@@ -44,7 +44,7 @@ const processingQueues = new Map<string, {
 /**
  * 队列处理超时时间（毫秒）
  */
-const QUEUE_TIMEOUT = 180000; // 3 分钟
+const QUEUE_TIMEOUT = 360000; // 6 分钟（比 streamer 的 5 分钟多 1 分钟缓冲）
 
 /**
  * 带超时的 Promise 包装
