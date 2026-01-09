@@ -30,6 +30,21 @@ msgcode 是一个基于 iMessage 的本地 AI Bot 系统，通过群组路由实
 - iMessage 已登录
 - Claude Code (`claude`) 已安装并登录
 
+> **⚠️ 重要：关闭 iCloud 消息同步**
+>
+> 使用本系统前，**必须关闭 macOS 的 iCloud 消息同步**：
+>
+> ```
+> 系统设置 → Apple ID → iCloud → 关闭"信息（Messages）"
+> ```
+>
+> **原因**：iCloud 同步会干扰本地数据库操作，导致：
+> - 消息检测失效（云端覆盖本地状态）
+> - markAsRead 无效（写入被云端回滚）
+> - 发送者身份混乱（多设备同步冲突）
+>
+> **尤其注意**：当 macOS 登录账号与 Bot 身份不一致时，问题更严重。
+
 ### 2. 安装
 
 ```bash
@@ -127,9 +142,13 @@ msgcode/
 
 ### Q: 为什么 Claude 不回复？
 A:
-1. 确保已发送 `/start` 启动会话。
-2. 确保 Bot 有读取 `~/Library/Messages` 的权限 (Full Disk Access)。
-3. 检查 `.env` 配置的路径是否正确。
+1. **检查 iCloud 消息同步是否关闭**（最常见原因）
+2. 确保已发送 `/start` 启动会话。
+3. 确保 Bot 有读取 `~/Library/Messages` 的权限 (Full Disk Access)。
+4. 检查 `.env` 配置的路径是否正确。
+
+### Q: 消息显示的发送者身份不对？
+A: 这是 iCloud 同步导致的多设备冲突。关闭 macOS 的 iCloud 消息同步即可解决。
 
 ### Q: 如何支持多个项目？
 A: 在 iMessage 建立多个群组，在 `.env` 中分别配置不同的 `GROUP_*` 和对应的项目路径。

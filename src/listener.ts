@@ -12,7 +12,7 @@ import { promisify } from "node:util";
 const execAsync = promisify(exec);
 
 import { checkWhitelist, formatSender } from "./security.js";
-import { routeByChatId, isConfiguredChatId, type Route } from "./router.js";
+import { routeByChatId, isConfiguredChatId, type Route, type BotType } from "./router.js";
 import { getHandler, type HandleResult } from "./handlers.js";
 import { createWatcher, isFileWatchingAvailable, type DatabaseWatcher } from "./watcher.js";
 import { handleTmuxStream } from "./tmux/streamer.js";
@@ -30,6 +30,84 @@ export interface ListenerConfig {
  */
 const processedMessages = new Set<string>();
 const MAX_CACHE_SIZE = 1000;
+
+/**
+ * 消息处理队列（每个 chatId 一个队列，确保顺序处理）
+ */
+const processingQueues = new Map<string, {
+    promise: Promise<void>;
+    startTime: number;
+    version: number;  // 版本号，用于检测重置
+}>();
+
+/**
+ * 队列处理超时时间（毫秒）
+ */
+const QUEUE_TIMEOUT = 180000; // 3 分钟
+
+/**
+ * 带超时的 Promise 包装
+ */
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMsg: string): Promise<T> {
+    return Promise.race([
+        promise,
+        new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error(errorMsg)), timeoutMs)
+        ),
+    ]);
+}
+
+/**
+ * 将消息处理加入队列（确保每个 chatId 同时只处理一条消息）
+ */
+async function enqueueMessage(chatId: string, handler: () => Promise<void>): Promise<void> {
+    const existing = processingQueues.get(chatId);
+    const nextVersion = existing ? existing.version + 1 : 1;
+
+    // 检查上一条消息是否超时
+    if (existing) {
+        const elapsed = Date.now() - existing.startTime;
+        if (elapsed > QUEUE_TIMEOUT) {
+            console.warn(`⚠️  [${chatId}] 队列超时 (${elapsed}ms)，强制重置`);
+            processingQueues.set(chatId, { promise: existing.promise, startTime: existing.startTime, version: -1 });
+            // 不删除 Map 条目，只是标记版本为 -1（已废弃）
+        }
+    }
+
+    const wrappedHandler = async () => {
+        const startTime = Date.now();
+        try {
+            await withTimeout(handler(), QUEUE_TIMEOUT, `消息处理超时 (${QUEUE_TIMEOUT}ms)`);
+        } catch (error: any) {
+            // 记录错误但继续处理后续消息
+            console.error(`❌ [${chatId}] 处理失败: ${error.message}`);
+            if (error.message.includes('超时')) {
+                console.error(`   可能原因: Claude 响应过慢或 tmux 会话卡死`);
+            }
+        } finally {
+            const elapsed = Date.now() - startTime;
+            if (elapsed > 10000) {  // 超过 10 秒记录
+                console.log(`⏱️  [${chatId}] 处理耗时: ${elapsed}ms`);
+            }
+        }
+    };
+
+    const nextPromise = (existing && existing.version !== -1)
+        ? existing.promise.then(wrappedHandler, wrappedHandler)
+        : wrappedHandler();
+
+    processingQueues.set(chatId, { promise: nextPromise, startTime: Date.now(), version: nextVersion });
+
+    try {
+        await nextPromise;
+    } finally {
+        // 只有当前版本匹配时才清理（防止旧 Promise 清理新队列）
+        const current = processingQueues.get(chatId);
+        if (current && current.version === nextVersion) {
+            processingQueues.delete(chatId);
+        }
+    }
+}
 
 /**
  * 已发送回复缓存（防止重复发送）
@@ -81,6 +159,56 @@ async function markMessagesAsReadOnStartup(): Promise<void> {
 }
 
 /**
+ * iMessage 数据库路径
+ */
+const MESSAGES_DB_PATH = `${process.env.HOME}/Library/Messages/chat.db`;
+
+/**
+ * 转义 SQLite 字符串（防止注入）
+ */
+function escapeSqlString(str: string): string {
+    return str.replace(/'/g, "''");
+}
+
+/**
+ * AppleScript 降级标记已读
+ */
+async function markAsReadAppleScript(chatId: string): Promise<boolean> {
+    const fullChatId = chatId.includes(";") ? chatId : `any;+;${chatId}`;
+    try {
+        await execAsync(`osascript -e 'tell application "Messages" to set read of chat id "${fullChatId}" to true' 2>/dev/null`);
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * 使用 SQLite 直接标记消息为已读（带降级）
+ *
+ * AppleScript 无法标记 iMessage 为已读，直接操作数据库是唯一可靠方法
+ * 失败时降级到 AppleScript（虽然不可靠，但聊胜于无）
+ */
+async function markAsReadSQLite(chatId: string): Promise<void> {
+    // 确保使用完整格式 any;+;GUID
+    const fullChatId = chatId.includes(";") ? chatId : `any;+;${chatId}`;
+    const escapedChatId = escapeSqlString(fullChatId);
+
+    // SQLite UPDATE 命令（单行格式，避免引号问题）
+    const sql = `UPDATE message SET is_read=1, date_read=(strftime('%s','now')+978307200)*1000000000 WHERE ROWID IN (SELECT cmj.message_id FROM chat_message_join cmj JOIN chat c ON cmj.chat_id=c.ROWID WHERE c.guid='${escapedChatId}') AND is_read=0`;
+
+    try {
+        await execAsync(`sqlite3 "${MESSAGES_DB_PATH}" "${sql}"`, { timeout: 5000 });
+    } catch (error: any) {
+        // SQLite 失败时降级到 AppleScript
+        const success = await markAsReadAppleScript(chatId);
+        if (!success) {
+            console.warn(`⚠️ markAsRead 完全失败: ${error.message.slice(0, 40)}...`);
+        }
+    }
+}
+
+/**
  * 转义 AppleScript 字符串
  */
 function escapeAppleScriptString(str: string): string {
@@ -88,12 +216,10 @@ function escapeAppleScriptString(str: string): string {
 }
 
 /**
- * 发送到群组（使用 AppleScript）
+ * 发送到群组（使用 AppleScript，SDK 不支持群组）
  */
 async function sendToChatGroup(chatId: string, text: string): Promise<void> {
-    // 确保使用完整格式 any;+;GUID
     const fullChatId = chatId.includes(";") ? chatId : `any;+;${chatId}`;
-
     const escapedText = escapeAppleScriptString(text);
     const escapedChatId = escapeAppleScriptString(fullChatId);
 
@@ -134,7 +260,7 @@ async function sendReply(sdk: IMessageSDK, chatId: string, text: string): Promis
         const isGroupChat = /^[a-f0-9]{32}$/i.test(chatId) || chatId.startsWith("any;+;");
 
         if (isGroupChat) {
-            // 群组使用 AppleScript 发送
+            // 群组使用 AppleScript 发送（SDK 不支持群组）
             await sendToChatGroup(chatId, text);
         } else {
             // 个人使用 SDK 发送
@@ -170,13 +296,8 @@ export async function handleMessage(
     if (!message.text?.trim()) {
         if (debug) console.log("🔍 跳过空消息");
         // 空消息也要标记为已读，防止重复处理
-        try {
-            const fullChatId = message.chatId;
-            if (fullChatId) {
-                await execAsync(`osascript -e 'tell application "Messages" to set read of chat id "${fullChatId}" to true' 2>/dev/null`);
-            }
-        } catch {
-            // 忽略标记失败
+        if (message.chatId) {
+            await markAsReadSQLite(message.chatId);
         }
         return;
     }
@@ -208,64 +329,69 @@ export async function handleMessage(
         return;
     }
 
+    // 提取路由信息（处理可能的 null 值，构建非 null 的 Route 对象）
+    const routeChatId = route.chatId ?? chatId;
+    const botType: BotType = route.botType ?? "default";
+    const groupName = route.groupName ?? "";
+    const projectDir = route.projectDir;
+
     // 获取处理器
-    const handler = getHandler(route.botType || "default");
+    const handler = getHandler(botType);
     const context = {
-        botType: route.botType || "default",
+        botType,
         chatId,
-        groupName: route.groupName,
-        projectDir: route.projectDir,
+        groupName,
+        projectDir,
         originalMessage: message,
     };
 
     // 打印日志
-    console.log(`\n📨 [${route.groupName}] ${formatSender(message)}: ${message.text}`);
+    console.log(`\n📨 [${groupName}] ${formatSender(message)}: ${message.text}`);
 
-    // 判断是否使用流式处理
-    if (shouldStream(route, message.text)) {
-        // === 流式处理：使用 handleTmuxStream ===
-        try {
-            await handleTmuxStream(route.groupName, message.text, {
-                projectDir: route.projectDir,
-                onChunk: async (chunk, isToolUse) => {
-                    const logPrefix = isToolUse ? "📤 [工具]" : "📤";
-                    console.log(`${logPrefix} [${route.groupName}] Bot: ${chunk}`);
-                    await sendReply(sdk, chatId, chunk);
-                }
-            });
-        } catch (error: any) {
-            console.error(`❌ 流式处理错误: ${error.message}`);
-            await sendReply(sdk, chatId, `处理失败: ${error.message}`);
-        }
-    } else {
-        // === 命令处理：使用原有 handler.handle() ===
-        let result: HandleResult;
-        try {
-            result = await handler.handle(message.text, context);
-        } catch (error: any) {
-            console.error(`❌ 处理错误: ${error.message}`);
-            result = {
-                success: false,
-                error: error.message,
-            };
+    // === 使用队列处理，确保每个 chatId 同时只处理一条消息 ===
+    await enqueueMessage(chatId, async () => {
+        // 判断是否使用流式处理（message.text 已在前面检查过非空）
+        const messageText = message.text ?? "";
+        if (shouldStream({ chatId: routeChatId, groupName, projectDir, botType }, messageText)) {
+            // === 流式处理：使用 handleTmuxStream ===
+            try {
+                await handleTmuxStream(groupName, messageText, {
+                    projectDir: projectDir ?? undefined,
+                    onChunk: async (chunk, isToolUse) => {
+                        const logPrefix = isToolUse ? "📤 [工具]" : "📤";
+                        console.log(`${logPrefix} [${groupName}] Bot: ${chunk}`);
+                        await sendReply(sdk, chatId, chunk);
+                    }
+                });
+            } catch (error: any) {
+                console.error(`❌ 流式处理错误: ${error.message}`);
+                await sendReply(sdk, chatId, `处理失败: ${error.message}`);
+            }
+        } else {
+            // === 命令处理：使用原有 handler.handle() ===
+            let result: HandleResult;
+            try {
+                result = await handler.handle(messageText, context);
+            } catch (error: any) {
+                console.error(`❌ 处理错误: ${error.message}`);
+                result = {
+                    success: false,
+                    error: error.message,
+                };
+            }
+
+            // 发送回复
+            if (result.response) {
+                console.log(`📤 [${groupName}] Bot: ${result.response}`);
+                await sendReply(sdk, chatId, result.response);
+            } else if (result.error) {
+                console.error(`❌ 错误: ${result.error}`);
+            }
         }
 
-        // 发送回复
-        if (result.response) {
-            console.log(`📤 [${route.groupName}] Bot: ${result.response}`);
-            await sendReply(sdk, chatId, result.response);
-        } else if (result.error) {
-            console.error(`❌ 错误: ${result.error}`);
-        }
-    }
-
-    // 标记消息为已读（防止重复处理）
-    try {
-        const fullChatId = chatId.includes(";") ? chatId : `any;+;${chatId}`;
-        await execAsync(`osascript -e 'tell application "Messages" to set read of chat id "${fullChatId}" to true' 2>/dev/null`);
-    } catch {
-        // 忽略标记失败
-    }
+        // 标记消息为已读（使用 SQLite 方法）
+        await markAsReadSQLite(chatId);
+    });
 }
 
 /**
@@ -313,15 +439,15 @@ export async function startListener(sdk: IMessageSDK, debug = false, useFileWatc
         console.log("✅ 监听器已启动，等待消息...\n");
         return watcher;
     } else {
-        // 使用 SDK 轮询模式
-        console.log("🔄 使用轮询模式 (2s 间隔)\n");
+        // 使用 SDK Watcher + 轮询模式
+        console.log("🔄 使用 SDK Watcher 模式\n");
 
         sdk.startWatching({
             onNewMessage: handleMessageWrapper,
             onGroupMessage: handleMessageWrapper,
         });
 
-        // 启动定期检查未读消息（补充 SDK watcher 的不足）
+        // 启动轮询作为补充（SDK Watcher 可能遗漏消息）
         startPolling(sdk, debug, handleMessageWrapper);
 
         console.log("✅ 监听器已启动，等待消息...\n");
@@ -356,17 +482,20 @@ async function checkExistingMessages(
         const result = await sdk.getMessages({ unreadOnly: true });
         const unreadMessages = result.messages.filter(m => m.text?.trim());
 
-        if (unreadMessages.length > 0) {
-            console.log(`📬 检测到 ${unreadMessages.length} 条未读消息，开始处理...`);
-            for (const msg of unreadMessages) {
+        // 过滤掉已处理的消息（防止重复处理）
+        const newMessages = unreadMessages.filter(m => m.id && !processedMessages.has(m.id));
+
+        if (newMessages.length > 0) {
+            console.log(`📬 检测到 ${newMessages.length} 条新消息，开始处理...`);
+            for (const msg of newMessages) {
                 await handler(msg);
-                // 标记为已读（通过 AppleScript）
-                try {
-                    await execAsync(`osascript -e 'tell application "Messages" to set read of chat id "${msg.chatId || ""}" to true' 2>/dev/null`);
-                } catch {
-                    // 忽略标记失败
+                // 标记为已读（使用 SQLite）
+                if (msg.chatId) {
+                    await markAsReadSQLite(msg.chatId);
                 }
             }
+        } else if (debug && unreadMessages.length > 0) {
+            console.log(`📭 已有 ${unreadMessages.length} 条未读消息已处理`);
         }
     } catch (error: any) {
         if (debug) console.error("检查未读消息失败:", error.message);

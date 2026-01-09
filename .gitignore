@@ -29,3 +29,6 @@ build/
 # Temp files
 0
 *.tmp
+
+# Reference materials (not tracked)
+ref/
