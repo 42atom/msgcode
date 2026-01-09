@@ -124,9 +124,10 @@ export class OutputReader {
                 }
             }
 
-            // 方法2: 使用 find 查找最近修改的 JSONL（排除 subagents）
+            // 方法2: 使用 find + ls 查找最近修改的 JSONL（排除 subagents）
+            // find 找到文件后，通过 ls -lt 按修改时间排序，取最新的
             const { stdout } = await execAsync(
-                `find ~/.claude/projects -name "*.jsonl" -path "*${projectDir ? projectDir.split("/").pop() : ""}*" ! -path "*/subagents/*" -mmin -30 -type f 2>/dev/null | head -1`,
+                `ls -lt $(find ~/.claude/projects -name "*.jsonl" -path "*${projectDir ? projectDir.split("/").pop() : ""}*" ! -path "*/subagents/*" -mmin -30 -type f) 2>/dev/null | head -1 | awk '{print $NF}'`,
                 { timeout: 10000 }  // 10秒超时，防止卡死
             );
             const path = stdout.trim();
@@ -134,7 +135,7 @@ export class OutputReader {
             // 方法3: 如果没找到，查找所有最近的 JSONL
             if (!path) {
                 const { stdout: fallback } = await execAsync(
-                    `find ~/.claude/projects -name "*.jsonl" ! -path "*/subagents/*" -mmin -30 -type f 2>/dev/null | head -1`,
+                    `ls -lt $(find ~/.claude/projects -name "*.jsonl" ! -path "*/subagents/*" -mmin -30 -type f) 2>/dev/null | head -1 | awk '{print $NF}'`,
                     { timeout: 10000 }  // 10秒超时，防止卡死
                 );
                 return fallback.trim() || null;
