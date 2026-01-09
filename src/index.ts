@@ -8,6 +8,7 @@ import { IMessageSDK } from "@photon-ai/imessage-kit";
 import { config } from "./config.js";
 import { startListener } from "./listener.js";
 import { getAllRoutes } from "./router.js";
+import { logger } from "./logger/index.js";
 
 /**
  * 打印启动信息
@@ -40,6 +41,15 @@ function printBanner() {
 async function main() {
     printBanner();
 
+    // 记录启动信息到日志文件
+    logger.info("msgcode v0.4.0 启动", {
+        module: "main",
+        logLevel: config.logLevel,
+        whitelistPhones: config.whitelist.phones.length,
+        whitelistEmails: config.whitelist.emails.length,
+        groupRoutes: getAllRoutes().length,
+    });
+
     // 创建 SDK
     const sdk = new IMessageSDK({
         debug: config.logLevel === "debug",
@@ -51,10 +61,12 @@ async function main() {
     // 优雅关闭
     process.on("SIGINT", async () => {
         console.log("\n\n👋 正在关闭...");
+        logger.info("正在关闭 msgcode", { module: "main" });
         if (watcher) {
             watcher.stop();
         }
         await sdk.close();
+        logger.close();
         process.exit(0);
     });
 }
@@ -62,5 +74,6 @@ async function main() {
 // 启动
 main().catch((error) => {
     console.error("💥 未处理的错误:", error);
+    logger.error("未处理的错误", { module: "main", error });
     process.exit(1);
 });

@@ -16,6 +16,7 @@ import { routeByChatId, isConfiguredChatId, type Route, type BotType } from "./r
 import { getHandler, type HandleResult } from "./handlers.js";
 import { createWatcher, isFileWatchingAvailable, type DatabaseWatcher } from "./watcher.js";
 import { handleTmuxStream } from "./tmux/streamer.js";
+import { logger } from "./logger/index.js";
 
 /**
  * 消息监听器配置
@@ -68,7 +69,7 @@ async function enqueueMessage(chatId: string, handler: () => Promise<void>): Pro
     if (existing) {
         const elapsed = Date.now() - existing.startTime;
         if (elapsed > QUEUE_TIMEOUT) {
-            console.warn(`⚠️  [${chatId}] 队列超时 (${elapsed}ms)，强制重置`);
+            logger.warn(`⚠️  [${chatId}] 队列超时 (${elapsed}ms)，强制重置`, { module: "listener", chatId, elapsed });
             processingQueues.set(chatId, { promise: existing.promise, startTime: existing.startTime, version: -1 });
             // 不删除 Map 条目，只是标记版本为 -1（已废弃）
         }
@@ -80,14 +81,14 @@ async function enqueueMessage(chatId: string, handler: () => Promise<void>): Pro
             await withTimeout(handler(), QUEUE_TIMEOUT, `消息处理超时 (${QUEUE_TIMEOUT}ms)`);
         } catch (error: any) {
             // 记录错误但继续处理后续消息
-            console.error(`❌ [${chatId}] 处理失败: ${error.message}`);
+            logger.error(`❌ [${chatId}] 处理失败: ${error.message}`, { module: "listener", chatId, error });
             if (error.message.includes('超时')) {
-                console.error(`   可能原因: Claude 响应过慢或 tmux 会话卡死`);
+                logger.error(`   可能原因: Claude 响应过慢或 tmux 会话卡死`, { module: "listener", chatId });
             }
         } finally {
             const elapsed = Date.now() - startTime;
             if (elapsed > 10000) {  // 超过 10 秒记录
-                console.log(`⏱️  [${chatId}] 处理耗时: ${elapsed}ms`);
+                logger.info(`⏱️  [${chatId}] 处理耗时: ${elapsed}ms`, { module: "listener", chatId, elapsed });
             }
         }
     };
@@ -203,7 +204,7 @@ async function markAsReadSQLite(chatId: string): Promise<void> {
         // SQLite 失败时降级到 AppleScript
         const success = await markAsReadAppleScript(chatId);
         if (!success) {
-            console.warn(`⚠️ markAsRead 完全失败: ${error.message.slice(0, 40)}...`);
+            logger.warn(`⚠️ markAsRead 完全失败: ${error.message.slice(0, 40)}...`, { module: "listener", error });
         }
     }
 }
@@ -267,7 +268,7 @@ async function sendReply(sdk: IMessageSDK, chatId: string, text: string): Promis
             await sendToIndividual(sdk, chatId, text);
         }
     } catch (error: any) {
-        console.error(`❌ 发送失败: ${error.message}`);
+        logger.error(`❌ 发送失败: ${error.message}`, { module: "listener", chatId, error });
     }
 }
 
@@ -280,13 +281,13 @@ export async function handleMessage(
 ): Promise<void> {
     // 跳过没有 id 的消息
     if (!message.id) {
-        if (debug) console.log("🔍 跳过无 id 消息");
+        if (debug) logger.debug("🔍 跳过无 id 消息", { module: "listener" });
         return;
     }
 
     // 防止重复处理
     if (processedMessages.has(message.id)) {
-        if (debug) console.log(`🔄 已处理过: ${message.id}`);
+        if (debug) logger.debug(`🔄 已处理过: ${message.id}`, { module: "listener", messageId: message.id });
         return;
     }
     processedMessages.add(message.id);
@@ -294,7 +295,7 @@ export async function handleMessage(
 
     // 跳过空消息
     if (!message.text?.trim()) {
-        if (debug) console.log("🔍 跳过空消息");
+        if (debug) logger.debug("🔍 跳过空消息", { module: "listener" });
         // 空消息也要标记为已读，防止重复处理
         if (message.chatId) {
             await markAsReadSQLite(message.chatId);
@@ -305,27 +306,27 @@ export async function handleMessage(
     // 获取 chatId
     const chatId = message.chatId;
     if (!chatId) {
-        if (debug) console.log("🔍 跳过无 chatId 消息");
+        if (debug) logger.debug("🔍 跳过无 chatId 消息", { module: "listener" });
         return;
     }
 
     // 检查是否是配置的群组
     if (!isConfiguredChatId(chatId)) {
-        if (debug) console.log(`🔍 未配置的群组: ${chatId}`);
+        if (debug) logger.debug(`🔍 未配置的群组: ${chatId}`, { module: "listener", chatId });
         return;
     }
 
     // 白名单检查
     const securityCheck = checkWhitelist(message);
     if (!securityCheck.allowed) {
-        console.warn(`⚠️  ${securityCheck.reason}`);
+        logger.warn(`⚠️  ${securityCheck.reason}`, { module: "listener" });
         return;
     }
 
     // 路由到对应的 Bot
     const route = routeByChatId(chatId);
     if (!route) {
-        console.warn(`⚠️  无法路由: ${chatId}`);
+        logger.warn(`⚠️  无法路由: ${chatId}`, { module: "listener", chatId });
         return;
     }
 
@@ -347,6 +348,7 @@ export async function handleMessage(
 
     // 打印日志
     console.log(`\n📨 [${groupName}] ${formatSender(message)}: ${message.text}`);
+    logger.info(`📨 [${groupName}] ${formatSender(message)}: ${message.text}`, { module: "listener", groupName, sender: formatSender(message), text: message.text });
 
     // === 使用队列处理，确保每个 chatId 同时只处理一条消息 ===
     await enqueueMessage(chatId, async () => {
@@ -360,11 +362,12 @@ export async function handleMessage(
                     onChunk: async (chunk, isToolUse) => {
                         const logPrefix = isToolUse ? "📤 [工具]" : "📤";
                         console.log(`${logPrefix} [${groupName}] Bot: ${chunk}`);
+                        logger.info(`${logPrefix} [${groupName}] Bot: ${chunk}`, { module: "listener", groupName, isToolUse });
                         await sendReply(sdk, chatId, chunk);
                     }
                 });
             } catch (error: any) {
-                console.error(`❌ 流式处理错误: ${error.message}`);
+                logger.error(`❌ 流式处理错误: ${error.message}`, { module: "listener", groupName, error });
                 await sendReply(sdk, chatId, `处理失败: ${error.message}`);
             }
         } else {
@@ -373,7 +376,7 @@ export async function handleMessage(
             try {
                 result = await handler.handle(messageText, context);
             } catch (error: any) {
-                console.error(`❌ 处理错误: ${error.message}`);
+                logger.error(`❌ 处理错误: ${error.message}`, { module: "listener", groupName, error });
                 result = {
                     success: false,
                     error: error.message,
@@ -383,9 +386,10 @@ export async function handleMessage(
             // 发送回复
             if (result.response) {
                 console.log(`📤 [${groupName}] Bot: ${result.response}`);
+                logger.info(`📤 [${groupName}] Bot: ${result.response}`, { module: "listener", groupName });
                 await sendReply(sdk, chatId, result.response);
             } else if (result.error) {
-                console.error(`❌ 错误: ${result.error}`);
+                logger.error(`❌ 错误: ${result.error}`, { module: "listener", groupName });
             }
         }
 
@@ -403,6 +407,7 @@ export async function handleMessage(
  */
 export async function startListener(sdk: IMessageSDK, debug = false, useFileWatcher = false): Promise<DatabaseWatcher | null> {
     console.log("🎯 启动消息监听...\n");
+    logger.info("启动消息监听", { module: "listener", debug, useFileWatcher });
 
     // 启动时打开 Messages 一次，标记所有消息为已读
     await markMessagesAsReadOnStartup();
@@ -417,6 +422,7 @@ export async function startListener(sdk: IMessageSDK, debug = false, useFileWatc
     if (useFileWatcher && isFileWatchingAvailable()) {
         // 使用文件监听模式 (Phase 2)
         console.log("📡 使用文件监听模式 (低延迟)\n");
+        logger.info("使用文件监听模式 (低延迟)", { module: "listener" });
 
         const watcher = createWatcher({
             sdk,
@@ -426,6 +432,7 @@ export async function startListener(sdk: IMessageSDK, debug = false, useFileWatc
         });
 
         await watcher.start().catch((error) => {
+            logger.error(`文件监听启动失败，回退到轮询模式: ${error.message}`, { module: "listener", error });
             console.error(`文件监听启动失败，回退到轮询模式: ${error.message}`);
             // 回退到 SDK 轮询
             sdk.startWatching({
@@ -437,10 +444,12 @@ export async function startListener(sdk: IMessageSDK, debug = false, useFileWatc
         });
 
         console.log("✅ 监听器已启动，等待消息...\n");
+        logger.info("监听器已启动，等待消息", { module: "listener", mode: "file" });
         return watcher;
     } else {
         // 使用 SDK Watcher + 轮询模式
         console.log("🔄 使用 SDK Watcher 模式\n");
+        logger.info("使用 SDK Watcher 模式", { module: "listener" });
 
         sdk.startWatching({
             onNewMessage: handleMessageWrapper,
@@ -451,6 +460,7 @@ export async function startListener(sdk: IMessageSDK, debug = false, useFileWatc
         startPolling(sdk, debug, handleMessageWrapper);
 
         console.log("✅ 监听器已启动，等待消息...\n");
+        logger.info("监听器已启动，等待消息", { module: "listener", mode: "sdk" });
         return null;
     }
 }
@@ -487,6 +497,7 @@ async function checkExistingMessages(
 
         if (newMessages.length > 0) {
             console.log(`📬 检测到 ${newMessages.length} 条新消息，开始处理...`);
+            logger.info(`📬 检测到 ${newMessages.length} 条新消息，开始处理`, { module: "listener", count: newMessages.length });
             for (const msg of newMessages) {
                 await handler(msg);
                 // 标记为已读（使用 SQLite）
@@ -496,8 +507,12 @@ async function checkExistingMessages(
             }
         } else if (debug && unreadMessages.length > 0) {
             console.log(`📭 已有 ${unreadMessages.length} 条未读消息已处理`);
+            logger.debug(`📭 已有 ${unreadMessages.length} 条未读消息已处理`, { module: "listener", count: unreadMessages.length });
         }
     } catch (error: any) {
-        if (debug) console.error("检查未读消息失败:", error.message);
+        if (debug) {
+            console.error("检查未读消息失败:", error.message);
+            logger.error("检查未读消息失败", { module: "listener", error });
+        }
     }
 }

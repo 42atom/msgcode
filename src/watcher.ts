@@ -8,6 +8,7 @@
 import { watch, existsSync } from "node:fs";
 import type { IMessageSDK } from "@photon-ai/imessage-kit";
 import type { Message } from "@photon-ai/imessage-kit";
+import { logger } from "./logger/index.js";
 
 /**
  * iMessage 数据库路径
@@ -50,6 +51,7 @@ export class DatabaseWatcher {
         }
 
         console.log(`📡 文件监听模式: ${CHAT_DB_PATH}`);
+        logger.info(`📡 文件监听模式: ${CHAT_DB_PATH}`, { module: "watcher", path: CHAT_DB_PATH });
 
         // 1. 监听数据库文件变化
         this.watcher = watch(CHAT_DB_PATH, { recursive: false }, (eventType, filename) => {
@@ -65,6 +67,7 @@ export class DatabaseWatcher {
         }, 10000); // 10秒备份轮询
 
         console.log(`✅ 监听器已启动 (文件监听 + 10s 备份轮询)`);
+        logger.info(`✅ 监听器已启动 (文件监听 + 10s 备份轮询)`, { module: "watcher" });
     }
 
     /**
@@ -81,6 +84,7 @@ export class DatabaseWatcher {
 
         if (this.config.debug) {
             console.log(`📝 数据库已变化，检查新消息...`);
+            logger.debug(`📝 数据库已变化，检查新消息...`, { module: "watcher" });
         }
 
         this.checkNewMessages();
@@ -118,6 +122,7 @@ export class DatabaseWatcher {
             }
         } catch (error: any) {
             console.error(`检查消息失败: ${error.message}`);
+            logger.error(`检查消息失败`, { module: "watcher", error });
         }
     }
 
@@ -146,6 +151,7 @@ export class DatabaseWatcher {
             this.pollInterval = null;
         }
         console.log(`监听器已停止`);
+        logger.info(`监听器已停止`, { module: "watcher" });
     }
 }
 

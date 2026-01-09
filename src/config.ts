@@ -2,12 +2,48 @@
  * msgcode: 配置加载模块
  *
  * 从 .env 文件加载配置，提供类型安全的配置访问
+ *
+ * 配置优先级：
+ * 1. ~/.config/msgcode/.env（用户配置，优先）
+ * 2. 项目根目录 .env（项目配置，后备）
+ * 3. 环境变量（系统环境，兜底）
  */
 
 import dotenv from "dotenv";
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
 
-// 加载 .env
-dotenv.config();
+/**
+ * 获取配置文件路径
+ *
+ * 优先级：用户配置目录 → 项目根目录
+ */
+function getConfigPath(): string {
+    // 用户配置目录：~/.config/msgcode/.env
+    const userConfig = path.join(os.homedir(), ".config/msgcode/.env");
+
+    // 项目配置：项目根目录/.env
+    const projectConfig = path.join(process.cwd(), ".env");
+
+    // 优先使用用户配置
+    if (fs.existsSync(userConfig)) {
+        return userConfig;
+    }
+
+    // 回退到项目配置
+    if (fs.existsSync(projectConfig)) {
+        console.warn("⚠️  使用项目配置文件，建议迁移到 ~/.config/msgcode/.env");
+        return projectConfig;
+    }
+
+    // 都不存在，返回用户配置路径（让 dotenv 报错，更清晰）
+    return userConfig;
+}
+
+// 加载 .env（使用优先级路径）
+const configPath = getConfigPath();
+dotenv.config({ path: configPath });
 
 /**
  * 群组配置

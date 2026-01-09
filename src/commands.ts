@@ -10,6 +10,7 @@ import { config } from "./config.js";
 import { IMessageSDK } from "@photon-ai/imessage-kit";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
+import { logger } from "./logger/index.js";
 
 const execAsync = promisify(exec);
 
@@ -24,10 +25,12 @@ export async function startBot(): Promise<void> {
     const isRunning = await checkBotRunning();
     if (isRunning) {
         console.log("⚠️  msgcode bot 已在运行");
+        logger.warn("⚠️  msgcode bot 已在运行", { module: "commands" });
         return;
     }
 
     console.log("🚀 启动 msgcode bot...");
+    logger.info("🚀 启动 msgcode bot...", { module: "commands" });
 
     sdk = new IMessageSDK({ debug: config.logLevel === "debug" });
 
@@ -35,6 +38,7 @@ export async function startBot(): Promise<void> {
     await startListener(sdk, config.logLevel === "debug", config.useFileWatcher);
 
     console.log("✅ msgcode bot 已启动");
+    logger.info("✅ msgcode bot 已启动", { module: "commands" });
 
     // 保持运行
     await keepAlive();
@@ -45,10 +49,12 @@ export async function startBot(): Promise<void> {
  */
 export async function stopBot(): Promise<void> {
     console.log("⏹️  停止 msgcode bot...");
+    logger.info("⏹️  停止 msgcode bot...", { module: "commands" });
 
     const isRunning = await checkBotRunning();
     if (!isRunning) {
         console.log("⚠️  msgcode bot 未在运行");
+        logger.warn("⚠️  msgcode bot 未在运行", { module: "commands" });
         return;
     }
 
@@ -57,8 +63,10 @@ export async function stopBot(): Promise<void> {
         await execAsync("pkill -f 'tsx src/index.ts'");
         await execAsync("pkill -f 'node.*msgcode'");
         console.log("✅ msgcode bot 已停止");
+        logger.info("✅ msgcode bot 已停止", { module: "commands" });
     } catch (error) {
         console.log("✅ msgcode bot 已停止（或未运行）");
+        logger.info("✅ msgcode bot 已停止（或未运行）", { module: "commands" });
     }
 }
 
@@ -67,6 +75,7 @@ export async function stopBot(): Promise<void> {
  */
 export async function restartBot(): Promise<void> {
     console.log("🔄 重启 msgcode bot...");
+    logger.info("🔄 重启 msgcode bot...", { module: "commands" });
     await stopBot();
     await new Promise(r => setTimeout(r, 1000));
     await startBot();
@@ -77,6 +86,7 @@ export async function restartBot(): Promise<void> {
  */
 export async function allStop(): Promise<void> {
     console.log("🛑 停止所有服务...");
+    logger.info("🛑 停止所有服务...", { module: "commands" });
 
     // 停止 bot
     await stopBot();
@@ -92,12 +102,14 @@ export async function allStop(): Promise<void> {
         for (const session of sessions) {
             await execAsync(`tmux kill-session -t ${session}`);
             console.log(`  ✓ 已停止 tmux 会话: ${session}`);
+            logger.info(`  ✓ 已停止 tmux 会话: ${session}`, { module: "commands", session });
         }
     } catch {
         // 忽略错误
     }
 
     console.log("✅ 所有服务已停止");
+    logger.info("✅ 所有服务已停止", { module: "commands" });
     process.exit(0);
 }
 

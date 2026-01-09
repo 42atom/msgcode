@@ -12,11 +12,12 @@ import { OutputReader } from "../output/reader.js";
 import { AssistantParser, type ToolUseInfo } from "../output/parser.js";
 import { BufferManager } from "../output/buffer.js";
 import { Throttler } from "../output/throttler.js";
+import { logger } from "../logger/index.js";
 
 // 轮询配置（与 responder.ts 保持一致）
 const FAST_INTERVAL = 300;      // 首次交付前
 const SLOW_INTERVAL = 1000;     // 首次交付后（缩短以更快捕获内容）
-const MAX_WAIT_MS = 120000;     // 最大等待 2 分钟（复杂问题需要更久）
+const MAX_WAIT_MS = 300000;     // 最大等待 5 分钟（复杂问题需要更久）
 
 /**
  * 延时函数
@@ -92,6 +93,7 @@ export async function handleTmuxStream(
     let currentText = "";  // 累积的完整文本
 
     console.log(`[Streamer ${groupName}] 发送前 offset: ${beforeResult.newOffset}`);
+    logger.debug(`[Streamer ${groupName}] 发送前 offset: ${beforeResult.newOffset}`, { module: "streamer", groupName, offset: beforeResult.newOffset });
 
     // 发送消息
     try {
@@ -146,6 +148,7 @@ export async function handleTmuxStream(
             buffer.append(deltaText);
 
             console.log(`[Streamer ${groupName}] 新增 ${deltaText.length} 字符, 缓冲区: ${buffer.length}, 完成: ${parseResult.isComplete}`);
+            logger.debug(`[Streamer ${groupName}] 新增 ${deltaText.length} 字符, 缓冲区: ${buffer.length}, 完成: ${parseResult.isComplete}`, { module: "streamer", groupName, deltaChars: deltaText.length, bufferLength: buffer.length, isComplete: parseResult.isComplete });
 
             // 首次检测到内容后，切换到慢速轮询
             if (!hasResponse) {
@@ -158,6 +161,7 @@ export async function handleTmuxStream(
                 const chunk = buffer.flush();
                 if (chunk.trim()) {
                     console.log(`[Streamer ${groupName}] 发送块: ${chunk.length} 字符`);
+                    logger.debug(`[Streamer ${groupName}] 发送块: ${chunk.length} 字符`, { module: "streamer", groupName, chunkLength: chunk.length });
                     await throttler.wait();
                     await options.onChunk(chunk, false);
                     throttler.recordSend();
@@ -167,6 +171,7 @@ export async function handleTmuxStream(
             // 检查完成
             if (parseResult.isComplete) {
                 console.log(`[Streamer ${groupName}] 检测到完成，发送剩余内容`);
+                logger.info(`[Streamer ${groupName}] 检测到完成，发送剩余内容`, { module: "streamer", groupName });
                 // 发送剩余内容（不等待节流，立即发送）
                 const remaining = buffer.forceFlush();
                 if (remaining.trim()) {
@@ -179,6 +184,7 @@ export async function handleTmuxStream(
 
     // 超时处理
     console.log(`[Streamer ${groupName}] 超时，发送剩余内容`);
+    logger.warn(`[Streamer ${groupName}] 超时，发送剩余内容`, { module: "streamer", groupName });
     const remaining = buffer.forceFlush();
     if (remaining.trim()) {
         await options.onChunk(remaining, false);

@@ -7,13 +7,14 @@
 import { TmuxSession } from "./session.js";
 import { OutputReader } from "../output/reader.js";
 import { AssistantParser, type ParseResult } from "../output/parser.js";
+import { logger } from "../logger/index.js";
 
 /**
  * 轮询配置（参考 Matcode）
  */
 const FAST_INTERVAL = 300;      // 首次交付前
 const SLOW_INTERVAL = 3000;     // 首次交付后
-const MAX_WAIT_MS = 30000;      // 最大等待
+const MAX_WAIT_MS = 300000;     // 最大等待 5 分钟（复杂问题需要更久）
 const STABLE_COUNT = 3;         // 稳定计数（连续 N 次无变化视为完成）
 
 /**
@@ -79,6 +80,7 @@ export async function handleTmuxSend(
     const startOffset = beforeResult.newOffset;
 
     console.log(`[Responder ${groupName}] 发送前 offset: ${startOffset}`);
+    logger.debug(`[Responder ${groupName}] 发送前 offset: ${startOffset}`, { module: "responder", groupName, offset: startOffset });
 
     // 3. 发送消息
     try {
@@ -110,6 +112,7 @@ export async function handleTmuxSend(
         const newText = AssistantParser.toPlainText(parseResult);
 
         console.log(`[Responder ${groupName}] 新增 ${newText.length} 字符, 完成: ${parseResult.isComplete}, 稳定: ${stableCount}/${STABLE_COUNT}`);
+        logger.debug(`[Responder ${groupName}] 新增 ${newText.length} 字符, 完成: ${parseResult.isComplete}, 稳定: ${stableCount}/${STABLE_COUNT}`, { module: "responder", groupName, newChars: newText.length, isComplete: parseResult.isComplete, stableCount });
 
         if (newText.length > 0) {
             currentText += newText;
@@ -138,6 +141,7 @@ export async function handleTmuxSend(
                 // 连续 N 次无新内容，视为完成
                 if (stableCount >= STABLE_COUNT) {
                     console.log(`[Responder ${groupName}] 稳定计数达标，返回`);
+                    logger.info(`[Responder ${groupName}] 稳定计数达标，返回`, { module: "responder", groupName, stableCount });
                     const cleanedText = removeUserEcho(currentText, message);
                     return {
                         success: true,

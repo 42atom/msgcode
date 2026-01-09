@@ -21,6 +21,82 @@ msgcode 是一个基于 iMessage 的本地 AI Bot 系统，通过群组路由实
 
 ---
 
+## 配置文件
+
+msgcode 优先从 `~/.config/msgcode/.env` 读取配置，如果不存在则回退到项目根目录的 `.env` 文件。
+
+### 首次安装
+
+```bash
+# 创建配置目录
+mkdir -p ~/.config/msgcode/log
+
+# 复制示例配置
+cp .env.example ~/.config/msgcode/.env
+
+# 编辑配置
+vim ~/.config/msgcode/.env
+```
+
+### 配置迁移
+
+如果你已经在使用项目根目录的 `.env`，可以迁移到用户配置目录：
+
+```bash
+# 创建配置目录
+mkdir -p ~/.config/msgcode/log
+
+# 复制现有配置
+cp .env ~/.config/msgcode/.env
+
+# 验证
+ls -la ~/.config/msgcode/
+```
+
+## 日志
+
+msgcode 使用双写策略：同时输出到控制台和日志文件。
+
+### 日志位置
+
+日志文件位于 `~/.config/msgcode/log/msgcode.log`
+
+### 日志级别
+
+通过 `LOG_LEVEL` 环境变量控制：
+
+- `debug` - 调试信息（详细）
+- `info` - 常规信息（默认）
+- `warn` - 警告信息
+- `error` - 错误信息（最少）
+
+在 `.env` 中设置：
+
+```bash
+LOG_LEVEL=info
+```
+
+### 日志轮转
+
+- 单个日志文件最大 10MB
+- 自动轮转，保留最近 3 个日志文件
+- 轮转后的文件命名：`msgcode.log.1`, `msgcode.log.2`, `msgcode.log.3`
+
+### 查看日志
+
+```bash
+# 查看最新日志
+tail -f ~/.config/msgcode/log/msgcode.log
+
+# 查看最近 50 行
+tail -50 ~/.config/msgcode/log/msgcode.log
+
+# 搜索错误
+grep ERROR ~/.config/msgcode/log/msgcode.log
+```
+
+---
+
 ## 快速开始
 
 ### 1. 系统要求
