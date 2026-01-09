@@ -50,6 +50,25 @@ async function main() {
         groupRoutes: getAllRoutes().length,
     });
 
+    // 全局未捕获的异常处理
+    process.on("uncaughtException", (error) => {
+        console.error("💥 未捕获的异常:", error);
+        logger.error("未捕获的异常", { module: "main", error: error.message, stack: error.stack });
+        // 不立即退出，给日志系统时间写入
+        setTimeout(() => process.exit(1), 1000);
+    });
+
+    // 全局未处理的 Promise rejection 处理
+    process.on("unhandledRejection", (reason, promise) => {
+        console.error("💥 未处理的 Promise rejection:", reason);
+        logger.error("未处理的 Promise rejection", {
+            module: "main",
+            reason: String(reason),
+            promise: String(promise)
+        });
+        // 不退出进程，继续运行
+    });
+
     // 创建 SDK
     const sdk = new IMessageSDK({
         debug: config.logLevel === "debug",

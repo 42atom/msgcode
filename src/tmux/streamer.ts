@@ -113,81 +113,92 @@ export async function handleTmuxStream(
     let hasResponse = false;
     const startTime = Date.now();
 
-    while (Date.now() - startTime < timeout) {
-        await sleep(pollInterval);
+    try {
+        while (Date.now() - startTime < timeout) {
+            await sleep(pollInterval);
 
-        // 读取新增内容
-        const result = await reader.readProject(options.projectDir);
-        if (result.entries.length === 0) {
-            continue;
-        }
-
-        // 解析新增内容
-        const parseResult = AssistantParser.parse(result.entries);
-        const newText = parseResult.text;
-
-        // 工具调用检测已禁用（用户反馈工具通知无可读性）
-        // const toolUses = AssistantParser.detectToolUses(result.entries);
-        // for (const tool of toolUses) {
-        //     const toolKey = `${groupName}-${toolIndex++}-${tool.name}`;
-        //     if (!processedTools.has(toolKey)) {
-        //         processedTools.add(toolKey);
-        //         console.log(`[Streamer ${groupName}] 检测到工具: ${tool.name}`);
-        //         await throttler.wait();
-        //         await options.onChunk(`⚡️ 执行: ${tool.name}`, true);
-        //         throttler.recordSend();
-        //     }
-        // }
-
-        if (newText.length > 0) {
-            // 计算增量文本
-            const deltaText = newText.slice(currentText.length);
-            currentText = newText;
-
-            // 累积到缓冲区
-            buffer.append(deltaText);
-
-            console.log(`[Streamer ${groupName}] 新增 ${deltaText.length} 字符, 缓冲区: ${buffer.length}, 完成: ${parseResult.isComplete}`);
-            logger.debug(`[Streamer ${groupName}] 新增 ${deltaText.length} 字符, 缓冲区: ${buffer.length}, 完成: ${parseResult.isComplete}`, { module: "streamer", groupName, deltaChars: deltaText.length, bufferLength: buffer.length, isComplete: parseResult.isComplete });
-
-            // 首次检测到内容后，切换到慢速轮询
-            if (!hasResponse) {
-                hasResponse = true;
-                pollInterval = slowInterval;
+            // 读取新增内容
+            const result = await reader.readProject(options.projectDir);
+            if (result.entries.length === 0) {
+                continue;
             }
 
-            // 检查触发条件
-            if (buffer.shouldFlush()) {
-                const chunk = buffer.flush();
-                if (chunk.trim()) {
-                    console.log(`[Streamer ${groupName}] 发送块: ${chunk.length} 字符`);
-                    logger.debug(`[Streamer ${groupName}] 发送块: ${chunk.length} 字符`, { module: "streamer", groupName, chunkLength: chunk.length });
-                    await throttler.wait();
-                    await options.onChunk(chunk, false);
-                    throttler.recordSend();
+            // 解析新增内容
+            const parseResult = AssistantParser.parse(result.entries);
+            const newText = parseResult.text;
+
+            // 工具调用检测已禁用（用户反馈工具通知无可读性）
+            // const toolUses = AssistantParser.detectToolUses(result.entries);
+            // for (const tool of toolUses) {
+            //     const toolKey = `${groupName}-${toolIndex++}-${tool.name}`;
+            //     if (!processedTools.has(toolKey)) {
+            //         processedTools.add(toolKey);
+            //         console.log(`[Streamer ${groupName}] 检测到工具: ${tool.name}`);
+            //         await throttler.wait();
+            //         await options.onChunk(`⚡️ 执行: ${tool.name}`, true);
+            //         throttler.recordSend();
+            //     }
+            // }
+
+            if (newText.length > 0) {
+                // 计算增量文本
+                const deltaText = newText.slice(currentText.length);
+                currentText = newText;
+
+                // 累积到缓冲区
+                buffer.append(deltaText);
+
+                console.log(`[Streamer ${groupName}] 新增 ${deltaText.length} 字符, 缓冲区: ${buffer.length}, 完成: ${parseResult.isComplete}`);
+                logger.debug(`[Streamer ${groupName}] 新增 ${deltaText.length} 字符, 缓冲区: ${buffer.length}, 完成: ${parseResult.isComplete}`, { module: "streamer", groupName, deltaChars: deltaText.length, bufferLength: buffer.length, isComplete: parseResult.isComplete });
+
+                // 首次检测到内容后，切换到慢速轮询
+                if (!hasResponse) {
+                    hasResponse = true;
+                    pollInterval = slowInterval;
+                }
+
+                // 检查触发条件
+                if (buffer.shouldFlush()) {
+                    const chunk = buffer.flush();
+                    if (chunk.trim()) {
+                        console.log(`[Streamer ${groupName}] 发送块: ${chunk.length} 字符`);
+                        logger.debug(`[Streamer ${groupName}] 发送块: ${chunk.length} 字符`, { module: "streamer", groupName, chunkLength: chunk.length });
+                        await throttler.wait();
+                        await options.onChunk(chunk, false);
+                        throttler.recordSend();
+                    }
+                }
+
+                // 检查完成
+                if (parseResult.isComplete) {
+                    console.log(`[Streamer ${groupName}] 检测到完成，发送剩余内容`);
+                    logger.info(`[Streamer ${groupName}] 检测到完成，发送剩余内容`, { module: "streamer", groupName });
+                    // 发送剩余内容（不等待节流，立即发送）
+                    const remaining = buffer.forceFlush();
+                    if (remaining.trim()) {
+                        await options.onChunk(remaining, false);
+                    }
+                    return { success: true };
                 }
             }
-
-            // 检查完成
-            if (parseResult.isComplete) {
-                console.log(`[Streamer ${groupName}] 检测到完成，发送剩余内容`);
-                logger.info(`[Streamer ${groupName}] 检测到完成，发送剩余内容`, { module: "streamer", groupName });
-                // 发送剩余内容（不等待节流，立即发送）
-                const remaining = buffer.forceFlush();
-                if (remaining.trim()) {
-                    await options.onChunk(remaining, false);
-                }
-                return { success: true };
-            }
         }
-    }
 
-    // 超时处理
-    console.log(`[Streamer ${groupName}] 超时，发送剩余内容`);
-    logger.warn(`[Streamer ${groupName}] 超时，发送剩余内容`, { module: "streamer", groupName });
-    const remaining = buffer.forceFlush();
-    if (remaining.trim()) {
-        await options.onChunk(remaining, false);
+        // 超时处理
+        console.log(`[Streamer ${groupName}] 超时，发送剩余内容`);
+        logger.warn(`[Streamer ${groupName}] 超时，发送剩余内容`, { module: "streamer", groupName });
+        const remaining = buffer.forceFlush();
+        if (remaining.trim()) {
+            await options.onChunk(remaining, false);
+        }
+        return { success: true };  // 部分内容也算成功
+    } catch (error: any) {
+        console.error(`[Streamer ${groupName}] 轮询异常: ${error.message}`);
+        logger.error(`[Streamer ${groupName}] 轮询异常: ${error.message}`, { module: "streamer", groupName, error });
+        // 发送剩余内容
+        const remaining = buffer.forceFlush();
+        if (remaining.trim()) {
+            await options.onChunk(remaining, false);
+        }
+        return { success: false, error: error.message };
     }
-    return { success: true };  // 部分内容也算成功
 }

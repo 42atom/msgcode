@@ -62,18 +62,20 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMsg: string
  * 将消息处理加入队列（确保每个 chatId 同时只处理一条消息）
  */
 async function enqueueMessage(chatId: string, handler: () => Promise<void>): Promise<void> {
-    const existing = processingQueues.get(chatId);
-    const nextVersion = existing ? existing.version + 1 : 1;
+    let existing = processingQueues.get(chatId);
 
     // 检查上一条消息是否超时
     if (existing) {
         const elapsed = Date.now() - existing.startTime;
         if (elapsed > QUEUE_TIMEOUT) {
             logger.warn(`⚠️  [${chatId}] 队列超时 (${elapsed}ms)，强制重置`, { module: "listener", chatId, elapsed });
-            processingQueues.set(chatId, { promise: existing.promise, startTime: existing.startTime, version: -1 });
-            // 不删除 Map 条目，只是标记版本为 -1（已废弃）
+            // 直接删除超时的队列条目，避免重复检测
+            processingQueues.delete(chatId);
+            existing = undefined;  // 清除引用，避免链式调用
         }
     }
+
+    const nextVersion = existing ? existing.version + 1 : 1;
 
     const wrappedHandler = async () => {
         const startTime = Date.now();
@@ -93,7 +95,7 @@ async function enqueueMessage(chatId: string, handler: () => Promise<void>): Pro
         }
     };
 
-    const nextPromise = (existing && existing.version !== -1)
+    const nextPromise = existing
         ? existing.promise.then(wrappedHandler, wrappedHandler)
         : wrappedHandler();
 
@@ -476,7 +478,12 @@ function startPolling(
     const CHECK_INTERVAL = 5000; // 5秒检查一次
 
     setInterval(async () => {
-        await checkExistingMessages(sdk, debug, handler);
+        try {
+            await checkExistingMessages(sdk, debug, handler);
+        } catch (error: any) {
+            logger.error(`❌ 轮询检查失败: ${error.message}`, { module: "listener", error });
+            // 继续运行，不中断 interval
+        }
     }, CHECK_INTERVAL);
 }
 
