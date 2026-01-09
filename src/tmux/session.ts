@@ -29,14 +29,15 @@ export class TmuxSession {
      */
     private static async getStatus(sessionName: string): Promise<SessionStatus> {
         try {
-            const { stdout } = await execAsync(`tmux list-sessions -F "#{session_name}"`);
+            const { stdout } = await execAsync(`tmux list-sessions -F "#{session_name}"`, { timeout: 5000 });
             if (!stdout.split("\n").includes(sessionName)) {
                 return SessionStatus.Stopped;
             }
 
             // 检查 Claude 是否在运行（通过检测提示符）
             const { stdout: paneOutput } = await execAsync(
-                `tmux capture-pane -t ${sessionName} -p -S -100`
+                `tmux capture-pane -t ${sessionName} -p -S -100`,
+                { timeout: 5000 }
             );
 
             // Claude 就绪标志：出现 "How can I help?" 或 ">" 提示符
@@ -71,7 +72,7 @@ export class TmuxSession {
         if (currentStatus !== SessionStatus.Stopped) {
             // 会话已存在，更新工作目录
             if (projectDir) {
-                await execAsync(`tmux send-keys -t ${sessionName} "cd ${projectDir}" Enter`);
+                await execAsync(`tmux send-keys -t ${sessionName} "cd ${projectDir}" Enter`, { timeout: 5000 });
             }
             const statusText = currentStatus === SessionStatus.Ready ? "Claude 已就绪" : "正在启动";
             return `✅ tmux 会话 "${sessionName}" 已在运行\n📁 工作目录: ${projectDir || "~/"}\n📊 状态: ${statusText}`;
@@ -80,7 +81,7 @@ export class TmuxSession {
         // 创建新会话
         try {
             const dirArg = projectDir ? `-c "${projectDir}"` : "";
-            await execAsync(`tmux new-session -d -s ${sessionName} ${dirArg}`);
+            await execAsync(`tmux new-session -d -s ${sessionName} ${dirArg}`, { timeout: 5000 });
 
             // 发送 claude 命令启动
             await this.sendCommand(sessionName, "claude");
@@ -105,7 +106,7 @@ export class TmuxSession {
         const sessionName = this.getSessionName(groupName);
 
         try {
-            await execAsync(`tmux kill-session -t ${sessionName}`);
+            await execAsync(`tmux kill-session -t ${sessionName}`, { timeout: 5000 });
             this.sessions.delete(sessionName);
             return `✅ 已关闭 tmux 会话 "${sessionName}"`;
         } catch (error: any) {
@@ -139,14 +140,14 @@ export class TmuxSession {
     static async sendCommand(sessionName: string, command: string): Promise<void> {
         // 转义命令中的双引号和反斜杠
         const escaped = command.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-        await execAsync(`tmux send-keys -t ${sessionName} "${escaped}" Enter`);
+        await execAsync(`tmux send-keys -t ${sessionName} "${escaped}" Enter`, { timeout: 5000 });
     }
 
     /**
      * 发送 ESC 键
      */
     static async sendEscape(sessionName: string): Promise<void> {
-        await execAsync(`tmux send-keys -t ${sessionName} Escape`);
+        await execAsync(`tmux send-keys -t ${sessionName} Escape`, { timeout: 5000 });
     }
 
     /**
@@ -155,7 +156,8 @@ export class TmuxSession {
     static async capturePane(sessionName: string, lines: number = 100): Promise<string> {
         try {
             const { stdout } = await execAsync(
-                `tmux capture-pane -t ${sessionName} -p -S -${lines}`
+                `tmux capture-pane -t ${sessionName} -p -S -${lines}`,
+                { timeout: 5000 }
             );
             return stdout.trim();
         } catch {
