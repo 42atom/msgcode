@@ -247,10 +247,47 @@ async function sendToIndividual(sdk: IMessageSDK, chatId: string, text: string):
 }
 
 /**
+ * 检查是否应该跳过该输出（过滤 plugin 等无关输出）
+ */
+function shouldSkipOutput(text: string): boolean {
+    // 过滤 plugin/MCP 观察者输出
+    const skipPatterns = [
+        /I understand the task\. I'm a.*observer/i,
+        /No observation created/i,
+        /However, I notice that the observed session/i,
+        /According to my instructions:/i,
+        /This appears to be a simple conversational exchange/i,
+        /Claude-Mem observer/i,
+        /MCP observer/i,
+    ];
+
+    for (const pattern of skipPatterns) {
+        if (pattern.test(text)) {
+            return true;
+        }
+    }
+
+    // 过滤看起来像元数据/日志的输出（包含特定标记）
+    if (text.includes("**No observation created**") ||
+        text.includes("When to skip") ||
+        text.includes("deliverables and capabilities")) {
+        return true;
+    }
+
+    return false;
+}
+
+/**
  * 发送回复
  */
 async function sendReply(sdk: IMessageSDK, chatId: string, text: string): Promise<void> {
     try {
+        // 过滤 plugin/MCP 等无关输出
+        if (shouldSkipOutput(text)) {
+            logger.debug(`跳过无关输出: ${text.slice(0, 50)}...`, { module: "listener", chatId });
+            return;
+        }
+
         // 检查是否在冷却期内（防止重复发送相同回复）
         const lastReply = sentReplies.get(chatId);
         if (lastReply === text) {
