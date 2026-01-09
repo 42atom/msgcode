@@ -77,6 +77,12 @@ async function main() {
     // 启动消息监听
     const watcher = await startListener(sdk, config.logLevel === "debug", config.useFileWatcher);
 
+    // 保持进程活跃（防止 startWatching 失败后进程退出）
+    // 使用一个永不 resolve 的 Promise 保持事件循环活跃
+    const keepAlive = new Promise<void>(() => {
+        // 这个 Promise 永远不会 resolve，保持进程运行
+    });
+
     // 优雅关闭
     process.on("SIGINT", async () => {
         console.log("\n\n👋 正在关闭...");
@@ -88,6 +94,9 @@ async function main() {
         logger.close();
         process.exit(0);
     });
+
+    // 等待 keepAlive（永远不结束）
+    await keepAlive;
 }
 
 // 启动
