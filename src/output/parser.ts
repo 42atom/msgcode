@@ -74,7 +74,7 @@ export class AssistantParser {
             }
 
             // 方式2: type === "summary"（某些情况下是完成标志）
-            if (entry.type === "summary" || entry.subtype === "summary") {
+            if (entry.type === "summary" || entry.subtype === "summary" || entry.subtype === "stop_hook_summary") {
                 isComplete = true;
             }
 
