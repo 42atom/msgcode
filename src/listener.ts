@@ -33,6 +33,13 @@ const processedMessages = new Set<string>();
 const MAX_CACHE_SIZE = 1000;
 
 /**
+ * 最近处理的消息内容（基于文本的去重，防止相同内容的不同消息 id）
+ * Key: "chatId:text", Value: timestamp
+ */
+const recentMessageContents = new Map<string, number>();
+const CONTENT_DEDUP_WINDOW = 10000; // 10秒内相同文本视为重复
+
+/**
  * 消息处理队列（每个 chatId 一个队列，确保顺序处理）
  */
 const processingQueues = new Map<string, {
@@ -324,28 +331,53 @@ export async function handleMessage(
         return;
     }
 
-    // 防止重复处理
+    // 防止重复处理（原子操作，避免竞态条件）
+    // 使用 has() + add() 的组合，确保只有第一个调用者能通过检查
     if (processedMessages.has(message.id)) {
-        if (debug) logger.debug(`🔄 已处理过: ${message.id}`, { module: "listener", messageId: message.id });
+        logger.warn(`🔄 跳过重复消息: ${message.id} | 文本: ${message.text?.slice(0, 30)}`, { module: "listener", messageId: message.id });
         return;
     }
+    // 标记为已处理（在异步操作前立即标记）
     processedMessages.add(message.id);
+    logger.debug(`✅ 新消息标记: ${message.id} | 文本: ${message.text?.slice(0, 30)}`, { module: "listener", messageId: message.id });
     cleanCache();
-
-    // 跳过空消息
-    if (!message.text?.trim()) {
-        if (debug) logger.debug("🔍 跳过空消息", { module: "listener" });
-        // 空消息也要标记为已读，防止重复处理
-        if (message.chatId) {
-            await markAsReadSQLite(message.chatId);
-        }
-        return;
-    }
 
     // 获取 chatId
     const chatId = message.chatId;
     if (!chatId) {
         if (debug) logger.debug("🔍 跳过无 chatId 消息", { module: "listener" });
+        return;
+    }
+
+    // 基于内容的去重（防止相同内容的不同消息 id）
+    if (message.text?.trim()) {
+        const contentKey = `${chatId}:${message.text.trim()}`;
+        const now = Date.now();
+        const lastTime = recentMessageContents.get(contentKey);
+
+        if (lastTime && now - lastTime < CONTENT_DEDUP_WINDOW) {
+            const elapsed = now - lastTime;
+            logger.warn(`🔄 跳过重复内容: ${contentKey.slice(0, 50)}... (${elapsed}ms内)`, { module: "listener", chatId, elapsed });
+            return;
+        }
+
+        recentMessageContents.set(contentKey, now);
+
+        // 清理过期的内容记录（超过窗口期的）
+        for (const [key, time] of recentMessageContents.entries()) {
+            if (now - time > CONTENT_DEDUP_WINDOW * 2) {
+                recentMessageContents.delete(key);
+            }
+        }
+    }
+
+    // 跳过空消息
+    if (!message.text?.trim()) {
+        if (debug) logger.debug("🔍 跳过空消息", { module: "listener" });
+        // 空消息也要标记为已读，防止重复处理
+        if (chatId) {
+            await markAsReadSQLite(chatId);
+        }
         return;
     }
 
