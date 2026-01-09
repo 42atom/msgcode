@@ -351,22 +351,26 @@ export async function handleMessage(
 
     // 基于内容的去重（防止相同内容的不同消息 id）
     if (message.text?.trim()) {
-        const contentKey = `${chatId}:${message.text.trim()}`;
+        // 限制 key 长度，避免内存问题
+        const textPreview = message.text.trim().slice(0, 200);
+        const contentKey = `${chatId}:${textPreview}`;
         const now = Date.now();
         const lastTime = recentMessageContents.get(contentKey);
 
         if (lastTime && now - lastTime < CONTENT_DEDUP_WINDOW) {
             const elapsed = now - lastTime;
-            logger.warn(`🔄 跳过重复内容: ${contentKey.slice(0, 50)}... (${elapsed}ms内)`, { module: "listener", chatId, elapsed });
+            logger.warn(`🔄 跳过重复内容: ${textPreview.slice(0, 30)}... (${elapsed}ms内)`, { module: "listener", chatId, elapsed });
             return;
         }
 
         recentMessageContents.set(contentKey, now);
 
-        // 清理过期的内容记录（超过窗口期的）
-        for (const [key, time] of recentMessageContents.entries()) {
-            if (now - time > CONTENT_DEDUP_WINDOW * 2) {
-                recentMessageContents.delete(key);
+        // 只在 Map 大小超过阈值时清理（避免每次都遍历）
+        if (recentMessageContents.size > 50) {
+            for (const [key, time] of recentMessageContents.entries()) {
+                if (now - time > CONTENT_DEDUP_WINDOW * 2) {
+                    recentMessageContents.delete(key);
+                }
             }
         }
     }

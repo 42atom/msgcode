@@ -14,9 +14,9 @@ import { BufferManager } from "../output/buffer.js";
 import { Throttler } from "../output/throttler.js";
 import { logger } from "../logger/index.js";
 
-// 轮询配置（与 responder.ts 保持一致）
-const FAST_INTERVAL = 300;      // 首次交付前
-const SLOW_INTERVAL = 1000;     // 首次交付后（缩短以更快捕获内容）
+// 轮询配置（优化响应速度）
+const FAST_INTERVAL = 200;      // 首次交付前（更快的初始检测）
+const SLOW_INTERVAL = 500;      // 首次交付后（更快的持续检测）
 const MAX_WAIT_MS = 300000;     // 最大等待 5 分钟（复杂问题需要更久）
 
 /**
@@ -47,7 +47,7 @@ export interface StreamOptions {
     timeout?: number;         // 默认 30s
     fastInterval?: number;    // 默认 300ms
     slowInterval?: number;    // 默认 3000ms
-    minInterval?: number;     // 发送最小间隔，默认 1500ms
+    minInterval?: number;     // 发送最小间隔，默认 1000ms（优化响应速度）
     onChunk: (chunk: string, isToolUse: boolean) => Promise<void>;
 }
 
@@ -86,7 +86,7 @@ export async function handleTmuxStream(
     // 创建独立的 reader、buffer、throttler（并发安全）
     const reader = new OutputReader();
     const buffer = new BufferManager();
-    const throttler = new Throttler(options.minInterval ?? 2000);  // 默认 2000ms 节流，减少碎片化发送
+    const throttler = new Throttler(options.minInterval ?? 1000);  // 默认 1000ms 节流，平衡响应速度和碎片化
 
     // 发送前记录当前状态
     const beforeResult = await reader.readProject(options.projectDir);
