@@ -155,7 +155,7 @@ async function markMessagesAsReadOnStartup(): Promise<void> {
     hasOpenedMessages = true;
     try {
         // 打开 Messages 应用，自动同步已读状态
-        await execAsync(`open -a Messages`);
+        await execAsync(`open -a Messages`, { timeout: 5000 });  // 添加超时
     } catch {
         // 忽略错误
     }
@@ -179,7 +179,7 @@ function escapeSqlString(str: string): string {
 async function markAsReadAppleScript(chatId: string): Promise<boolean> {
     const fullChatId = chatId.includes(";") ? chatId : `any;+;${chatId}`;
     try {
-        await execAsync(`osascript -e 'tell application "Messages" to set read of chat id "${fullChatId}" to true' 2>/dev/null`);
+        await execAsync(`osascript -e 'tell application "Messages" to set read of chat id "${fullChatId}" to true' 2>/dev/null`, { timeout: 5000 });  // 添加超时
         return true;
     } catch {
         return false;
@@ -233,7 +233,7 @@ tell application "Messages"
 end tell
 `.trim();
 
-    await execAsync(`osascript -e '${script.replace(/'/g, "'\\''")}'`);
+    await execAsync(`osascript -e '${script.replace(/'/g, "'\\''")}'`, { timeout: 5000 });  // 添加超时
 }
 
 /**

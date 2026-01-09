@@ -126,14 +126,16 @@ export class OutputReader {
 
             // 方法2: 使用 find 查找最近修改的 JSONL（排除 subagents）
             const { stdout } = await execAsync(
-                `find ~/.claude/projects -name "*.jsonl" -path "*${projectDir ? projectDir.split("/").pop() : ""}*" ! -path "*/subagents/*" -mmin -30 -type f 2>/dev/null | head -1`
+                `find ~/.claude/projects -name "*.jsonl" -path "*${projectDir ? projectDir.split("/").pop() : ""}*" ! -path "*/subagents/*" -mmin -30 -type f 2>/dev/null | head -1`,
+                { timeout: 10000 }  // 10秒超时，防止卡死
             );
             const path = stdout.trim();
 
             // 方法3: 如果没找到，查找所有最近的 JSONL
             if (!path) {
                 const { stdout: fallback } = await execAsync(
-                    `find ~/.claude/projects -name "*.jsonl" ! -path "*/subagents/*" -mmin -30 -type f 2>/dev/null | head -1`
+                    `find ~/.claude/projects -name "*.jsonl" ! -path "*/subagents/*" -mmin -30 -type f 2>/dev/null | head -1`,
+                    { timeout: 10000 }  // 10秒超时，防止卡死
                 );
                 return fallback.trim() || null;
             }
