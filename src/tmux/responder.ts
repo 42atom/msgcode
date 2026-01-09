@@ -1,5 +1,5 @@
 /**
- * matcode-mac: 请求-响应模式的 Claude 交互
+ * msgcode: 请求-响应模式的 Claude 交互
  *
  * 发送消息到 Claude 并同步等待回复
  */
@@ -15,12 +15,6 @@ const FAST_INTERVAL = 300;      // 首次交付前
 const SLOW_INTERVAL = 3000;     // 首次交付后
 const MAX_WAIT_MS = 30000;      // 最大等待
 const STABLE_COUNT = 3;         // 稳定计数（连续 N 次无变化视为完成）
-
-/**
- * 共享的 Reader 实例（单例模式）
- * 保持 offset 状态跨请求共享
- */
-const sharedReader = new OutputReader();
 
 /**
  * 响应选项
@@ -77,8 +71,11 @@ export async function handleTmuxSend(
     const fastInterval = options.fastInterval ?? FAST_INTERVAL;
     const slowInterval = options.slowInterval ?? SLOW_INTERVAL;
 
-    // 1. 发送前记录当前状态（使用共享 reader）
-    const beforeResult = await sharedReader.readProject(options.projectDir);
+    // 1. 创建独立 reader 实例（并发安全：每个请求有独立状态）
+    const reader = new OutputReader();
+
+    // 2. 发送前记录当前状态
+    const beforeResult = await reader.readProject(options.projectDir);
     const startOffset = beforeResult.newOffset;
 
     console.log(`[Responder ${groupName}] 发送前 offset: ${startOffset}`);
@@ -97,14 +94,13 @@ export async function handleTmuxSend(
     let hasResponse = false;
     let currentText = "";
     let stableCount = 0;  // 稳定计数：连续 N 次无新内容
-    let lastTextLength = 0;
     const startTime = Date.now();
 
     while (Date.now() - startTime < timeout) {
         await sleep(pollInterval);
 
         // 读取新增内容
-        const result = await sharedReader.readProject(options.projectDir);
+        const result = await reader.readProject(options.projectDir);
         if (result.entries.length === 0) {
             continue;
         }
@@ -126,7 +122,6 @@ export async function handleTmuxSend(
 
             // 重置稳定计数
             stableCount = 0;
-            lastTextLength = currentText.length;
 
             // 检测 Stop Hook - 完成后立即返回
             if (parseResult.isComplete) {

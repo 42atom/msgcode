@@ -1,5 +1,5 @@
 /**
- * matcode-mac: 获取 iMessage 群组列表工具
+ * msgcode: 获取 iMessage 群组列表工具
  *
  * 用途：获取所有 iMessage 群组及其 chatId，用于配置 .env
  * 运行：npm run get-chats 或 tsx scripts/get-chats.ts
@@ -116,7 +116,7 @@ function formatService(service: string): string {
  */
 function getCurrentEnvConfig(): Map<string, string> {
     try {
-        const envPath = "/Users/admin/BotRoot/00_projects/matcode-mac/.env";
+        const envPath = "/Users/admin/BotRoot/00_projects/msgcode/.env";
         const content = readFileSync(envPath, "utf-8");
         const config = new Map<string, string>();
 
@@ -135,7 +135,7 @@ function getCurrentEnvConfig(): Map<string, string> {
 
 async function main() {
     console.log(`${colors.bright}${colors.blue}══════════════════════════════════════════${colors.reset}`);
-    console.log(`${colors.bright}${colors.blue}      matcode-mac: 群组配置工具           ${colors.reset}`);
+    console.log(`${colors.bright}${colors.blue}      msgcode: 群组配置工具           ${colors.reset}`);
     console.log(`${colors.bright}${colors.blue}══════════════════════════════════════════${colors.reset}\n`);
 
     const sdk = new IMessageSDK({ debug: false });

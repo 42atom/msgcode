@@ -1,5 +1,5 @@
 /**
- * matcode-mac: JSONL 输出读取器
+ * msgcode: JSONL 输出读取器
  *
  * 增量读取 Claude Code 的 JSONL 输出文件
  */
@@ -214,6 +214,13 @@ export class OutputReader {
         } else {
             this.positions.clear();
         }
+    }
+
+    /**
+     * 设置读取位置（用于并发安全：每个请求设置自己的起点）
+     */
+    setPosition(filePath: string, offset: number): void {
+        this.positions.set(filePath, { filePath, offset });
     }
 
     /**

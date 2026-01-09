@@ -1,4 +1,4 @@
-# matcode-mac
+# msgcode
 
 > 用 iMessage 替代 Matrix，实现 Mac 本地的 AI Bot 系统
 
@@ -8,14 +8,16 @@
 
 ## 简介
 
-matcode-mac 是一个基于 iMessage 的本地 AI Bot 系统，通过群组路由实现多个 Bot/Agent 会话。无需云服务器，简化运维。
+msgcode 是一个基于 iMessage 的本地 AI Bot 系统，通过群组路由实现多个 Bot/Agent 会话。无需云服务器，简化运维。
 
 ### 核心特性
 
-- **消息监听**: Socket.IO 实时推送
-- **群组路由**: 不同群组 → 不同 Bot 会话
-- **命令执行**: 调用 Matcode 逻辑
-- **安全机制**: 白名单验证
+- **iMessage 集成**: 基于 `@photon-ai/imessage-kit` (SDK)
+- **群组路由**: 不同群组 → 对应 Claude Project / Bot
+- **双向通信**:
+  - 输入: iMessage → tmux send-keys
+  - 输出: Claude JSONL → iMessage 回复
+- **安全机制**: 白名单验证 (Email/Phone)
 
 ---
 
@@ -23,15 +25,16 @@ matcode-mac 是一个基于 iMessage 的本地 AI Bot 系统，通过群组路�
 
 ### 1. 系统要求
 
-- macOS
+- macOS (需授予 Terminal/IDE "完全磁盘访问权限")
 - Node.js >= 18.0.0
-- iMessage 已启用
+- iMessage 已登录
+- Claude Code (`claude`) 已安装并登录
 
 ### 2. 安装
 
 ```bash
 # 克隆项目
-cd /path/to/matcode-mac
+cd /path/to/msgcode
 
 # 安装依赖
 npm install
@@ -40,14 +43,7 @@ npm install
 cp .env.example .env
 ```
 
-### 3. 启动 iMessage 服务器
-
-```bash
-# 启动 advanced-imessage-kit 服务器
-npx @photon-ai/imessage-server-run
-```
-
-### 4. 获取群组 ID
+### 3. 获取群组 ID
 
 ```bash
 # 运行工具获取群组列表
@@ -58,25 +54,26 @@ npm run get-chats
 ```
 📁 群组 (3)
   1. Code Bot
-     guid: i chat;-;chat1234
-     成员: 2 人
+     guid: i chat;+;chat1234
   2. Image Bot
-     guid: i chat;-;chat5678
-     成员: 2 人
+     guid: i chat;+;chat5678
 ```
 
-### 5. 配置 .env
-
-将获取的 `guid` 填入 `.env`：
+### 4. 配置 .env
 
 ```bash
-GROUP_CODE_BOT=i chat;-;chat1234
-GROUP_IMAGE_BOT=i chat;-;chat5678
+# 配置白名单
+MY_EMAIL=me@icloud.com
+
+# 配置群组路由
+# 格式: GROUP_<NAME>=<GUID>:<PROJECT_DIR>:<BOT_TYPE>
+GROUP_MATCODE=i chat;+;chat1234:/Users/admin/Dev/my-project:code
 ```
 
-### 6. 启动 Bot
+### 5. 启动 Bot
 
 ```bash
+# 启动（生产模式）
 npm start
 ```
 
@@ -85,67 +82,65 @@ npm start
 ## 目录结构
 
 ```
-matcode-mac/
-├── PRD.md           # 产品需求文档
-├── README.md        # 项目文档
-├── .env.example     # 配置模板
-├── .env             # 实际配置（需创建）
+msgcode/
+├── PRD.md               # 产品需求文档
+├── README.md            # 项目文档
+├── package.json         # 依赖配置
+├── .env                 # 配置文件
 ├── scripts/
-│   └── get-chats.ts # 获取群组工具
-├── src/             # 源代码
-│   ├── index.ts     # 主入口
-│   ├── config.ts    # 配置加载
-│   ├── security.ts  # 安全验证
-│   ├── router.ts    # 群组路由
-│   ├── handlers.ts  # 命令处理
-│   └── listener.ts  # 消息监听
-└── ref/             # 参考代码
-    ├── advanced-imessage-kit/
-    ├── imessage-kit/
-    └── MY_AGENT_HOME/
+│   └── get-chats.ts     # 获取群组工具
+└── src/
+    ├── index.ts         # 主入口
+    ├── config.ts        # 配置加载
+    ├── router.ts        # 群组路由
+    ├── security.ts      # 安全验证
+    ├── listener.ts      # 消息监听器
+    ├── handlers.ts      # 命令分发
+    ├── tmux/            # tmux 会话管理
+    │   ├── session.ts   # 会话控制
+    │   ├── sender.ts    # 发送器
+    │   └── responder.ts # 响应器 (核心逻辑)
+    └── output/          # Claude 输出处理
+        ├── reader.ts    # JSONL 增量读取
+        └── parser.ts    # 消息解析
 ```
 
 ---
 
-## 使用说明
+## 常用命令
 
-### 群组路由
+在 iMessage 群组中发送：
 
-| 群组 | 用途 |
+| 命令 | 说明 |
 |------|------|
-| Code Bot | 代码相关任务 |
-| Image Bot | 图像生成 |
-| File Bot | 文件推送 |
-
-在对应群组发送消息，自动路由到相应 Bot。
-
-### 白名单
-
-仅响应 `.env` 中配置的号码/邮箱：
-
-```bash
-MY_PHONE=+8613800138000
-MY_EMAIL=user@icloud.com
-```
+| `/start` | 启动当前项目的 Claude 会话 |
+| `/stop` | 停止会话 |
+| `/status` | 查看会话状态 |
+| `/snapshot` | 获取终端当前屏幕截图 (文本) |
+| `/clear` | 清空 Claude 上下文 |
+| `/esc` | 发送 ESC 中断操作 |
+| *(直接发消息)* | 发送给 Claude 并等待回复 |
 
 ---
 
 ## 常见问题
 
-### Q: 自说自话？
-A: 是的，Bot 用你登录的 iMessage 账号发送。通过群组名称区分会话。
+### Q: 为什么 Claude 不回复？
+A:
+1. 确保已发送 `/start` 启动会话。
+2. 确保 Bot 有读取 `~/Library/Messages` 的权限 (Full Disk Access)。
+3. 检查 `.env` 配置的路径是否正确。
 
-### Q: Mac 关机能收到消息吗？
-A: 不能。建议 Mac 24/7 运行（NAS 场景）。
-
-### Q: 如何获取群组 ID？
-A: 运行 `npm run get-chats` 工具。
+### Q: 如何支持多个项目？
+A: 在 iMessage 建立多个群组，在 `.env` 中分别配置不同的 `GROUP_*` 和对应的项目路径。
 
 ---
 
 ## 依赖
 
-- [@photon-ai/advanced-imessage-kit](https://github.com/photon-hq/advanced-imessage-kit)
+- `@photon-ai/imessage-kit`: iMessage 数据库读取与发送
+- `tmux`: 终端多路复用器 (系统自带或 brew 安装)
+- `claude`: Claude Code CLI 工具
 
 ---
 

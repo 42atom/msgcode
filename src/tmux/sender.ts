@@ -1,5 +1,5 @@
 /**
- * matcode-mac: 消息发送器
+ * msgcode: 消息发送器
  *
  * 将用户消息发送到 Claude Code (tmux)
  */

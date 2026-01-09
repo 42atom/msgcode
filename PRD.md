@@ -1,4 +1,4 @@
-# matcode-mac 产品需求文档 (PRD)
+# msgcode 产品需求文档 (PRD)
 
 ## 一、项目背景
 
@@ -43,7 +43,7 @@
 │  └── iPhone/iPad/Mac 上使用，发送消息给 Bot                      │
 │                                                                  │
 │  账户 B (Bot 账户)                                               │
-│  └── Mac 服务器上运行 matcode-mac，接收/回复消息                  │
+│  └── Mac 服务器上运行 msgcode，接收/回复消息                  │
 │                                                                  │
 │  账户 C (辅助账户，可选)                                         │
 │  └── 仅用于建群（iMessage 建群需要 3 人），建群后可退出           │
@@ -74,7 +74,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                     matcode-mac (单一进程)                       │
+│                     msgcode (单一进程)                       │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  .env 配置                                                       │
@@ -93,7 +93,7 @@
 
 ### 2.4 对比原 Matcode
 
-| 原 Matcode | matcode-mac |
+| 原 Matcode | msgcode |
 |:---|:---|
 | bot0 (master) + worker bots | **单一 Bot 进程** |
 | Matrix Room | **iMessage 群组** |
@@ -111,7 +111,7 @@
 ```
 1. 你在 iMessage 群组发消息
         ↓
-2. matcode-mac 轮询检测新消息
+2. msgcode 轮询检测新消息
         ↓
 3. 根据 chatId 路由到对应项目
         ↓
@@ -128,7 +128,7 @@
 ```
 1. Claude 处理完成，输出写入 JSONL
         ↓
-2. matcode-mac 检测文件变化
+2. msgcode 检测文件变化
         ↓
 3. 增量读取新内容
         ↓
@@ -147,7 +147,7 @@
 2. 文件自动下载到 Mac
    ~/Library/Messages/Attachments/...
         ↓
-3. matcode-mac 读取 message.attachments
+3. msgcode 读取 message.attachments
         ↓
 4. 构造 prompt: "请分析这个文件: {path}"
         ↓
@@ -247,7 +247,7 @@ Claude Code 输出保存在 JSONL 文件：
 ## 六、代码结构
 
 ```
-matcode-mac/
+msgcode/
 ├── PRD.md               # 产品需求文档
 ├── README.md            # 项目文档
 ├── .env.example         # 配置模板

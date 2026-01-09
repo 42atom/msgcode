@@ -1,5 +1,5 @@
 /**
- * matcode-mac: 命令处理器
+ * msgcode: 命令处理器
  *
  * 处理不同类型 Bot 的命令
  */

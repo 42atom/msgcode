@@ -1,5 +1,5 @@
 /**
- * matcode-mac: Assistant 消息解析器
+ * msgcode: Assistant 消息解析器
  *
  * 从 Claude Code JSONL 输出中提取 assistant 回复
  */
@@ -13,6 +13,14 @@ export interface ParseResult {
     text: string;
     hasToolUse: boolean;
     isComplete: boolean;
+}
+
+/**
+ * 工具调用信息
+ */
+export interface ToolUseInfo {
+    name: string;
+    input?: any;
 }
 
 /**
@@ -124,5 +132,38 @@ export class AssistantParser {
         }
 
         return this.parse(entries);
+    }
+
+    /**
+     * 检测工具调用（用于流式输出的工具通知）
+     *
+     * @param entries JSONL 条目数组
+     * @returns 检测到的工具调用列表
+     */
+    static detectToolUses(entries: JSONLEntry[]): ToolUseInfo[] {
+        const toolUses: ToolUseInfo[] = [];
+
+        for (const entry of entries) {
+            // 只处理 assistant 类型的条目
+            if (entry.type !== "assistant") {
+                continue;
+            }
+
+            const message = entry.message as any;
+            let content = message?.content || entry.content;
+
+            if (Array.isArray(content)) {
+                for (const block of content) {
+                    if (block.type === "tool_use" && block.name) {
+                        toolUses.push({
+                            name: block.name,
+                            input: block.input,
+                        });
+                    }
+                }
+            }
+        }
+
+        return toolUses;
     }
 }

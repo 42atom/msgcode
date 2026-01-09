@@ -1,5 +1,5 @@
 /**
- * matcode-mac: 消息监听器
+ * msgcode: 消息监听器
  *
  * 监听 iMessage 消息，路由到对应处理器，并发送回复
  */
@@ -12,9 +12,10 @@ import { promisify } from "node:util";
 const execAsync = promisify(exec);
 
 import { checkWhitelist, formatSender } from "./security.js";
-import { routeByChatId, isConfiguredChatId } from "./router.js";
+import { routeByChatId, isConfiguredChatId, type Route } from "./router.js";
 import { getHandler, type HandleResult } from "./handlers.js";
 import { createWatcher, isFileWatchingAvailable, type DatabaseWatcher } from "./watcher.js";
+import { handleTmuxStream } from "./tmux/streamer.js";
 
 /**
  * 消息监听器配置
@@ -46,6 +47,22 @@ function cleanCache() {
             processedMessages.delete(entries[i]);
         }
     }
+}
+
+/**
+ * 判断是否需要流式处理
+ *
+ * @param route 路由信息
+ * @param message 消息内容
+ * @returns 是否使用流式处理
+ */
+function shouldStream(route: Route, message: string): boolean {
+    // 命令消息不使用流式处理
+    if (message.trim().startsWith("/")) {
+        return false;
+    }
+    // 其他消息使用流式处理（转发给 Claude）
+    return true;
 }
 
 /**
@@ -152,6 +169,15 @@ export async function handleMessage(
     // 跳过空消息
     if (!message.text?.trim()) {
         if (debug) console.log("🔍 跳过空消息");
+        // 空消息也要标记为已读，防止重复处理
+        try {
+            const fullChatId = message.chatId;
+            if (fullChatId) {
+                await execAsync(`osascript -e 'tell application "Messages" to set read of chat id "${fullChatId}" to true' 2>/dev/null`);
+            }
+        } catch {
+            // 忽略标记失败
+        }
         return;
     }
 
@@ -195,24 +221,42 @@ export async function handleMessage(
     // 打印日志
     console.log(`\n📨 [${route.groupName}] ${formatSender(message)}: ${message.text}`);
 
-    // 处理命令
-    let result: HandleResult;
-    try {
-        result = await handler.handle(message.text, context);
-    } catch (error: any) {
-        console.error(`❌ 处理错误: ${error.message}`);
-        result = {
-            success: false,
-            error: error.message,
-        };
-    }
+    // 判断是否使用流式处理
+    if (shouldStream(route, message.text)) {
+        // === 流式处理：使用 handleTmuxStream ===
+        try {
+            await handleTmuxStream(route.groupName, message.text, {
+                projectDir: route.projectDir,
+                onChunk: async (chunk, isToolUse) => {
+                    const logPrefix = isToolUse ? "📤 [工具]" : "📤";
+                    console.log(`${logPrefix} [${route.groupName}] Bot: ${chunk}`);
+                    await sendReply(sdk, chatId, chunk);
+                }
+            });
+        } catch (error: any) {
+            console.error(`❌ 流式处理错误: ${error.message}`);
+            await sendReply(sdk, chatId, `处理失败: ${error.message}`);
+        }
+    } else {
+        // === 命令处理：使用原有 handler.handle() ===
+        let result: HandleResult;
+        try {
+            result = await handler.handle(message.text, context);
+        } catch (error: any) {
+            console.error(`❌ 处理错误: ${error.message}`);
+            result = {
+                success: false,
+                error: error.message,
+            };
+        }
 
-    // 发送回复
-    if (result.response) {
-        console.log(`📤 [${route.groupName}] Bot: ${result.response}`);
-        await sendReply(sdk, chatId, result.response);
-    } else if (result.error) {
-        console.error(`❌ 错误: ${result.error}`);
+        // 发送回复
+        if (result.response) {
+            console.log(`📤 [${route.groupName}] Bot: ${result.response}`);
+            await sendReply(sdk, chatId, result.response);
+        } else if (result.error) {
+            console.error(`❌ 错误: ${result.error}`);
+        }
     }
 
     // 标记消息为已读（防止重复处理）

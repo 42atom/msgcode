@@ -1,5 +1,5 @@
 /**
- * matcode-mac: 文件监听器 (替代轮询)
+ * msgcode: 文件监听器 (替代轮询)
  *
  * 使用 fs.watch 监听 iMessage 数据库变化
  * 这是 Phase 2 的实验性功能

@@ -1,5 +1,5 @@
 /**
- * matcode-mac: tmux 会话管理
+ * msgcode: tmux 会话管理
  *
  * 管理与 Claude Code 的 tmux 会话
  */
@@ -51,10 +51,11 @@ export class TmuxSession {
     }
 
     /**
-     * 生成会话名称
+     * 生成会话名称（msgcode-前缀）
      */
     static getSessionName(groupName: string): string {
-        return groupName.toLowerCase().replace(/[^a-z0-9]/g, "_");
+        const cleanName = groupName.toLowerCase().replace(/[^a-z0-9]/g, "_");
+        return `msgcode-${cleanName}`;
     }
 
     /**

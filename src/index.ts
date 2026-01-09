@@ -1,5 +1,5 @@
 /**
- * matcode-mac: 主入口
+ * msgcode: 主入口
  *
  * iMessage Bot 系统主程序
  */
@@ -15,7 +15,7 @@ import { getAllRoutes } from "./router.js";
 function printBanner() {
     console.log(`
 ╔════════════════════════════════════════╗
-║         matcode-mac v0.2.0            ║
+║         msgcode v0.4.0            ║
 ║     iMessage-based AI Bot System      ║
 ╚════════════════════════════════════════╝
 `);
