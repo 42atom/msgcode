@@ -86,7 +86,7 @@ export async function handleTmuxStream(
     // 创建独立的 reader、buffer、throttler（并发安全）
     const reader = new OutputReader();
     const buffer = new BufferManager();
-    const throttler = new Throttler(options.minInterval ?? 800);  // 默认 800ms 节流
+    const throttler = new Throttler(options.minInterval ?? 2000);  // 默认 2000ms 节流，减少碎片化发送
 
     // 发送前记录当前状态
     const beforeResult = await reader.readProject(options.projectDir);

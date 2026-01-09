@@ -24,8 +24,8 @@ export class BufferManager {
 
     constructor(config?: Partial<BufferConfig>) {
         this.config = {
-            maxLength: config?.maxLength ?? 500,
-            longSentenceLength: config?.longSentenceLength ?? 50,
+            maxLength: config?.maxLength ?? 1500,  // 增加到 1500，减少碎片化
+            longSentenceLength: config?.longSentenceLength ?? 150,  // 增加到 150，减少频繁触发
         };
     }
 
