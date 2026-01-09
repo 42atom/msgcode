@@ -429,7 +429,10 @@ export async function handleMessage(
     await enqueueMessage(chatId, async () => {
         // 判断是否使用流式处理（message.text 已在前面检查过非空）
         const messageText = message.text ?? "";
+        logger.info(`🔍 开始处理消息: ${messageText.slice(0, 30)}...`, { module: "listener", chatId, textLength: messageText.length });
+
         if (shouldStream({ chatId: routeChatId, groupName, projectDir, botType }, messageText)) {
+            logger.info(`🎬 使用流式处理`, { module: "listener", chatId, groupName });
             // === 流式处理：使用 handleTmuxStream ===
             try {
                 await handleTmuxStream(groupName, messageText, {
@@ -441,6 +444,7 @@ export async function handleMessage(
                         await sendReply(sdk, chatId, chunk);
                     }
                 });
+                logger.info(`✅ 流式处理完成`, { module: "listener", chatId, groupName });
             } catch (error: any) {
                 logger.error(`❌ 流式处理错误: ${error.message}`, { module: "listener", groupName, error });
                 await sendReply(sdk, chatId, `处理失败: ${error.message}`);
