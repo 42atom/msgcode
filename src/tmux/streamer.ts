@@ -22,7 +22,7 @@ const SILENT_TIMEOUT = 10000;     // 静默超时 10 秒（长回复兜底）
 const STALLED_TIMEOUT = 5000;     // 卡住超时 5 秒（有内容但无新增时快速收尾）
 const SHORT_SILENT_TIMEOUT = 3000; // 短回复静默超时 3 秒
 const SHORT_RESPONSE_THRESHOLD = 200; // 短回复长度阈值
-const NO_RESPONSE_TIMEOUT = 7000; // 未收到任何输出时的兜底超时
+const NO_RESPONSE_TIMEOUT = 15000; // 未收到任何输出时的兜底超时
 
 /**
  * 延时函数
