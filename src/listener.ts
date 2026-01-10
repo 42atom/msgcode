@@ -108,6 +108,7 @@ async function verifyConfiguredChats(): Promise<void> {
  * 心跳/自愈机制（防止 SDK Watcher 静默停摆）
  */
 let lastActivity = Date.now(); // 最后活动时间戳
+let lastPollHit = Date.now(); // 轮询命中时间戳
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 const HEARTBEAT_CHECK_INTERVAL = 15000; // 守护检查间隔：15秒
 const HEARTBEAT_ACTIVITY_TIMEOUT = 60000; // 活动超时阈值：60秒（避免误报）
@@ -160,6 +161,10 @@ function updateHeartbeat(): void {
     lastActivity = Date.now();
 }
 
+function updatePollHit(): void {
+    lastPollHit = Date.now();
+}
+
 /**
  * 启动心跳守护进程（检测 SDK Watcher 静默停摆）
  */
@@ -178,12 +183,13 @@ function startHeartbeatMonitor(
     heartbeatTimer = setInterval(async () => {
         const now = Date.now();
         const inactiveTime = now - lastActivity;
+        const pollSilent = now - lastPollHit;
 
         // 检查是否有正在处理的队列（避免误报）
         const hasInFlight = processingQueues.size > 0 || inFlightMessages.size > 0;
 
         // 检查是否超时（只有在没有正在处理的消息时才报停摆）
-        if (inactiveTime > HEARTBEAT_ACTIVITY_TIMEOUT && !hasInFlight) {
+        if (inactiveTime > HEARTBEAT_ACTIVITY_TIMEOUT && pollSilent > HEARTBEAT_ACTIVITY_TIMEOUT && !hasInFlight) {
             logger.warn(`⚠️  检测到 SDK Watcher 停摆 (${Math.floor(inactiveTime / 1000)}s 无活动)，开始自愈`, {
                 module: "listener",
                 inactiveTime,
@@ -1019,6 +1025,7 @@ async function checkExistingMessages(
         const newMessages = unreadMessages.filter(m => m.id && !processedMessages.has(m.id));
 
         if (newMessages.length > 0) {
+            updatePollHit();
             console.log(`📬 [轮询] 检测到 ${newMessages.length} 条遗漏消息，开始处理...`);
             logger.info(`📬 [轮询] 检测到 ${newMessages.length} 条遗漏消息，开始处理`, { module: "listener", count: newMessages.length, source: "polling" });
             updateHeartbeat(); // 轮询检测到消息时更新心跳
