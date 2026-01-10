@@ -38,6 +38,7 @@ const MAX_CACHE_SIZE = 1000;
  */
 const recentMessageContents = new Map<string, number>();
 const CONTENT_DEDUP_WINDOW = 10000; // 10秒内相同文本视为重复
+const CONTENT_DEDUP_IMMEDIATE_WINDOW = 1000; // 1秒内的重复视为系统重复检测（SDK Watcher + polling）
 
 /**
  * 消息处理队列（每个 chatId 一个队列，确保顺序处理）
@@ -121,8 +122,9 @@ async function enqueueMessage(chatId: string, handler: () => Promise<void>): Pro
 
 /**
  * 已发送回复缓存（防止重复发送）
+ * 格式：Map<chatId, { text: string, timestamp: number }>
  */
-const sentReplies = new Map<string, string>(); // chatId -> last reply
+const sentReplies = new Map<string, { text: string; timestamp: number }>();
 const REPLY_COOLDOWN = 10000; // 10秒内不重复发送相同回复
 
 /**
@@ -263,6 +265,16 @@ function shouldSkipOutput(text: string): boolean {
         return true;
     }
 
+    // 长度检查：大于 500 字符且包含特定关键词，也视为插件输出
+    if (text.length > 500 && (
+        text.includes("observation") ||
+        text.includes("No code was written") ||
+        text.includes("no technical work")
+    )) {
+        logger.info(`🚫 过滤长插件输出 (${text.length}字符)`, { module: "listener", preview: text.slice(0, 50) });
+        return true;
+    }
+
     // 过滤 plugin/MCP 观察者输出
     const skipPatterns = [
         /I understand the task\. I'm a.*observer/i,
@@ -301,7 +313,15 @@ function shouldSkipOutput(text: string): boolean {
     // 过滤看起来像元数据/日志的输出（包含特定标记）
     if (text.includes("**No observation created**") ||
         text.includes("When to skip") ||
-        text.includes("deliverables and capabilities")) {
+        text.includes("deliverables and capabilities") ||
+        text.includes("falls under routine operations") ||
+        text.includes("should be skipped") ||
+        text.includes("No observation will be generated") ||
+        text.includes("WHEN TO SKIP category") ||
+        text.includes("No code was written") ||
+        text.includes("no files were modified") ||
+        text.includes("no technical work")) {
+        logger.info(`🚫 过滤元数据输出`, { module: "listener", preview: text.slice(0, 50) });
         return true;
     }
 
@@ -321,12 +341,18 @@ async function sendReply(sdk: IMessageSDK, chatId: string, text: string): Promis
 
         logger.info(`📤 准备发送回复 (${text.length}字符)`, { module: "listener", chatId, preview: text.slice(0, 30) });
 
-        // 检查是否在冷却期内（防止重复发送相同回复）
+        // 检查是否在冷却期内（防止短时间内重复发送相同回复）
+        const now = Date.now();
         const lastReply = sentReplies.get(chatId);
-        if (lastReply === text) {
-            return;
+        if (lastReply && lastReply.text === text) {
+            const elapsed = now - lastReply.timestamp;
+            if (elapsed < REPLY_COOLDOWN) {
+                logger.info(`⏸️  冷却中跳过重复回复 (${elapsed}ms < ${REPLY_COOLDOWN}ms)`, { module: "listener", chatId, elapsed });
+                return;
+            }
+            // 超过冷却期，允许发送
         }
-        sentReplies.set(chatId, text);
+        sentReplies.set(chatId, { text, timestamp: now });
 
         // 判断是群组还是个人
         // 群组 chatId 格式: 纯 GUID (32位十六进制) 或 any;+;GUID
@@ -357,6 +383,12 @@ export async function handleMessage(
         return;
     }
 
+    // 🔒 高优先级：跳过自己发送的消息，防止自我回路
+    if (message.isFromMe === true) {
+        if (debug) logger.debug(`🔍 跳过自身消息: ${message.id} | ${message.text?.slice(0, 30)}`, { module: "listener", messageId: message.id });
+        return;
+    }
+
     // 防止重复处理（原子操作，避免竞态条件）
     // 使用 has() + add() 的组合，确保只有第一个调用者能通过检查
     if (processedMessages.has(message.id)) {
@@ -383,10 +415,18 @@ export async function handleMessage(
         const now = Date.now();
         const lastTime = recentMessageContents.get(contentKey);
 
-        if (lastTime && now - lastTime < CONTENT_DEDUP_WINDOW) {
+        if (lastTime) {
             const elapsed = now - lastTime;
-            logger.warn(`🔄 跳过重复内容: ${textPreview.slice(0, 30)}... (${elapsed}ms内)`, { module: "listener", chatId, elapsed });
-            return;
+            // 1秒内的重复：视为系统重复检测（SDK Watcher + polling），直接跳过
+            if (elapsed < CONTENT_DEDUP_IMMEDIATE_WINDOW) {
+                logger.warn(`🔄 跳过系统重复: ${textPreview.slice(0, 30)}... (${elapsed}ms内)`, { module: "listener", chatId, elapsed });
+                return;
+            }
+            // 1秒-10秒内的重复：可能是用户重复提问，记录但不阻止
+            if (elapsed < CONTENT_DEDUP_WINDOW) {
+                logger.info(`⚠️  检测到用户重复提问: ${textPreview.slice(0, 30)}... (${elapsed}ms前已处理过)`, { module: "listener", chatId, elapsed });
+                // 不 return，允许处理
+            }
         }
 
         recentMessageContents.set(contentKey, now);
