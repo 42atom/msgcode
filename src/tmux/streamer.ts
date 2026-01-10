@@ -17,12 +17,12 @@ import { logger } from "../logger/index.js";
 // 轮询配置（优化响应速度）
 const FAST_INTERVAL = 200;        // 首次交付前（更快的初始检测）
 const SLOW_INTERVAL = 500;        // 首次交付后（更快的持续检测）
-const MAX_WAIT_MS = 30000;        // 绝对超时 30 秒
+const MAX_WAIT_MS = 30 * 60 * 1000; // 绝对超时 30 分钟
 const SILENT_TIMEOUT = 10000;     // 静默超时 10 秒（长回复兜底）
 const STALLED_TIMEOUT = 5000;     // 卡住超时 5 秒（有内容但无新增时快速收尾）
 const SHORT_SILENT_TIMEOUT = 3000; // 短回复静默超时 3 秒
 const SHORT_RESPONSE_THRESHOLD = 200; // 短回复长度阈值
-const NO_RESPONSE_TIMEOUT = 5000; // 未收到任何输出时的兜底超时
+const NO_RESPONSE_TIMEOUT = 7000; // 未收到任何输出时的兜底超时
 
 /**
  * 延时函数
@@ -61,6 +61,10 @@ function extractTmuxDiff(oldOutput: string, newOutput: string, sentMessage: stri
             const trimmed = line.trim();
             // 移除发送的消息
             if (trimmed === sentMessage || trimmed.includes(sentMessage.substring(0, 30))) {
+                return false;
+            }
+            // 移除 Claude 过程提示
+            if (/Pontificating|Coalescing|Thinking|esc to interrupt/i.test(trimmed)) {
                 return false;
             }
             // 移除纯提示符
@@ -164,6 +168,7 @@ export async function handleTmuxStream(
     let pollInterval = fastInterval;
     let hasResponse = false;
     let hasToolUse = false; // 检测是否有工具调用
+    let sentThinking = false; // 无响应时只提示一次
     const startTime = Date.now();
     let lastContentTime = Date.now(); // 最近收到内容的时间戳
 
@@ -174,29 +179,15 @@ export async function handleTmuxStream(
             // 读取新增内容
             const result = await reader.readProject(options.projectDir);
             if (result.entries.length === 0) {
-                // 完全无输出：5 秒兜底，先尝试读取 tmux 输出
+                // 完全无输出：5 秒提示“思考中”，继续等待最终回复
                 if (!hasResponse && Date.now() - startTime > NO_RESPONSE_TIMEOUT) {
-                    // 先尝试读取 tmux 输出
-                    const tmuxOutput = await TmuxSession.capturePane(sessionName, 100);
-                    const tmuxDiff = extractTmuxDiff(lastTmuxOutput, tmuxOutput, message);
-
-                    if (tmuxDiff) {
-                        console.log(`[Streamer ${groupName}] 无响应但 tmux 有输出，使用 tmux 内容`);
-                        logger.info(`[Streamer ${groupName}] 无响应但 tmux 有输出，使用 tmux 内容`, { module: "streamer", groupName, tmuxDiffLength: tmuxDiff.length });
-                        buffer.append(tmuxDiff);
-                        const remaining = buffer.forceFlush();
-                        if (remaining.trim()) {
-                            await options.onChunk(remaining, false);
-                        }
-                        return { success: true };
+                    if (!sentThinking) {
+                        const fallback = "思考中💭";
+                        console.log(`[Streamer ${groupName}] 无响应超时，发送兜底提示`);
+                        logger.warn(`[Streamer ${groupName}] 无响应超时，发送兜底提示`, { module: "streamer", groupName });
+                        await options.onChunk(fallback, false);
+                        sentThinking = true;
                     }
-
-                    // tmux 也没有输出，发送兜底提示
-                    const fallback = "⚠️ 未收到 Claude 响应，请稍后重试";
-                    console.log(`[Streamer ${groupName}] 无响应超时，发送兜底提示`);
-                    logger.warn(`[Streamer ${groupName}] 无响应超时，发送兜底提示`, { module: "streamer", groupName });
-                    await options.onChunk(fallback, false);
-                    return { success: false, error: "no response" };
                 }
                 // 静默检测：无新增内容且已超过静默阈值时结束
                 if (hasResponse) {
@@ -338,23 +329,13 @@ export async function handleTmuxStream(
         }
 
         // 超时处理
-        console.log(`[Streamer ${groupName}] 超时，尝试读取 tmux 输出作为兜底`);
-        logger.warn(`[Streamer ${groupName}] 超时，尝试读取 tmux 输出作为兜底`, { module: "streamer", groupName });
-
-        // 读取 tmux 终端输出作为兜底
-        const tmuxOutput = await TmuxSession.capturePane(sessionName, 100);
-        const tmuxDiff = extractTmuxDiff(lastTmuxOutput, tmuxOutput, message);
-
-        // 如果 tmux 有新内容，添加到缓冲区
-        if (tmuxDiff) {
-            console.log(`[Streamer ${groupName}] 从 tmux 捕获到 ${tmuxDiff.length} 字符`);
-            logger.info(`[Streamer ${groupName}] 从 tmux 捕获到 ${tmuxDiff.length} 字符`, { module: "streamer", groupName, tmuxDiffLength: tmuxDiff.length });
-            buffer.append(tmuxDiff);
-        }
-
+        console.log(`[Streamer ${groupName}] 超时，发送剩余内容`);
+        logger.warn(`[Streamer ${groupName}] 超时，发送剩余内容`, { module: "streamer", groupName });
         const remaining = buffer.forceFlush();
         if (remaining.trim()) {
             await options.onChunk(remaining, false);
+        } else if (!hasResponse) {
+            await options.onChunk("⚠️ 未收到最终回复，请稍后重试", false);
         }
         return { success: true };  // 部分内容也算成功
     } catch (error: any) {
