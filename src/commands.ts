@@ -244,12 +244,26 @@ async function checkBotRunning(): Promise<RunningInfo> {
                 .map(p => parseInt(p, 10))
                 .filter(p => !isNaN(p) && p !== currentPid);
 
+            // 过滤掉系统的 IMDPersistenceAgent（系统 iMessage 后台进程）
+            const filteredPids: number[] = [];
+            for (const pid of pids) {
+                try {
+                    const { stdout: comm } = await execAsync(`ps -p ${pid} -o comm= || true`);
+                    if (comm.includes("IMDPersistenceAgent")) {
+                        continue;
+                    }
+                } catch {
+                    // ignore
+                }
+                filteredPids.push(pid);
+            }
+
             if (pids.length > 0) {
                 return {
-                    isRunning: true,
-                    count: pids.length,
-                    pid: pids[0],
-                    pids,
+                    isRunning: filteredPids.length > 0,
+                    count: filteredPids.length,
+                    pid: filteredPids[0] ?? null,
+                    pids: filteredPids,
                 };
             }
         }
