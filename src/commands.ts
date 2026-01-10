@@ -71,6 +71,15 @@ export async function startBot(): Promise<void> {
     console.log("✅ msgcode bot 已启动");
     logger.info("✅ msgcode bot 已启动", { module: "commands" });
 
+    // 启动后再次检查是否有多实例（守护）
+    const postStartInfo = await checkBotRunning();
+    if (postStartInfo.count > 1) {
+        console.error(`🚨 检测到多实例冲突，正在退出。保留的 PID: ${postStartInfo.pid}`);
+        logger.error("🚨 检测到多实例冲突，退出", { module: "commands", postStartInfo });
+        await cleanupPidFile();
+        process.exit(1);
+    }
+
     // 保持运行
     await keepAlive();
 }
@@ -93,9 +102,11 @@ export async function stopBot(): Promise<void> {
 
     // 杀死所有 msgcode 相关进程
     try {
+        await execAsync("pkill -9 -f 'tsx.*src/index.ts'");
         await execAsync("pkill -9 -f 'tsx.*cli.ts'");
-        await execAsync("pkill -9 -f 'node.*msgcode'");
         await execAsync("pkill -9 -f 'tsx.*listener'");
+        await execAsync("pkill -9 -f 'node.*tsx.*msgcode'");
+        await execAsync("pkill -9 -f 'npm exec tsx src/index.ts'");
 
         // 等待进程完全退出
         await new Promise(r => setTimeout(r, 500));

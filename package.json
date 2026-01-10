@@ -9,7 +9,8 @@
   "scripts": {
     "get-chats": "tsx scripts/get-chats.ts",
     "dev": "tsx src/index.ts",
-    "start": "tsx src/index.ts"
+    "start": "tsx src/index.ts",
+    "test": "LOG_FILE=false LOG_LEVEL=warn bun test"
   },
   "keywords": [
     "imessage",
@@ -27,6 +28,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
+    "bun-types": "^1.3.5",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3"
   }

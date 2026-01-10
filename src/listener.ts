@@ -8,6 +8,8 @@ import type { IMessageSDK } from "@photon-ai/imessage-kit";
 import type { Message } from "@photon-ai/imessage-kit";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
+import fs from "node:fs";
+import os from "node:os";
 
 const execAsync = promisify(exec);
 
@@ -17,6 +19,8 @@ import { getHandler, type HandleResult } from "./handlers.js";
 import { createWatcher, isFileWatchingAvailable, type DatabaseWatcher } from "./watcher.js";
 import { handleTmuxStream } from "./tmux/streamer.js";
 import { logger } from "./logger/index.js";
+import { config } from "./config.js";
+import { TmuxSession } from "./tmux/session.js";
 
 /**
  * 消息监听器配置
@@ -35,6 +39,78 @@ const handledMessages = new Map<string, number>(); // messageId -> timestamp
 const HANDLED_TTL = 5 * 60 * 1000; // 5分钟内视为已处理
 const inFlightMessages = new Set<string>();
 let hasAnnouncedStartup = false;
+const UNKNOWN_CHAT_RATE_LIMIT_WINDOW = 60000; // 60秒
+const UNKNOWN_CHAT_MAX_HITS = 3;
+const unknownChatHits = new Map<string, { count: number; first: number }>();
+const unknownChatWarnCooldown = new Map<string, number>(); // chatId -> last warn timestamp
+const UNKNOWN_WARN_COOLDOWN = 60000; // 60秒节流未知群告警
+const groupIdWarned = new Set<string>(); // 启动校验发现的异常群组
+const rateLimitMap = new Map<string, { tokens: number; last: number }>();
+const RATE_LIMIT_WINDOW = 1000; // 1秒窗口
+const RATE_LIMIT_TOKENS = 3; // 每秒最多3条
+let healthTimer: ReturnType<typeof setInterval> | null = null;
+const HEALTH_INTERVAL = 60000; // 60 秒健康检查
+const markReadFailures = new Map<string, number>(); // chatId -> 连续失败次数
+
+/**
+ * AppleScript 检查 chatId 是否存在
+ */
+async function checkChatExistsAppleScript(chatId: string): Promise<boolean> {
+    const escaped = chatId.replace(/"/g, '\\"');
+    const script = `
+        tell application "Messages"
+            if exists chat id "${escaped}" then
+                return "ok"
+            else
+                return "missing"
+            end if
+        end tell
+    `.trim();
+    try {
+        const { stdout } = await execAsync(`osascript -e '${script.replace(/'/g, "'\\''")}'`, { timeout: 5000 });
+        return stdout.trim() === "ok";
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * 启动时校验群组 chatId 是否可用（只对群聊）
+ */
+async function verifyConfiguredChats(): Promise<void> {
+    const routes = getAllRoutes();
+    const invalid: string[] = [];
+
+    for (const route of routes) {
+        const chatId = route.chatId;
+        const isGroupChat = /^[a-f0-9]{32}$/i.test(chatId) || chatId.startsWith("any;+;");
+        if (!isGroupChat) continue;
+
+        const ok = await checkChatExistsAppleScript(chatId);
+        if (!ok) {
+            const key = `${route.groupName}:${chatId}`;
+            if (!groupIdWarned.has(key)) {
+                groupIdWarned.add(key);
+                logger.warn(`⚠️ 群组 chatId 不存在或未加入: ${chatId}`, { module: "listener", groupName: route.groupName });
+            }
+            invalid.push(`${route.groupName}(${chatId})`);
+        }
+    }
+
+    if (invalid.length > 0) {
+        logger.warn(`⚠️ 群组校验失败，无法发送: ${invalid.join(", ")}`, { module: "listener" });
+    } else {
+        logger.info("✅ 群组 chatId 校验通过", { module: "listener" });
+    }
+}
+
+/**
+ * 心跳/自愈机制（防止 SDK Watcher 静默停摆）
+ */
+let lastActivity = Date.now(); // 最后活动时间戳
+let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+const HEARTBEAT_CHECK_INTERVAL = 15000; // 守护检查间隔：15秒
+const HEARTBEAT_ACTIVITY_TIMEOUT = 60000; // 活动超时阈值：60秒（避免误报）
 
 /**
  * 最近处理的消息内容（基于文本的去重，防止相同内容的不同消息 id）
@@ -75,6 +151,73 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMsg: string
  */
 function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * 更新心跳时间戳（每次处理消息时调用）
+ */
+function updateHeartbeat(): void {
+    lastActivity = Date.now();
+}
+
+/**
+ * 启动心跳守护进程（检测 SDK Watcher 静默停摆）
+ */
+function startHeartbeatMonitor(
+    sdk: IMessageSDK,
+    debug: boolean,
+    handler: (message: Message) => Promise<void>
+): void {
+    if (heartbeatTimer) {
+        logger.warn("⚠️  心跳监控已在运行", { module: "listener" });
+        return;
+    }
+
+    logger.info("💓 启动心跳监控", { module: "listener", checkInterval: HEARTBEAT_CHECK_INTERVAL, activityTimeout: HEARTBEAT_ACTIVITY_TIMEOUT });
+
+    heartbeatTimer = setInterval(async () => {
+        const now = Date.now();
+        const inactiveTime = now - lastActivity;
+
+        // 检查是否有正在处理的队列（避免误报）
+        const hasInFlight = processingQueues.size > 0 || inFlightMessages.size > 0;
+
+        // 检查是否超时（只有在没有正在处理的消息时才报停摆）
+        if (inactiveTime > HEARTBEAT_ACTIVITY_TIMEOUT && !hasInFlight) {
+            logger.warn(`⚠️  检测到 SDK Watcher 停摆 (${Math.floor(inactiveTime / 1000)}s 无活动)，开始自愈`, {
+                module: "listener",
+                inactiveTime,
+                lastActivity: new Date(lastActivity).toISOString()
+            });
+
+            console.log(`⚠️  检测到服务停摆 (${Math.floor(inactiveTime / 1000)}s 无活动)，正在自愈...`);
+
+            try {
+                // 1. 立即检查未读消息
+                await checkExistingMessages(sdk, debug, handler);
+
+                // 2. 更新心跳时间（避免重复触发）
+                updateHeartbeat();
+
+                logger.info("✅ 心跳自愈完成", { module: "listener" });
+                console.log("✅ 服务已恢复");
+            } catch (error: any) {
+                logger.error(`❌ 心跳自愈失败: ${error.message}`, { module: "listener", error });
+                console.error("❌ 自愈失败，将在下次检查时重试");
+            }
+        }
+    }, HEARTBEAT_CHECK_INTERVAL);
+}
+
+/**
+ * 停止心跳监控
+ */
+function stopHeartbeatMonitor(): void {
+    if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+        logger.info("💓 心跳监控已停止", { module: "listener" });
+    }
 }
 
 /**
@@ -172,10 +315,49 @@ function cleanCache() {
 }
 
 /**
- * 上线通知
+ * 健康检查（轻量）
+ */
+async function healthCheck(sdk: IMessageSDK): Promise<void> {
+    try {
+        // 检查 Claude 会话是否存活（tmux）
+        const exists = await TmuxSession.exists("health-check");
+        const chatDb = `${os.homedir()}/Library/Messages/chat.db`;
+        const dbExists = fs.existsSync(chatDb);
+        logger.info("🩺 healthz", { module: "listener", tmuxExists: exists, dbExists });
+    } catch (error: any) {
+        logger.error(`❌ healthz 检查失败: ${error.message}`, { module: "listener", error });
+    }
+}
+
+function startHealthMonitor(sdk: IMessageSDK): void {
+    if (healthTimer) return;
+    healthTimer = setInterval(() => {
+        healthCheck(sdk).catch(() => {});
+    }, HEALTH_INTERVAL);
+    logger.info("🩺 健康检查已启动", { module: "listener", interval: HEALTH_INTERVAL });
+}
+
+function stopHealthMonitor(): void {
+    if (healthTimer) {
+        clearInterval(healthTimer);
+        healthTimer = null;
+        logger.info("🩺 健康检查已停止", { module: "listener" });
+    }
+}
+
+/**
+ * 上线通知（配置开关控制，失败不重试）
  */
 async function sendStartupAnnouncement(sdk: IMessageSDK): Promise<void> {
     if (hasAnnouncedStartup) return;
+
+    // 检查配置开关
+    if (!config.sendStartupAnnouncement) {
+        logger.info("🔇 上线通知已禁用（SEND_STARTUP_ANNOUNCEMENT=false）", { module: "listener" });
+        hasAnnouncedStartup = true;
+        return;
+    }
+
     const routes = getAllRoutes();
     if (routes.length === 0) {
         logger.info("🎯 无群组配置，跳过上线通知", { module: "listener" });
@@ -184,12 +366,25 @@ async function sendStartupAnnouncement(sdk: IMessageSDK): Promise<void> {
     }
 
     const timestamp = new Date().toISOString().replace("T", " ").slice(0, 19);
-    const text = `Hi ${timestamp}，已上线`;
+    const text = config.announceMessage || `Hi ${timestamp}，已上线`;
+
+    // 记录失败的群组（避免重复刷屏）
+    const failedGroups = new Set<string>();
 
     for (const route of routes) {
         const chatId = route.chatId;
         const isGroupChat = /^[a-f0-9]{32}$/i.test(chatId) || chatId.startsWith("any;+;");
+        const groupKey = `${route.groupName}:${chatId}`;
+
         try {
+            // 启动前验证群聊是否存在（仅限群组）
+            if (isGroupChat) {
+                const exists = await checkChatExistsAppleScript(chatId);
+                if (!exists) {
+                    logger.warn(`⚠️ 群组 chatId 不存在或未加入: ${chatId}`, { module: "listener", groupName: route.groupName });
+                    continue;
+                }
+            }
             if (isGroupChat) {
                 await sendToChatGroup(chatId, text);
             } else {
@@ -197,7 +392,16 @@ async function sendStartupAnnouncement(sdk: IMessageSDK): Promise<void> {
             }
             logger.info(`✅ 上线通知已发送`, { module: "listener", chatId, groupName: route.groupName });
         } catch (error: any) {
-            logger.warn(`⚠️ 上线通知发送失败: ${error.message}`, { module: "listener", chatId, groupName: route.groupName });
+            // 只记录一次失败，避免刷屏
+            if (!failedGroups.has(groupKey)) {
+                failedGroups.add(groupKey);
+                logger.warn(`⚠️ 上线通知发送失败（将不再重试）: ${error.message.slice(0, 60)}`, {
+                    module: "listener",
+                    chatId,
+                    groupName: route.groupName,
+                    hint: "如需关闭通知，设置 SEND_STARTUP_ANNOUNCEMENT=false"
+                });
+            }
         }
     }
 
@@ -270,17 +474,25 @@ async function markAsReadSQLite(chatId: string): Promise<void> {
     // 确保使用完整格式 any;+;GUID
     const fullChatId = chatId.includes(";") ? chatId : `any;+;${chatId}`;
     const escapedChatId = escapeSqlString(fullChatId);
+    const failureKey = fullChatId;
+    const failures = (markReadFailures.get(failureKey) ?? 0);
 
     // SQLite UPDATE 命令（单行格式，避免引号问题）
     const sql = `UPDATE message SET is_read=1, date_read=(strftime('%s','now')+978307200)*1000000000 WHERE ROWID IN (SELECT cmj.message_id FROM chat_message_join cmj JOIN chat c ON cmj.chat_id=c.ROWID WHERE c.guid='${escapedChatId}') AND is_read=0`;
 
     try {
         await execAsync(`sqlite3 "${MESSAGES_DB_PATH}" "${sql}"`, { timeout: 5000 });
+        markReadFailures.delete(failureKey);
     } catch (error: any) {
         // SQLite 失败时降级到 AppleScript
         const success = await markAsReadAppleScript(chatId);
         if (!success) {
-            logger.warn(`⚠️ markAsRead 完全失败: ${error.message.slice(0, 40)}...`, { module: "listener", error });
+            const nextFailures = failures + 1;
+            markReadFailures.set(failureKey, nextFailures);
+            logger.warn(`⚠️ markAsRead 完全失败(${nextFailures}): ${error.message.slice(0, 40)}...`, { module: "listener", error });
+            if (nextFailures >= 3) {
+                logger.error("🚨 无法标记已读，请打开 Messages 应用并保持前台同步", { module: "listener", chatId });
+            }
         }
     }
 }
@@ -487,6 +699,24 @@ export async function handleMessage(
         return;
     }
 
+    // 简单速率限制（每 chatId 每秒最多 3 条，超限直接回复流控提示）
+    const nowTs = Date.now();
+    const bucket = rateLimitMap.get(chatId) || { tokens: RATE_LIMIT_TOKENS, last: nowTs };
+    // 补充令牌
+    const elapsed = nowTs - bucket.last;
+    const refill = Math.floor(elapsed / RATE_LIMIT_WINDOW) * RATE_LIMIT_TOKENS;
+    bucket.tokens = Math.min(RATE_LIMIT_TOKENS, bucket.tokens + refill);
+    bucket.last = nowTs;
+
+    if (bucket.tokens <= 0) {
+        // 速率超限，直接提示并丢弃
+        await sendReply(sdk, chatId, "⏳ 流控中，请稍后再发");
+        logger.warn(`⚠️ 速率限制触发: ${chatId}`, { module: "listener", chatId });
+        return;
+    }
+    bucket.tokens -= 1;
+    rateLimitMap.set(chatId, bucket);
+
     // 基于内容的去重（防止相同内容的不同消息 id）
     if (message.text?.trim()) {
         // 限制 key 长度，避免内存问题
@@ -533,7 +763,19 @@ export async function handleMessage(
 
     // 检查是否是配置的群组
     if (!isConfiguredChatId(chatId)) {
-        if (debug) logger.debug(`🔍 未配置的群组: ${chatId}`, { module: "listener", chatId });
+        const now = Date.now();
+        const hit = unknownChatHits.get(chatId);
+        if (!hit) {
+            unknownChatHits.set(chatId, { count: 1, first: now });
+        } else {
+            hit.count += 1;
+        }
+
+        const lastWarn = unknownChatWarnCooldown.get(chatId) || 0;
+        if (now - lastWarn > UNKNOWN_WARN_COOLDOWN) {
+            logger.warn(`⚠️ 未配置的群组: ${chatId}`, { module: "listener", chatId });
+            unknownChatWarnCooldown.set(chatId, now);
+        }
         return;
     }
 
@@ -548,6 +790,8 @@ export async function handleMessage(
     const route = routeByChatId(chatId);
     if (!route) {
         logger.warn(`⚠️  无法路由: ${chatId}`, { module: "listener", chatId });
+        // 未路由也需要标记为已读，避免重复触发
+        await markAsReadSQLite(chatId);
         return;
     }
 
@@ -676,8 +920,10 @@ export async function startListener(sdk: IMessageSDK, debug = false, useFileWatc
 
     // 启动时打开 Messages 一次，标记所有消息为已读
     await markMessagesAsReadOnStartup();
+    await verifyConfiguredChats();
 
     const handleMessageWrapper = async (message: Message) => {
+        updateHeartbeat(); // 每次处理消息时更新心跳
         await handleMessage(message, { sdk, debug });
     };
 
@@ -711,6 +957,7 @@ export async function startListener(sdk: IMessageSDK, debug = false, useFileWatc
         console.log("✅ 监听器已启动，等待消息...\n");
         logger.info("监听器已启动，等待消息", { module: "listener", mode: "file" });
         await sendStartupAnnouncement(sdk);
+        startHealthMonitor(sdk);
         return watcher;
     } else {
         // 使用 SDK Watcher + 轮询模式
@@ -725,9 +972,13 @@ export async function startListener(sdk: IMessageSDK, debug = false, useFileWatc
         // 启动轮询作为补充（SDK Watcher 可能遗漏消息）
         startPolling(sdk, debug, handleMessageWrapper);
 
+        // 启动心跳监控（防止 SDK Watcher 静默停摆）
+        startHeartbeatMonitor(sdk, debug, handleMessageWrapper);
+
         console.log("✅ 监听器已启动，等待消息...\n");
         logger.info("监听器已启动，等待消息", { module: "listener", mode: "sdk" });
         await sendStartupAnnouncement(sdk);
+        startHealthMonitor(sdk);
         return null;
     }
 }
@@ -740,7 +991,7 @@ function startPolling(
     debug: boolean,
     handler: (message: Message) => Promise<void>
 ): void {
-    const CHECK_INTERVAL = 5000; // 5秒检查一次
+    const CHECK_INTERVAL = 2000; // 2秒检查一次（优化：提高遗漏消息捕获率）
 
     setInterval(async () => {
         try {
@@ -768,18 +1019,52 @@ async function checkExistingMessages(
         const newMessages = unreadMessages.filter(m => m.id && !processedMessages.has(m.id));
 
         if (newMessages.length > 0) {
-            console.log(`📬 检测到 ${newMessages.length} 条新消息，开始处理...`);
-            logger.info(`📬 检测到 ${newMessages.length} 条新消息，开始处理`, { module: "listener", count: newMessages.length });
+            console.log(`📬 [轮询] 检测到 ${newMessages.length} 条遗漏消息，开始处理...`);
+            logger.info(`📬 [轮询] 检测到 ${newMessages.length} 条遗漏消息，开始处理`, { module: "listener", count: newMessages.length, source: "polling" });
+            updateHeartbeat(); // 轮询检测到消息时更新心跳
             for (const msg of newMessages) {
                 await handler(msg);
-                // 标记为已读（使用 SQLite）
-                if (msg.chatId) {
-                    await markAsReadSQLite(msg.chatId);
+
+                // 标记为已读（使用 SQLite，带退避重试）
+                if (msg.chatId && msg.id) {
+                    let markSuccess = false;
+                    let retryCount = 0;
+                    const MAX_RETRIES = 2; // 最多重试 2 次
+                    const RETRY_DELAY = 1000; // 1 秒退避
+
+                    while (retryCount <= MAX_RETRIES && !markSuccess) {
+                        try {
+                            await markAsReadSQLite(msg.chatId);
+                            markSuccess = true;
+                        } catch (error: any) {
+                            retryCount++;
+                            if (retryCount <= MAX_RETRIES) {
+                                logger.warn(`⚠️  markAsRead 失败 (第 ${retryCount} 次)，${RETRY_DELAY}ms 后重试`, {
+                                    module: "listener",
+                                    chatId: msg.chatId,
+                                    retryCount,
+                                    error: error.message
+                                });
+                                await sleep(RETRY_DELAY);
+                            }
+                        }
+                    }
+
+                    // 最终失败时，强制塞入 handled 缓存避免重复拉取
+                    if (!markSuccess) {
+                        logger.error(`❌ markAsRead 完全失败 (重试 ${MAX_RETRIES} 次后)，强制标记为已处理`, {
+                            module: "listener",
+                            messageId: msg.id,
+                            chatId: msg.chatId
+                        });
+                        handledMessages.set(msg.id, Date.now());
+                        processedMessages.add(msg.id); // 同时加入 processed 缓存
+                    }
                 }
             }
         } else if (debug && unreadMessages.length > 0) {
-            console.log(`📭 已有 ${unreadMessages.length} 条未读消息已处理`);
-            logger.debug(`📭 已有 ${unreadMessages.length} 条未读消息已处理`, { module: "listener", count: unreadMessages.length });
+            console.log(`📭 [轮询] 已有 ${unreadMessages.length} 条未读消息已处理`);
+            logger.debug(`📭 [轮询] 已有 ${unreadMessages.length} 条未读消息已处理`, { module: "listener", count: unreadMessages.length, source: "polling" });
         }
     } catch (error: any) {
         if (debug) {

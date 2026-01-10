@@ -64,8 +64,7 @@ export class AssistantParser {
                             text += filteredText;
                         } else if (block.type === "tool_use" && block.name) {
                             hasToolUse = true;
-                            // 工具调用可以选择性显示
-                            text += `\n🔧 执行: ${block.name}\n`;
+                            // 工具调用不显示，只等待结果
                         }
                     }
                 }

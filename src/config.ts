@@ -70,6 +70,10 @@ export interface Config {
     whitelist: WhitelistConfig;
     // 群组路由：群组名 → 配置
     groupRoutes: Map<string, GroupConfig>;
+    // 启动公告开关
+    sendStartupAnnouncement: boolean;
+    // 启动公告文案
+    announceMessage?: string;
     // 默认群组
     defaultGroup: string | null;
     // 日志级别
@@ -130,8 +134,13 @@ export function loadConfig(): Config {
     const phones = parsePhones(process.env.MY_PHONE);
     const emails = parseEmails(process.env.MY_EMAIL);
 
+    const groupRoutes = parseGroupRoutes();
+    if (groupRoutes.size === 0) {
+        throw new Error("未配置任何群组路由 (GROUP_*)，请在 ~/.config/msgcode/.env 中添加");
+    }
+
     if (phones.length === 0 && emails.length === 0) {
-        console.warn("⚠️  警告: 未配置白名单 (MY_PHONE 或 MY_EMAIL)");
+        throw new Error("白名单为空 (MY_PHONE / MY_EMAIL)，为安全起见请至少配置一项");
     }
 
     return {
@@ -139,10 +148,12 @@ export function loadConfig(): Config {
             phones,
             emails,
         },
-        groupRoutes: parseGroupRoutes(),
+        groupRoutes,
         defaultGroup: process.env.DEFAULT_GROUP || null,
         logLevel: (process.env.LOG_LEVEL as Config["logLevel"]) || "info",
         useFileWatcher: process.env.USE_FILE_WATCHER === "true",
+        sendStartupAnnouncement: process.env.SEND_STARTUP_ANNOUNCEMENT !== "false", // 默认 true
+        announceMessage: process.env.ANNOUNCE_MESSAGE,
     };
 }
 

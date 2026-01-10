@@ -9,6 +9,11 @@ import { config } from "./config.js";
 import { startListener } from "./listener.js";
 import { getAllRoutes } from "./router.js";
 import { logger } from "./logger/index.js";
+import http from "node:http";
+import { exec } from "node:child_process";
+import { promisify } from "node:util";
+
+const execAsync = promisify(exec);
 
 /**
  * 打印启动信息
@@ -50,10 +55,43 @@ async function main() {
         groupRoutes: getAllRoutes().length,
     });
 
+    // 创建 SDK
+    const sdk = new IMessageSDK({
+        debug: config.logLevel === "debug",
+    });
+
+    // 崩溃/异常通知（最佳努力）
+    async function sendAlert(text: string) {
+        try {
+            const routes = getAllRoutes();
+            const target =
+                (config.defaultGroup && routes.find(r => r.groupName === config.defaultGroup)) ||
+                routes[0];
+            if (!target) return;
+            const chatId = target.chatId;
+            const isGroupChat = /^[a-f0-9]{32}$/i.test(chatId) || chatId.startsWith("any;+;");
+            if (isGroupChat) {
+                const escapedChatId = chatId.replace(/"/g, '\\"');
+                const escapedText = text.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+                const script = `
+tell application "Messages"
+    send "${escapedText}" to chat id "${escapedChatId}"
+end tell
+`.trim();
+                await execAsync(`osascript -e '${script.replace(/'/g, "'\\''")}'`, { timeout: 5000 });
+            } else {
+                await sdk.send(chatId, text);
+            }
+        } catch {
+            // 静默失败
+        }
+    }
+
     // 全局未捕获的异常处理
     process.on("uncaughtException", (error) => {
         console.error("💥 未捕获的异常:", error);
         logger.error("未捕获的异常", { module: "main", error: error.message, stack: error.stack });
+        sendAlert(`🚨 msgcode 崩溃: ${error.message.slice(0, 120)}`).catch(() => {});
         // 不立即退出，给日志系统时间写入
         setTimeout(() => process.exit(1), 1000);
     });
@@ -66,13 +104,24 @@ async function main() {
             reason: String(reason),
             promise: String(promise)
         });
+        sendAlert(`🚨 msgcode 未处理的 Promise: ${String(reason).slice(0, 120)}`).catch(() => {});
         // 不退出进程，继续运行
     });
 
-    // 创建 SDK
-    const sdk = new IMessageSDK({
-        debug: config.logLevel === "debug",
-    });
+    // 可选 healthz HTTP 接口
+    if (process.env.HEALTH_PORT) {
+        const port = Number(process.env.HEALTH_PORT);
+        if (!Number.isNaN(port)) {
+            const server = http.createServer((req, res) => {
+                res.writeHead(200, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ status: "ok" }));
+            });
+            server.listen(port, () => {
+                logger.info(`🩺 healthz HTTP 已启动: http://localhost:${port}/`, { module: "main", port });
+            });
+            process.on("exit", () => server.close());
+        }
+    }
 
     // 启动消息监听
     const watcher = await startListener(sdk, config.logLevel === "debug", config.useFileWatcher);

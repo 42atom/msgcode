@@ -77,7 +77,7 @@ export class ConsoleTransport implements Transport {
         const moduleStr = module ? `[${module}] ` : "";
 
         // 如果禁用颜色，直接返回纯文本
-        if (!this.colorify) {
+        if (!this.colorize) {
             return `${timeStr} [${levelStr}] ${moduleStr}${message}`;
         }
 
