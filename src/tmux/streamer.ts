@@ -15,9 +15,12 @@ import { Throttler } from "../output/throttler.js";
 import { logger } from "../logger/index.js";
 
 // 轮询配置（优化响应速度）
-const FAST_INTERVAL = 200;      // 首次交付前（更快的初始检测）
-const SLOW_INTERVAL = 500;      // 首次交付后（更快的持续检测）
-const MAX_WAIT_MS = 300000;     // 最大等待 5 分钟（复杂问题需要更久）
+const FAST_INTERVAL = 200;        // 首次交付前（更快的初始检测）
+const SLOW_INTERVAL = 500;        // 首次交付后（更快的持续检测）
+const MAX_WAIT_MS = 30000;        // 绝对超时 30 秒
+const SILENT_TIMEOUT = 10000;     // 静默超时 10 秒（长回复兜底）
+const SHORT_SILENT_TIMEOUT = 3000; // 短回复静默超时 3 秒
+const SHORT_RESPONSE_THRESHOLD = 200; // 短回复长度阈值
 
 /**
  * 延时函数
@@ -112,6 +115,7 @@ export async function handleTmuxStream(
     let pollInterval = fastInterval;
     let hasResponse = false;
     const startTime = Date.now();
+    let lastContentTime = Date.now(); // 最近收到内容的时间戳
 
     try {
         while (Date.now() - startTime < timeout) {
@@ -120,6 +124,30 @@ export async function handleTmuxStream(
             // 读取新增内容
             const result = await reader.readProject(options.projectDir);
             if (result.entries.length === 0) {
+                // 静默检测：无新增内容且已超过静默阈值时结束
+                if (hasResponse) {
+                    const silentSpan = Date.now() - lastContentTime;
+                    // 短回复快速收尾
+                    if (buffer.length <= SHORT_RESPONSE_THRESHOLD && silentSpan > SHORT_SILENT_TIMEOUT) {
+                        console.log(`[Streamer ${groupName}] 静默超时（短回复），发送剩余内容`);
+                        logger.info(`[Streamer ${groupName}] 静默超时（短回复），发送剩余内容`, { module: "streamer", groupName, silentSpan });
+                        const remaining = buffer.forceFlush();
+                        if (remaining.trim()) {
+                            await options.onChunk(remaining, false);
+                        }
+                        return { success: true };
+                    }
+                    // 普通静默收尾
+                    if (silentSpan > SILENT_TIMEOUT) {
+                        console.log(`[Streamer ${groupName}] 静默超时，发送剩余内容`);
+                        logger.info(`[Streamer ${groupName}] 静默超时，发送剩余内容`, { module: "streamer", groupName, silentSpan });
+                        const remaining = buffer.forceFlush();
+                        if (remaining.trim()) {
+                            await options.onChunk(remaining, false);
+                        }
+                        return { success: true };
+                    }
+                }
                 continue;
             }
 
@@ -141,6 +169,7 @@ export async function handleTmuxStream(
             // }
 
             if (newText.length > 0) {
+                lastContentTime = Date.now();
                 // 计算增量文本
                 const deltaText = newText.slice(currentText.length);
                 currentText = newText;
@@ -179,6 +208,30 @@ export async function handleTmuxStream(
                         await options.onChunk(remaining, false);
                     }
                     return { success: true };
+                }
+            } else {
+                // 已有响应且长时间无新增字符，认为完成
+                if (hasResponse) {
+                    const silentSpan = Date.now() - lastContentTime;
+                    // 短回复快速收尾
+                    if (buffer.length <= SHORT_RESPONSE_THRESHOLD && silentSpan > SHORT_SILENT_TIMEOUT) {
+                        console.log(`[Streamer ${groupName}] 静默超时（短回复，无增量），发送剩余内容`);
+                        logger.info(`[Streamer ${groupName}] 静默超时（短回复，无增量），发送剩余内容`, { module: "streamer", groupName, silentSpan });
+                        const remaining = buffer.forceFlush();
+                        if (remaining.trim()) {
+                            await options.onChunk(remaining, false);
+                        }
+                        return { success: true };
+                    }
+                    if (silentSpan > SILENT_TIMEOUT) {
+                        console.log(`[Streamer ${groupName}] 静默超时（无增量），发送剩余内容`);
+                        logger.info(`[Streamer ${groupName}] 静默超时（无增量），发送剩余内容`, { module: "streamer", groupName, silentSpan });
+                        const remaining = buffer.forceFlush();
+                        if (remaining.trim()) {
+                            await options.onChunk(remaining, false);
+                        }
+                        return { success: true };
+                    }
                 }
             }
         }

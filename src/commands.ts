@@ -192,11 +192,10 @@ async function checkBotRunning(): Promise<RunningInfo> {
         }
     }
 
-    // 方法2: 检测 listener 进程（通过检查特定命令行参数）
+    // 方法2: 检测 msgcode 相关进程（更宽松的命令行匹配）
     try {
-        // 查找包含 "启动消息监听" 或正在运行 listener 的进程
         const { stdout } = await execAsync(
-            "ps aux | grep -E 'listener.*start|监听器已启动' | grep -v grep | grep -v msgcode || true"
+            "ps -axo pid,command | grep -E 'msgcode|src/index.ts|cli.ts|listener' | grep -v grep || true"
         );
 
         const lines = stdout.trim().split('\n').filter(Boolean);
@@ -222,8 +221,9 @@ async function checkBotRunning(): Promise<RunningInfo> {
     // 方法3: 使用 lsof 检测监听中的进程（如果使用了文件监听）
     try {
         // 检查是否有进程正在监看 iMessage 数据库
+        const chatDbPath = `${os.homedir()}/Library/Messages/chat.db`;
         const { stdout } = await execAsync(
-            "lsof +c 0 /Users/admin/Library/Messages/chat.db 2>/dev/null | grep -v COMMAND || true"
+            `lsof +c 0 "${chatDbPath}" 2>/dev/null | grep -v COMMAND || true`
         );
 
         const lines = stdout.trim().split('\n').filter(Boolean);

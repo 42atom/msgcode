@@ -12,7 +12,7 @@ import { promisify } from "node:util";
 const execAsync = promisify(exec);
 
 import { checkWhitelist, formatSender } from "./security.js";
-import { routeByChatId, isConfiguredChatId, type Route, type BotType } from "./router.js";
+import { routeByChatId, isConfiguredChatId, getAllRoutes, type Route, type BotType } from "./router.js";
 import { getHandler, type HandleResult } from "./handlers.js";
 import { createWatcher, isFileWatchingAvailable, type DatabaseWatcher } from "./watcher.js";
 import { handleTmuxStream } from "./tmux/streamer.js";
@@ -31,6 +31,10 @@ export interface ListenerConfig {
  */
 const processedMessages = new Set<string>();
 const MAX_CACHE_SIZE = 1000;
+const handledMessages = new Map<string, number>(); // messageId -> timestamp
+const HANDLED_TTL = 5 * 60 * 1000; // 5分钟内视为已处理
+const inFlightMessages = new Set<string>();
+let hasAnnouncedStartup = false;
 
 /**
  * 最近处理的消息内容（基于文本的去重，防止相同内容的不同消息 id）
@@ -67,6 +71,13 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, errorMsg: string
 }
 
 /**
+ * 延时函数
+ */
+function sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
  * 将消息处理加入队列（确保每个 chatId 同时只处理一条消息）
  */
 async function enqueueMessage(chatId: string, handler: () => Promise<void>): Promise<void> {
@@ -87,12 +98,15 @@ async function enqueueMessage(chatId: string, handler: () => Promise<void>): Pro
 
     const wrappedHandler = async () => {
         const startTime = Date.now();
+        let handlerError: Error | null = null;
         try {
             await withTimeout(handler(), QUEUE_TIMEOUT, `消息处理超时 (${QUEUE_TIMEOUT}ms)`);
         } catch (error: any) {
+            const normalizedError = error instanceof Error ? error : new Error(String(error));
+            handlerError = normalizedError;
             // 记录错误但继续处理后续消息
-            logger.error(`❌ [${chatId}] 处理失败: ${error.message}`, { module: "listener", chatId, error });
-            if (error.message.includes('超时')) {
+            logger.error(`❌ [${chatId}] 处理失败: ${normalizedError.message}`, { module: "listener", chatId, error: normalizedError });
+            if (normalizedError.message.includes('超时')) {
                 logger.error(`   可能原因: Claude 响应过慢或 tmux 会话卡死`, { module: "listener", chatId });
             }
         } finally {
@@ -100,6 +114,9 @@ async function enqueueMessage(chatId: string, handler: () => Promise<void>): Pro
             if (elapsed > 10000) {  // 超过 10 秒记录
                 logger.info(`⏱️  [${chatId}] 处理耗时: ${elapsed}ms`, { module: "listener", chatId, elapsed });
             }
+        }
+        if (handlerError) {
+            throw handlerError;
         }
     };
 
@@ -128,6 +145,13 @@ const sentReplies = new Map<string, { text: string; timestamp: number }>();
 const REPLY_COOLDOWN = 10000; // 10秒内不重复发送相同回复
 
 /**
+ * 失败重试计数器（轻量级）
+ */
+const retryAttempts = new Map<string, number>();
+const MAX_RETRIES = 2; // 最多重试 2 次
+const RETRY_DELAY = 1000; // 1 秒退避
+
+/**
  * 清理旧缓存
  */
 function cleanCache() {
@@ -137,6 +161,47 @@ function cleanCache() {
             processedMessages.delete(entries[i]);
         }
     }
+
+    // 清理已处理消息的 TTL 缓存
+    const now = Date.now();
+    for (const [id, ts] of handledMessages.entries()) {
+        if (now - ts > HANDLED_TTL) {
+            handledMessages.delete(id);
+        }
+    }
+}
+
+/**
+ * 上线通知
+ */
+async function sendStartupAnnouncement(sdk: IMessageSDK): Promise<void> {
+    if (hasAnnouncedStartup) return;
+    const routes = getAllRoutes();
+    if (routes.length === 0) {
+        logger.info("🎯 无群组配置，跳过上线通知", { module: "listener" });
+        hasAnnouncedStartup = true;
+        return;
+    }
+
+    const timestamp = new Date().toISOString().replace("T", " ").slice(0, 19);
+    const text = `Hi ${timestamp}，已上线`;
+
+    for (const route of routes) {
+        const chatId = route.chatId;
+        const isGroupChat = /^[a-f0-9]{32}$/i.test(chatId) || chatId.startsWith("any;+;");
+        try {
+            if (isGroupChat) {
+                await sendToChatGroup(chatId, text);
+            } else {
+                await sendToIndividual(sdk, chatId, text);
+            }
+            logger.info(`✅ 上线通知已发送`, { module: "listener", chatId, groupName: route.groupName });
+        } catch (error: any) {
+            logger.warn(`⚠️ 上线通知发送失败: ${error.message}`, { module: "listener", chatId, groupName: route.groupName });
+        }
+    }
+
+    hasAnnouncedStartup = true;
 }
 
 /**
@@ -382,6 +447,20 @@ export async function handleMessage(
         if (debug) logger.debug("🔍 跳过无 id 消息", { module: "listener" });
         return;
     }
+    const messageId = message.id;
+
+    // 5 分钟内已处理过，直接跳过（防止重复拉取/重启后重复）
+    const handledAt = handledMessages.get(messageId);
+    if (handledAt && Date.now() - handledAt < HANDLED_TTL) {
+        if (debug) logger.debug(`🔁 已处理过，跳过: ${messageId}`, { module: "listener", messageId });
+        return;
+    }
+
+    // 防止同一消息并发处理中
+    if (inFlightMessages.has(messageId)) {
+        if (debug) logger.debug(`⏳ 已在处理中的消息，跳过: ${messageId}`, { module: "listener", messageId });
+        return;
+    }
 
     // 🔒 高优先级：跳过自己发送的消息，防止自我回路
     if (message.isFromMe === true) {
@@ -397,6 +476,7 @@ export async function handleMessage(
     }
     // 标记为已处理（在异步操作前立即标记）
     processedMessages.add(message.id);
+    inFlightMessages.add(message.id);
     logger.debug(`✅ 新消息标记: ${message.id} | 文本: ${message.text?.slice(0, 30)}`, { module: "listener", messageId: message.id });
     cleanCache();
 
@@ -492,55 +572,95 @@ export async function handleMessage(
     logger.info(`📨 [${groupName}] ${formatSender(message)}: ${message.text}`, { module: "listener", groupName, sender: formatSender(message), text: message.text });
 
     // === 使用队列处理，确保每个 chatId 同时只处理一条消息 ===
-    await enqueueMessage(chatId, async () => {
-        // 判断是否使用流式处理（message.text 已在前面检查过非空）
-        const messageText = message.text ?? "";
-        logger.info(`🔍 开始处理消息: ${messageText.slice(0, 30)}...`, { module: "listener", chatId, textLength: messageText.length });
+    let handledSuccessfully = false;
+    let lastError: unknown = null;
+    let attempts = retryAttempts.get(messageId) ?? 0;
 
-        if (shouldStream({ chatId: routeChatId, groupName, projectDir, botType }, messageText)) {
-            logger.info(`🎬 使用流式处理`, { module: "listener", chatId, groupName });
-            // === 流式处理：使用 handleTmuxStream ===
-            try {
-                await handleTmuxStream(groupName, messageText, {
-                    projectDir: projectDir ?? undefined,
-                    onChunk: async (chunk, isToolUse) => {
-                        const logPrefix = isToolUse ? "📤 [工具]" : "📤";
-                        console.log(`${logPrefix} [${groupName}] Bot: ${chunk}`);
-                        logger.info(`${logPrefix} [${groupName}] Bot: ${chunk}`, { module: "listener", groupName, isToolUse });
-                        await sendReply(sdk, chatId, chunk);
+    while (attempts <= MAX_RETRIES) {
+        try {
+            await enqueueMessage(chatId, async () => {
+                // 判断是否使用流式处理（message.text 已在前面检查过非空）
+                const messageText = message.text ?? "";
+                logger.info(`🔍 开始处理消息: ${messageText.slice(0, 30)}...`, { module: "listener", chatId, textLength: messageText.length });
+
+                if (shouldStream({ chatId: routeChatId, groupName, projectDir, botType }, messageText)) {
+                    logger.info(`🎬 使用流式处理`, { module: "listener", chatId, groupName });
+                    // === 流式处理：使用 handleTmuxStream ===
+                    try {
+                        await handleTmuxStream(groupName, messageText, {
+                            projectDir: projectDir ?? undefined,
+                            onChunk: async (chunk, isToolUse) => {
+                                const logPrefix = isToolUse ? "📤 [工具]" : "📤";
+                                console.log(`${logPrefix} [${groupName}] Bot: ${chunk}`);
+                                logger.info(`${logPrefix} [${groupName}] Bot: ${chunk}`, { module: "listener", groupName, isToolUse });
+                                await sendReply(sdk, chatId, chunk);
+                            }
+                        });
+                        logger.info(`✅ 流式处理完成`, { module: "listener", chatId, groupName });
+                    } catch (error: any) {
+                        logger.error(`❌ 流式处理错误: ${error.message}`, { module: "listener", groupName, error });
+                        await sendReply(sdk, chatId, `处理失败: ${error.message}`);
                     }
+                } else {
+                    // === 命令处理：使用原有 handler.handle() ===
+                    let result: HandleResult;
+                    try {
+                        result = await handler.handle(messageText, context);
+                    } catch (error: any) {
+                        logger.error(`❌ 处理错误: ${error.message}`, { module: "listener", groupName, error });
+                        result = {
+                            success: false,
+                            error: error.message,
+                        };
+                    }
+
+                    // 发送回复
+                    if (result.response) {
+                        console.log(`📤 [${groupName}] Bot: ${result.response}`);
+                        logger.info(`📤 [${groupName}] Bot: ${result.response}`, { module: "listener", groupName });
+                        await sendReply(sdk, chatId, result.response);
+                    } else if (result.error) {
+                        logger.error(`❌ 错误: ${result.error}`, { module: "listener", groupName });
+                    }
+                }
+
+                // 标记消息为已读（使用 SQLite 方法）
+                await markAsReadSQLite(chatId);
+            });
+            handledSuccessfully = true;
+            break;
+        } catch (error: any) {
+            lastError = error;
+            if (attempts < MAX_RETRIES) {
+                processedMessages.delete(messageId);
+                retryAttempts.set(messageId, attempts + 1);
+                logger.warn(`⚠️  处理失败，将在 ${RETRY_DELAY}ms 后重试 (${attempts + 1}/${MAX_RETRIES})`, {
+                    module: "listener",
+                    messageId,
+                    error: error?.message ?? String(error),
                 });
-                logger.info(`✅ 流式处理完成`, { module: "listener", chatId, groupName });
-            } catch (error: any) {
-                logger.error(`❌ 流式处理错误: ${error.message}`, { module: "listener", groupName, error });
-                await sendReply(sdk, chatId, `处理失败: ${error.message}`);
+                await sleep(RETRY_DELAY);
+                attempts += 1;
+                continue;
             }
-        } else {
-            // === 命令处理：使用原有 handler.handle() ===
-            let result: HandleResult;
-            try {
-                result = await handler.handle(messageText, context);
-            } catch (error: any) {
-                logger.error(`❌ 处理错误: ${error.message}`, { module: "listener", groupName, error });
-                result = {
-                    success: false,
-                    error: error.message,
-                };
-            }
-
-            // 发送回复
-            if (result.response) {
-                console.log(`📤 [${groupName}] Bot: ${result.response}`);
-                logger.info(`📤 [${groupName}] Bot: ${result.response}`, { module: "listener", groupName });
-                await sendReply(sdk, chatId, result.response);
-            } else if (result.error) {
-                logger.error(`❌ 错误: ${result.error}`, { module: "listener", groupName });
-            }
+            logger.error(`❌ 处理失败，已达最大重试次数`, { module: "listener", messageId, error });
+            break;
         }
+    }
 
-        // 标记消息为已读（使用 SQLite 方法）
-        await markAsReadSQLite(chatId);
-    });
+    if (handledSuccessfully) {
+        retryAttempts.delete(messageId);
+        handledMessages.set(messageId, Date.now());
+    } else if (attempts >= MAX_RETRIES) {
+        retryAttempts.delete(messageId);
+        handledMessages.set(messageId, Date.now()); // 避免重复处理同一失败消息
+        if (lastError) {
+            logger.error(`❌ 最终失败: ${String(lastError)}`, { module: "listener", messageId });
+        }
+    }
+
+    // 清理并发标记
+    inFlightMessages.delete(messageId);
 }
 
 /**
@@ -590,6 +710,7 @@ export async function startListener(sdk: IMessageSDK, debug = false, useFileWatc
 
         console.log("✅ 监听器已启动，等待消息...\n");
         logger.info("监听器已启动，等待消息", { module: "listener", mode: "file" });
+        await sendStartupAnnouncement(sdk);
         return watcher;
     } else {
         // 使用 SDK Watcher + 轮询模式
@@ -606,6 +727,7 @@ export async function startListener(sdk: IMessageSDK, debug = false, useFileWatc
 
         console.log("✅ 监听器已启动，等待消息...\n");
         logger.info("监听器已启动，等待消息", { module: "listener", mode: "sdk" });
+        await sendStartupAnnouncement(sdk);
         return null;
     }
 }
