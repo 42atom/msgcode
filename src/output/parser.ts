@@ -52,12 +52,16 @@ export class AssistantParser {
 
             if (content) {
                 if (typeof content === "string") {
-                    text += content;
+                    // 过滤掉 observation/summary XML 块
+                    const filteredContent = this.filterPluginOutput(content);
+                    text += filteredContent;
                 } else if (Array.isArray(content)) {
                     const blocks = content as Array<{ type: string; text?: string; name?: string }>;
                     for (const block of blocks) {
                         if (block.type === "text" && block.text) {
-                            text += block.text;
+                            // 过滤掉 observation/summary XML 块
+                            const filteredText = this.filterPluginOutput(block.text);
+                            text += filteredText;
                         } else if (block.type === "tool_use" && block.name) {
                             hasToolUse = true;
                             // 工具调用可以选择性显示
@@ -113,6 +117,30 @@ export class AssistantParser {
 
         // 截断并添加提示
         return plainText.slice(0, maxLength - 50) + "\n\n... (消息过长，已截断)";
+    }
+
+    /**
+     * 过滤插件/MCP 输出（移除 observation/summary XML 块）
+     *
+     * 策略：移除 <observation>...</observation> 和 <summary>...</summary> 块
+     * 保留其他正常文本
+     */
+    private static filterPluginOutput(text: string): string {
+        let filtered = text;
+
+        // 移除 <observation>...</observation> 块（包括带数字前缀的）
+        filtered = filtered.replace(/\d*<\/?observation>[^]*<\/?observation>/gi, "");
+
+        // 移除 <summary>...</summary> 块（包括带数字前缀的）
+        filtered = filtered.replace(/\d*<\/?summary>[^]*<\/?summary>/gi, "");
+
+        // 移除残留的 XML 元素（如果上面的替换没有完全清除）
+        filtered = filtered.replace(/<(title|facts|narrative|concepts|request|investigated|learned|completed|next_steps|notes|subtitle|type)>[^<]*<\/\1>/gi, "");
+
+        // 移除未闭合的标签（如 "123observation>" 或 "123summary>"）
+        filtered = filtered.replace(/\d+(observation|summary)>/gi, "");
+
+        return filtered.trim();
     }
 
     /**

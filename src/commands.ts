@@ -10,7 +10,11 @@ import { config } from "./config.js";
 import { IMessageSDK } from "@photon-ai/imessage-kit";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
+import { writeFile, unlink } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { logger } from "./logger/index.js";
+import * as os from "node:os";
+import * as path from "node:path";
 
 const execAsync = promisify(exec);
 
@@ -18,19 +22,46 @@ let sdk: IMessageSDK | null = null;
 let botProcess: ReturnType<typeof setInterval> | null = null;
 
 /**
+ * PID 文件路径（用于单进程检测）
+ */
+const PID_FILE = path.join(os.homedir(), '.config/msgcode/msgcode.pid');
+
+/**
  * 启动 bot
  */
 export async function startBot(): Promise<void> {
-    // 检查是否已经在运行
-    const isRunning = await checkBotRunning();
-    if (isRunning) {
-        console.log("⚠️  msgcode bot 已在运行");
-        logger.warn("⚠️  msgcode bot 已在运行", { module: "commands" });
+    // 🔒 单进程检测：检查是否已有实例在运行
+    const runningInfo = await checkBotRunning();
+    if (runningInfo.isRunning) {
+        console.log(`❌ msgcode bot 已在运行 (PID: ${runningInfo.pid}, 进程数: ${runningInfo.count})`);
+        console.log(`💡 如需重启，请先运行: msgcode stop`);
+        logger.error(`msgcode bot 已在运行 (PID: ${runningInfo.pid}, 进程数: ${runningInfo.count})`, { module: "commands", runningInfo });
+        process.exit(1);
         return;
     }
 
     console.log("🚀 启动 msgcode bot...");
     logger.info("🚀 启动 msgcode bot...", { module: "commands" });
+
+    // 🔒 写入 PID 文件
+    try {
+        await writeFile(PID_FILE, String(process.pid), { mode: 0o644 });
+        logger.info(`PID 文件已创建: ${PID_FILE} (PID: ${process.pid})`, { module: "commands", pid: process.pid });
+    } catch (error: any) {
+        console.warn(`⚠️  无法创建 PID 文件: ${error.message}`);
+        logger.warn(`无法创建 PID 文件: ${error.message}`, { module: "commands", error });
+    }
+
+    // 注册退出时清理 PID 文件
+    process.on('exit', () => cleanupPidFile());
+    process.on('SIGINT', async () => {
+        await cleanupPidFile();
+        process.exit(0);
+    });
+    process.on('SIGTERM', async () => {
+        await cleanupPidFile();
+        process.exit(0);
+    });
 
     sdk = new IMessageSDK({ debug: config.logLevel === "debug" });
 
@@ -51,23 +82,33 @@ export async function stopBot(): Promise<void> {
     console.log("⏹️  停止 msgcode bot...");
     logger.info("⏹️  停止 msgcode bot...", { module: "commands" });
 
-    const isRunning = await checkBotRunning();
-    if (!isRunning) {
+    const runningInfo = await checkBotRunning();
+    if (!runningInfo.isRunning) {
         console.log("⚠️  msgcode bot 未在运行");
         logger.warn("⚠️  msgcode bot 未在运行", { module: "commands" });
+        // 即使没有运行，也清理 PID 文件
+        await cleanupPidFile();
         return;
     }
 
-    // 杀死 bot 进程
+    // 杀死所有 msgcode 相关进程
     try {
-        await execAsync("pkill -f 'tsx src/index.ts'");
-        await execAsync("pkill -f 'node.*msgcode'");
-        console.log("✅ msgcode bot 已停止");
-        logger.info("✅ msgcode bot 已停止", { module: "commands" });
+        await execAsync("pkill -9 -f 'tsx.*cli.ts'");
+        await execAsync("pkill -9 -f 'node.*msgcode'");
+        await execAsync("pkill -9 -f 'tsx.*listener'");
+
+        // 等待进程完全退出
+        await new Promise(r => setTimeout(r, 500));
+
+        console.log(`✅ msgcode bot 已停止 (终止了 ${runningInfo.count} 个进程)`);
+        logger.info(`msgcode bot 已停止 (终止了 ${runningInfo.count} 个进程)`, { module: "commands", count: runningInfo.count });
     } catch (error) {
         console.log("✅ msgcode bot 已停止（或未运行）");
         logger.info("✅ msgcode bot 已停止（或未运行）", { module: "commands" });
     }
+
+    // 清理 PID 文件
+    await cleanupPidFile();
 }
 
 /**
@@ -114,14 +155,141 @@ export async function allStop(): Promise<void> {
 }
 
 /**
- * 检查 bot 是否在运行
+ * 运行信息
  */
-async function checkBotRunning(): Promise<boolean> {
+interface RunningInfo {
+    isRunning: boolean;
+    count: number;
+    pid: number | null;
+    pids: number[];
+}
+
+/**
+ * 检查 bot 是否在运行（改进版，使用多种方法检测）
+ */
+async function checkBotRunning(): Promise<RunningInfo> {
+    const currentPid = process.pid;
+
+    // 方法1: 检查 PID 文件（最可靠）
+    if (existsSync(PID_FILE)) {
+        try {
+            const { stdout: pidCheck } = await execAsync(`cat ${PID_FILE}`);
+            const pid = parseInt(pidCheck.trim(), 10);
+            if (!isNaN(pid) && pid !== currentPid) {
+                // 检查该 PID 是否仍在运行
+                const { stdout: processCheck } = await execAsync(`ps -p ${pid} -o comm= 2>/dev/null || true`);
+                if (processCheck.trim().length > 0) {
+                    return {
+                        isRunning: true,
+                        count: 1,
+                        pid: pid,
+                        pids: [pid],
+                    };
+                }
+            }
+        } catch {
+            // PID 文件读取失败，继续其他检测
+        }
+    }
+
+    // 方法2: 检测 listener 进程（通过检查特定命令行参数）
     try {
-        const { stdout } = await execAsync("pgrep -f 'tsx src/index.ts' || true");
-        return stdout.trim().length > 0;
+        // 查找包含 "启动消息监听" 或正在运行 listener 的进程
+        const { stdout } = await execAsync(
+            "ps aux | grep -E 'listener.*start|监听器已启动' | grep -v grep | grep -v msgcode || true"
+        );
+
+        const lines = stdout.trim().split('\n').filter(Boolean);
+        if (lines.length > 0) {
+            const pids = lines
+                .map(line => line.trim().split(/\s+/)[1])
+                .map(p => parseInt(p, 10))
+                .filter(p => !isNaN(p) && p !== currentPid);
+
+            if (pids.length > 0) {
+                return {
+                    isRunning: true,
+                    count: pids.length,
+                    pid: pids[0],
+                    pids,
+                };
+            }
+        }
     } catch {
-        return false;
+        // 检测失败
+    }
+
+    // 方法3: 使用 lsof 检测监听中的进程（如果使用了文件监听）
+    try {
+        // 检查是否有进程正在监看 iMessage 数据库
+        const { stdout } = await execAsync(
+            "lsof +c 0 /Users/admin/Library/Messages/chat.db 2>/dev/null | grep -v COMMAND || true"
+        );
+
+        const lines = stdout.trim().split('\n').filter(Boolean);
+        if (lines.length > 0) {
+            const pids = lines
+                .map(line => line.trim().split(/\s+/)[1])
+                .map(p => parseInt(p, 10))
+                .filter(p => !isNaN(p) && p !== currentPid);
+
+            if (pids.length > 0) {
+                return {
+                    isRunning: true,
+                    count: pids.length,
+                    pid: pids[0],
+                    pids,
+                };
+            }
+        }
+    } catch {
+        // lsof 检测失败
+    }
+
+    // 方法4: 最后的保险 - 检测 tmux 会话（每个运行的 bot 都有 tmux 会话）
+    // 注意：这里只作为提示，不单独作为判断依据（因为有 tmux 会话不代表 bot 进程在运行）
+    // 移除此方法，避免误判
+    // try {
+    //     const { stdout } = await execAsync("tmux ls 2>/dev/null || true");
+    //     const sessions = stdout.split('\n')
+    //         .map(line => line.match(/^msgcode-([^:]+)/)?.[1])
+    //         .filter((name): name is string => Boolean(name));
+    //
+    //     if (sessions.length > 0) {
+    //         // 有 tmux 会话说明 bot 可能在运行
+    //         // 但需要进一步确认是否有对应的监听进程
+    //         // 这里返回保守的结果
+    //         return {
+    //             isRunning: true,
+    //             count: sessions.length,
+    //             pid: null,
+    //             pids: [],
+    //         };
+    //     }
+    // } catch {
+    //     // tmux 检测失败
+    // }
+
+    // 没有检测到运行中的进程
+    return {
+        isRunning: false,
+        count: 0,
+        pid: null,
+        pids: [],
+    };
+}
+
+/**
+ * 清理 PID 文件
+ */
+async function cleanupPidFile(): Promise<void> {
+    try {
+        if (existsSync(PID_FILE)) {
+            await unlink(PID_FILE);
+            logger.info(`PID 文件已删除: ${PID_FILE}`, { module: "commands" });
+        }
+    } catch (error: any) {
+        logger.warn(`清理 PID 文件失败: ${error.message}`, { module: "commands", error });
     }
 }
 

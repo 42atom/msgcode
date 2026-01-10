@@ -257,6 +257,12 @@ async function sendToIndividual(sdk: IMessageSDK, chatId: string, text: string):
  * 检查是否应该跳过该输出（过滤 plugin 等无关输出）
  */
 function shouldSkipOutput(text: string): boolean {
+    // 如果文本太长（超过1000字符），很可能是 plugin 输出
+    if (text.length > 1000) {
+        logger.info(`🚫 过滤长文本 (${text.length}字符): ${text.slice(0, 50)}...`, { module: "listener" });
+        return true;
+    }
+
     // 过滤 plugin/MCP 观察者输出
     const skipPatterns = [
         /I understand the task\. I'm a.*observer/i,
@@ -266,10 +272,28 @@ function shouldSkipOutput(text: string): boolean {
         /This appears to be a simple conversational exchange/i,
         /Claude-Mem observer/i,
         /MCP observer/i,
+        // 新增：更多 Claude-Mem 插件输出模式
+        /I notice that I'?m being asked to observe/i,
+        /I notice that I'?m being asked/i,
+        /the only content provided/i,
+        /not a development or implementation task/i,
+        /appears to be a simple question/i,
+        /being asked to observe a session/i,
+        // 过滤 XML observation/summary 块（匹配有或无尖括号前缀的情况）
+        /<?(observation|summary)>/i,
+        /<\/?(observation|summary)>/i,
+        // 匹配数字前缀的 XML 块: "1observation>", "12summary>", "3summary>" 等
+        /\d*<\/?(observation|summary)>/i,
+        /\d*(observation|summary)>/i,
+        // 匹配 XML 结构的元素
+        /<type>.*(bugfix|feature|refactor|change|discovery).*<\/type>/i,
+        /<(title|facts|narrative|concepts|request|investigated|learned|completed|next_steps|notes)>/i,
+        /<\/(title|facts|narrative|concepts|request|investigated|learned|completed|next_steps|notes)>/i,
     ];
 
     for (const pattern of skipPatterns) {
         if (pattern.test(text)) {
+            logger.info(`🚫 过滤输出，匹配模式: ${pattern.source}`, { module: "listener", textPreview: text.slice(0, 100) });
             return true;
         }
     }
@@ -291,9 +315,11 @@ async function sendReply(sdk: IMessageSDK, chatId: string, text: string): Promis
     try {
         // 过滤 plugin/MCP 等无关输出
         if (shouldSkipOutput(text)) {
-            logger.debug(`跳过无关输出: ${text.slice(0, 50)}...`, { module: "listener", chatId });
+            logger.info(`✅ 已跳过发送 (${text.length}字符)`, { module: "listener", chatId, preview: text.slice(0, 30) });
             return;
         }
+
+        logger.info(`📤 准备发送回复 (${text.length}字符)`, { module: "listener", chatId, preview: text.slice(0, 30) });
 
         // 检查是否在冷却期内（防止重复发送相同回复）
         const lastReply = sentReplies.get(chatId);
