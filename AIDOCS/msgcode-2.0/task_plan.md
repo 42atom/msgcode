@@ -4,8 +4,8 @@
 把 msgcode 升级为“可长期运维”的本地 iMessage Bot 平台：核心链路去除 DB 写依赖，群聊/收消息优先走 `imsg rpc`，并把 `imsg` 的供应链风险压到可控（源码构建+固定版本）。
 
 ## Phases
-- [ ] Phase 0: Version scope & success criteria
-- [ ] Phase 1: imsg 供应链方案（开源核验 + 源码构建 + 固定版本）
+- [x] Phase 0: Version scope & success criteria
+- [x] Phase 1: imsg 供应链方案（开源核验 + 源码构建 + 固定版本）
 - [ ] Phase 2: iMessage Provider 改造（rpc send + watch）
 - [ ] Phase 3: 收消息链路去 DB 写（lastSeen 游标替代 unreadOnly/markAsRead）
 - [ ] Phase 4: 发送链路统一与降级策略（DM/群聊同构）
@@ -43,4 +43,4 @@
 - 内容处理边界：**msgcode 只做“全面转发/能力管理”（I/O、落盘、发布、权限、审计），不做 ASR/TTS/内容理解**；内容处理由 agent 的 skill 负责。
 
 ## Status
-**Currently in Phase 1** - 已确认方案 B，进入 E01（`imsg` 供应链：固定版本 + 源码构建 + 产物校验）。
+**Currently in Phase 2** - 开始 E02（`imsg rpc` provider：watch + send），逐步替换现有 SDK watcher 主链路。
