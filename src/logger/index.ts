@@ -185,8 +185,11 @@ function createLogger(): Logger {
     // 创建传输器
     const transports: Transport[] = [];
 
-    // 控制台传输器（始终启用）
-    transports.push(new ConsoleTransportClass({ colorize: true }));
+    // 控制台传输器（可选）
+    const shouldConsoleLog = process.env.LOG_CONSOLE !== "false";
+    if (shouldConsoleLog) {
+        transports.push(new ConsoleTransportClass({ colorize: true }));
+    }
 
     // 文件传输器（可选）
     if (process.env.LOG_FILE !== "false") {

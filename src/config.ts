@@ -80,6 +80,8 @@ export interface Config {
     logLevel: "debug" | "info" | "warn" | "error";
     // 是否使用文件监听模式 (Phase 2 功能)
     useFileWatcher: boolean;
+    // 是否跳过未读积压消息（不补发给 Claude）
+    skipUnreadBacklog: boolean;
 }
 
 /**
@@ -154,6 +156,7 @@ export function loadConfig(): Config {
         useFileWatcher: process.env.USE_FILE_WATCHER === "true",
         sendStartupAnnouncement: process.env.SEND_STARTUP_ANNOUNCEMENT !== "false", // 默认 true
         announceMessage: process.env.ANNOUNCE_MESSAGE,
+        skipUnreadBacklog: process.env.SKIP_UNREAD_BACKLOG === "true",
     };
 }
 

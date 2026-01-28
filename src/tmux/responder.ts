@@ -8,6 +8,8 @@ import { TmuxSession } from "./session.js";
 import { OutputReader } from "../output/reader.js";
 import { AssistantParser, type ParseResult } from "../output/parser.js";
 import { logger } from "../logger/index.js";
+import { sendAttachmentsToSession } from "./sender.js";
+import type { Message } from "@photon-ai/imessage-kit";
 
 /**
  * 轮询配置（参考 Matcode）
@@ -25,6 +27,7 @@ export interface ResponseOptions {
     timeout?: number;       // 默认 30s
     fastInterval?: number;  // 默认 300ms
     slowInterval?: number;  // 默认 3000ms
+    attachments?: Message["attachments"];
 }
 
 /**
@@ -82,7 +85,10 @@ export async function handleTmuxSend(
     console.log(`[Responder ${groupName}] 发送前 offset: ${startOffset}`);
     logger.debug(`[Responder ${groupName}] 发送前 offset: ${startOffset}`, { module: "responder", groupName, offset: startOffset });
 
-    // 3. 发送消息
+    // 3. 发送附件
+    await sendAttachmentsToSession(sessionName, options.attachments);
+
+    // 4. 发送消息
     try {
         const escapedMessage = escapeMessage(message);
         await TmuxSession.sendCommand(sessionName, escapedMessage);

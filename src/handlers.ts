@@ -96,7 +96,7 @@ export abstract class BaseHandler implements CommandHandler {
             const result = await handleTmuxSend(
                 context.groupName,
                 trimmed,
-                { projectDir: context.projectDir }
+                { projectDir: context.projectDir, attachments: context.originalMessage.attachments }
             );
 
             if (result.error) {

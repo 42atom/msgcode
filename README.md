@@ -166,7 +166,7 @@ MY_EMAIL=me@icloud.com
 
 # 配置群组路由
 # 格式: GROUP_<NAME>=<GUID>:<PROJECT_DIR>:<BOT_TYPE>
-GROUP_MATCODE=i chat;+;chat1234:/Users/admin/Dev/my-project:code
+GROUP_MATCODE=i chat;+;chat1234:/Users/<you>/Dev/my-project:code
 ```
 
 ### 5. 启动 Bot
@@ -206,6 +206,20 @@ msgcode/
 
 ---
 
+**Tip:** `msgcode start` 在后台静默运行并把日志写入 `~/.config/msgcode/log/msgcode.log`，`msgcode start debug` 则把日志同步输出到当前终端；如果需要实时看到 Claude 的终端内容，可以用 `LOG_CONSOLE=true msgcode start debug`，让 tmux 内容同时写入控制台和日志，方便在 iMessage 里快速判断「Do you want to proceed?」等互动提示。
+
+建议在 `msgcode stop` 后再跑一次 `msgcode stopall`（或 `msgcode allstop`），确保所有 `msgcode-` 前缀的 tmux 会话都被清理，否则下次启动可能抱怨会话已存在。`msgcode stopall` 会在清理 bot 后再扫描所有 tmux 并逐个杀掉。
+
+### 状态与快照命令详解
+
+- `/status` 会向 `tmux capture-pane -t msgcode-<group> -p -S -100` 请求当前状态，回显 Claude 是 ready、正在执行还是等待你的输入（适用于确认 1/2/3 交互）。
+- `/snapshot` 会跑 `tmux capture-pane -t msgcode-<group> -p -J`，把最近 200 行终端内容打包发回来，方便在手机上看到 prompt、授权提示或 CLI 的内部日志。
+- `/resume` 表示你已经在 tmux 中手动回了那条交互提示（比如 “Do you want to proceed?”、`1. Yes / 2. No`），接下来继续在群组里发消息即可恢复对话。你可以在本机终端执行 `tmux attach -t msgcode-<group>` 或 `tmux send-keys -t msgcode-<group> "1" Enter`，也可以在 `LOG_CONSOLE=true msgcode start debug` 下观察 prompt 再返回 tmux 操作。
+
+当 tmux 里出现 `Read(~/Library/Mobile...): Do you want to proceed?` 之类权限/文件提示时，请先在 tmux 终端手动输入可选项，这样 Claude 会继续运行；若想跳过每次确认，可以在 macOS 系统设置 → 隐私与安全性 → "完全磁盘访问" 中添加 Terminal（或 VS Code）、授予 `Messages` 数据库读写，之后再启动 `msgcode` 即可。
+
+---
+
 ## 常用命令
 
 在 iMessage 群组中发送：
@@ -217,6 +231,7 @@ msgcode/
 | `/status` | 查看会话状态 |
 | `/snapshot` | 获取终端当前屏幕截图 (文本) |
 | `/clear` | 清空 Claude 上下文 |
+| `/resume` | 手动输入选项恢复交互（tmux attach 或 send-keys） |
 | `/esc` | 发送 ESC 中断操作 |
 | *(直接发消息)* | 发送给 Claude 并等待回复 |
 

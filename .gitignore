@@ -31,4 +31,5 @@ build/
 *.tmp
 
 # Reference materials (not tracked)
+refs/
 ref/

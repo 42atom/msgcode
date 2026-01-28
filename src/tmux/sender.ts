@@ -33,18 +33,7 @@ export async function sendMessage(
 
     try {
         // 处理附件
-        if (attachments && attachments.length > 0) {
-            for (const attachment of attachments) {
-                const filePath = attachment.path;
-                if (filePath) {
-                    await TmuxSession.sendCommand(sessionName, `请分析这个文件: ${filePath}`);
-                    // Claude 需要额外一次 Enter 确认
-                    await TmuxSession.sendCommand(sessionName, "");
-                    // 等待处理完成
-                    await sleep(500);
-                }
-            }
-        }
+        await sendAttachmentsToSession(sessionName, attachments);
 
         // 发送普通消息（如果有）
         if (message.trim()) {
@@ -73,7 +62,10 @@ export async function sendSnapshot(groupName: string): Promise<string> {
     }
 
     const output = await TmuxSession.capturePane(sessionName, 200);
-    return output || "终端无输出";
+    if (!output.trim()) {
+        return "终端无输出";
+    }
+    return summarizeSnapshot(output);
 }
 
 /**
@@ -126,4 +118,44 @@ function escapeMessage(message: string): string {
  */
 function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+export async function sendAttachmentsToSession(
+    sessionName: string,
+    attachments?: Message["attachments"]
+): Promise<void> {
+    if (!attachments || attachments.length === 0) {
+        return;
+    }
+
+    for (const attachment of attachments) {
+        const filePath = attachment.path;
+        if (!filePath) {
+            continue;
+        }
+        await TmuxSession.sendCommand(sessionName, `请分析这个文件: ${filePath}`);
+        await TmuxSession.sendCommand(sessionName, "");
+        await sleep(500);
+    }
+}
+
+function summarizeSnapshot(output: string): string {
+    const lines = output.split("\n").map(line => line.trimEnd());
+    if (lines.length === 0) {
+        return "终端无输出";
+    }
+
+    const head = lines.slice(0, 3);
+    const tail = lines.length > 3 ? lines.slice(-3) : [];
+    const summary: string[] = [];
+    summary.push(`⏺ snapshot 概览（共 ${lines.length} 行，展示前/后各 3 行）：`);
+    summary.push(...head.filter(Boolean));
+    if (tail.length > 0 && lines.length > head.length) {
+        summary.push("...");
+        summary.push(...tail.filter(Boolean));
+    }
+    if (lines.length > head.length + tail.length) {
+        summary.push("...（已截断，使用 tmux capture-pane 手动查看完整内容）");
+    }
+    return summary.join("\n");
 }

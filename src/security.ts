@@ -46,14 +46,12 @@ export function checkWhitelist(message: Message): SecurityCheck {
 export function formatSender(message: Message): string {
     if (message.isFromMe) return "你";
 
-    // 从 chatId 提取发送者
-    const parts = message.chatId.split(";-;");
-    const sender = parts[1] || "unknown";
-
-    // 隐藏中间部分保护隐私
-    if (sender.includes("@")) {
-        const [local, domain] = sender.split("@");
-        return `${local[0]}***@${domain}`;
-    }
-    return sender.replace(/(\d{3})\d+(\d{4})/, "$1***$2");
+    return (
+        message.sender ||
+        message.handle ||
+        message.address ||
+        (message.chatId?.includes(";-;") ? message.chatId.split(";-;")[1] : undefined) ||
+        message.chatId ||
+        "unknown"
+    );
 }

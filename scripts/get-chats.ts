@@ -14,7 +14,9 @@
 import { IMessageSDK } from "@photon-ai/imessage-kit";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
 const execAsync = promisify(exec);
 
@@ -116,7 +118,12 @@ function formatService(service: string): string {
  */
 function getCurrentEnvConfig(): Map<string, string> {
     try {
-        const envPath = "/Users/admin/BotRoot/00_projects/msgcode/.env";
+        // 优先读取用户配置：~/.config/msgcode/.env；没有则回退到当前目录 .env
+        const preferredPath =
+            process.env.MSGCODE_ENV_PATH ||
+            path.join(os.homedir(), ".config/msgcode/.env");
+        const fallbackPath = path.join(process.cwd(), ".env");
+        const envPath = existsSync(preferredPath) ? preferredPath : fallbackPath;
         const content = readFileSync(envPath, "utf-8");
         const config = new Map<string, string>();
 
@@ -244,7 +251,7 @@ async function main() {
                 const envName = generateEnvName(item.name, item.id);
                 const isConfigured = currentConfig.has(envName);
                 const prefix = isConfigured ? `${colors.green}✓${colors.reset} ` : `  `;
-                console.log(`${prefix}GROUP_${envName}=${item.id}:/Users/admin/BotRoot/00_projects/your_project`);
+                console.log(`${prefix}GROUP_${envName}=${item.id}:/Users/<you>/path/to/your_project`);
             }
             console.log("");
         }

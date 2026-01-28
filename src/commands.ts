@@ -95,9 +95,7 @@ export async function stopBot(): Promise<void> {
     if (!runningInfo.isRunning) {
         console.log("⚠️  msgcode bot 未在运行");
         logger.warn("⚠️  msgcode bot 未在运行", { module: "commands" });
-        // 即使没有运行，也清理 PID 文件
-        await cleanupPidFile();
-        return;
+        // 即使没有运行，也继续强制清理残留进程和 tmux
     }
 
     // 杀死所有 msgcode 相关进程
@@ -107,15 +105,22 @@ export async function stopBot(): Promise<void> {
         await execAsync("pkill -9 -f 'tsx.*listener'");
         await execAsync("pkill -9 -f 'node.*tsx.*msgcode'");
         await execAsync("pkill -9 -f 'npm exec tsx src/index.ts'");
+    } catch {
+        // 忽略
+    }
 
-        // 等待进程完全退出
-        await new Promise(r => setTimeout(r, 500));
+    await killMsgcodeProcesses();
 
-        console.log(`✅ msgcode bot 已停止 (终止了 ${runningInfo.count} 个进程)`);
-        logger.info(`msgcode bot 已停止 (终止了 ${runningInfo.count} 个进程)`, { module: "commands", count: runningInfo.count });
-    } catch (error) {
-        console.log("✅ msgcode bot 已停止（或未运行）");
-        logger.info("✅ msgcode bot 已停止（或未运行）", { module: "commands" });
+    // 等待进程完全退出
+    await new Promise(r => setTimeout(r, 500));
+
+    console.log(`✅ msgcode bot 已停止 (终止了 ${runningInfo.count} 个进程)`);
+    logger.info(`✅ msgcode bot 已停止 (终止了 ${runningInfo.count} 个进程)`, { module: "commands", count: runningInfo.count });
+
+    const stoppedSessions = await killMsgcodeTmuxSessions();
+    for (const session of stoppedSessions) {
+        console.log(`  ✓ 已停止 tmux 会话: ${session}`);
+        logger.info(`  ✓ 已停止 tmux 会话: ${session}`, { module: "commands", session });
     }
 
     // 清理 PID 文件
@@ -144,20 +149,10 @@ export async function allStop(): Promise<void> {
     await stopBot();
 
     // 停止所有 tmux 会话
-    try {
-        const { stdout } = await execAsync("tmux ls 2>/dev/null || true");
-        const sessions = stdout.split("\n")
-            .map(line => line.match(/^([^:]+)/)?.[1])
-            .filter((name): name is string => Boolean(name))
-            .filter(name => name.startsWith("msgcode-"));
-
-        for (const session of sessions) {
-            await execAsync(`tmux kill-session -t ${session}`);
-            console.log(`  ✓ 已停止 tmux 会话: ${session}`);
-            logger.info(`  ✓ 已停止 tmux 会话: ${session}`, { module: "commands", session });
-        }
-    } catch {
-        // 忽略错误
+    const stoppedSessions = await killMsgcodeTmuxSessions();
+    for (const session of stoppedSessions) {
+        console.log(`  ✓ 已停止 tmux 会话: ${session}`);
+        logger.info(`  ✓ 已停止 tmux 会话: ${session}`, { module: "commands", session });
     }
 
     console.log("✅ 所有服务已停止");
@@ -325,4 +320,54 @@ function keepAlive(): Promise<never> {
     return new Promise(() => {
         // 永不 resolve，保持进程运行
     });
+}
+
+/**
+ * 遍历并杀掉残留的 msgcode 相关进程
+ */
+async function killMsgcodeProcesses(): Promise<void> {
+    try {
+        const { stdout } = await execAsync(
+            "ps -axo pid,command | grep -E 'msgcode|daemon\\.ts|cli.ts' | grep -v grep || true"
+        );
+        const lines = stdout.trim().split("\n").filter(Boolean);
+        for (const line of lines) {
+            const match = line.trim().match(/^(\d+)\s+/);
+            if (!match) continue;
+            const pid = parseInt(match[1], 10);
+            if (isNaN(pid) || pid === process.pid) continue;
+            try {
+                process.kill(pid, "SIGKILL");
+                logger.info(`额外杀掉残留 msgcode 进程 ${pid}`, { module: "commands" });
+            } catch {
+                // 忽略
+            }
+        }
+    } catch (error: any) {
+        logger.warn("列举 msgcode 进程失败", { module: "commands", error });
+    }
+}
+
+
+/**
+ * 杀掉所有 msgcode 标识的 tmux 会话
+ */
+async function killMsgcodeTmuxSessions(): Promise<string[]> {
+    try {
+        const { stdout } = await execAsync("tmux ls 2>/dev/null || true");
+        const candidates = stdout.split("\n")
+            .map(line => line.match(/^([^:]+)/)?.[1])
+            .filter((name): name is string => Boolean(name))
+            .filter(name => name.startsWith("msgcode-"));
+
+        const killed: string[] = [];
+        for (const session of candidates) {
+            await execAsync(`tmux kill-session -t ${session}`);
+            killed.push(session);
+        }
+        return killed;
+    } catch (error: any) {
+        logger.warn("❌ 无法枚举 tmux 会话", { module: "commands", error });
+        return [];
+    }
 }

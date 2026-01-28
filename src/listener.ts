@@ -17,7 +17,7 @@ import { checkWhitelist, formatSender } from "./security.js";
 import { routeByChatId, isConfiguredChatId, getAllRoutes, type Route, type BotType } from "./router.js";
 import { getHandler, type HandleResult } from "./handlers.js";
 import { createWatcher, isFileWatchingAvailable, type DatabaseWatcher } from "./watcher.js";
-import { handleTmuxStream } from "./tmux/streamer.js";
+import { handleTmuxStream, type StreamResult } from "./tmux/streamer.js";
 import { logger } from "./logger/index.js";
 import { config } from "./config.js";
 import { TmuxSession } from "./tmux/session.js";
@@ -48,9 +48,13 @@ const groupIdWarned = new Set<string>(); // 启动校验发现的异常群组
 const rateLimitMap = new Map<string, { tokens: number; last: number }>();
 const RATE_LIMIT_WINDOW = 1000; // 1秒窗口
 const RATE_LIMIT_TOKENS = 3; // 每秒最多3条
+const rateLimitNoticeAt = new Map<string, number>(); // chatId -> last notice timestamp
+const RATE_LIMIT_NOTICE_COOLDOWN = 10000; // 10秒内只提示一次流控
 let healthTimer: ReturnType<typeof setInterval> | null = null;
-const HEALTH_INTERVAL = 60000; // 60 秒健康检查
+const HEALTH_INTERVAL = 300000; // 5 分钟健康检查，降低日志噪音
 const markReadFailures = new Map<string, number>(); // chatId -> 连续失败次数
+/* 启动时只处理最近 N 条未读，避免历史积压被一次性推送 */
+const MAX_STARTUP_UNREAD = 2;
 
 /**
  * AppleScript 检查 chatId 是否存在
@@ -109,6 +113,8 @@ async function verifyConfiguredChats(): Promise<void> {
  */
 let lastActivity = Date.now(); // 最后活动时间戳
 let lastPollHit = Date.now(); // 轮询命中时间戳
+let lastChunkActivity = Date.now(); // 最近一次流式 chunk 活动时间
+let watcherStallCount = 0;
 let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
 const HEARTBEAT_CHECK_INTERVAL = 15000; // 守护检查间隔：15秒
 const HEARTBEAT_ACTIVITY_TIMEOUT = 60000; // 活动超时阈值：60秒（避免误报）
@@ -120,6 +126,7 @@ const HEARTBEAT_ACTIVITY_TIMEOUT = 60000; // 活动超时阈值：60秒（避免
 const recentMessageContents = new Map<string, number>();
 const CONTENT_DEDUP_WINDOW = 10000; // 10秒内相同文本视为重复
 const CONTENT_DEDUP_IMMEDIATE_WINDOW = 1000; // 1秒内的重复视为系统重复检测（SDK Watcher + polling）
+const MAX_CONTENT_CACHE_SIZE = 200; // P1 修复：内容去重缓存最大条目数
 
 /**
  * 消息处理队列（每个 chatId 一个队列，确保顺序处理）
@@ -128,12 +135,16 @@ const processingQueues = new Map<string, {
     promise: Promise<void>;
     startTime: number;
     version: number;  // 版本号，用于检测重置
+    pending: number;  // 待处理数量（含当前）
+    lastBusyLogAt: number;
 }>();
 
 /**
  * 队列处理超时时间（毫秒）
  */
 const QUEUE_TIMEOUT = 360000; // 6 分钟（比 streamer 的 5 分钟多 1 分钟缓冲）
+const MAX_QUEUE_DEPTH = 20; // 队列最大深度（超过则丢弃并记录）
+const QUEUE_BUSY_LOG_COOLDOWN = 5000; // 排队日志冷却，避免刷屏
 
 /**
  * 带超时的 Promise 包装
@@ -165,6 +176,17 @@ function updatePollHit(): void {
     lastPollHit = Date.now();
 }
 
+function resetWatcherStallCount(): void {
+    watcherStallCount = 0;
+}
+
+function markStreamActivity(): void {
+    lastChunkActivity = Date.now();
+    updateHeartbeat();
+    updatePollHit();
+    resetWatcherStallCount();
+}
+
 /**
  * 启动心跳守护进程（检测 SDK Watcher 静默停摆）
  */
@@ -184,17 +206,25 @@ function startHeartbeatMonitor(
         const now = Date.now();
         const inactiveTime = now - lastActivity;
         const pollSilent = now - lastPollHit;
+        const streamSilent = now - lastChunkActivity;
 
         // 检查是否有正在处理的队列（避免误报）
         const hasInFlight = processingQueues.size > 0 || inFlightMessages.size > 0;
 
         // 检查是否超时（只有在没有正在处理的消息时才报停摆）
-        if (inactiveTime > HEARTBEAT_ACTIVITY_TIMEOUT && pollSilent > HEARTBEAT_ACTIVITY_TIMEOUT && !hasInFlight) {
-            logger.warn(`⚠️  检测到 SDK Watcher 停摆 (${Math.floor(inactiveTime / 1000)}s 无活动)，开始自愈`, {
+        if (inactiveTime > HEARTBEAT_ACTIVITY_TIMEOUT && pollSilent > HEARTBEAT_ACTIVITY_TIMEOUT && streamSilent > HEARTBEAT_ACTIVITY_TIMEOUT && !hasInFlight) {
+            watcherStallCount += 1;
+            logger.warn(`⚠️  检测到 SDK Watcher 停摆 (${Math.floor(inactiveTime / 1000)}s 无活动，连续 ${watcherStallCount} 次)，开始自愈`, {
                 module: "listener",
                 inactiveTime,
-                lastActivity: new Date(lastActivity).toISOString()
+                lastActivity: new Date(lastActivity).toISOString(),
+                watcherStallCount
             });
+
+            if (watcherStallCount >= 2) {
+                logger.error("❌ SDK Watcher 连续停摆，触发重启", { module: "listener", watcherStallCount });
+                process.exit(1);
+            }
 
             console.log(`⚠️  检测到服务停摆 (${Math.floor(inactiveTime / 1000)}s 无活动)，正在自愈...`);
 
@@ -229,8 +259,19 @@ function stopHeartbeatMonitor(): void {
 /**
  * 将消息处理加入队列（确保每个 chatId 同时只处理一条消息）
  */
-async function enqueueMessage(chatId: string, handler: () => Promise<void>): Promise<void> {
+async function enqueueMessage(chatId: string, handler: () => Promise<void>): Promise<boolean> {
     let existing = processingQueues.get(chatId);
+    const now = Date.now();
+
+    if (existing && existing.pending >= MAX_QUEUE_DEPTH) {
+        logger.error(`队列过载，丢弃消息`, {
+            module: "listener",
+            chatId,
+            pending: existing.pending,
+            max: MAX_QUEUE_DEPTH,
+        });
+        return false;
+    }
 
     // 检查上一条消息是否超时
     if (existing) {
@@ -244,8 +285,16 @@ async function enqueueMessage(chatId: string, handler: () => Promise<void>): Pro
     }
 
     const nextVersion = existing ? existing.version + 1 : 1;
+    const pending = (existing?.pending ?? 0) + 1;
+    const lastBusyLogAt = existing?.lastBusyLogAt ?? 0;
+    const startTime = existing?.startTime ?? now;
 
     const wrappedHandler = async () => {
+        const currentEntry = processingQueues.get(chatId);
+        if (currentEntry) {
+            currentEntry.startTime = Date.now();
+            processingQueues.set(chatId, currentEntry);
+        }
         const startTime = Date.now();
         let handlerError: Error | null = null;
         try {
@@ -263,6 +312,11 @@ async function enqueueMessage(chatId: string, handler: () => Promise<void>): Pro
             if (elapsed > 10000) {  // 超过 10 秒记录
                 logger.info(`⏱️  [${chatId}] 处理耗时: ${elapsed}ms`, { module: "listener", chatId, elapsed });
             }
+            const current = processingQueues.get(chatId);
+            if (current) {
+                current.pending = Math.max(0, current.pending - 1);
+                processingQueues.set(chatId, current);
+            }
         }
         if (handlerError) {
             throw handlerError;
@@ -273,17 +327,28 @@ async function enqueueMessage(chatId: string, handler: () => Promise<void>): Pro
         ? existing.promise.then(wrappedHandler, wrappedHandler)
         : wrappedHandler();
 
-    processingQueues.set(chatId, { promise: nextPromise, startTime: Date.now(), version: nextVersion });
+    if (pending > 1 && now - lastBusyLogAt > QUEUE_BUSY_LOG_COOLDOWN) {
+        logger.info(`队列排队`, { module: "listener", chatId, pending, max: MAX_QUEUE_DEPTH });
+    }
+
+    processingQueues.set(chatId, {
+        promise: nextPromise,
+        startTime,
+        version: nextVersion,
+        pending,
+        lastBusyLogAt: pending > 1 ? now : lastBusyLogAt,
+    });
 
     try {
         await nextPromise;
     } finally {
         // 只有当前版本匹配时才清理（防止旧 Promise 清理新队列）
         const current = processingQueues.get(chatId);
-        if (current && current.version === nextVersion) {
+        if (current && current.version === nextVersion && current.pending <= 0) {
             processingQueues.delete(chatId);
         }
     }
+    return true;
 }
 
 /**
@@ -318,6 +383,17 @@ function cleanCache() {
             handledMessages.delete(id);
         }
     }
+
+    // P1 修复：限制 recentMessageContents 大小
+    if (recentMessageContents.size > MAX_CONTENT_CACHE_SIZE) {
+        // 按时间排序，删除最旧的一半
+        const contentEntries = Array.from(recentMessageContents.entries())
+            .sort((a, b) => a[1] - b[1]);
+        const deleteCount = Math.floor(contentEntries.length / 2);
+        for (let i = 0; i < deleteCount; i++) {
+            recentMessageContents.delete(contentEntries[i][0]);
+        }
+    }
 }
 
 /**
@@ -338,7 +414,7 @@ async function healthCheck(sdk: IMessageSDK): Promise<void> {
 function startHealthMonitor(sdk: IMessageSDK): void {
     if (healthTimer) return;
     healthTimer = setInterval(() => {
-        healthCheck(sdk).catch(() => {});
+        healthCheck(sdk).catch(() => { });
     }, HEALTH_INTERVAL);
     logger.info("🩺 健康检查已启动", { module: "listener", interval: HEALTH_INTERVAL });
 }
@@ -451,6 +527,108 @@ async function markMessagesAsReadOnStartup(): Promise<void> {
 const MESSAGES_DB_PATH = `${process.env.HOME}/Library/Messages/chat.db`;
 
 /**
+ * 检测完全磁盘访问权限
+ *
+ * 尝试读取 chat.db 文件来判断是否有权限访问
+ */
+async function checkDiskAccessPermission(): Promise<boolean> {
+    try {
+        // 尝试以只读方式打开文件（快速检测）
+        const handle = await fs.promises.open(MESSAGES_DB_PATH, "r");
+        await handle.close();
+        return true;
+    } catch {
+        // 权限不足或文件不存在
+        return false;
+    }
+}
+
+/**
+ * 打印完全磁盘访问权限引导信息
+ */
+function printPermissionGuide(): void {
+    console.error("\n" + "=".repeat(60));
+    console.error("🚨 缺少完全磁盘访问权限");
+    console.error("=".repeat(60));
+    console.error("\n📋 解决方法：");
+    console.error("   1. 打开 系统设置 → 隐私与安全性");
+    console.error("   2. 选择 完全磁盘访问权限");
+    console.error("   3. 找到并启用 终端 (Terminal)");
+    console.error("   4. 如果使用 IDE (VS Code/Xcode 等)，也请启用");
+    console.error("\n💡 提示：");
+    console.error("   - 修改设置后可能需要重启终端");
+    console.error("   - 如果使用 Tmux，确保 Terminal.app 已在授权列表中");
+    console.error("\n" + "=".repeat(60) + "\n");
+    logger.error("🚨 缺少完全磁盘访问权限，请手动授权", { module: "listener" });
+}
+
+/**
+ * 检测 Messages 是否已登录账户
+ *
+ * 检查是否有 iMessage service 存在（不要求状态为 available）
+ */
+async function checkMessagesAccount(): Promise<{ loggedIn: boolean; account?: string }> {
+    try {
+        // AppleScript 获取所有 service，检查是否有 iMessage 类型
+        const script = `
+            tell application "Messages"
+                if (count of services) > 0 then
+                    repeat with aService in services
+                        -- 检查是否是 iMessage 类型的 service
+                        if service type of aService is iMessage then
+                            return name of aService
+                        end if
+                    end repeat
+                    -- 回退：返回第一个 service 的名称
+                    return name of first service
+                end if
+                return "NO_ACCOUNT"
+            end tell
+        `.trim();
+
+        const { stdout } = await execAsync(`osascript -e '${script.replace(/'/g, "'\\''")}'`, { timeout: 5000 });
+        const result = stdout.trim();
+
+        if (result === "NO_ACCOUNT" || !result) {
+            return { loggedIn: false };
+        }
+
+        return { loggedIn: true, account: result };
+    } catch {
+        // AppleScript 失败时，尝试检查是否能获取 chat 列表作为备选
+        try {
+            const fallbackScript = `tell application "Messages" to count of chats`;
+            const { stdout } = await execAsync(`osascript -e '${fallbackScript}'`, { timeout: 5000 });
+            const chatCount = parseInt(stdout.trim());
+            if (chatCount >= 0) {
+                return { loggedIn: true, account: "iMessage" };
+            }
+        } catch {
+            // 忽略
+        }
+        return { loggedIn: false };
+    }
+}
+
+/**
+ * 打印 Messages 登录引导信息
+ */
+function printMessagesLoginGuide(): void {
+    console.error("\n" + "=".repeat(60));
+    console.error("🚨 Messages 未登录");
+    console.error("=".repeat(60));
+    console.error("\n📋 解决方法：");
+    console.error("   1. 打开 Messages (信息) 应用");
+    console.error("   2. 登录你的 Apple ID (iMessage 账户)");
+    console.error("   3. 确认登录成功后重启 msgcode");
+    console.error("\n💡 提示：");
+    console.error("   - 不需要登录 iCloud");
+    console.error("   - Messages → 设置 → iMessage → 确保已启用");
+    console.error("\n" + "=".repeat(60) + "\n");
+    logger.error("🚨 Messages 未登录账户", { module: "listener" });
+}
+
+/**
  * 转义 SQLite 字符串（防止注入）
  */
 function escapeSqlString(str: string): string {
@@ -505,15 +683,163 @@ async function markAsReadSQLite(chatId: string): Promise<void> {
 
 /**
  * 转义 AppleScript 字符串
+ *
+ * P1 修复：增加控制字符转义，提高鲁棒性
  */
 function escapeAppleScriptString(str: string): string {
-    return str.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    return str
+        .replace(/\\/g, "\\\\")
+        .replace(/"/g, '\\"')
+        .replace(/\n/g, "\\n")
+        .replace(/\r/g, "\\r")
+        .replace(/\t/g, "\\t");
 }
 
 /**
- * 发送到群组（使用 AppleScript，SDK 不支持群组）
+ * 获取群聊最近一条“我发送”的消息 ROWID（用于发送确认）
  */
-async function sendToChatGroup(chatId: string, text: string): Promise<void> {
+async function getLatestOutgoingRowId(chatId: string): Promise<number | null> {
+    const fullChatId = chatId.includes(";") ? chatId : `any;+;${chatId}`;
+    const escapedChatId = escapeSqlString(fullChatId);
+    const sql = `SELECT MAX(m.ROWID) FROM message m JOIN chat_message_join cmj ON m.ROWID=cmj.message_id JOIN chat c ON cmj.chat_id=c.ROWID WHERE c.guid='${escapedChatId}' AND m.is_from_me=1`;
+    try {
+        const { stdout } = await execAsync(`sqlite3 "${MESSAGES_DB_PATH}" "${sql}"`, { timeout: 5000 });
+        const value = stdout.trim();
+        if (!value) return null;
+        const rowId = Number(value);
+        return Number.isFinite(rowId) ? rowId : null;
+    } catch (error: any) {
+        logger.warn(`⚠️ 群聊发送确认读取失败: ${error.message}`, { module: "listener", chatId });
+        return null;
+    }
+}
+
+type GroupDeliveryStatus = {
+    rowId: number;
+    guid: string;
+    isSent: number;
+    isDelivered: number;
+    dateDelivered: number | null;
+    isRead: number;
+    dateRead: number | null;
+    error: number;
+    isFinished: number;
+};
+
+const GROUP_DELIVERY_VERIFY_TIMEOUT = 6000;
+const GROUP_DELIVERY_VERIFY_INTERVAL = 1000;
+const GROUP_DELIVERY_RETRY_LIMIT = 1;
+const GROUP_RETRY_COOLDOWN = 60000;
+const groupRetryHistory = new Map<string, number>();
+
+function isGroupDeliveryConfirmed(delivery: GroupDeliveryStatus | null): boolean {
+    if (!delivery) return false;
+    return delivery.isDelivered === 1 || delivery.isSent === 1;
+}
+
+async function waitForGroupDelivery(chatId: string, rowId: number): Promise<GroupDeliveryStatus | null> {
+    const deadline = Date.now() + GROUP_DELIVERY_VERIFY_TIMEOUT;
+    let lastStatus: GroupDeliveryStatus | null = null;
+    while (Date.now() < deadline) {
+        const status = await getGroupDeliveryStatus(chatId, rowId);
+        if (status) {
+            lastStatus = status;
+            if (isGroupDeliveryConfirmed(status)) {
+                return status;
+            }
+        }
+        await sleep(GROUP_DELIVERY_VERIFY_INTERVAL);
+    }
+    return lastStatus ?? getGroupDeliveryStatus(chatId, rowId);
+}
+
+function shouldRetryGroupSend(chatId: string, text: string): boolean {
+    const trimmed = text.trim();
+    if (trimmed.length < 12) {
+        return false;
+    }
+    if (/思考中|流控|等待交互|处理失败/.test(trimmed)) {
+        return false;
+    }
+    const key = `${chatId}:${text.slice(0, 80)}`;
+    const now = Date.now();
+    const last = groupRetryHistory.get(key);
+    if (last && now - last < GROUP_RETRY_COOLDOWN) {
+        return false;
+    }
+    groupRetryHistory.set(key, now);
+    return true;
+}
+
+async function confirmGroupSend(chatId: string, beforeRowId: number | null): Promise<number | null> {
+    for (let i = 0; i < 3; i++) {
+        await sleep(200);
+        const afterRowId = await getLatestOutgoingRowId(chatId);
+        if (afterRowId !== null && (beforeRowId === null || afterRowId > beforeRowId)) {
+            return afterRowId;
+        }
+    }
+    return null;
+}
+
+async function getGroupDeliveryStatus(chatId: string, rowId: number): Promise<GroupDeliveryStatus | null> {
+    const fullChatId = chatId.includes(";") ? chatId : `any;+;${chatId}`;
+    const escapedChatId = escapeSqlString(fullChatId);
+    const sql = `SELECT m.ROWID, m.guid, m.is_sent, m.is_delivered, m.date_delivered, m.is_read, m.date_read, m.error, m.is_finished FROM message m JOIN chat_message_join cmj ON m.ROWID=cmj.message_id JOIN chat c ON cmj.chat_id=c.ROWID WHERE c.guid='${escapedChatId}' AND m.ROWID=${rowId} LIMIT 1`;
+    try {
+        const { stdout } = await execAsync(`sqlite3 -separator '|' "${MESSAGES_DB_PATH}" "${sql}"`, { timeout: 5000 });
+        const line = stdout.trim();
+        if (!line) return null;
+        const parts = line.split("|");
+        if (parts.length < 9) return null;
+        const [
+            rowIdText,
+            guid,
+            isSentText,
+            isDeliveredText,
+            dateDeliveredText,
+            isReadText,
+            dateReadText,
+            errorText,
+            isFinishedText,
+        ] = parts;
+        const rowIdValue = Number(rowIdText);
+        if (!Number.isFinite(rowIdValue)) return null;
+        const isSent = Number(isSentText);
+        const isDelivered = Number(isDeliveredText);
+        const dateDelivered = dateDeliveredText ? Number(dateDeliveredText) : null;
+        const isRead = Number(isReadText);
+        const dateRead = dateReadText ? Number(dateReadText) : null;
+        const error = Number(errorText);
+        const isFinished = Number(isFinishedText);
+        return {
+            rowId: rowIdValue,
+            guid,
+            isSent: Number.isFinite(isSent) ? isSent : 0,
+            isDelivered: Number.isFinite(isDelivered) ? isDelivered : 0,
+            dateDelivered: Number.isFinite(dateDelivered ?? NaN) ? dateDelivered : null,
+            isRead: Number.isFinite(isRead) ? isRead : 0,
+            dateRead: Number.isFinite(dateRead ?? NaN) ? dateRead : null,
+            error: Number.isFinite(error) ? error : 0,
+            isFinished: Number.isFinite(isFinished) ? isFinished : 0,
+        };
+    } catch (error: any) {
+        logger.warn(`⚠️ 群聊回执读取失败: ${error.message}`, { module: "listener", chatId, rowId });
+        return null;
+    }
+}
+
+type GroupSendOptions = {
+    allowRetry?: boolean;
+};
+
+async function sendToChatGroupOnce(chatId: string, text: string, attempt: number): Promise<{
+    rowId: number | null;
+    delivery: GroupDeliveryStatus | null;
+}> {
+    const start = Date.now();
+    logger.info(`📤 [AS] 群组发送开始`, { module: "listener", chatId, length: text.length, attempt });
+    const beforeRowId = await getLatestOutgoingRowId(chatId);
     const fullChatId = chatId.includes(";") ? chatId : `any;+;${chatId}`;
     const escapedText = escapeAppleScriptString(text);
     const escapedChatId = escapeAppleScriptString(fullChatId);
@@ -526,6 +852,74 @@ end tell
 `.trim();
 
     await execAsync(`osascript -e '${script.replace(/'/g, "'\\''")}'`, { timeout: 5000 });  // 添加超时
+    const confirmedRowId = await confirmGroupSend(chatId, beforeRowId);
+    if (confirmedRowId !== null) {
+        logger.info(`📤 [AS] 群组发送已入库`, { module: "listener", chatId, elapsed: Date.now() - start, attempt });
+    } else {
+        logger.warn(`📤 [AS] 群组发送未入库`, { module: "listener", chatId, elapsed: Date.now() - start, attempt });
+    }
+    const rowIdForCheck = confirmedRowId ?? await getLatestOutgoingRowId(chatId);
+    if (rowIdForCheck !== null) {
+        const delivery = await getGroupDeliveryStatus(chatId, rowIdForCheck);
+        if (delivery) {
+            const deliveryText = `📤 [AS] 群组回执细节 rowId=${delivery.rowId} sent=${delivery.isSent} delivered=${delivery.isDelivered} date_delivered=${delivery.dateDelivered ?? "null"} read=${delivery.isRead} date_read=${delivery.dateRead ?? "null"} error=${delivery.error} finished=${delivery.isFinished}`;
+            logger.info(deliveryText, { module: "listener", chatId, attempt });
+            logger.info(`📤 [AS] 群组回执`, {
+                module: "listener",
+                chatId,
+                rowId: delivery.rowId,
+                guid: delivery.guid,
+                isSent: delivery.isSent,
+                isDelivered: delivery.isDelivered,
+                dateDelivered: delivery.dateDelivered,
+                isRead: delivery.isRead,
+                dateRead: delivery.dateRead,
+                error: delivery.error,
+                isFinished: delivery.isFinished,
+                attempt,
+            });
+            return { rowId: rowIdForCheck, delivery };
+        }
+        logger.warn(`📤 [AS] 群组回执缺失`, { module: "listener", chatId, rowId: rowIdForCheck, attempt });
+        return { rowId: rowIdForCheck, delivery: null };
+    }
+    logger.warn(`📤 [AS] 群组回执缺失`, { module: "listener", chatId, rowId: null, attempt });
+    return { rowId: null, delivery: null };
+}
+
+/**
+ * 发送到群组（使用 AppleScript，SDK 不支持群组）
+ */
+async function sendToChatGroup(chatId: string, text: string, options?: GroupSendOptions): Promise<void> {
+    const allowRetry = options?.allowRetry !== false && GROUP_DELIVERY_RETRY_LIMIT > 0;
+    const { rowId, delivery } = await sendToChatGroupOnce(chatId, text, 0);
+    if (!allowRetry || rowId === null) {
+        return;
+    }
+    if (isGroupDeliveryConfirmed(delivery)) {
+        return;
+    }
+
+    const verified = await waitForGroupDelivery(chatId, rowId);
+    if (isGroupDeliveryConfirmed(verified)) {
+        return;
+    }
+
+    logger.warn(`群组回执超时，准备重发`, {
+        module: "listener",
+        chatId,
+        rowId,
+        sent: verified?.isSent ?? 0,
+        delivered: verified?.isDelivered ?? 0,
+        error: verified?.error ?? 0,
+    });
+
+    if (!shouldRetryGroupSend(chatId, text)) {
+        logger.warn(`群组重发跳过（冷却中）`, { module: "listener", chatId, rowId });
+        return;
+    }
+
+    await sendToChatGroupOnce(chatId, text, 1);
 }
 
 /**
@@ -535,91 +929,73 @@ async function sendToIndividual(sdk: IMessageSDK, chatId: string, text: string):
     // chatId 格式: any;-;email@example.com
     const parts = chatId.split(";-;");
     const address = parts[1] || chatId;
-    await sdk.send(address, text);
+    /* SDK 发送详细日志：定位卡住/超时 */
+    const start = Date.now();
+    logger.info(`📤 [SDK] 发送开始`, { module: "listener", chatId, address, length: text.length });
+    try {
+        const result = await withTimeout(sdk.send(address, text), 8000, "sdk.send timeout");
+        logger.info(`📤 [SDK] 发送完成`, { module: "listener", chatId, address, elapsed: Date.now() - start, result });
+    } catch (error: any) {
+        logger.error(`📤 [SDK] 发送失败: ${error.message}`, { module: "listener", chatId, address, elapsed: Date.now() - start, error });
+        // SDK 失败时降级到 AppleScript
+        const fallbackStart = Date.now();
+        try {
+            await sendToIndividualAppleScript(address, text);
+            logger.warn(`📤 [SDK] 降级 AppleScript 成功`, { module: "listener", chatId, address, elapsed: Date.now() - fallbackStart });
+        } catch (fallbackError: any) {
+            logger.error(`📤 [SDK] 降级 AppleScript 失败: ${fallbackError.message}`, { module: "listener", chatId, address, elapsed: Date.now() - fallbackStart, error: fallbackError });
+            throw error;
+        }
+    }
 }
+
+/**
+ * 发送给个人（AppleScript 降级）
+ */
+async function sendToIndividualAppleScript(address: string, text: string): Promise<void> {
+    const escapedAddress = escapeAppleScriptString(address);
+    const escapedText = escapeAppleScriptString(text);
+    const script = `
+tell application "Messages"
+    set targetService to first service whose service type = iMessage
+    set targetBuddy to buddy "${escapedAddress}" of targetService
+    send "${escapedText}" to targetBuddy
+end tell
+`.trim();
+
+    await execAsync(`osascript -e '${script.replace(/'/g, "'\\''")}'`, { timeout: 5000 });
+}
+
 
 /**
  * 检查是否应该跳过该输出（过滤 plugin 等无关输出）
  */
 function shouldSkipOutput(text: string): boolean {
-    // 如果文本太长（超过1000字符），很可能是 plugin 输出
-    if (text.length > 1000) {
-        logger.info(`🚫 过滤长文本 (${text.length}字符): ${text.slice(0, 50)}...`, { module: "listener" });
+    if (!text.trim()) {
         return true;
     }
-
-    // 长度检查：大于 500 字符且包含特定关键词，也视为插件输出
-    if (text.length > 500 && (
-        text.includes("observation") ||
-        text.includes("No code was written") ||
-        text.includes("no technical work")
-    )) {
-        logger.info(`🚫 过滤长插件输出 (${text.length}字符)`, { module: "listener", preview: text.slice(0, 50) });
-        return true;
-    }
-
-    // 过滤 plugin/MCP 观察者输出
-    const skipPatterns = [
-        /I understand the task\. I'm a.*observer/i,
-        /No observation created/i,
-        /However, I notice that the observed session/i,
-        /According to my instructions:/i,
-        /This appears to be a simple conversational exchange/i,
-        /Claude-Mem observer/i,
-        /MCP observer/i,
-        // 新增：更多 Claude-Mem 插件输出模式
-        /I notice that I'?m being asked to observe/i,
-        /I notice that I'?m being asked/i,
-        /the only content provided/i,
-        /not a development or implementation task/i,
-        /appears to be a simple question/i,
-        /being asked to observe a session/i,
-        // 过滤 XML observation/summary 块（匹配有或无尖括号前缀的情况）
-        /<?(observation|summary)>/i,
-        /<\/?(observation|summary)>/i,
-        // 匹配数字前缀的 XML 块: "1observation>", "12summary>", "3summary>" 等
-        /\d*<\/?(observation|summary)>/i,
-        /\d*(observation|summary)>/i,
-        // 匹配 XML 结构的元素
-        /<type>.*(bugfix|feature|refactor|change|discovery).*<\/type>/i,
-        /<(title|facts|narrative|concepts|request|investigated|learned|completed|next_steps|notes)>/i,
-        /<\/(title|facts|narrative|concepts|request|investigated|learned|completed|next_steps|notes)>/i,
-    ];
-
-    for (const pattern of skipPatterns) {
-        if (pattern.test(text)) {
-            logger.info(`🚫 过滤输出，匹配模式: ${pattern.source}`, { module: "listener", textPreview: text.slice(0, 100) });
-            return true;
-        }
-    }
-
-    // 过滤看起来像元数据/日志的输出（包含特定标记）
-    if (text.includes("**No observation created**") ||
-        text.includes("When to skip") ||
-        text.includes("deliverables and capabilities") ||
-        text.includes("falls under routine operations") ||
-        text.includes("should be skipped") ||
-        text.includes("No observation will be generated") ||
-        text.includes("WHEN TO SKIP category") ||
-        text.includes("No code was written") ||
-        text.includes("no files were modified") ||
-        text.includes("no technical work")) {
-        logger.info(`🚫 过滤元数据输出`, { module: "listener", preview: text.slice(0, 50) });
-        return true;
-    }
-
     return false;
 }
 
 /**
  * 发送回复
  */
-async function sendReply(sdk: IMessageSDK, chatId: string, text: string): Promise<void> {
+type ReplyOptions = {
+    allowRetry?: boolean;
+};
+
+async function sendReply(sdk: IMessageSDK, chatId: string, text: string, options?: ReplyOptions): Promise<void> {
     try {
         // 过滤 plugin/MCP 等无关输出
         if (shouldSkipOutput(text)) {
             logger.info(`✅ 已跳过发送 (${text.length}字符)`, { module: "listener", chatId, preview: text.slice(0, 30) });
             return;
+        }
+
+        // 长文本截断（避免 iMessage 发送失败）
+        const maxLength = 8000;
+        if (text.length > maxLength) {
+            text = text.slice(0, maxLength - 40) + "\n\n...（已截断）";
         }
 
         logger.info(`📤 准备发送回复 (${text.length}字符)`, { module: "listener", chatId, preview: text.slice(0, 30) });
@@ -643,7 +1019,7 @@ async function sendReply(sdk: IMessageSDK, chatId: string, text: string): Promis
 
         if (isGroupChat) {
             // 群组使用 AppleScript 发送（SDK 不支持群组）
-            await sendToChatGroup(chatId, text);
+            await sendToChatGroup(chatId, text, { allowRetry: options?.allowRetry });
         } else {
             // 个人使用 SDK 发送
             await sendToIndividual(sdk, chatId, text);
@@ -686,14 +1062,15 @@ export async function handleMessage(
         return;
     }
 
-    // 防止重复处理（原子操作，避免竞态条件）
-    // 使用 has() + add() 的组合，确保只有第一个调用者能通过检查
-    if (processedMessages.has(message.id)) {
+    // 防止重复处理（使size检查减少竞态窗口）
+    // P1 修复：使用 size 检查减少竞态窗口，防御性编程
+    const sizeBefore = processedMessages.size;
+    processedMessages.add(message.id);
+    if (processedMessages.size === sizeBefore) {
         logger.warn(`🔄 跳过重复消息: ${message.id} | 文本: ${message.text?.slice(0, 30)}`, { module: "listener", messageId: message.id });
         return;
     }
     // 标记为已处理（在异步操作前立即标记）
-    processedMessages.add(message.id);
     inFlightMessages.add(message.id);
     logger.debug(`✅ 新消息标记: ${message.id} | 文本: ${message.text?.slice(0, 30)}`, { module: "listener", messageId: message.id });
     cleanCache();
@@ -705,8 +1082,52 @@ export async function handleMessage(
         return;
     }
 
+    const text = message.text?.trim();
+    // 跳过空消息
+    if (!text) {
+        if (debug) logger.debug("🔍 跳过空消息", { module: "listener" });
+        // 空消息也要标记为已读，防止重复处理
+        if (chatId) {
+            await markAsReadSQLite(chatId);
+        }
+        return;
+    }
+
+    // 基于内容的去重（防止相同内容的不同消息 id）
+    // 限制 key 长度，避免内存问题
+    const textPreview = text.slice(0, 200);
+    const contentKey = `${chatId}:${textPreview}`;
+    const now = Date.now();
+    const lastTime = recentMessageContents.get(contentKey);
+
+    if (lastTime) {
+        const elapsed = now - lastTime;
+        // 1秒内的重复：视为系统重复检测（SDK Watcher + polling），直接跳过
+        if (elapsed < CONTENT_DEDUP_IMMEDIATE_WINDOW) {
+            logger.warn(`🔄 跳过系统重复: ${textPreview.slice(0, 30)}... (${elapsed}ms内)`, { module: "listener", chatId, elapsed });
+            await markAsReadSQLite(chatId);
+            return;
+        }
+        // 1秒-10秒内的重复：可能是用户重复提问，记录但不阻止
+        if (elapsed < CONTENT_DEDUP_WINDOW) {
+            logger.info(`⚠️  检测到用户重复提问: ${textPreview.slice(0, 30)}... (${elapsed}ms前已处理过)`, { module: "listener", chatId, elapsed });
+            // 不 return，允许处理
+        }
+    }
+
+    recentMessageContents.set(contentKey, now);
+
+    // 只在 Map 大小超过阈值时清理（避免每次都遍历）
+    if (recentMessageContents.size > 50) {
+        for (const [key, time] of recentMessageContents.entries()) {
+            if (now - time > CONTENT_DEDUP_WINDOW * 2) {
+                recentMessageContents.delete(key);
+            }
+        }
+    }
+
     // 简单速率限制（每 chatId 每秒最多 3 条，超限直接回复流控提示）
-    const nowTs = Date.now();
+    const nowTs = now;
     const bucket = rateLimitMap.get(chatId) || { tokens: RATE_LIMIT_TOKENS, last: nowTs };
     // 补充令牌
     const elapsed = nowTs - bucket.last;
@@ -715,57 +1136,18 @@ export async function handleMessage(
     bucket.last = nowTs;
 
     if (bucket.tokens <= 0) {
-        // 速率超限，直接提示并丢弃
-        await sendReply(sdk, chatId, "⏳ 流控中，请稍后再发");
+        // 速率超限，节流提示
+        const lastNotice = rateLimitNoticeAt.get(chatId) || 0;
+        if (nowTs - lastNotice > RATE_LIMIT_NOTICE_COOLDOWN) {
+            await sendReply(sdk, chatId, "⏳ 流控中，请稍后再发");
+            rateLimitNoticeAt.set(chatId, nowTs);
+        }
         logger.warn(`⚠️ 速率限制触发: ${chatId}`, { module: "listener", chatId });
+        await markAsReadSQLite(chatId);
         return;
     }
     bucket.tokens -= 1;
     rateLimitMap.set(chatId, bucket);
-
-    // 基于内容的去重（防止相同内容的不同消息 id）
-    if (message.text?.trim()) {
-        // 限制 key 长度，避免内存问题
-        const textPreview = message.text.trim().slice(0, 200);
-        const contentKey = `${chatId}:${textPreview}`;
-        const now = Date.now();
-        const lastTime = recentMessageContents.get(contentKey);
-
-        if (lastTime) {
-            const elapsed = now - lastTime;
-            // 1秒内的重复：视为系统重复检测（SDK Watcher + polling），直接跳过
-            if (elapsed < CONTENT_DEDUP_IMMEDIATE_WINDOW) {
-                logger.warn(`🔄 跳过系统重复: ${textPreview.slice(0, 30)}... (${elapsed}ms内)`, { module: "listener", chatId, elapsed });
-                return;
-            }
-            // 1秒-10秒内的重复：可能是用户重复提问，记录但不阻止
-            if (elapsed < CONTENT_DEDUP_WINDOW) {
-                logger.info(`⚠️  检测到用户重复提问: ${textPreview.slice(0, 30)}... (${elapsed}ms前已处理过)`, { module: "listener", chatId, elapsed });
-                // 不 return，允许处理
-            }
-        }
-
-        recentMessageContents.set(contentKey, now);
-
-        // 只在 Map 大小超过阈值时清理（避免每次都遍历）
-        if (recentMessageContents.size > 50) {
-            for (const [key, time] of recentMessageContents.entries()) {
-                if (now - time > CONTENT_DEDUP_WINDOW * 2) {
-                    recentMessageContents.delete(key);
-                }
-            }
-        }
-    }
-
-    // 跳过空消息
-    if (!message.text?.trim()) {
-        if (debug) logger.debug("🔍 跳过空消息", { module: "listener" });
-        // 空消息也要标记为已读，防止重复处理
-        if (chatId) {
-            await markAsReadSQLite(chatId);
-        }
-        return;
-    }
 
     // 检查是否是配置的群组
     if (!isConfiguredChatId(chatId)) {
@@ -828,7 +1210,7 @@ export async function handleMessage(
 
     while (attempts <= MAX_RETRIES) {
         try {
-            await enqueueMessage(chatId, async () => {
+            const queued = await enqueueMessage(chatId, async () => {
                 // 判断是否使用流式处理（message.text 已在前面检查过非空）
                 const messageText = message.text ?? "";
                 logger.info(`🔍 开始处理消息: ${messageText.slice(0, 30)}...`, { module: "listener", chatId, textLength: messageText.length });
@@ -836,20 +1218,44 @@ export async function handleMessage(
                 if (shouldStream({ chatId: routeChatId, groupName, projectDir, botType }, messageText)) {
                     logger.info(`🎬 使用流式处理`, { module: "listener", chatId, groupName });
                     // === 流式处理：使用 handleTmuxStream ===
+                    let streamResult: StreamResult | null = null;
                     try {
-                        await handleTmuxStream(groupName, messageText, {
+                        streamResult = await handleTmuxStream(groupName, messageText, {
                             projectDir: projectDir ?? undefined,
                             onChunk: async (chunk, isToolUse) => {
                                 const logPrefix = isToolUse ? "📤 [工具]" : "📤";
                                 console.log(`${logPrefix} [${groupName}] Bot: ${chunk}`);
                                 logger.info(`${logPrefix} [${groupName}] Bot: ${chunk}`, { module: "listener", groupName, isToolUse });
-                                await sendReply(sdk, chatId, chunk);
-                            }
+                                await sendReply(sdk, chatId, chunk, { allowRetry: false });
+                                markStreamActivity();
+                            },
+                            attachments: message.attachments,
                         });
-                        logger.info(`✅ 流式处理完成`, { module: "listener", chatId, groupName });
+                        logger.info(`✅ 流式处理完成`, { module: "listener", chatId, groupName, streamResult });
                     } catch (error: any) {
                         logger.error(`❌ 流式处理错误: ${error.message}`, { module: "listener", groupName, error });
                         await sendReply(sdk, chatId, `处理失败: ${error.message}`);
+                        throw error;
+                    }
+
+                    if (streamResult && streamResult.success === false && streamResult.error) {
+                        logger.warn(`⚠️ 流式处理失败: ${streamResult.error}`, { module: "listener", groupName, streamResult });
+                        await sendReply(sdk, chatId, `⚠️ ${streamResult.error}`);
+                        return;
+                    }
+
+                    if (streamResult && !streamResult.finished) {
+                        const reason = streamResult.finishReason ?? (streamResult.timedOut ? "超时" : "未知原因");
+                        logger.warn(`⚠️ 流式处理未检测到完成标记 (${reason})`, { module: "listener", groupName, streamResult });
+                        if (streamResult.timedOut) {
+                            await sendReply(sdk, chatId, "⚠️ Claude 似乎没完成回复，正在重试...");
+                        }
+                    }
+
+                    const prompt = streamResult?.interactionPrompt;
+                    if (prompt) {
+                        logger.warn(`⚠️ Claude 需要交互: ${prompt}`, { module: "listener", groupName });
+                        await sendReply(sdk, chatId, `🚧 Claude 当前在等待交互（${prompt}），请打开 tmux 终端输入相应选项`);
                     }
                 } else {
                     // === 命令处理：使用原有 handler.handle() ===
@@ -877,6 +1283,12 @@ export async function handleMessage(
                 // 标记消息为已读（使用 SQLite 方法）
                 await markAsReadSQLite(chatId);
             });
+            if (!queued) {
+                logger.warn(`消息未入队（队列过载）`, { module: "listener", chatId, messageId });
+                await markAsReadSQLite(chatId);
+                handledSuccessfully = true;
+                break;
+            }
             handledSuccessfully = true;
             break;
         } catch (error: any) {
@@ -924,12 +1336,34 @@ export async function startListener(sdk: IMessageSDK, debug = false, useFileWatc
     console.log("🎯 启动消息监听...\n");
     logger.info("启动消息监听", { module: "listener", debug, useFileWatcher });
 
+    // 启动时检测磁盘访问权限
+    const hasPermission = await checkDiskAccessPermission();
+    if (!hasPermission) {
+        printPermissionGuide();
+        // 提示用户并退出
+        console.error("❌ 权限不足，无法继续运行。请完成授权后重启。\n");
+        process.exit(1);
+        return null;
+    }
+    logger.info("✅ 完全磁盘访问权限检查通过", { module: "listener" });
+
+    // 启动时检测 Messages 账户登录状态
+    const accountStatus = await checkMessagesAccount();
+    if (!accountStatus.loggedIn) {
+        printMessagesLoginGuide();
+        console.error("❌ Messages 未登录，无法接收和发送消息。请登录后重启。\n");
+        process.exit(1);
+        return null;
+    }
+    logger.info(`✅ Messages 账户检查通过: ${accountStatus.account}`, { module: "listener" });
+
     // 启动时打开 Messages 一次，标记所有消息为已读
     await markMessagesAsReadOnStartup();
     await verifyConfiguredChats();
 
     const handleMessageWrapper = async (message: Message) => {
         updateHeartbeat(); // 每次处理消息时更新心跳
+        resetWatcherStallCount();
         await handleMessage(message, { sdk, debug });
     };
 
@@ -957,7 +1391,11 @@ export async function startListener(sdk: IMessageSDK, debug = false, useFileWatc
                 onGroupMessage: handleMessageWrapper,
             });
             // 启动定期检查
-            startPolling(sdk, debug, handleMessageWrapper);
+            if (!config.skipUnreadBacklog) {
+                startPolling(sdk, debug, handleMessageWrapper);
+            } else {
+                logger.warn("⚠️ 已禁用未读轮询（按配置不补发积压消息）", { module: "listener" });
+            }
         });
 
         console.log("✅ 监听器已启动，等待消息...\n");
@@ -976,7 +1414,11 @@ export async function startListener(sdk: IMessageSDK, debug = false, useFileWatc
         });
 
         // 启动轮询作为补充（SDK Watcher 可能遗漏消息）
-        startPolling(sdk, debug, handleMessageWrapper);
+        if (!config.skipUnreadBacklog) {
+            startPolling(sdk, debug, handleMessageWrapper);
+        } else {
+            logger.warn("⚠️ 已禁用未读轮询（按配置不补发积压消息）", { module: "listener" });
+        }
 
         // 启动心跳监控（防止 SDK Watcher 静默停摆）
         startHeartbeatMonitor(sdk, debug, handleMessageWrapper);
@@ -1021,15 +1463,75 @@ async function checkExistingMessages(
         const result = await sdk.getMessages({ unreadOnly: true });
         const unreadMessages = result.messages.filter(m => m.text?.trim());
 
+        if (config.skipUnreadBacklog) {
+            if (unreadMessages.length === 0) {
+                return;
+            }
+            const discardChatIds = new Set<string>();
+            for (const msg of unreadMessages) {
+                if (msg.id) {
+                    handledMessages.set(msg.id, Date.now());
+                    processedMessages.add(msg.id);
+                }
+                if (msg.chatId) {
+                    discardChatIds.add(msg.chatId);
+                }
+            }
+
+            for (const chatId of discardChatIds) {
+                await markAsReadSQLite(chatId);
+            }
+
+            logger.warn(`⚠️ 已忽略未读积压消息 ${unreadMessages.length} 条（按配置不补发）`, {
+                module: "listener",
+                count: unreadMessages.length,
+            });
+            return;
+        }
+
         // 过滤掉已处理的消息（防止重复处理）
         const newMessages = unreadMessages.filter(m => m.id && !processedMessages.has(m.id));
+        let messagesToProcess = newMessages;
+        let discardedCount = 0;
 
-        if (newMessages.length > 0) {
+        if (newMessages.length > MAX_STARTUP_UNREAD) {
+            const sorted = [...newMessages].sort((a, b) => (Number(b.date) || 0) - (Number(a.date) || 0));
+            const keep = sorted.slice(0, MAX_STARTUP_UNREAD);
+            const discard = sorted.slice(MAX_STARTUP_UNREAD);
+            discardedCount = discard.length;
+
+            const discardChatIds = new Set<string>();
+            for (const msg of discard) {
+                if (msg.id) {
+                    handledMessages.set(msg.id, Date.now());
+                    processedMessages.add(msg.id);
+                }
+                if (msg.chatId) {
+                    discardChatIds.add(msg.chatId);
+                }
+            }
+
+            for (const chatId of discardChatIds) {
+                await markAsReadSQLite(chatId);
+            }
+
+            logger.warn(`⚠️ 启动未读过多，已丢弃 ${discardedCount} 条，仅处理最近 ${MAX_STARTUP_UNREAD} 条`, {
+                module: "listener",
+                discardedCount,
+                limit: MAX_STARTUP_UNREAD,
+            });
+
+            // 保持处理顺序为时间正序
+            messagesToProcess = keep.sort((a, b) => (Number(a.date) || 0) - (Number(b.date) || 0));
+        }
+
+        if (messagesToProcess.length > 0) {
             updatePollHit();
-            console.log(`📬 [轮询] 检测到 ${newMessages.length} 条遗漏消息，开始处理...`);
-            logger.info(`📬 [轮询] 检测到 ${newMessages.length} 条遗漏消息，开始处理`, { module: "listener", count: newMessages.length, source: "polling" });
+            console.log(`📬 [轮询] 检测到 ${messagesToProcess.length} 条遗漏消息，开始处理...`);
+            logger.info(`📬 [轮询] 检测到 ${messagesToProcess.length} 条遗漏消息，开始处理`, { module: "listener", count: messagesToProcess.length, source: "polling", discardedCount });
             updateHeartbeat(); // 轮询检测到消息时更新心跳
-            for (const msg of newMessages) {
+            resetWatcherStallCount();
+            for (const msg of messagesToProcess) {
                 await handler(msg);
 
                 // 标记为已读（使用 SQLite，带退避重试）

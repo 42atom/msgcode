@@ -100,7 +100,8 @@ export class DatabaseWatcher {
             // 获取最近的消息
             const result = await this.sdk.getMessages({
                 limit: 50,
-                excludeOwnMessages: false,
+                unreadOnly: true,
+                excludeOwnMessages: true,
             });
 
             for (const message of result.messages) {

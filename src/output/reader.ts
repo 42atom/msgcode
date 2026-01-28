@@ -46,7 +46,7 @@ export class OutputReader {
 
     /**
      * 将项目目录转换为 Claude 项目目录名称
-     * 例如: /Users/admin/BotRoot/00_projects → -Users-admin-BotRoot-00-projects
+     * 例如: /Users/<you>/BotRoot/00_projects → -Users-you-BotRoot-00-projects
      * 规则: 所有非字母数字字符都替换为 "-"
      */
     private projectDirToClaudeDir(projectDir: string): string {
@@ -193,6 +193,8 @@ export class OutputReader {
                 this.positions.delete(filePath);
                 return { entries: [], bytesRead: 0, newOffset: 0 };
             }
+            // P1 修复：记录读取失败日志
+            console.error(`[Reader] JSONL 读取失败: ${filePath}`, error.message);
             throw error;
         }
     }
