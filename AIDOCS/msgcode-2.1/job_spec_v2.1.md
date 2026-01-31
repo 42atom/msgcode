@@ -13,6 +13,7 @@
   3) 读取响应（复用现有 reader/streamer 能力）
   4) 按策略回发到该群（或静默不回）
 - 产生可机器读取的状态：job 列表、下次唤醒、运行历史、错误码。
+- 可恢复：job 状态与调度元数据落盘；daemon 重启后自动恢复调度（重算 nextRunAt/nextWakeAt）。
 
 ### 不做什么（2.1 明确不做）
 - 不执行任意 shell 命令（除非未来做 allowlist + workspace 内脚本白名单）。
@@ -73,15 +74,18 @@
   /* 回发策略（iMessage only） */
   "delivery": {
     "mode": "reply-to-same-chat",
-    "bestEffort": true
+    "bestEffort": true,
+    "maxChars": 2000
   },
 
   /* 运行状态（可诊断、可恢复） */
   "state": {
+    "routeStatus": "valid",
     "nextRunAtMs": 1738262400000,
     "runningAtMs": null,
     "lastRunAtMs": 1738262400000,
     "lastStatus": "ok",
+    "lastErrorCode": null,
     "lastError": null,
     "lastDurationMs": 800
   },
@@ -92,9 +96,24 @@
 ```
 
 ### 类型约束（建议）
-- `route.chatGuid`：必须存在于 `routes.json`，否则 job 状态为 `warning`（不自动运行，除非 `--force`）。
+- `route.chatGuid`：必须存在于 `routes.json`，否则 `state.routeStatus="orphaned"`，默认不自动运行（除非 `--force`）。
 - `payload.text`：非空、trim 后长度 > 0。
 - `name`：trim 后非空，建议限制 1~64 字符，作为 UI/日志可读名。
+
+### 枚举定义（即使 2.1 只有一种值，也先把协议立住）
+#### payload.kind
+- `tmuxMessage`（2.1 唯一允许值）
+
+#### state.routeStatus
+- `valid`：routes.json 存在该 chatGuid 且 status=active
+- `invalid`：routes.json 存在该 chatGuid，但绑定不完整/状态非 active（例如 paused/archived）
+- `orphaned`：routes.json 不存在该 chatGuid（路由失效）
+
+#### state.lastStatus
+- `pending`：job 创建后尚未运行（或运行历史被清理）
+- `ok`：本次运行成功
+- `skipped`：符合“不可运行条件”而跳过（例如 empty payload、scheduler disabled）
+- `error`：运行失败
 
 ---
 
@@ -126,6 +145,7 @@
 语义：
 - 使用 `croner`（或同类库）计算 `nextRunAtMs`。
 - `tz` 为空时：默认使用主机时区（或强制 UTC，需在实现时固定一条规则并写进 README）。
+- **时区变化处理**：daemon 启动时与每次 tick 前都重算 `nextRunAtMs`（对 `cron`/`every`），避免系统时区改变后 schedule 漂移。
 
 ---
 
@@ -165,10 +185,14 @@
 - 对超远 future 的 delay 做 clamp（避免 TimeoutOverflow）
 
 ### 防卡死（stuck 清理）
-- 若 `runningAtMs` 超过阈值（建议 2h）：
+- 若 `runningAtMs` 超过阈值（默认建议 2h，但必须可配置）：
   - 清掉 running 标记
   - 写入 runs.jsonl：`status="error", error="stuck cleared"`
   - 继续调度其他 job（不让一个 job 挂死整个 scheduler）
+
+配置建议（优先全局，后续可 per-job）：
+- `CRON_STUCK_RUN_MS`（全局，默认 `2h`）
+- 未来可加：`job.maxRunMs`（per-job 覆盖）
 
 ---
 
@@ -191,6 +215,14 @@
 隐私原则：
 - 默认不落用户/模型正文；只落 `textLength/textDigest`（与 E17 一致）。
 
+### 保留策略（避免无限增长）
+建议至少支持一种：
+- `CRON_RUNS_RETENTION_DAYS`（默认 30 天）
+- 或 `CRON_RUNS_MAX_LINES`（默认 10_000 行）
+
+实现策略：
+- 追加写不影响主链路；清理作为后台 best-effort（可在 daemon 启动/每日定时执行）。
+
 ---
 
 ## CLI 设计（v2.1）
@@ -202,10 +234,16 @@
 - `msgcode job list --json [--all]`
 - `msgcode job add --json <file>`（或 `--name/--at/--cron/...` 逐步补）
 - `msgcode job edit <id> --json <patchFile>`
+- `msgcode job edit <id> --patch '<json>'`（内联 patch，便于交互）
 - `msgcode job enable <id>` / `msgcode job disable <id>`
 - `msgcode job remove <id>`
 - `msgcode job run <id> [--force]`
 - `msgcode job runs [--id <id>] --json`
+- `msgcode job validate [--id <id>] --json`（校验 routes/schedule/payload）
+
+### dry-run（强烈建议）
+对 `add/edit/run`：
+- 支持 `--dry-run`：输出“将要写入/将要执行”的摘要，不产生副作用。
 
 ### status JSON（建议）
 ```jsonc
@@ -239,6 +277,63 @@
 
 ---
 
+## 运行态错误码（2.1 建议）
+
+> 规则：`lastErrorCode` 必须是稳定枚举；`lastError` 允许为简短人类文本（不含正文）。
+
+- `ROUTE_NOT_FOUND`：routes.json 无该 chatGuid（orphaned）
+- `ROUTE_INACTIVE`：路由存在但非 active（paused/archived）
+- `SCHEDULE_INVALID`：schedule 无法解析（cron expr/tz 无效）
+- `PAYLOAD_EMPTY`：payload 文本为空
+- `TMUX_MISSING`：本机无 tmux
+- `TMUX_SESSION_START_FAILED`：main session 不存在且尝试 start 失败
+- `TMUX_SESSION_DEAD`：session 存在但不可用（send/capture 失败）
+- `IMSG_SEND_FAILED`：回发失败（若 bestEffort=false 则计为 error）
+- `DELIVERY_TRUNCATED`：输出被截断（不是错误，建议作为 warning 或 runLog 字段）
+- `JOB_STUCK_CLEARED`：发现卡死标记并清理
+
+---
+
+## 启动恢复与并发控制（必须明确）
+
+### daemon 启动时的恢复流程
+1) 加载 `jobs.json`（坏 JSON → 报 `DATA_CRON_INVALID_JSON`，并进入 degraded 模式）
+2) 对每个 job：
+   - 重算 `state.routeStatus`
+   - 重算 `state.nextRunAtMs`
+3) 清理“孤儿 running”：
+   - 若 `runningAtMs` 存在且超过 `CRON_STUCK_RUN_MS`：清理并写 runLog（`JOB_STUCK_CLEARED`）
+   - 若 `runningAtMs` 存在但未超时：也应清理（daemon 重启意味着之前那次运行已丢失），并写 runLog（`error`，errorCode 可用 `JOB_ABORTED_BY_RESTART`）
+4) armTimer(nextWakeAtMs)
+
+### 并发约束
+- 同一时刻最多执行 1 个 job（全局串行），避免 tmux/iMessage 互相干扰。
+- 未来扩展：允许并行，但必须按 chatGuid 做串行队列（同群严格顺序）。
+
+---
+
+## tmux 与 delivery 的工程细节（2.1 建议写清）
+
+### main session 健康检查与恢复
+建议策略：
+1) 发现 session 不存在：先尝试 `TmuxSession.start(...)`（best-effort resume）
+2) 若仍失败：本次 job 记 `TMUX_SESSION_START_FAILED`，下次按 schedule 重试
+
+### iMessage 回发截断策略
+- 默认 `delivery.maxChars=2000`
+- 超长时：
+  - 只发前 `maxChars` 字符 + `…(truncated)`
+  - 额外在 runLog 写 `fullTextDigest/fullTextLength`（仍不落正文）
+
+---
+
+## 待办 / 未来扩展（明确不在 2.1 做）
+- 跨机器同步（多 Mac）
+- RBAC（多用户/多角色）
+- 任意 shell 执行（allowlist + workspace 脚本）
+- WebUI（job 可视化/编辑）
+---
+
 ## 验收清单（2.1）
 
 ### 最小闭环（必须）
@@ -254,4 +349,3 @@
 
 ### 隐私（必须）
 1) runs/log 不落正文（默认）
-
