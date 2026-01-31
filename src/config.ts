@@ -82,6 +82,18 @@ export interface Config {
     useFileWatcher: boolean;
     // 是否跳过未读积压消息（不补发给 Claude）
     skipUnreadBacklog: boolean;
+    // LM Studio CLI 路径（默认: lms）
+    lmstudioPath?: string;
+    // LM Studio 模型名（可选）
+    lmstudioModel?: string;
+    // LM Studio System Prompt（可选）
+    lmstudioSystemPrompt?: string;
+    // LM Studio 本地 API Base URL（OpenAI 兼容），默认: http://127.0.0.1:1234
+    lmstudioBaseUrl?: string;
+    // LM Studio 请求超时（毫秒），默认: 60000
+    lmstudioTimeoutMs?: number;
+    // LM Studio API Key（可选，服务端需要授权时使用）
+    lmstudioApiKey?: string;
 }
 
 /**
@@ -157,6 +169,12 @@ export function loadConfig(): Config {
         sendStartupAnnouncement: process.env.SEND_STARTUP_ANNOUNCEMENT !== "false", // 默认 true
         announceMessage: process.env.ANNOUNCE_MESSAGE,
         skipUnreadBacklog: process.env.SKIP_UNREAD_BACKLOG === "true",
+        lmstudioPath: process.env.LMSTUDIO_PATH,
+        lmstudioModel: process.env.LMSTUDIO_MODEL,
+        lmstudioSystemPrompt: process.env.LMSTUDIO_SYSTEM_PROMPT,
+        lmstudioBaseUrl: process.env.LMSTUDIO_BASE_URL,
+        lmstudioTimeoutMs: process.env.LMSTUDIO_TIMEOUT_MS ? Number(process.env.LMSTUDIO_TIMEOUT_MS) : undefined,
+        lmstudioApiKey: process.env.LMSTUDIO_API_KEY,
     };
 }
 

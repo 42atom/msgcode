@@ -4,12 +4,12 @@
 把 msgcode 升级为“可长期运维”的本地 iMessage Bot 平台：核心链路去除 DB 写依赖，群聊/收消息优先走 `imsg rpc`，并把 `imsg` 的供应链风险压到可控（源码构建+固定版本）。
 
 ## Phases
-- [ ] Phase 0: Version scope & success criteria
-- [ ] Phase 1: imsg 供应链方案（开源核验 + 源码构建 + 固定版本）
-- [ ] Phase 2: iMessage Provider 改造（rpc send + watch）
-- [ ] Phase 3: 收消息链路去 DB 写（lastSeen 游标替代 unreadOnly/markAsRead）
+- [x] Phase 0: Version scope & success criteria
+- [x] Phase 1: imsg 供应链方案（开源核验 + 源码构建 + 固定版本）
+- [x] Phase 2: iMessage Provider 改造（rpc send + watch）
+- [ ] Phase 3: 收消息链路去 DB 写（E14: lastSeen 游标）
 - [ ] Phase 4: 发送链路统一与降级策略（DM/群聊同构）
-- [ ] Phase 5: 可观测性与自愈（probe/health/日志结构化）
+- [ ] Phase 5: 可观测性与自愈（E15: probe/status/日志结构化）
 - [ ] Phase 6: 测试与回归（无真账号也能测的模拟层）
 - [ ] Phase 7: 打包与运行方式（launchd/配置/升级）
 - [ ] Phase 8: 发布（RC → 2.0）
@@ -32,6 +32,7 @@
 - `AIDOCS/msgcode-2.0/feature_spec_control_plane_v1.md`
 - `AIDOCS/msgcode-2.0/config_spec_v1.md`
 - `AIDOCS/msgcode-2.0/epics/E08_control_plane_newchat.md`
+- `AIDOCS/msgcode-2.0/epics/E12_chatlist_and_help.md`
 - `AIDOCS/msgcode-2.0/epics/E09_public_artifacts_and_tunnel.md`
 - `AIDOCS/msgcode-2.0/epics/E10_scheduler_jobs_push.md`
 - `AIDOCS/msgcode-2.0/epics/E11_capability_api_skills.md`
@@ -43,4 +44,4 @@
 - 内容处理边界：**msgcode 只做“全面转发/能力管理”（I/O、落盘、发布、权限、审计），不做 ASR/TTS/内容理解**；内容处理由 agent 的 skill 负责。
 
 ## Status
-**Currently in Phase 1** - 已确认方案 B，进入 E01（`imsg` 供应链：固定版本 + 源码构建 + 产物校验）。
+**Currently in Phase 2.1** - E08（群内 `/bind` 绑定工作目录）已落地，开始补齐“聊天进程管理”最小控制面（`/chatlist` + `/help`）。

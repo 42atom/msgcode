@@ -33,3 +33,6 @@ build/
 # Reference materials (not tracked)
 refs/
 ref/
+
+# Built binaries (not tracked)
+vendor/imsg/

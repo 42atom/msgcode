@@ -4,7 +4,6 @@
  * 提供 start/stop/restart/allstop 命令
  */
 
-import { TmuxSession } from "./tmux/session.js";
 import { startListener } from "./listener.js";
 import { config } from "./config.js";
 import { IMessageSDK } from "@photon-ai/imessage-kit";
@@ -33,15 +32,15 @@ export async function startBot(): Promise<void> {
     // 🔒 单进程检测：检查是否已有实例在运行
     const runningInfo = await checkBotRunning();
     if (runningInfo.isRunning) {
-        console.log(`❌ msgcode bot 已在运行 (PID: ${runningInfo.pid}, 进程数: ${runningInfo.count})`);
-        console.log(`💡 如需重启，请先运行: msgcode stop`);
+        console.log(`msgcode bot 已在运行 (PID: ${runningInfo.pid}, 进程数: ${runningInfo.count})`);
+        console.log(`如需重启，请先运行: msgcode stop`);
         logger.error(`msgcode bot 已在运行 (PID: ${runningInfo.pid}, 进程数: ${runningInfo.count})`, { module: "commands", runningInfo });
         process.exit(1);
         return;
     }
 
-    console.log("🚀 启动 msgcode bot...");
-    logger.info("🚀 启动 msgcode bot...", { module: "commands" });
+    console.log("启动 msgcode bot...");
+    logger.info("启动 msgcode bot...", { module: "commands" });
 
     // 🔒 写入 PID 文件
     try {
@@ -68,14 +67,14 @@ export async function startBot(): Promise<void> {
     // 启动消息监听
     await startListener(sdk, config.logLevel === "debug", config.useFileWatcher);
 
-    console.log("✅ msgcode bot 已启动");
-    logger.info("✅ msgcode bot 已启动", { module: "commands" });
+    console.log("msgcode bot 已启动");
+    logger.info("msgcode bot 已启动", { module: "commands" });
 
     // 启动后再次检查是否有多实例（守护）
     const postStartInfo = await checkBotRunning();
     if (postStartInfo.count > 1) {
-        console.error(`🚨 检测到多实例冲突，正在退出。保留的 PID: ${postStartInfo.pid}`);
-        logger.error("🚨 检测到多实例冲突，退出", { module: "commands", postStartInfo });
+        console.error(`检测到多实例冲突，正在退出。保留的 PID: ${postStartInfo.pid}`);
+        logger.error("检测到多实例冲突，退出", { module: "commands", postStartInfo });
         await cleanupPidFile();
         process.exit(1);
     }
@@ -87,15 +86,17 @@ export async function startBot(): Promise<void> {
 /**
  * 停止 bot
  */
-export async function stopBot(): Promise<void> {
-    console.log("⏹️  停止 msgcode bot...");
-    logger.info("⏹️  停止 msgcode bot...", { module: "commands" });
+export async function stopBot(options?: { keepTmux?: boolean }): Promise<void> {
+    const keepTmux = options?.keepTmux !== false;
+
+    console.log("停止 msgcode bot...");
+    logger.info("停止 msgcode bot...", { module: "commands" });
 
     const runningInfo = await checkBotRunning();
     if (!runningInfo.isRunning) {
-        console.log("⚠️  msgcode bot 未在运行");
-        logger.warn("⚠️  msgcode bot 未在运行", { module: "commands" });
-        // 即使没有运行，也继续强制清理残留进程和 tmux
+        console.log("msgcode bot 未在运行");
+        logger.warn("msgcode bot 未在运行", { module: "commands" });
+        // 即使没有运行，也继续强制清理残留进程
     }
 
     // 杀死所有 msgcode 相关进程
@@ -114,13 +115,17 @@ export async function stopBot(): Promise<void> {
     // 等待进程完全退出
     await new Promise(r => setTimeout(r, 500));
 
-    console.log(`✅ msgcode bot 已停止 (终止了 ${runningInfo.count} 个进程)`);
-    logger.info(`✅ msgcode bot 已停止 (终止了 ${runningInfo.count} 个进程)`, { module: "commands", count: runningInfo.count });
+    console.log(`msgcode bot 已停止 (终止了 ${runningInfo.count} 个进程)`);
+    logger.info(`msgcode bot 已停止 (终止了 ${runningInfo.count} 个进程)`, { module: "commands", count: runningInfo.count });
 
-    const stoppedSessions = await killMsgcodeTmuxSessions();
-    for (const session of stoppedSessions) {
-        console.log(`  ✓ 已停止 tmux 会话: ${session}`);
-        logger.info(`  ✓ 已停止 tmux 会话: ${session}`, { module: "commands", session });
+    if (keepTmux) {
+        console.log("tmux 会话已保留（如需清理请运行: msgcode allstop）");
+    } else {
+        const stoppedSessions = await killMsgcodeTmuxSessions();
+        for (const session of stoppedSessions) {
+            console.log(`已停止 tmux 会话: ${session}`);
+            logger.info(`已停止 tmux 会话: ${session}`, { module: "commands", session });
+        }
     }
 
     // 清理 PID 文件
@@ -131,8 +136,8 @@ export async function stopBot(): Promise<void> {
  * 重启 bot
  */
 export async function restartBot(): Promise<void> {
-    console.log("🔄 重启 msgcode bot...");
-    logger.info("🔄 重启 msgcode bot...", { module: "commands" });
+    console.log("重启 msgcode bot...");
+    logger.info("重启 msgcode bot...", { module: "commands" });
     await stopBot();
     await new Promise(r => setTimeout(r, 1000));
     await startBot();
@@ -142,21 +147,14 @@ export async function restartBot(): Promise<void> {
  * 停止所有（bot + tmux）
  */
 export async function allStop(): Promise<void> {
-    console.log("🛑 停止所有服务...");
-    logger.info("🛑 停止所有服务...", { module: "commands" });
+    console.log("停止所有服务...");
+    logger.info("停止所有服务...", { module: "commands" });
 
     // 停止 bot
-    await stopBot();
+    await stopBot({ keepTmux: false });
 
-    // 停止所有 tmux 会话
-    const stoppedSessions = await killMsgcodeTmuxSessions();
-    for (const session of stoppedSessions) {
-        console.log(`  ✓ 已停止 tmux 会话: ${session}`);
-        logger.info(`  ✓ 已停止 tmux 会话: ${session}`, { module: "commands", session });
-    }
-
-    console.log("✅ 所有服务已停止");
-    logger.info("✅ 所有服务已停止", { module: "commands" });
+    console.log("所有服务已停止");
+    logger.info("所有服务已停止", { module: "commands" });
     process.exit(0);
 }
 
@@ -367,7 +365,7 @@ async function killMsgcodeTmuxSessions(): Promise<string[]> {
         }
         return killed;
     } catch (error: any) {
-        logger.warn("❌ 无法枚举 tmux 会话", { module: "commands", error });
+        logger.warn("无法枚举 tmux 会话", { module: "commands", error });
         return [];
     }
 }

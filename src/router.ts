@@ -10,7 +10,7 @@ import { config, type GroupConfig } from "./config.js";
 /**
  * Bot 类型
  */
-export type BotType = "code" | "image" | "file" | "default";
+export type BotType = "code" | "lmstudio" | "image" | "file" | "default";
 
 /**
  * 路由结果

@@ -208,7 +208,7 @@ msgcode/
 
 **Tip:** `msgcode start` 在后台静默运行并把日志写入 `~/.config/msgcode/log/msgcode.log`，`msgcode start debug` 则把日志同步输出到当前终端；如果需要实时看到 Claude 的终端内容，可以用 `LOG_CONSOLE=true msgcode start debug`，让 tmux 内容同时写入控制台和日志，方便在 iMessage 里快速判断「Do you want to proceed?」等互动提示。
 
-建议在 `msgcode stop` 后再跑一次 `msgcode stopall`（或 `msgcode allstop`），确保所有 `msgcode-` 前缀的 tmux 会话都被清理，否则下次启动可能抱怨会话已存在。`msgcode stopall` 会在清理 bot 后再扫描所有 tmux 并逐个杀掉。
+`msgcode stop` 只停止 msgcode 进程（保留 tmux，会话上下文不丢）；如果你想彻底清理所有 `msgcode-` 前缀的 tmux 会话，再运行 `msgcode allstop`（或 `msgcode stopall`）。
 
 ### 状态与快照命令详解
 
@@ -226,13 +226,14 @@ msgcode/
 
 | 命令 | 说明 |
 |------|------|
-| `/start` | 启动当前项目的 Claude 会话 |
-| `/stop` | 停止会话 |
+| `/start` | 启动或恢复会话（tmux 已在就复用） |
+| `/stop` | 停止会话（kill tmux） |
 | `/status` | 查看会话状态 |
 | `/snapshot` | 获取终端当前屏幕截图 (文本) |
-| `/clear` | 清空 Claude 上下文 |
-| `/resume` | 手动输入选项恢复交互（tmux attach 或 send-keys） |
+| `/clear` | 新线程（kill + start），用于从零开始 |
+| `/resume` | 恢复交互（需要你在 tmux 里手动选 1/2/3） |
 | `/esc` | 发送 ESC 中断操作 |
+| `/help` | 显示帮助 |
 | *(直接发消息)* | 发送给 Claude 并等待回复 |
 
 ---

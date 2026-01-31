@@ -85,6 +85,23 @@ program
     .description("初始化配置目录和环境文件")
     .action(initBot);
 
+program
+    .command("status")
+    .description("显示当前配置摘要")
+    .action(async () => {
+        const { statusCommand } = await import("./cli/status.js");
+        await statusCommand();
+    });
+
+program
+    .command("probe")
+    .description("运行系统健康检查")
+    .option("--json", "输出 JSON 格式")
+    .action(async (options) => {
+        const { probeCommand } = await import("./cli/probe.js");
+        await probeCommand(options.json === true);
+    });
+
 program.parse();
 
 async function launchDaemon(): Promise<void> {

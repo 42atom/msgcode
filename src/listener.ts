@@ -502,7 +502,10 @@ function shouldStream(route: Route, message: string): boolean {
     if (message.trim().startsWith("/")) {
         return false;
     }
-    // 其他消息使用流式处理（转发给 Claude）
+    // 仅 tmux/Claude 路径使用流式（本地模型等不走 tmux）
+    if (route.botType === "lmstudio") {
+        return false;
+    }
     return true;
 }
 

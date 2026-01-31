@@ -10,7 +10,7 @@
     "get-chats": "tsx scripts/get-chats.ts",
     "dev": "tsx src/index.ts",
     "start": "tsx src/index.ts",
-    "test": "LOG_FILE=false LOG_LEVEL=warn bun test"
+    "test": "LOG_FILE=false LOG_LEVEL=warn ${BUN_BIN:-$HOME/.bun/bin/bun} test"
   },
   "keywords": [
     "imessage",
