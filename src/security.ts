@@ -4,7 +4,7 @@
  * 白名单验证、权限检查
  */
 
-import type { Message } from "@photon-ai/imessage-kit";
+import type { InboundMessage } from "./imsg/types.js";
 import { isWhitelisted } from "./config.js";
 
 /**
@@ -19,15 +19,14 @@ export interface SecurityCheck {
 /**
  * 检查消息发送者是否在白名单中
  */
-export function checkWhitelist(message: Message): SecurityCheck {
+export function checkWhitelist(message: InboundMessage): SecurityCheck {
     // 自己发的消息，总是允许
     if (message.isFromMe) {
         return { allowed: true, sender: "me" };
     }
 
-    // 直接使用 message.sender 作为发送者标识
-    // sender 是邮箱或电话号码
-    const sender = message.sender || "unknown";
+    // 使用 message.sender 或 message.handle 作为发送者标识（电话/邮箱）
+    const sender = message.sender || message.handle || "unknown";
 
     if (isWhitelisted(sender)) {
         return { allowed: true, sender };
@@ -43,14 +42,13 @@ export function checkWhitelist(message: Message): SecurityCheck {
 /**
  * 格式化发送者显示名称
  */
-export function formatSender(message: Message): string {
+export function formatSender(message: InboundMessage): string {
     if (message.isFromMe) return "你";
 
     return (
+        message.senderName ||
         message.sender ||
         message.handle ||
-        message.address ||
-        (message.chatId?.includes(";-;") ? message.chatId.split(";-;")[1] : undefined) ||
         message.chatId ||
         "unknown"
     );

@@ -13,6 +13,7 @@ import dotenv from "dotenv";
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { logger } from "./logger/index.js";
 
 /**
  * 获取配置文件路径
@@ -33,7 +34,7 @@ function getConfigPath(): string {
 
     // 回退到项目配置
     if (fs.existsSync(projectConfig)) {
-        console.warn("⚠️  使用项目配置文件，建议迁移到 ~/.config/msgcode/.env");
+        logger.warn("使用项目配置文件，建议迁移到 ~/.config/msgcode/.env");
         return projectConfig;
     }
 
@@ -70,28 +71,24 @@ export interface Config {
     whitelist: WhitelistConfig;
     // 群组路由：群组名 → 配置
     groupRoutes: Map<string, GroupConfig>;
-    // 启动公告开关
-    sendStartupAnnouncement: boolean;
-    // 启动公告文案
-    announceMessage?: string;
-    // 默认群组
-    defaultGroup: string | null;
     // 日志级别
     logLevel: "debug" | "info" | "warn" | "error";
-    // 是否使用文件监听模式 (Phase 2 功能)
-    useFileWatcher: boolean;
-    // 是否跳过未读积压消息（不补发给 Claude）
-    skipUnreadBacklog: boolean;
-    // LM Studio CLI 路径（默认: lms）
-    lmstudioPath?: string;
+    // imsg 二进制路径（2.0 唯一 iMessage Provider）
+    imsgPath: string;
+    // imsg 数据库路径 (可选)
+    imsgDbPath?: string;
+    // 工作空间根目录（E08 新增）
+    workspaceRoot: string;
+    // LM Studio 本地 API Base URL（Local Server），默认: http://127.0.0.1:1234
+    lmstudioBaseUrl?: string;
     // LM Studio 模型名（可选）
     lmstudioModel?: string;
     // LM Studio System Prompt（可选）
     lmstudioSystemPrompt?: string;
-    // LM Studio 本地 API Base URL（OpenAI 兼容），默认: http://127.0.0.1:1234
-    lmstudioBaseUrl?: string;
-    // LM Studio 请求超时（毫秒），默认: 60000
+    // LM Studio 请求超时（毫秒），默认: 120000
     lmstudioTimeoutMs?: number;
+    // LM Studio 最大输出 token（可选，默认: 4000）
+    lmstudioMaxTokens?: number;
     // LM Studio API Key（可选，服务端需要授权时使用）
     lmstudioApiKey?: string;
 }
@@ -149,12 +146,14 @@ export function loadConfig(): Config {
     const emails = parseEmails(process.env.MY_EMAIL);
 
     const groupRoutes = parseGroupRoutes();
-    if (groupRoutes.size === 0) {
-        throw new Error("未配置任何群组路由 (GROUP_*)，请在 ~/.config/msgcode/.env 中添加");
-    }
 
     if (phones.length === 0 && emails.length === 0) {
         throw new Error("白名单为空 (MY_PHONE / MY_EMAIL)，为安全起见请至少配置一项");
+    }
+
+    const imsgPath = process.env.IMSG_PATH;
+    if (!imsgPath) {
+        throw new Error("未设置 IMSG_PATH（2.0 仅支持 imsg RPC）");
     }
 
     return {
@@ -163,17 +162,16 @@ export function loadConfig(): Config {
             emails,
         },
         groupRoutes,
-        defaultGroup: process.env.DEFAULT_GROUP || null,
         logLevel: (process.env.LOG_LEVEL as Config["logLevel"]) || "info",
-        useFileWatcher: process.env.USE_FILE_WATCHER === "true",
-        sendStartupAnnouncement: process.env.SEND_STARTUP_ANNOUNCEMENT !== "false", // 默认 true
-        announceMessage: process.env.ANNOUNCE_MESSAGE,
-        skipUnreadBacklog: process.env.SKIP_UNREAD_BACKLOG === "true",
-        lmstudioPath: process.env.LMSTUDIO_PATH,
+        imsgPath,
+        imsgDbPath: process.env.IMSG_DB_PATH || `${process.env.HOME}/Library/Messages/chat.db`,
+        // E08: 工作空间根目录配置
+        workspaceRoot: process.env.WORKSPACE_ROOT || path.join(os.homedir(), "msgcode-workspaces"),
+        lmstudioBaseUrl: process.env.LMSTUDIO_BASE_URL,
         lmstudioModel: process.env.LMSTUDIO_MODEL,
         lmstudioSystemPrompt: process.env.LMSTUDIO_SYSTEM_PROMPT,
-        lmstudioBaseUrl: process.env.LMSTUDIO_BASE_URL,
         lmstudioTimeoutMs: process.env.LMSTUDIO_TIMEOUT_MS ? Number(process.env.LMSTUDIO_TIMEOUT_MS) : undefined,
+        lmstudioMaxTokens: process.env.LMSTUDIO_MAX_TOKENS ? Number(process.env.LMSTUDIO_MAX_TOKENS) : undefined,
         lmstudioApiKey: process.env.LMSTUDIO_API_KEY,
     };
 }

@@ -1,7 +1,7 @@
 /**
- * msgcode: 探针类型定义
+ * msgcode: 可观测性探针类型定义
  *
- * 定义探针结果和执行器接口
+ * E15: 统一的健康检查与状态探针
  */
 
 /**
@@ -10,70 +10,129 @@
 export interface ProbeResult {
     /** 探针名称 */
     name: string;
-    /** 是否通过 */
-    ok: boolean;
-    /** 详细信息 */
-    details: string;
-    /** 修复建议（失败时） */
-    fixHint?: string;
+    /** 探针状态 */
+    status: ProbeStatus;
+    /** 状态描述 */
+    message: string;
+    /** 详细信息（禁止输出敏感内容：.env 值、用户消息等） */
+    details?: Record<string, unknown>;
 }
 
 /**
- * 探针汇总
+ * 探针状态
  */
-export interface ProbeSummary {
-    /** 通过数量 */
-    ok: number;
-    /** 失败数量 */
-    fail: number;
-    /** 跳过数量 */
-    skip: number;
+export type ProbeStatus = "pass" | "warning" | "error" | "skip";
+
+/**
+ * 探针类别结果
+ */
+export interface ProbeCategoryResult {
+    /** 类别名称 */
+    name: string;
+    /** 类别状态（由 probes 聚合） */
+    status: ProbeStatus;
+    /** 该类别下的所有探针 */
+    probes: ProbeResult[];
 }
 
 /**
- * 完整探针报告
+ * 状态报告摘要
  */
-export interface ProbeReport {
-    /** 所有探针结果 */
-    results: ProbeResult[];
-    /** 汇总统计 */
-    summary: ProbeSummary;
-    /** 是否全部通过 */
-    allOk: boolean;
+export interface StatusSummary {
+    /** 总体状态 */
+    status: ProbeStatus;
+    /** 警告数量 */
+    warnings: number;
+    /** 错误数量 */
+    errors: number;
 }
 
 /**
- * 命令执行结果
+ * 完整状态报告
  */
-export interface ExecResult {
-    /** 标准输出 */
-    stdout: string;
-    /** 标准错误输出 */
-    stderr: string;
-    /** 退出码 */
-    exitCode: number;
+export interface StatusReport {
+    /** 报告版本 */
+    version: string;
+    /** 时间戳 */
+    timestamp: string;
+    /** 摘要 */
+    summary: StatusSummary;
+    /** 各类别探针结果 */
+    categories: Record<string, ProbeCategoryResult>;
 }
 
 /**
- * 命令执行器接口（可注入，用于测试）
+ * 探针执行选项
  */
-export interface CommandExecutor {
-    /**
-     * 执行命令
-     * @param command 要执行的命令
-     * @returns 执行结果
-     */
-    exec(command: string): Promise<ExecResult>;
+export interface ProbeOptions {
+    /** 超时时间（毫秒），默认 2000 */
+    timeout?: number;
 }
 
 /**
- * 探针配置
+ * 格式化选项
  */
-export interface ProbeConfig {
-    /** imsg 二进制路径 */
-    imsgPath?: string;
-    /** routes.json 路径 */
-    routesPath: string;
-    /** 工作空间根目录 */
-    workspaceRoot: string;
+export interface FormatOptions {
+    /** 输出格式 */
+    format: "text" | "json";
+    /** 是否彩色输出（仅 text 格式） */
+    colorize?: boolean;
+}
+
+/**
+ * 探针函数签名
+ */
+export type ProbeFunction = (options?: ProbeOptions) => Promise<ProbeResult>;
+
+/**
+ * 带超时的 Promise 执行
+ */
+export async function withTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    description: string
+): Promise<T> {
+    let timeoutHandle: NodeJS.Timeout | undefined;
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+            reject(new Error(`超时 (${timeoutMs}ms): ${description}`));
+        }, timeoutMs);
+    });
+
+    try {
+        return await Promise.race([promise, timeoutPromise]);
+    } finally {
+        if (timeoutHandle) {
+            clearTimeout(timeoutHandle);
+        }
+    }
+}
+
+/**
+ * 安全地执行探针（捕获异常，不影响其他探针）
+ */
+export async function safeProbe(
+    name: string,
+    fn: () => Promise<ProbeResult>
+): Promise<ProbeResult> {
+    try {
+        return await fn();
+    } catch (error) {
+        return {
+            name,
+            status: "error",
+            message: `探针执行异常: ${error instanceof Error ? error.message : String(error)}`,
+        };
+    }
+}
+
+/**
+ * 聚合探针状态
+ */
+export function aggregateStatus(results: ProbeResult[]): ProbeStatus {
+    if (results.some(r => r.status === "error")) return "error";
+    if (results.some(r => r.status === "warning")) return "warning";
+    if (results.some(r => r.status === "pass")) return "pass";
+    return "skip";
 }

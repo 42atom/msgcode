@@ -14,7 +14,7 @@ import { BufferManager } from "../output/buffer.js";
 import { Throttler } from "../output/throttler.js";
 import { logger } from "../logger/index.js";
 import { sendAttachmentsToSession } from "./sender.js";
-import type { Message } from "@photon-ai/imessage-kit";
+import type { Attachment } from "../imsg/types.js";
 
 // 轮询配置（优化响应速度）
 const FAST_INTERVAL = 150;        // 首次交付前（更快的初始检测）
@@ -133,7 +133,7 @@ export interface StreamOptions {
     slowInterval?: number;    // 默认 3000ms
     minInterval?: number;     // 发送最小间隔，默认 1000ms（优化响应速度）
     onChunk: (chunk: string, isToolUse: boolean) => Promise<void>;
-    attachments?: Message["attachments"];
+    attachments?: readonly Attachment[];
 }
 
 /**
@@ -210,8 +210,24 @@ export async function handleTmuxStream(
     let currentText = "";  // 累积的完整文本
     let lastTmuxOutput = await TmuxSession.capturePane(sessionName, 50); // 记录发送前的 tmux 输出
 
+    // E16: trace 发送前状态
     console.log(`[Streamer ${groupName}] 发送前 offset: ${beforeResult.newOffset}`);
-    logger.debug(`[Streamer ${groupName}] 发送前 offset: ${beforeResult.newOffset}`, { module: "streamer", groupName, offset: beforeResult.newOffset });
+    logger.debug(`[Streamer ${groupName}] 发送前 offset: ${beforeResult.newOffset}`, {
+        module: "streamer",
+        groupName,
+        offset: beforeResult.newOffset,
+        entriesCount: beforeResult.entries.length,
+        messagePreview: message.slice(0, 50),
+    });
+
+    if (process.env.DEBUG_TRACE === "1") {
+        logger.debug("发送前 JSONL 状态", {
+            module: "streamer",
+            groupName,
+            offset: beforeResult.newOffset,
+            entriesCount: beforeResult.entries.length,
+        });
+    }
 
     // 发送消息
     try {
@@ -246,7 +262,7 @@ export async function handleTmuxStream(
                 // 完全无输出：5 秒提示“思考中”，继续等待最终回复
                 if (!hasResponse && Date.now() - startTime > NO_RESPONSE_TIMEOUT) {
                     if (!sentThinking) {
-                        const fallback = "思考中💭";
+                        const fallback = "思考中";
                         console.log(`[Streamer ${groupName}] 无响应超时，发送兜底提示`);
                         logger.warn(`[Streamer ${groupName}] 无响应超时，发送兜底提示`, { module: "streamer", groupName });
                         await options.onChunk(fallback, false);
@@ -398,7 +414,7 @@ export async function handleTmuxStream(
         console.log(`[Streamer ${groupName}] 超时，发送剩余内容`);
         logger.warn(`[Streamer ${groupName}] 超时，发送剩余内容`, { module: "streamer", groupName });
         if (!hasResponse) {
-            await options.onChunk("⚠️ 未收到最终回复，请稍后重试", false);
+            await options.onChunk("未收到最终回复，请稍后重试", false);
         }
         return await finalizeResult("timeout", { timedOut: true, finished: false, incomplete: !hasResponse });
     } catch (error: any) {

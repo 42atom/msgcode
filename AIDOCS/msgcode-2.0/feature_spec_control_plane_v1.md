@@ -3,7 +3,7 @@
 更新时间：2026-01-28
 
 ## 目标
-把 msgcode 2.0 做成“用户只需和 agent 私聊下命令，就能自动建群/绑定目录/收发文件/跑任务/发布成果”的控制面产品。
+把 msgcode 2.0 做成“用户手动建群后，在群里一条命令完成绑定目录；随后收发/跑任务/发布成果”的控制面产品。
 
 ## 前提（你已给出的约束）
 1. 用户与 agent 的 iMessage 账号分离（你愿意提供额外账号用于组群）。
@@ -23,6 +23,10 @@
 - **创建群聊用 AppleScript（make new chat with participants）**
 - 创建完成后获得 `chat.id`（这是 guid），把它作为 `chat_guid` 交给 `imsg rpc` 的发送通道
 - 后续收/发主链路仍然是 `imsg rpc`（watch + send），不要把 AppleScript 扩散到主链路以外
+
+> 但：为降低权限/GUI 依赖与复杂度，msgcode 2.0 **默认不做自动建群**。推荐方案：
+> - 用户手动建群（Messages UI）
+> - 群内 `/bind <dir>` 完成绑定与落盘
 
 ### B) 发文件：`imsg` 支持附件发送（可行性高）
 `imsg` 的发送实现会在 AppleScript 里对 chat 或 buddy 执行 `send theFile to ...`，且 RPC `send` 支持 `file` 参数。
@@ -79,6 +83,8 @@
 约束（你想要的“总是链接”）：
 - 所有交付物写入 `<workspace>/public/`
 - iMessage 只回一个 URL（必要时附上文件名/大小/sha256）
+
+> 注：2.0 不建议叫 `public/`，更推荐 `share/`（语义更明确，避免用户误以为是公网目录）。
 
 用户→bot 的附件：
 - inbound 附件落到 `<workspace>/inbound/`

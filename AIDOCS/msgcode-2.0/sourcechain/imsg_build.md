@@ -27,8 +27,8 @@
 ### 1. 环境要求
 
 ```bash
-# 检查 Swift 工具链（来自 Xcode Command Line Tools）
-swift --version
+# 检查 Swift 工具链
+swift --version        # >= 6.0
 swift package --version
 
 # 检查 Python（补丁脚本需要）

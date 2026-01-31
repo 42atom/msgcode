@@ -4,13 +4,17 @@
  * 处理不同类型 Bot 的命令
  */
 
-import type { Message, IMessageSDK } from "@photon-ai/imessage-kit";
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { BotType } from "./router.js";
 import { runLmStudioChat } from "./lmstudio.js";
+import type { InboundMessage } from "./imsg/types.js";
 
 // 导入 tmux 模块
 import { TmuxSession } from "./tmux/session.js";
-import { sendSnapshot, sendEscape } from "./tmux/sender.js";
+import { sendSnapshot, sendEscape, sendClear } from "./tmux/sender.js";
 import { handleTmuxSend } from "./tmux/responder.js";
 
 /**
@@ -40,8 +44,7 @@ export interface HandlerContext {
     chatId: string;
     groupName: string;
     projectDir?: string;
-    originalMessage: Message;
-    sdk?: IMessageSDK;  // 可选的 SDK 实例
+    originalMessage: InboundMessage;
 }
 
 /**
@@ -55,11 +58,6 @@ export abstract class BaseHandler implements CommandHandler {
         const trimmed = message.trim();
 
         // === 公共命令 ===
-
-        // /help - 显示帮助
-        if (trimmed === "/help" || trimmed === "/?") {
-            return { success: true, response: this.getHelp() };
-        }
 
         // /start - 启动 tmux 会话并运行 Claude
         if (trimmed === "/start") {
@@ -91,19 +89,10 @@ export abstract class BaseHandler implements CommandHandler {
             return { success: true, response };
         }
 
-        // /clear - 新线程（kill + start）
+        // /clear - 清空 Claude 上下文（E16-S7: kill+start）
         if (trimmed === "/clear") {
-            await TmuxSession.stop(context.groupName);
-            const response = await TmuxSession.start(context.groupName, context.projectDir);
-            return { success: true, response: `已重建会话\n${response}` };
-        }
-
-        // /resume - 恢复交互（提示型命令，不做自动化）
-        if (trimmed === "/resume") {
-            return {
-                success: true,
-                response: "如果 tmux 里在等你输入选项，请先在 tmux 里手动输入；然后继续在群里发消息即可。",
-            };
+            const response = await sendClear(context.groupName, context.projectDir);
+            return { success: true, response };
         }
 
         // === 非命令消息：转发给 Claude（请求-响应模式）===
@@ -136,19 +125,17 @@ export abstract class BaseHandler implements CommandHandler {
      */
     protected getHelp(extraCommands?: string[]): string {
         const commands = [
-            "/start   启动或恢复会话（tmux 已在就会复用）",
-            "/stop    关闭会话（kill tmux）",
-            "/status  查看会话状态",
-            "/snapshot 获取终端输出",
-            "/esc     发送 ESC 中断",
-            "/clear   新线程（kill + start）",
-            "/resume  恢复交互（需要你在 tmux 里手动选 1/2/3）",
-            "/help    显示帮助",
+            "• /start - 启动 tmux 会话 + Claude",
+            "• /stop - 关闭 tmux 会话",
+            "• /status - 查看会话状态",
+            "• /snapshot - 获取终端输出",
+            "• /esc - 发送 ESC 中断",
+            "• /clear - 清空上下文",
         ];
         if (extraCommands) {
             commands.push(...extraCommands);
         }
-        return `命令列表:\n${commands.join("\n")}`;
+        return `📝 命令列表：\n${commands.join("\n")}`;
     }
 }
 
@@ -177,7 +164,7 @@ export class CodeHandler extends BaseHandler {
             return {
                 success: true,
                 response: this.getHelp([
-                    "help / 帮助  显示帮助",
+                    "• help / 帮助 - 显示帮助",
                 ]),
             };
         }
@@ -197,7 +184,7 @@ export class ImageHandler extends BaseHandler {
     protected async handleSpecific(message: string, context: HandlerContext): Promise<HandleResult> {
         return {
             success: true,
-            response: `Image Bot 收到: "${message}"`,
+            response: `🎨 Image Bot 收到: "${message}"`,
         };
     }
 }
@@ -209,31 +196,39 @@ export class FileHandler extends BaseHandler {
     protected async handleSpecific(message: string, context: HandlerContext): Promise<HandleResult> {
         return {
             success: true,
-            response: `File Bot 收到: "${message}"`,
+            response: `📁 File Bot 收到: "${message}"`,
         };
     }
 }
 
 /**
- * LM Studio Bot 处理器（本地模型）
+ * LM Studio 处理器
  *
- * 规则：
- * - 不使用 tmux/Claude
- * - /clear 只重置“思维泄露清理”上下文（本实现无持久上下文，返回确认即可）
+ * 使用 LM Studio 本地 OpenAI 兼容 API（不使用 lms CLI）
+ * 不涉及 API key；只转发 content（忽略 reasoning_content）
  */
-export class LmStudioHandler implements CommandHandler {
+export class LMStudioHandler implements CommandHandler {
     async handle(message: string, context: HandlerContext): Promise<HandleResult> {
         const trimmed = message.trim();
 
-        if (trimmed === "/help" || trimmed === "/?") {
+        // help
+        if (trimmed === "help" || trimmed === "帮助" || trimmed === "/help" || trimmed === "/?") {
+            const baseUrl = (process.env.LMSTUDIO_BASE_URL || "http://127.0.0.1:1234").replace(/\/+$/, "");
+            const model = process.env.LMSTUDIO_MODEL || "(auto)";
             return {
                 success: true,
                 response: [
-                    "命令列表:",
-                    "/help    显示帮助",
-                    "/start   准备就绪（本地模型无 tmux 会话）",
-                    "/stop    无需停止（本地模型无后台会话）",
-                    "/clear   清空本地会话（本地模型无持久上下文）",
+                    "LM Studio Bot",
+                    `BaseUrl: ${baseUrl}`,
+                    `Model: ${model}`,
+                    "",
+                    "直接发送消息即可与模型对话。",
+                    "",
+                    "可用命令:",
+                    "help / 帮助 / /help  显示帮助",
+                    "/start  已就绪（本地模型无 tmux 会话）",
+                    "/stop   无需停止（本地模型无后台会话）",
+                    "/clear  清空本地会话（本地模型无持久上下文）",
                 ].join("\n"),
             };
         }
@@ -251,18 +246,33 @@ export class LmStudioHandler implements CommandHandler {
         }
 
         if (trimmed.startsWith("/")) {
-            return { success: true, response: `未知命令: ${trimmed}\n发送 /help 查看可用命令` };
+            return {
+                success: true,
+                response: `LM Studio Bot 不支持命令: ${trimmed}
+发送 help 查看帮助`,
+            };
         }
 
-        try {
-            const response = await runLmStudioChat({ prompt: trimmed });
-            return { success: true, response: response || "（无回复）" };
-        } catch (error: any) {
-            return { success: false, error: error?.message ?? String(error) };
+  try {
+      const response = await runLmStudioChat({
+        prompt: trimmed,
+        workspace: context.projectDir,  // 传递工作目录，启用工具调用
+      });
+      if (!response || !response.trim()) {
+        return {
+          success: false,
+          error: "LM Studio 未返回可展示的文本（可能模型只输出了 reasoning、发生截断，或模型已崩溃）",
+        };
+      }
+      return { success: true, response };
+    } catch (error: unknown) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "调用失败",
+      };
         }
     }
 }
-
 /**
  * 获取对应 Bot 的处理器
  */
@@ -270,12 +280,12 @@ export function getHandler(botType: BotType): CommandHandler {
     switch (botType) {
         case "code":
             return new CodeHandler();
-        case "lmstudio":
-            return new LmStudioHandler();
         case "image":
             return new ImageHandler();
         case "file":
             return new FileHandler();
+        case "lmstudio":
+            return new LMStudioHandler();
         default:
             return new DefaultHandler();
     }

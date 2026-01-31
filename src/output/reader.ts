@@ -205,8 +205,18 @@ export class OutputReader {
     async readProject(projectDir?: string): Promise<ReadResult> {
         const filePath = await this.findLatestJsonl(projectDir);
         if (!filePath) {
+            // E16: trace 未找到文件的情况
+            if (process.env.DEBUG_TRACE === "1") {
+                console.log(`[Reader] 未找到 JSONL 文件，projectDir: ${projectDir}`);
+            }
             return { entries: [], bytesRead: 0, newOffset: 0 };
         }
+
+        // E16: trace 找到的文件路径
+        if (process.env.DEBUG_TRACE === "1") {
+            console.log(`[Reader] 找到 JSONL: ${filePath}`);
+        }
+
         return this.read(filePath);
     }
 

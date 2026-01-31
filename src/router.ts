@@ -3,14 +3,23 @@
  *
  * 根据 chatId 路由消息到对应的 Bot 处理器
  * 每个群组可以关联一个项目目录
+ *
+ * E08: 优先使用 RouteStore（动态绑定），fallback 到 GROUP_* 配置（静态配置）
  */
 
 import { config, type GroupConfig } from "./config.js";
+import { normalizeChatId, stableGroupNameForChatId } from "./imsg/adapter.js";
+import { getRouteByChatId as getRouteFromStore } from "./routes/store.js";
 
 /**
  * Bot 类型
  */
-export type BotType = "code" | "lmstudio" | "image" | "file" | "default";
+export type BotType = "code" | "image" | "file" | "lmstudio" | "default";
+
+/**
+ * E13: 模型客户端类型（本机可执行）
+ */
+export type ModelClient = "claude" | "codex" | "opencode";
 
 /**
  * 路由结果
@@ -23,21 +32,24 @@ export interface Route {
 }
 
 /**
- * 归一化 chatId（提取核心部分用于匹配）
- */
-function normalizeChatId(chatId: string): string {
-    // 提取 GUID 部分（去掉 any;+; 或 any;-; 前缀）
-    const parts = chatId.split(";");
-    return parts[parts.length - 1];
-}
-
-/**
  * 根据 chatId 查找对应的群组配置
+ *
+ * E08: 优先使用 RouteStore（动态绑定），fallback 到 GROUP_* 配置（静态配置）
  */
 export function routeByChatId(chatId: string): Route | null {
-    const normalizedInput = normalizeChatId(chatId);
+    // 优先查询 RouteStore（动态绑定）
+    const storeRoute = getRouteFromStore(chatId);
+    if (storeRoute && storeRoute.status === "active") {
+        return {
+            chatId: storeRoute.chatGuid,
+            groupName: stableGroupNameForChatId(storeRoute.chatGuid),
+            projectDir: storeRoute.workspacePath,
+            botType: storeRoute.botType,
+        };
+    }
 
-    // 遍历配置的群组路由
+    // Fallback 到 GROUP_* 配置（静态配置，不破现网）
+    const normalizedInput = normalizeChatId(chatId);
     for (const [name, groupConfig] of config.groupRoutes.entries()) {
         const normalizedConfig = normalizeChatId(groupConfig.chatId);
         if (normalizedConfig === normalizedInput) {

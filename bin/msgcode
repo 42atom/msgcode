@@ -24,14 +24,9 @@ const child = spawn(command, args, {
     stdio: "inherit",
 });
 
-// 转发信号
 process.on("SIGINT", () => child.kill("SIGINT"));
 process.on("SIGTERM", () => child.kill("SIGTERM"));
 
-// 等待子进程退出
 child.on("exit", (code) => {
     process.exit(code ?? 0);
 });
-
-// 保持父进程运行，直到子进程退出
-// 不要让父进程过早退出

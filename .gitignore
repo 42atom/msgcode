@@ -26,6 +26,12 @@ Thumbs.db
 dist/
 build/
 
+# Bun
+bun.lock
+
+# Vendor (generated binaries)
+vendor/imsg/
+
 # Temp files
 0
 *.tmp
