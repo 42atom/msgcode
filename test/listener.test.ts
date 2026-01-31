@@ -1,42 +1,108 @@
-import { describe, it, expect, beforeEach } from "bun:test";
-import { FakeSDK, makeMessage } from "./fakeSdk";
-import { handleMessage } from "../src/listener";
-import { config } from "../src/config";
+/**
+ * msgcode: listener（2.0）单测
+ *
+ * 只验证控制面：/bind /where 以及未绑定时的提示。
+ * 不触发 tmux（/start 走“未绑定提示”路径）。
+ */
 
-// 确保有默认群路由配置（用于测试路由）
-config.groupRoutes.set("test", {
-    chatId: "any;-;test@example.com",
-    botType: "default",
+import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+
+import { handleMessage } from "../src/listener.js";
+import { config } from "../src/config.js";
+
+const TEST_ROUTES_FILE = path.join(os.tmpdir(), ".config/msgcode/routes-listener.test.json");
+const TEST_WORKSPACE_ROOT = path.join(os.tmpdir(), "msgcode-workspaces-listener.test");
+
+class FakeImsgClient {
+  public sent: Array<{ chat_guid: string; text: string }> = [];
+  async send(params: { chat_guid: string; text: string }): Promise<{ ok: boolean }> {
+    this.sent.push({ chat_guid: params.chat_guid, text: params.text });
+    return { ok: true };
+  }
+}
+
+function cleanTestData(): void {
+  if (fs.existsSync(TEST_ROUTES_FILE)) {
+    fs.unlinkSync(TEST_ROUTES_FILE);
+  }
+  if (fs.existsSync(TEST_WORKSPACE_ROOT)) {
+    fs.rmSync(TEST_WORKSPACE_ROOT, { recursive: true, force: true });
+  }
+}
+
+describe("listener (2.0)", () => {
+  beforeEach(() => {
+    cleanTestData();
+    fs.mkdirSync(TEST_WORKSPACE_ROOT, { recursive: true });
+
+    process.env.ROUTES_FILE_PATH = TEST_ROUTES_FILE;
+    process.env.WORKSPACE_ROOT = TEST_WORKSPACE_ROOT;
+
+    if (!config.whitelist.emails.includes("test@example.com")) {
+      config.whitelist.emails.push("test@example.com");
+    }
+  });
+
+  afterEach(() => {
+    cleanTestData();
+  });
+
+  it("未绑定时，/start 会提示先 /bind", async () => {
+    const imsg = new FakeImsgClient();
+    await handleMessage(
+      {
+        id: "m1",
+        chatId: "any;+;chat-guid-1",
+        text: "/start",
+        isFromMe: false,
+        sender: "test@example.com",
+        handle: "test@example.com",
+      },
+      { imsgClient: imsg as unknown as any }
+    );
+
+    expect(imsg.sent.length).toBe(1);
+    expect(imsg.sent[0].text).toContain("/bind");
+  });
+
+  it("/bind 会写入 RouteStore，并且 /where 可查询", async () => {
+    const imsg = new FakeImsgClient();
+    const chatId = "any;+;chat-guid-2";
+
+    await handleMessage(
+      {
+        id: "m2",
+        chatId,
+        text: "/bind acme/ops",
+        isFromMe: false,
+        sender: "test@example.com",
+        handle: "test@example.com",
+      },
+      { imsgClient: imsg as unknown as any }
+    );
+
+    expect(imsg.sent.length).toBe(1);
+    expect(imsg.sent[0].text).toContain("绑定成功");
+    expect(fs.existsSync(TEST_ROUTES_FILE)).toBe(true);
+
+    await handleMessage(
+      {
+        id: "m3",
+        chatId,
+        text: "/where",
+        isFromMe: false,
+        sender: "test@example.com",
+        handle: "test@example.com",
+      },
+      { imsgClient: imsg as unknown as any }
+    );
+
+    expect(imsg.sent.length).toBe(2);
+    expect(imsg.sent[1].text).toContain("当前绑定");
+    expect(imsg.sent[1].text).toContain(path.join(TEST_WORKSPACE_ROOT, "acme/ops"));
+  });
 });
-// 将测试发件人加入白名单，避免干扰性告警
-config.whitelist.emails.push("test@example.com");
 
-describe("listener", () => {
-    let sdk: FakeSDK;
-
-    beforeEach(() => {
-        sdk = new FakeSDK();
-    });
-
-    it("should rate-limit burst messages from same chatId", async () => {
-        const chatId = "any;-;test@example.com";
-        const msgs = Array.from({ length: 5 }).map((_, i) =>
-            makeMessage({ id: `m${i}`, chatId, text: `ping ${i}` })
-        );
-
-        for (const m of msgs) {
-            await handleMessage(m as any, { sdk: sdk as any, debug: false });
-        }
-
-        // 速率限制：每秒3条，超过的应该收到流控提示
-        const flowControl = sdk.sent.filter(s => s.text.includes("流控中")).length;
-        expect(flowControl).toBeGreaterThan(0);
-    });
-
-    it("should skip unknown groupId but warn once", async () => {
-        const msg = makeMessage({ id: "unknown1", chatId: "any;+;unknown-guid", isGroupChat: true });
-        await handleMessage(msg as any, { sdk: sdk as any, debug: false });
-        // 未配置群不会发送任何回复
-        expect(sdk.sent.length).toBe(0);
-    });
-});

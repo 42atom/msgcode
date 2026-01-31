@@ -11,16 +11,27 @@
 
 ### 身份与权限
 - `OWNER_ALLOW_FROM`：允许控制 bot 的用户标识（邮箱/电话），单个或逗号分隔
-- `DEFAULT_PARTICIPANT`：固定“新人账号”（用于 `/newchat` 自动建群第三人）
 - `DM_COMMANDS_ENABLED=true|false`
 - `GROUP_COMMANDS_ENABLED=true|false`（默认 false）
 
 ### 工作目录与路由
-- `WORK_ROOT=/Users/<bot-user>/msgcode-workspaces`
-- `ROUTE_STORE_PATH=...`（chat_guid ↔ workspace ↔ label）
+- `WORKSPACE_ROOT=/Users/<bot-user>/msgcode-workspaces`（Agent Root；所有 workspace 必须在其子目录下；可自行加一层 `<agent-name>` 做隔离）
+- `ROUTE_STORE_PATH=...`（chat_guid/chat_id ↔ workspace ↔ label）
 
-### iMessage Provider（方案 B）
-- `IMESSAGE_PROVIDER=imsg`（主）|`sdk`（fallback）
+#### 路由主键策略（双键制，单一真相源）
+msgcode 2.0 的路由以 **chat_guid 为主键**，chat_id(rowid) 仅作为缓存/补全字段：
+- `chatGuid`：主键（稳定、可复制；与现有 `any;+;...` 配置一致）
+- `chatId`：辅助字段（本机 chat.db 的 rowid；不可迁移，但过滤/断点续传更稳）
+
+入站路由（Inbound → Route）：
+1. 若消息带 `chat_guid`：用它路由
+2. 若缺失：回退用 `chat_id`，并通过 `chats.list`/缓存补全 `chat_guid`（写回 RouteStore）
+
+出站发送（Route → Send）：
+1. 优先用 `chat_guid` 发送
+2. 必要时回退用 `chat_id`（`imsg send` 支持两者）
+
+### iMessage Provider（2.0 唯一）
 - `IMSG_PATH=/path/to/our-built/imsg`（强制使用源码构建产物）
 - `IMSG_DB_PATH=/Users/<bot-user>/Library/Messages/chat.db`
 

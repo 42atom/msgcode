@@ -5,7 +5,7 @@
  */
 
 import { TmuxSession } from "./session.js";
-import type { Message } from "@photon-ai/imessage-kit";
+import type { Attachment } from "../imsg/types.js";
 
 /**
  * 消息发送结果
@@ -21,7 +21,7 @@ export interface SendResult {
 export async function sendMessage(
     groupName: string,
     message: string,
-    attachments?: Message["attachments"]
+    attachments?: readonly Attachment[]
 ): Promise<SendResult> {
     const sessionName = TmuxSession.getSessionName(groupName);
 
@@ -58,7 +58,7 @@ export async function sendSnapshot(groupName: string): Promise<string> {
     const exists = await TmuxSession.exists(groupName);
 
     if (!exists) {
-        return "⚠️  tmux 会话未运行";
+        return "tmux 会话未运行";
     }
 
     const output = await TmuxSession.capturePane(sessionName, 200);
@@ -76,27 +76,34 @@ export async function sendEscape(groupName: string): Promise<string> {
     const exists = await TmuxSession.exists(groupName);
 
     if (!exists) {
-        return "⚠️  tmux 会话未运行";
+        return "tmux 会话未运行";
     }
 
     await TmuxSession.sendEscape(sessionName);
-    return "✅ 已发送 ESC 中断";
+    return "已发送 ESC 中断";
 }
 
 /**
- * 发送 /clear 清空上下文
+ * 发送 /clear 清空上下文（E16-S7: kill+start 语义）
+ *
+ * 杀掉现有会话并重新启动，彻底清空上下文
  */
-export async function sendClear(groupName: string): Promise<string> {
-    const sessionName = TmuxSession.getSessionName(groupName);
+export async function sendClear(groupName: string, projectDir?: string): Promise<string> {
     const exists = await TmuxSession.exists(groupName);
 
-    if (!exists) {
-        return "⚠️  tmux 会话未运行";
+    // E16-S7: 无论会话是否存在，都执行 kill+start
+    // 先 kill（如果存在）
+    if (exists) {
+        try {
+            await TmuxSession.stop(groupName);
+        } catch {
+            // ignore stop failure
+        }
     }
 
-    await TmuxSession.sendCommand(sessionName, "/clear");
-    await TmuxSession.sendCommand(sessionName, ""); // 额外 Enter
-    return "✅ 已发送 /clear 清空上下文";
+    // 再 start
+    const startResult = await TmuxSession.start(groupName, projectDir);
+    return `已清空上下文（kill+start）\n${startResult}`;
 }
 
 /**
@@ -122,7 +129,7 @@ function sleep(ms: number): Promise<void> {
 
 export async function sendAttachmentsToSession(
     sessionName: string,
-    attachments?: Message["attachments"]
+    attachments?: readonly Attachment[]
 ): Promise<void> {
     if (!attachments || attachments.length === 0) {
         return;
@@ -148,7 +155,7 @@ function summarizeSnapshot(output: string): string {
     const head = lines.slice(0, 3);
     const tail = lines.length > 3 ? lines.slice(-3) : [];
     const summary: string[] = [];
-    summary.push(`⏺ snapshot 概览（共 ${lines.length} 行，展示前/后各 3 行）：`);
+    summary.push(`snapshot 概览（共 ${lines.length} 行，展示前/后各 3 行）：`);
     summary.push(...head.filter(Boolean));
     if (tail.length > 0 && lines.length > head.length) {
         summary.push("...");

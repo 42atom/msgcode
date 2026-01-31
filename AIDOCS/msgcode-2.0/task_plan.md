@@ -35,12 +35,18 @@
 - `AIDOCS/msgcode-2.0/epics/E09_public_artifacts_and_tunnel.md`
 - `AIDOCS/msgcode-2.0/epics/E10_scheduler_jobs_push.md`
 - `AIDOCS/msgcode-2.0/epics/E11_capability_api_skills.md`
+- `AIDOCS/msgcode-2.0/epics/E13_model_switching.md`
+- `AIDOCS/msgcode-2.0/epics/E14_lastseen_cursor.md`
+- `AIDOCS/msgcode-2.0/epics/E15_probe_status.md`
+- `AIDOCS/msgcode-2.0/epics/E16_code_health_and_boundary.md`
+- `AIDOCS/msgcode-2.0/epics/E17_log_privacy_and_shell_safety.md`
 
 ## Decisions Made
 - 2.0 核心风险优先级：供应链（高权限依赖） > 收消息可靠性（去 DB 写） > 群聊发送稳定性（去 AppleScript 主路径）。
 - 范围选择：采用 **方案 B（高收益，`imsg rpc` 作为主 provider）**。
 - 发布策略：**不使用 Cloudflare Tunnel**；发布通道改为 **Pinme（静态网页）+ OneDrive（文件/成果）**，并做成可配置插件能力。
 - 内容处理边界：**msgcode 只做“全面转发/能力管理”（I/O、落盘、发布、权限、审计），不做 ASR/TTS/内容理解**；内容处理由 agent 的 skill 负责。
+- 主链路约束：**不保留 iMessage SDK / AppleScript fallback**；收/发统一走 `imsg rpc`。
 
 ## Status
 **Currently in Phase 2** - 开始 E02（`imsg rpc` provider：watch + send），逐步替换现有 SDK watcher 主链路。

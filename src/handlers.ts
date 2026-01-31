@@ -4,8 +4,13 @@
  * 处理不同类型 Bot 的命令
  */
 
-import type { Message, IMessageSDK } from "@photon-ai/imessage-kit";
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type { BotType } from "./router.js";
+import { runLmStudioChat } from "./lmstudio.js";
+import type { InboundMessage } from "./imsg/types.js";
 
 // 导入 tmux 模块
 import { TmuxSession } from "./tmux/session.js";
@@ -39,8 +44,7 @@ export interface HandlerContext {
     chatId: string;
     groupName: string;
     projectDir?: string;
-    originalMessage: Message;
-    sdk?: IMessageSDK;  // 可选的 SDK 实例
+    originalMessage: InboundMessage;
 }
 
 /**
@@ -85,9 +89,9 @@ export abstract class BaseHandler implements CommandHandler {
             return { success: true, response };
         }
 
-        // /clear - 清空 Claude 上下文
+        // /clear - 清空 Claude 上下文（E16-S7: kill+start）
         if (trimmed === "/clear") {
-            const response = await sendClear(context.groupName);
+            const response = await sendClear(context.groupName, context.projectDir);
             return { success: true, response };
         }
 
@@ -198,6 +202,78 @@ export class FileHandler extends BaseHandler {
 }
 
 /**
+ * LM Studio 处理器
+ *
+ * 使用 LM Studio 本地 OpenAI 兼容 API（不使用 lms CLI）
+ * 不涉及 API key；只转发 content（忽略 reasoning_content）
+ */
+export class LMStudioHandler implements CommandHandler {
+    async handle(message: string, context: HandlerContext): Promise<HandleResult> {
+        const trimmed = message.trim();
+
+        // help
+        if (trimmed === "help" || trimmed === "帮助" || trimmed === "/help" || trimmed === "/?") {
+            const baseUrl = (process.env.LMSTUDIO_BASE_URL || "http://127.0.0.1:1234").replace(/\/+$/, "");
+            const model = process.env.LMSTUDIO_MODEL || "(auto)";
+            return {
+                success: true,
+                response: [
+                    "LM Studio Bot",
+                    `BaseUrl: ${baseUrl}`,
+                    `Model: ${model}`,
+                    "",
+                    "直接发送消息即可与模型对话。",
+                    "",
+                    "可用命令:",
+                    "help / 帮助 / /help  显示帮助",
+                    "/start  已就绪（本地模型无 tmux 会话）",
+                    "/stop   无需停止（本地模型无后台会话）",
+                    "/clear  清空本地会话（本地模型无持久上下文）",
+                ].join("\n"),
+            };
+        }
+
+        if (trimmed === "/start") {
+            return { success: true, response: "已就绪" };
+        }
+
+        if (trimmed === "/stop") {
+            return { success: true, response: "无需停止" };
+        }
+
+        if (trimmed === "/clear") {
+            return { success: true, response: "已清空（本地模型无持久上下文）" };
+        }
+
+        if (trimmed.startsWith("/")) {
+            return {
+                success: true,
+                response: `LM Studio Bot 不支持命令: ${trimmed}
+发送 help 查看帮助`,
+            };
+        }
+
+  try {
+      const response = await runLmStudioChat({
+        prompt: trimmed,
+        workspace: context.projectDir,  // 传递工作目录，启用工具调用
+      });
+      if (!response || !response.trim()) {
+        return {
+          success: false,
+          error: "LM Studio 未返回可展示的文本（可能模型只输出了 reasoning、发生截断，或模型已崩溃）",
+        };
+      }
+      return { success: true, response };
+    } catch (error: unknown) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : "调用失败",
+      };
+        }
+    }
+}
+/**
  * 获取对应 Bot 的处理器
  */
 export function getHandler(botType: BotType): CommandHandler {
@@ -208,6 +284,8 @@ export function getHandler(botType: BotType): CommandHandler {
             return new ImageHandler();
         case "file":
             return new FileHandler();
+        case "lmstudio":
+            return new LMStudioHandler();
         default:
             return new DefaultHandler();
     }

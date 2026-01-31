@@ -59,7 +59,7 @@ export class FileTransport implements Transport {
             this.ensureDir();
             this.openStream();
         } catch (error: any) {
-            console.error(`❌ [FileTransport] 初始化失败: ${error.message}`);
+            console.error(`[FileTransport] 初始化失败: ${error.message}`);
             console.error(`   日志文件: ${this.filename}`);
             console.error(`   将只输出到控制台`);
             this.disabled = true;
@@ -98,7 +98,7 @@ export class FileTransport implements Transport {
 
         // 处理流错误
         this.stream.on("error", (error) => {
-            console.error(`❌ [FileTransport] 写入错误: ${error.message}`);
+            console.error(`[FileTransport] 写入错误: ${error.message}`);
             this.disabled = true;
         });
     }
@@ -124,7 +124,7 @@ export class FileTransport implements Transport {
             this.stream.write(message);
             this.currentSize += messageSize;
         } catch (error: any) {
-            console.error(`❌ [FileTransport] 写入失败: ${error.message}`);
+            console.error(`[FileTransport] 写入失败: ${error.message}`);
             this.disabled = true;
         }
     }
@@ -133,10 +133,28 @@ export class FileTransport implements Transport {
      * 格式化日志消息
      */
     private format(entry: LogEntry): string {
-        const { timestamp, level, message, module } = entry;
+        const { timestamp, level, message, module, meta } = entry;
         const levelStr = level.toUpperCase().padEnd(5);
         const moduleStr = module ? `[${module}] ` : "";
-        return `${timestamp} [${levelStr}] ${moduleStr}${message}\n`;
+
+        // 添加关键元数据用于调试
+        let metaStr = "";
+        if (meta) {
+            const parts: string[] = [];
+            if (meta.chatId) parts.push(`chatId=${String(meta.chatId).slice(-6)}`);
+            if (meta.sender) parts.push(`sender=${meta.sender}`);
+            // 注意：默认不把用户/模型的原始文本写入文件日志，避免敏感内容落盘。
+            // 如需排障，请在调用侧显式提供 textDigest/textLength，并使用 DEBUG_TRACE_TEXT=1 控制 textPreview。
+            if (meta.textLength !== undefined) parts.push(`textLen=${meta.textLength}`);
+            if (meta.textDigest) parts.push(`textSha=${String(meta.textDigest).slice(0, 12)}`);
+            if (process.env.DEBUG_TRACE_TEXT === "1" && meta.textPreview) {
+                parts.push(`textPreview="${String(meta.textPreview).slice(0, 30)}"`);
+            }
+            if (meta.rowid !== undefined) parts.push(`rowid=${meta.rowid}`);
+            if (parts.length) metaStr = ` [${parts.join(" ")}]`;
+        }
+
+        return `${timestamp} [${levelStr}] ${moduleStr}${message}${metaStr}\n`;
     }
 
     /**
@@ -176,9 +194,9 @@ export class FileTransport implements Transport {
             this.currentSize = 0;
             this.openStream();
 
-            console.log(`✅ [FileTransport] 日志已轮转`);
+            console.log(`[FileTransport] 日志已轮转`);
         } catch (error: any) {
-            console.error(`❌ [FileTransport] 轮转失败: ${error.message}`);
+            console.error(`[FileTransport] 轮转失败: ${error.message}`);
             this.disabled = true;
         }
     }

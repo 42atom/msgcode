@@ -1,0 +1,19 @@
+{# LM Studio 通用聊天模板 - 兼容 /api/v1/chat 和 /v1/chat/completions #}
+{# 不包含工具格式，让 LM Studio 自动处理 MCP integrations #}
+
+{%- if messages -%}
+    {%- for message in messages -%}
+        {%- if message.role == "system" -%}
+System: {{ message.content }}
+
+        {%- elif message.role == "user" -%}
+User: {{ message.content }}
+
+        {%- elif message.role == "assistant" -%}
+Assistant: {{ message.content }}
+
+        {%- endif -%}
+    {%- endfor -%}
+{%- endif -%}
+
+Assistant:

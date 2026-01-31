@@ -12,7 +12,7 @@ msgcode 是一个基于 iMessage 的本地 AI Bot 系统，通过群组路由实
 
 ### 核心特性
 
-- **iMessage 集成**: 基于 `@photon-ai/imessage-kit` (SDK)
+- **iMessage 集成**: 基于 `imsg rpc`（无 SDK / 无 AppleScript）
 - **群组路由**: 不同群组 → 对应 Claude Project / Bot
 - **双向通信**:
   - 输入: iMessage → tmux send-keys
@@ -114,18 +114,18 @@ grep ERROR ~/.config/msgcode/log/msgcode.log
 - iMessage 已登录
 - Claude Code (`claude`) 已安装并登录
 
-> **⚠️ 重要：关闭 iCloud 消息同步**
+> **提示：iCloud 消息同步**
 >
-> 使用本系统前，**必须关闭 macOS 的 iCloud 消息同步**：
+> msgcode 2.0 主链路不写 `chat.db`，一般不需要强制关闭 iCloud 消息同步。
+> 但如果出现“消息来源/状态不一致”等诡异问题，可以尝试关闭 macOS 的 iCloud 消息同步：
 >
 > ```
 > 系统设置 → Apple ID → iCloud → 关闭"信息（Messages）"
 > ```
 >
-> **原因**：iCloud 同步会干扰本地数据库操作，导致：
-> - 消息检测失效（云端覆盖本地状态）
-> - markAsRead 无效（写入被云端回滚）
-> - 发送者身份混乱（多设备同步冲突）
+> 可能影响：
+> - 消息检测表现不稳定（多设备/云端状态切换）
+> - 发送者身份显示混乱（多设备同步冲突）
 >
 > **尤其注意**：当 macOS 登录账号与 Bot 身份不一致时，问题更严重。
 
@@ -138,43 +138,39 @@ cd /path/to/msgcode
 # 安装依赖
 npm install
 
-# 复制配置模板
-cp .env.example .env
+# 初始化配置（推荐）
+msgcode init
 ```
 
-### 3. 获取群组 ID
-
-```bash
-# 运行工具获取群组列表
-npm run get-chats
-```
-
-输出示例：
-```
-📁 群组 (3)
-  1. Code Bot
-     guid: i chat;+;chat1234
-  2. Image Bot
-     guid: i chat;+;chat5678
-```
-
-### 4. 配置 .env
+### 3. 配置 ~/.config/msgcode/.env
 
 ```bash
 # 配置白名单
 MY_EMAIL=me@icloud.com
 
-# 配置群组路由
-# 格式: GROUP_<NAME>=<GUID>:<PROJECT_DIR>:<BOT_TYPE>
-GROUP_MATCODE=i chat;+;chat1234:/Users/<you>/Dev/my-project:code
+# imsg 二进制路径（必填）
+IMSG_PATH=/Users/<you>/msgcode/vendor/imsg/v0.4.0/imsg
+
+# 工作空间根目录（可选；默认 ~/msgcode-workspaces）
+WORKSPACE_ROOT=/Users/<you>/msgcode-workspaces
 ```
 
-### 5. 启动 Bot
+### 4. 启动 Bot
 
 ```bash
-# 启动（生产模式）
-npm start
+# 后台启动
+msgcode start
+
+# 或前台 debug
+msgcode start debug
 ```
+
+### 5. 绑定群聊（2.0 推荐）
+
+1. 在 iMessage 里手动建一个群聊，把 msgcode 的 iMessage 账号拉进群
+2. 在群里发送：
+   - `/bind acme/ops`
+   - `/start`
 
 ---
 
@@ -187,7 +183,8 @@ msgcode/
 ├── package.json         # 依赖配置
 ├── .env                 # 配置文件
 ├── scripts/
-│   └── get-chats.ts     # 获取群组工具
+│   ├── build-imsg.sh    # 源码构建 imsg（供应链收口）
+│   └── verify-imsg.sh   # 校验 imsg（hash/权限/版本）
 └── src/
     ├── index.ts         # 主入口
     ├── config.ts        # 配置加载
@@ -208,7 +205,7 @@ msgcode/
 
 **Tip:** `msgcode start` 在后台静默运行并把日志写入 `~/.config/msgcode/log/msgcode.log`，`msgcode start debug` 则把日志同步输出到当前终端；如果需要实时看到 Claude 的终端内容，可以用 `LOG_CONSOLE=true msgcode start debug`，让 tmux 内容同时写入控制台和日志，方便在 iMessage 里快速判断「Do you want to proceed?」等互动提示。
 
-建议在 `msgcode stop` 后再跑一次 `msgcode stopall`（或 `msgcode allstop`），确保所有 `msgcode-` 前缀的 tmux 会话都被清理，否则下次启动可能抱怨会话已存在。`msgcode stopall` 会在清理 bot 后再扫描所有 tmux 并逐个杀掉。
+`msgcode stop` 只停止 msgcode 进程，**不会**清理 `msgcode-` 前缀的 tmux 会话（用于重启后保留 Claude 上下文）；需要彻底清理时用 `msgcode allstop`。
 
 ### 状态与快照命令详解
 
@@ -216,7 +213,7 @@ msgcode/
 - `/snapshot` 会跑 `tmux capture-pane -t msgcode-<group> -p -J`，把最近 200 行终端内容打包发回来，方便在手机上看到 prompt、授权提示或 CLI 的内部日志。
 - `/resume` 表示你已经在 tmux 中手动回了那条交互提示（比如 “Do you want to proceed?”、`1. Yes / 2. No`），接下来继续在群组里发消息即可恢复对话。你可以在本机终端执行 `tmux attach -t msgcode-<group>` 或 `tmux send-keys -t msgcode-<group> "1" Enter`，也可以在 `LOG_CONSOLE=true msgcode start debug` 下观察 prompt 再返回 tmux 操作。
 
-当 tmux 里出现 `Read(~/Library/Mobile...): Do you want to proceed?` 之类权限/文件提示时，请先在 tmux 终端手动输入可选项，这样 Claude 会继续运行；若想跳过每次确认，可以在 macOS 系统设置 → 隐私与安全性 → "完全磁盘访问" 中添加 Terminal（或 VS Code）、授予 `Messages` 数据库读写，之后再启动 `msgcode` 即可。
+当 tmux 里出现 `Do you want to proceed?` 之类交互提示时，请先在 tmux 终端手动输入可选项，Claude 才会继续运行。
 
 ---
 
@@ -235,28 +232,59 @@ msgcode/
 | `/esc` | 发送 ESC 中断操作 |
 | *(直接发消息)* | 发送给 Claude 并等待回复 |
 
+### msgcode 2.0（推荐）：群绑定模式（无需编辑 `.env`）
+
+目标：让小白用户“建群就能用”，不再手动维护 `GROUP_*` 配置。
+
+使用方式（两步）：
+1. 在 Messages 里**手动创建一个群聊**（用于一个项目/会话）。
+2. 在该群里发送 `/bind <dir>` 绑定工作目录。
+
+约定：
+- 先配置一个 **Agent Root**（所有项目都在它下面）：
+  - `WORKSPACE_ROOT=/Users/<you>/msgcode-workspaces`（可自行加一层 `<agent-name>` 做隔离）
+- `/bind` 只接受**相对路径**（统一纳入 root 管理）
+- 最终目录永远是：`$WORKSPACE_ROOT/<dir>`
+- 目录不存在会自动创建
+
+| 命令 | 说明 |
+|------|------|
+| `/bind <dir>` | 绑定当前群到工作目录（已绑定则更新为新目录） |
+| `/bind` | 返回建议目录并提示你复制确认（避免误绑） |
+| `/where` | 查看当前群绑定的工作目录 |
+| `/unbind` | 解除当前群绑定（停止路由到任何目录） |
+| `/chatlist` | 列出所有已绑定的群组 |
+| `/help` | 显示命令帮助 |
+
+示例：
+- `/bind acme/ops` → `/Users/<you>/msgcode-workspaces/acme/ops`
+- `/bind clientA` → `/Users/<you>/msgcode-workspaces/clientA`
+- 修改目录：再次发送 `/bind <newDir>`（只改绑定指针；不自动搬迁文件）
+- 不支持：`/bind /abs/path`（必须在 Agent Root 下）
+
 ---
 
 ## 常见问题
 
 ### Q: 为什么 Claude 不回复？
 A:
-1. **检查 iCloud 消息同步是否关闭**（最常见原因）
+1. 确保已发送 `/bind <dir>` 绑定工作目录。
 2. 确保已发送 `/start` 启动会话。
-3. 确保 Bot 有读取 `~/Library/Messages` 的权限 (Full Disk Access)。
-4. 检查 `.env` 配置的路径是否正确。
+3. 确保运行 msgcode 的终端 + imsg 有读取 `~/Library/Messages` 的权限 (Full Disk Access)。
+4. 检查 `IMSG_PATH` 是否正确。
 
 ### Q: 消息显示的发送者身份不对？
-A: 这是 iCloud 同步导致的多设备冲突。关闭 macOS 的 iCloud 消息同步即可解决。
+A: 多设备 iCloud 同步可能导致身份/状态冲突。优先确认 msgcode 使用的是“专用 iMessage 账号”；必要时再尝试关闭 macOS 的 iCloud 消息同步。
 
 ### Q: 如何支持多个项目？
-A: 在 iMessage 建立多个群组，在 `.env` 中分别配置不同的 `GROUP_*` 和对应的项目路径。
+A:
+- 每个项目/会话建一个群聊，在群里 `/bind <dir>`，之后无需再改 `.env`。
 
 ---
 
 ## 依赖
 
-- `@photon-ai/imessage-kit`: iMessage 数据库读取与发送
+- `imsg`: iMessage RPC（建议源码构建并固定版本）
 - `tmux`: 终端多路复用器 (系统自带或 brew 安装)
 - `claude`: Claude Code CLI 工具
 
@@ -268,4 +296,4 @@ MIT
 
 ---
 
-*更新: 2026-01-09*
+*更新: 2026-01-28*

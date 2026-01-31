@@ -1,0 +1,550 @@
+/**
+ * msgcode: LM Studio API 适配器
+ *
+ * 目标：
+ * - 只走本地 HTTP API（不使用 lms CLI）
+ * - 不涉及 API key
+ * - 只转发最终回答（忽略 reasoning_content），并做兜底清洗
+ *
+ * 优先级：
+ * 1) LM Studio 原生 REST `/api/v1/chat`（更结构化，可把 reasoning 单独分离）
+ * 2) OpenAI 兼容 `/v1/chat/completions`（后备）
+ */
+
+import { config } from "./config.js";
+
+export interface LmStudioChatOptions {
+    prompt: string;
+    system?: string;
+}
+
+export async function runLmStudioChat(options: LmStudioChatOptions): Promise<string> {
+    const baseUrl = normalizeBaseUrl(config.lmstudioBaseUrl || "http://127.0.0.1:1234");
+
+    const model = await resolveLmStudioModelId({ baseUrl });
+    const system = options.system ?? config.lmstudioSystemPrompt;
+
+    const timeoutMs = typeof config.lmstudioTimeoutMs === "number" && !Number.isNaN(config.lmstudioTimeoutMs)
+        ? config.lmstudioTimeoutMs
+        : 120_000;
+
+    const maxTokens = typeof config.lmstudioMaxTokens === "number" && Number.isFinite(config.lmstudioMaxTokens) && config.lmstudioMaxTokens > 0
+        ? Math.floor(config.lmstudioMaxTokens)
+        : 4000;
+
+    async function runNativeOnce(maxOutputTokens: number): Promise<string> {
+        const native = await runLmStudioChatNative({
+            baseUrl,
+            model,
+            prompt: options.prompt,
+            system: system && system.trim() ? system.trim() : undefined,
+            maxOutputTokens,
+            timeoutMs,
+        });
+        return sanitizeLmStudioOutput(native);
+    }
+
+    async function runCompatOnce(maxOutputTokens: number): Promise<string> {
+        const text = await runLmStudioChatOpenAICompat({
+            baseUrl,
+            model,
+            prompt: options.prompt,
+            system: system && system.trim() ? system.trim() : undefined,
+            maxTokens: maxOutputTokens,
+            timeoutMs,
+        });
+        return sanitizeLmStudioOutput(text);
+    }
+
+    // 1) 优先走原生 REST
+    try {
+        return await runNativeOnce(maxTokens);
+    } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : "";
+
+        // 止血：部分模型在长输出/长思考时会直接崩溃（500 model has crashed）
+        // 这里不改变提示词，仅把 max tokens 降档重试一次，避免“无回复”。
+        if (isModelCrashedMessage(msg) && maxTokens > 1600) {
+            try {
+                return await runNativeOnce(1600);
+            } catch {
+                // ignore and proceed to normal fallback/throw
+            }
+        }
+
+        // /api/v1/chat 不存在时（老版本/未启用），走 OpenAI 兼容模式
+        const shouldFallback = msg.includes("404") || msg.includes("未返回可展示的内容");
+        if (!shouldFallback) {
+            // 其他错误直接抛给上层（含超时/模型错误），避免吞掉根因
+            throw error instanceof Error ? error : new Error("LM Studio 调用失败");
+        }
+    }
+
+    // 2) 后备：OpenAI 兼容
+    try {
+        return await runCompatOnce(maxTokens);
+    } catch (error: unknown) {
+        const msg = error instanceof Error ? error.message : "";
+        if (isModelCrashedMessage(msg) && maxTokens > 1600) {
+            return await runCompatOnce(1600);
+        }
+        throw error instanceof Error ? error : new Error("LM Studio 调用失败");
+    }
+}
+
+type ResolveModelParams = {
+    baseUrl: string;
+};
+
+let cachedModel: { baseUrl: string; id: string } | undefined;
+
+function normalizeBaseUrl(raw: string): string {
+    let base = raw.replace(/\/+$/, "");
+    if (base.endsWith("/v1")) {
+        base = base.slice(0, -3);
+    }
+    return base;
+}
+
+async function resolveLmStudioModelId(params: ResolveModelParams): Promise<string> {
+    const configured = (config.lmstudioModel || "").trim();
+    if (configured) return configured;
+
+    if (cachedModel && cachedModel.baseUrl === params.baseUrl) {
+        return cachedModel.id;
+    }
+
+    const id = await fetchFirstModelId({ baseUrl: params.baseUrl });
+    cachedModel = { baseUrl: params.baseUrl, id };
+    return id;
+}
+
+async function fetchFirstModelId(params: { baseUrl: string }): Promise<string> {
+    // 优先：原生 REST
+    try {
+        const id = await fetchFirstLoadedModelKeyNative({ baseUrl: params.baseUrl });
+        if (id) return id;
+    } catch {
+        // ignore and fallback
+    }
+
+    // 后备：OpenAI 兼容
+    const url = `${params.baseUrl}/v1/models`;
+
+    const timeoutMs = typeof config.lmstudioTimeoutMs === "number" && !Number.isNaN(config.lmstudioTimeoutMs)
+        ? config.lmstudioTimeoutMs
+        : 60_000;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+    let resp: Response;
+    try {
+        resp = await fetch(url, { method: "GET", signal: controller.signal });
+    } catch (error: unknown) {
+        if (isAbortError(error)) {
+            throw new Error("LM Studio models 请求超时");
+        }
+        throw new Error(`无法从 LM Studio 获取模型列表：请确认已在 LM Studio 中启动本地 Server（${params.baseUrl}）`);
+    } finally {
+        clearTimeout(timeoutId);
+    }
+
+    const rawText = await resp.text();
+    if (!resp.ok) {
+        throw new Error(`LM Studio models 错误 (${resp.status})：${sanitizeLmStudioOutput(rawText).slice(0, 400)}`);
+    }
+
+    let json: unknown;
+    try {
+        json = JSON.parse(rawText);
+    } catch {
+        throw new Error(`LM Studio models 返回非 JSON：${sanitizeLmStudioOutput(rawText).slice(0, 400)}`);
+    }
+
+    const data = isModelsList(json) ? json.data : [];
+    for (const item of data) {
+        const id = typeof item.id === "string" ? item.id.trim() : "";
+        if (id) return id;
+    }
+
+    throw new Error(
+        "LM Studio 未返回可用模型：请在 LM Studio 中加载至少一个模型，或在 ~/.config/msgcode/.env 中设置 LMSTUDIO_MODEL"
+    );
+}
+
+function isAbortError(error: unknown): boolean {
+    if (!error || typeof error !== "object") return false;
+    if (!("name" in error)) return false;
+    return (error as { name?: unknown }).name === "AbortError";
+}
+
+function isModelCrashedMessage(message: string): boolean {
+    return /model has crashed/i.test(message) || message.includes("模型进程崩溃");
+}
+
+function isModelsList(value: unknown): value is { data: Array<{ id?: unknown }> } {
+    if (!value || typeof value !== "object") return false;
+    if (!("data" in value)) return false;
+    return Array.isArray((value as { data?: unknown }).data);
+}
+
+type LmStudioNativeChatParams = {
+    baseUrl: string;
+    model: string;
+    prompt: string;
+    system?: string;
+    maxOutputTokens: number;
+    timeoutMs: number;
+};
+
+async function runLmStudioChatNative(params: LmStudioNativeChatParams): Promise<string> {
+    const url = `${params.baseUrl}/api/v1/chat`;
+
+    const bodyBase: Record<string, unknown> = {
+        model: params.model,
+        input: params.prompt,
+        stream: false,
+        max_output_tokens: params.maxOutputTokens,
+    };
+
+    if (params.system) {
+        // 默认不注入（除非用户显式配置），避免绑定角色/行为
+        bodyBase.system_prompt = params.system;
+    }
+
+    try {
+        const rawText = await fetchTextWithTimeout({
+            url,
+            method: "POST",
+            timeoutMs: params.timeoutMs,
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify(bodyBase),
+        });
+
+        let json: unknown;
+        try {
+            json = JSON.parse(rawText);
+        } catch {
+            throw new Error(`LM Studio API 返回非 JSON：${sanitizeLmStudioOutput(rawText).slice(0, 400)}`);
+        }
+
+        const message = extractLmStudioNativeMessage(json);
+        if (!message || !message.trim()) {
+            throw new Error("LM Studio 未返回可展示的内容");
+        }
+        return message;
+    } catch (error: unknown) {
+        const e0 = error instanceof Error ? error : new Error("LM Studio 调用失败");
+        throw new Error(`LM Studio(${params.model}) ${e0.message}`);
+    }
+}
+
+type LmStudioOpenAIChatParams = {
+    baseUrl: string;
+    model: string;
+    prompt: string;
+    system?: string;
+    maxTokens: number;
+    timeoutMs: number;
+};
+
+async function runLmStudioChatOpenAICompat(params: LmStudioOpenAIChatParams): Promise<string> {
+    const url = `${params.baseUrl}/v1/chat/completions`;
+
+    const messages: Array<{ role: "system" | "user"; content: string }> = [];
+    if (params.system && params.system.trim()) {
+        // 默认不注入（除非用户显式配置），避免绑定角色/行为
+        messages.push({ role: "system", content: params.system.trim() });
+    }
+    messages.push({ role: "user", content: params.prompt });
+
+    const rawText = await fetchTextWithTimeout({
+        url,
+        method: "POST",
+        timeoutMs: params.timeoutMs,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+            model: params.model,
+            messages,
+            stream: false,
+            max_tokens: params.maxTokens,
+        }),
+    });
+
+    let json: unknown;
+    try {
+        json = JSON.parse(rawText);
+    } catch {
+        throw new Error(`LM Studio API 返回非 JSON：${sanitizeLmStudioOutput(rawText).slice(0, 400)}`);
+    }
+
+    const content = isChatCompletion(json) ? json.choices[0]?.message?.content : undefined;
+    const text = typeof content === "string" ? content : (content ? String(content) : "");
+    if (!text || !text.trim()) {
+        throw new Error(`LM Studio(${params.model}) 未返回可展示的内容`);
+    }
+    return text;
+}
+
+async function fetchFirstLoadedModelKeyNative(params: { baseUrl: string }): Promise<string | null> {
+    const url = `${params.baseUrl}/api/v1/models`;
+    const rawText = await fetchTextWithTimeout({
+        url,
+        method: "GET",
+        timeoutMs: typeof config.lmstudioTimeoutMs === "number" && !Number.isNaN(config.lmstudioTimeoutMs) ? config.lmstudioTimeoutMs : 60_000,
+    });
+
+    let json: unknown;
+    try {
+        json = JSON.parse(rawText);
+    } catch {
+        return null;
+    }
+
+    const models = isNativeModelsList(json) ? json.data : [];
+    for (const m of models) {
+        if (m.type !== "llm") continue;
+        if (!Array.isArray(m.loaded_instances) || m.loaded_instances.length === 0) continue;
+        const key = typeof m.key === "string" ? m.key.trim() : "";
+        if (key) return key;
+    }
+    return null;
+}
+
+async function fetchTextWithTimeout(params: {
+    url: string;
+    method: "GET" | "POST";
+    timeoutMs: number;
+    headers?: Record<string, string>;
+    body?: string;
+}): Promise<string> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), params.timeoutMs);
+
+    const headers: Record<string, string> = { ...params.headers };
+    const apiKey = config.lmstudioApiKey?.trim();
+    if (apiKey) {
+        headers["authorization"] = `Bearer ${apiKey}`;
+    }
+
+    let resp: Response;
+    try {
+        resp = await fetch(params.url, {
+            method: params.method,
+            headers,
+            body: params.body,
+            signal: controller.signal,
+        });
+    } catch (error: unknown) {
+        if (isAbortError(error)) {
+            throw new Error(`LM Studio API 请求超时`);
+        }
+        throw new Error(`LM Studio API 连接失败：请确认已在 LM Studio 中启动本地 Server（${params.url}）`);
+    } finally {
+        clearTimeout(timeoutId);
+    }
+
+    const rawText = await resp.text();
+    if (!resp.ok) {
+        const snippet = sanitizeLmStudioOutput(rawText).slice(0, 400);
+        if (resp.status >= 500 && /model has crashed/i.test(rawText)) {
+            throw new Error(
+                `LM Studio API 错误 (${resp.status})：模型进程崩溃。请在 LM Studio 中重新加载/重启该模型，或切换到更小/更稳定的模型。\n${snippet}`
+            );
+        }
+        throw new Error(`LM Studio API 错误 (${resp.status})：${snippet}`);
+    }
+    return rawText;
+}
+
+function extractLmStudioNativeMessage(value: unknown): string {
+    const output = isNativeChatResponse(value) ? value.output : [];
+    for (const item of output) {
+        if (item.type !== "message") continue;
+        const extracted = extractTextFromUnknown(item.content);
+        if (extracted) return extracted;
+    }
+    return "";
+}
+
+function extractTextFromUnknown(value: unknown): string {
+    if (typeof value === "string") return value;
+    if (!value) return "";
+
+    if (Array.isArray(value)) {
+        const parts: string[] = [];
+        for (const v of value) {
+            const t = extractTextFromUnknown(v);
+            if (t) parts.push(t);
+        }
+        return parts.join("");
+    }
+
+    if (typeof value === "object") {
+        const obj = value as Record<string, unknown>;
+        // 常见形态：{ text: "..." }
+        if (typeof obj.text === "string") return obj.text;
+        // 或者：{ content: "..." }
+        if (typeof obj.content === "string") return obj.content;
+        // 或者：{ value: "..." }
+        if (typeof obj.value === "string") return obj.value;
+    }
+
+    return "";
+}
+
+function isNativeChatResponse(value: unknown): value is { output: Array<{ type?: unknown; content?: unknown }> } {
+    if (!value || typeof value !== "object") return false;
+    if (!("output" in value)) return false;
+    return Array.isArray((value as { output?: unknown }).output);
+}
+
+function isNativeModelsList(value: unknown): value is { data: Array<{ type?: unknown; key?: unknown; loaded_instances?: unknown }> } {
+    if (!value || typeof value !== "object") return false;
+    if (!("data" in value)) return false;
+    return Array.isArray((value as { data?: unknown }).data);
+}
+
+function isChatCompletion(value: unknown): value is { choices: Array<{ message?: { content?: unknown } }> } {
+    if (!value || typeof value !== "object") return false;
+    if (!("choices" in value)) return false;
+    return Array.isArray((value as { choices?: unknown }).choices);
+}
+
+/**
+ * 清洗 LM Studio 输出：
+ *
+ * wire-hygiene（默认开启）：
+ * - 去 ANSI 转义
+ * - 去除 JSON 包裹（reasoning_content/content/role）
+ * - 去除 </think>...<think>...</think>
+ * - 去掉角色扮演脚手架 action/expression，若有 dialogue 则只保留 dialogue
+ * - 轻量去 Markdown 噪声
+ */
+export function sanitizeLmStudioOutput(text: string): string {
+    let out = text ?? "";
+
+    out = stripAnsi(out);
+    out = normalizeJsonishEnvelope(out);
+    out = dropBeforeLastClosingTag(out, "think");
+    out = out.replace(/<think>[\s\S]*?<\/think>/gi, "");
+
+    // 内容形态改变：默认关闭，需显式启用
+    if (config.lmstudioStripRoleplay) {
+        out = stripRoleplayScaffolding(out);
+    }
+    if (config.lmstudioStripMarkdown) {
+        out = stripMarkdown(out);
+    }
+
+    return out
+        .split("\n")
+        .map(line => line.trimEnd())
+        .join("\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
+}
+
+function stripAnsi(input: string): string {
+    return input
+        .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
+        .replace(/\u001b\][^\u0007]*\u0007/g, "")
+        .replace(/\u001b[\(\)][0-9A-Za-z]/g, "");
+}
+
+function dropBeforeLastClosingTag(input: string, tagName: string): string {
+    const lower = input.toLowerCase();
+    const needle = `</${tagName.toLowerCase()}>`;
+    const idx = lower.lastIndexOf(needle);
+    if (idx < 0) return input;
+    return input.slice(idx + needle.length);
+}
+
+function stripRoleplayScaffolding(input: string): string {
+    const lines = input.split("\n");
+
+    let hasDialogue = false;
+    let sawScaffold = false;
+    const out: string[] = [];
+
+    for (const rawLine of lines) {
+        const line = rawLine.trim();
+        if (!line) continue;
+
+        const m = line.match(/^(?:[-*+]\s+|\d+\.\s+)?(action|expression|dialogue)\s*:\s*(.*)$/i);
+        if (m) {
+            sawScaffold = true;
+            const key = m[1].toLowerCase();
+            const value = (m[2] ?? "").trim();
+
+            if (key === "dialogue") {
+                hasDialogue = true;
+                if (value) out.push(value);
+            }
+            continue;
+        }
+
+        out.push(rawLine);
+    }
+
+    if (hasDialogue) {
+        return out.join("\n").trim();
+    }
+
+    if (sawScaffold) {
+        return out.join("\n").trim();
+    }
+
+    return input;
+}
+
+function stripMarkdown(input: string): string {
+    return input
+        .replace(/^#{1,6}\s+/gm, "")
+        .replace(/\*\*(.*?)\*\*/g, "$1")
+        .replace(/__(.*?)__/g, "$1")
+        .replace(/`{1,3}([^`]+)`{1,3}/g, "$1")
+        .replace(/^\s*[-*+]\s+/gm, "")
+        .replace(/^\s*\d+\.\s+/gm, "");
+}
+
+function normalizeJsonishEnvelope(input: string): string {
+    let out = input;
+
+    // 有些模型会把换行以 "\\n" 的形式塞进字符串里（尤其是输出 JSON 片段时）
+    if (out.includes("\\n")) {
+        // 兼容双重转义（"\\\\n" -> 实际内容里的 "\\n"）
+        out = out.replace(/\\\\n/g, "\n");
+        out = out.replace(/\\n/g, "\n");
+    }
+
+    const lines = out.split("\n");
+    const normalized: string[] = [];
+
+    for (let rawLine of lines) {
+        const trimmed = rawLine.trim();
+
+        // 直接丢弃 reasoning_content 行（无论是 JSON key 还是类 key:value）
+        if (/^"?reasoning_content"?\s*:/.test(trimmed)) {
+            continue;
+        }
+        if (/^reasoning_content\s*=/i.test(trimmed)) {
+            continue;
+        }
+
+        // 丢弃 role 行（有些模型会输出 role/content/reasoning_content 的 JSON 片段）
+        if (/^"?role"?\s*:/.test(trimmed)) {
+            continue;
+        }
+
+        // 若是 "content": "..." 这种包裹，把前缀剥掉，让后续规则能识别 Action/Expression/Dialogue
+        rawLine = rawLine.replace(/^\s*"?content"?\s*:\s*"/, "");
+        // 去掉行尾可能出现的引号/逗号
+        rawLine = rawLine.replace(/"\s*,?\s*$/, "");
+
+        normalized.push(rawLine);
+    }
+
+    return normalized.join("\n");
+}

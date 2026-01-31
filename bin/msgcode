@@ -5,24 +5,28 @@
 
 import { spawn } from "child_process";
 import { fileURLToPath } from "url";
-import { dirname } from "path";
+import { dirname, join } from "path";
+import { existsSync } from "fs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// 使用 tsx 运行 cli.ts
-const child = spawn("npx", ["tsx", `${__dirname}/../src/cli.ts`, ...process.argv.slice(2)], {
+const cliPath = join(__dirname, "..", "src", "cli.ts");
+const localTsx = join(__dirname, "..", "node_modules", ".bin", "tsx");
+
+// 优先使用本地 tsx（避免 npx 在线拉取/版本漂移），找不到再回退到 npx
+const command = existsSync(localTsx) ? localTsx : "npx";
+const args = existsSync(localTsx)
+    ? [cliPath, ...process.argv.slice(2)]
+    : ["tsx", cliPath, ...process.argv.slice(2)];
+
+const child = spawn(command, args, {
     stdio: "inherit",
 });
 
-// 转发信号
 process.on("SIGINT", () => child.kill("SIGINT"));
 process.on("SIGTERM", () => child.kill("SIGTERM"));
 
-// 等待子进程退出
 child.on("exit", (code) => {
     process.exit(code ?? 0);
 });
-
-// 保持父进程运行，直到子进程退出
-// 不要让父进程过早退出

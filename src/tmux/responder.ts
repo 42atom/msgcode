@@ -9,7 +9,7 @@ import { OutputReader } from "../output/reader.js";
 import { AssistantParser, type ParseResult } from "../output/parser.js";
 import { logger } from "../logger/index.js";
 import { sendAttachmentsToSession } from "./sender.js";
-import type { Message } from "@photon-ai/imessage-kit";
+import type { Attachment } from "../imsg/types.js";
 
 /**
  * 轮询配置（参考 Matcode）
@@ -27,7 +27,7 @@ export interface ResponseOptions {
     timeout?: number;       // 默认 30s
     fastInterval?: number;  // 默认 300ms
     slowInterval?: number;  // 默认 3000ms
-    attachments?: Message["attachments"];
+    attachments?: readonly Attachment[];
 }
 
 /**

@@ -22,7 +22,8 @@ const STARTUP_SLOW_THRESHOLD_MS = 10000; // 超过该阈值视为 Claude 启动�
  * - 不允许包含 Shell 特殊字符（$, `, !）
  */
 function isSafePath(path: string): boolean {
-    return path.startsWith("/") && !path.includes("..") && !/[$`!]/.test(path);
+    // 只允许绝对路径；禁止路径遍历；禁止控制字符与换行（避免注入 tmux 输入流）
+    return path.startsWith("/") && !path.includes("..") && !/[\r\n\0]/.test(path) && !/[$`!]/.test(path);
 }
 
 /**
@@ -31,6 +32,11 @@ function isSafePath(path: string): boolean {
  */
 function shellEscapeSingleQuote(str: string): string {
     return "'" + str.replace(/'/g, "'\\''") + "'";
+}
+
+function buildSafeCdCommand(dir: string): string {
+    // 使用 cd -- '<escaped>' 兼容空格/特殊字符，避免被 shell 解释
+    return `cd -- ${shellEscapeSingleQuote(dir)}`;
 }
 
 /**
@@ -88,7 +94,10 @@ export class TmuxSession {
     }
 
     /**
-     * 启动 tmux 会话并运行 Claude
+     * 启动 tmux 会话并运行 Claude（E16-S7: resume 语义）
+     *
+     * 会话已存在：恢复会话，更新工作目录
+     * 会话不存在：创建新会话
      */
     static async start(groupName: string, projectDir?: string): Promise<string> {
         const sessionName = this.getSessionName(groupName);
@@ -99,17 +108,16 @@ export class TmuxSession {
         // 检查会话是否已存在
         const currentStatus = await this.getStatus(sessionName);
         if (currentStatus !== SessionStatus.Stopped) {
-            // 会话已存在，更新工作目录
+            // E16-S7: resume 语义 - 会话已存在，恢复并更新工作目录
             if (projectDir) {
                 // P0 修复：校验路径安全性
                 if (!isSafePath(projectDir)) {
                     throw new Error(`Invalid project directory: ${projectDir}`);
                 }
-                // 使用 spawn 避免命令注入，直接传路径（无需 shell 转义）
-                await this.sendCommand(sessionName, `cd ${projectDir}`);
+                await this.sendCommand(sessionName, buildSafeCdCommand(projectDir));
             }
             const statusText = currentStatus === SessionStatus.Ready ? "Claude 已就绪" : "正在启动";
-            return `✅ tmux 会话 "${sessionName}" 已在运行\n📁 工作目录: ${projectDir || "~/"}\n📊 状态: ${statusText}`;
+            return `已恢复 tmux 会话 "${sessionName}"\n工作目录: ${projectDir || "~/"}\n状态: ${statusText}`;
         }
 
         // 创建新会话
@@ -133,17 +141,17 @@ export class TmuxSession {
             const ready = await this.waitForReady(sessionName, READY_WAIT_TIMEOUT_MS);
             state.status = ready ? SessionStatus.Ready : SessionStatus.Starting;
 
-            const dirInfo = projectDir ? `\n📁 工作目录: ${projectDir}` : "";
+            const dirInfo = projectDir ? `\n工作目录: ${projectDir}` : "";
             const elapsed = Date.now() - startTime;
             if (!ready && elapsed > STARTUP_SLOW_THRESHOLD_MS) {
-                logger.warn(`⚠️ Claude 启动异常: ${elapsed}ms 未就绪`, { module: "tmux", sessionName, elapsed });
+                logger.warn(`Claude 启动异常: ${elapsed}ms 未就绪`, { module: "tmux", sessionName, elapsed });
             }
             const readyInfo = ready
-                ? "\n🤖 Claude 已就绪"
+                ? "\nClaude 已就绪"
                 : elapsed > STARTUP_SLOW_THRESHOLD_MS
-                    ? "\n⚠️ Claude 启动异常（超过10秒未就绪）"
-                    : "\n⏳ Claude 正在启动...";
-            return `✅ 已启动 tmux 会话 "${sessionName}"${dirInfo}${readyInfo}`;
+                    ? "\nClaude 启动异常（超过10秒未就绪）"
+                    : "\nClaude 正在启动...";
+            return `已启动 tmux 会话 "${sessionName}"${dirInfo}${readyInfo}`;
         } catch (error: any) {
             this.sessions.delete(sessionName);
             throw new Error(`启动失败: ${error.message}`);
@@ -159,10 +167,10 @@ export class TmuxSession {
         try {
             await execAsync(`tmux kill-session -t ${sessionName}`, { timeout: 5000 });
             this.sessions.delete(sessionName);
-            return `✅ 已关闭 tmux 会话 "${sessionName}"`;
+            return `已关闭 tmux 会话 "${sessionName}"`;
         } catch (error: any) {
             if (error.message.includes("session not found")) {
-                return `⚠️  tmux 会话 "${sessionName}" 未运行`;
+                return `tmux 会话 "${sessionName}" 未运行`;
             }
             throw error;
         }
@@ -176,13 +184,13 @@ export class TmuxSession {
         const status = await this.getStatus(sessionName);
 
         if (status === SessionStatus.Stopped) {
-            return `⚠️  tmux 会话 "${sessionName}" 未运行`;
+            return `tmux 会话 "${sessionName}" 未运行`;
         }
 
         const state = this.sessions.get(sessionName);
-        const dirInfo = state?.projectDir ? `\n📁 工作目录: ${state.projectDir}` : "";
-        const statusText = status === SessionStatus.Ready ? "🤖 Claude 已就绪" : "⏳ 正在启动";
-        return `✅ tmux 会话 "${sessionName}" 正在运行${dirInfo}\n📊 状态: ${statusText}`;
+        const dirInfo = state?.projectDir ? `\n工作目录: ${state.projectDir}` : "";
+        const statusText = status === SessionStatus.Ready ? "Claude 已就绪" : "正在启动";
+        return `tmux 会话 "${sessionName}" 正在运行${dirInfo}\n状态: ${statusText}`;
     }
 
     /**

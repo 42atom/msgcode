@@ -94,16 +94,17 @@ export class Logger {
             return;
         }
 
-        // 生成时间戳：YYYY-MM-DD HH:MM:SS
+        // 生成时间戳：YYYY-MM-DD HH:MM:SS.mmm（毫秒精度）
         const now = new Date();
-        const timestamp = now.toISOString().replace("T", " ").slice(0, 19);
+        const timestamp = now.toISOString().replace("T", " ").replace("Z", "").slice(0, 23);
 
-        // 构建日志条目
+        // 构建日志条目（meta 不展开到顶层，保持结构化）
         const entry: LogEntry = {
             timestamp,
             level,
             message,
-            ...meta,
+            module: meta?.module,
+            meta,
         };
 
         // 写入所有传输器
@@ -201,7 +202,7 @@ function createLogger(): Logger {
                 maxFiles: 3,
             }));
         } catch (error: any) {
-            console.warn(`⚠️  文件日志初始化失败: ${error.message}`);
+            console.warn(`文件日志初始化失败: ${error.message}`);
         }
     }
 

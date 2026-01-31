@@ -14,8 +14,8 @@
 - `imsg rpc` 成为主 provider：
   - 收：`watch.subscribe` 推送
   - 发：`send`（DM/群聊同构目标）
-- `imessage-kit` 保留为 fallback/迁移过渡。
-- 目标：显著减少 AppleScript/sqlite3 对主路径的参与。
+- 不保留 SDK/AppleScript fallback（2.0 直接收口到 imsg RPC）。
+- 目标：主链路不写 `chat.db`，不依赖 GUI Automation 权限。
 
 **当前选择：方案 B（2026-01-28）**
 
