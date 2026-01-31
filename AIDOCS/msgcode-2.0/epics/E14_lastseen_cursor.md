@@ -157,9 +157,9 @@ export async function updateLastSeen(
 - [x] 启动窗口控制（通过日志 + 手测验证）
 
 ### 手动验证
-- [ ] 重启后不补发历史消息
-- [ ] 新消息正常接收
-- [ ] 不写入 `chat.db`
+- [x] 重启后不补发历史消息
+- [x] 新消息正常接收
+- [x] 不写入 `chat.db`
 
 ## Migration Path
 
@@ -173,11 +173,11 @@ export async function updateLastSeen(
 - 删除 `state.json` 即可回退到旧行为
 
 ## Acceptance Criteria
-- [ ] 启动时只获取最近 60 秒消息（无游标时）
-- [ ] 有游标时只获取新消息（`since_rowid`）
-- [ ] 不再调用 `markAsRead`，不写 `chat.db`
-- [ ] 游标持久化，重启后恢复
-- [ ] 提供游标管理命令
+- [x] 启动时只获取最近 60 秒消息（无游标时）
+- [x] 有游标时只获取新消息（`since_rowid`）
+- [x] 不再调用 `markAsRead`，不写 `chat.db`
+- [x] 游标持久化，重启后恢复
+- [x] 提供游标管理命令
 
 ## Related Epics
 - E02: iMessage Provider 改造（imsg rpc）

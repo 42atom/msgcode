@@ -6,8 +6,8 @@
 ## Phases
 - [x] Phase 0: Version scope & success criteria
 - [x] Phase 1: imsg 供应链方案（开源核验 + 源码构建 + 固定版本）
-- [ ] Phase 2: iMessage Provider 改造（rpc send + watch）
-- [ ] Phase 3: 收消息链路去 DB 写（lastSeen 游标替代 unreadOnly/markAsRead）
+- [x] Phase 2: iMessage Provider 改造（rpc send + watch）
+- [x] Phase 3: 收消息链路去 DB 写（lastSeen 游标替代 unreadOnly/markAsRead）
 - [ ] Phase 4: 发送链路统一与降级策略（DM/群聊同构）
 - [ ] Phase 5: 可观测性与自愈（probe/health/日志结构化）
 - [ ] Phase 6: 测试与回归（无真账号也能测的模拟层）
@@ -49,4 +49,4 @@
 - 主链路约束：**不保留 iMessage SDK / AppleScript fallback**；收/发统一走 `imsg rpc`。
 
 ## Status
-**Currently in Phase 2** - 开始 E02（`imsg rpc` provider：watch + send），逐步替换现有 SDK watcher 主链路。
+**Currently in Phase 4/5/7** - 主链路已收口到 `imsg rpc` + `lastSeen` + probe/status；下一步聚焦：发送细节一致性（Phase 4）、健康自愈（Phase 5）、launchd/升级（Phase 7）。

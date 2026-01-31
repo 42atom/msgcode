@@ -33,8 +33,8 @@ bun.lock
 vendor/imsg/
 
 # Temp files
-0
 *.tmp
+*.bak
 
 # Reference materials (not tracked)
 refs/

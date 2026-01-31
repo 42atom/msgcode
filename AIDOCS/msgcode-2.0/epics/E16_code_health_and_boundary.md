@@ -13,7 +13,7 @@
 
 ## 现状问题（证据点）
 ### 1) 临时调试落盘（安全/噪声）
-- `src/listener.ts` 多处写入 `/tmp/msgcode-debug.log`（含用户文本片段），属于敏感落盘与不可控噪声源。
+- 已移除 `/tmp/msgcode-debug.log` 的临时落盘；调试追踪统一走 `logger`，并由 `DEBUG_TRACE`/`DEBUG_TRACE_TEXT` 显式开关控制。
 
 ### 2) “内容清洗”越界（测试污染风险）
 - `src/lmstudio.ts` 的 `sanitizeLmStudioOutput()` 当前包含：
@@ -56,7 +56,7 @@
 
 ## 执行计划（按顺序做，逐项可验收）
 ### Step 1：移除 `/tmp/msgcode-debug.log`（必做）
-改动：
+改动（已完成）：
 - 删除 `src/listener.ts` 对 `/tmp/msgcode-debug.log` 的写入
 - 用 `logger.debug(...)` 替代；并加一个总开关（例如 `DEBUG_TRACE=1`）控制是否输出“链路追踪”日志
 
@@ -129,4 +129,3 @@
 ## 交付物
 - 本文档：`AIDOCS/msgcode-2.0/epics/E16_code_health_and_boundary.md`
 - 对应代码改动 + 测试（按 Step 1~7 分 PR/分提交，不做大爆炸式重构）
-

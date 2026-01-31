@@ -31,12 +31,12 @@ RouteStore（建议持久化为一个 JSON/SQLite；v1 可用 JSON）：
 > 极简原则：所有其它信息都可以通过 `imsg rpc chats.list` 或运行时探测恢复，不再重复存。
 
 ## Tasks
-- [ ] 定义 owner allowlist（高权限动作执行者）
-- [ ] 定义 route store（chat_guid 主键 + chat_id 缓存）
-- [ ] `/bind <dir>`：创建/更新绑定（幂等）
-- [ ] `/where`：回显当前群绑定的 workspace
-- [ ] `/unbind`：解除绑定（软删除或 status=archived/paused）
-- [ ] `/chatlist` 输出：label/chat_guid/workspace/lastActive（可选）
+- [x] 定义 owner allowlist（高权限动作执行者，复用白名单）
+- [x] 定义 route store（chat_guid 主键 + chat_id 缓存）
+- [x] `/bind <dir>`：创建/更新绑定（幂等）
+- [x] `/where`：回显当前群绑定的 workspace
+- [x] `/unbind`：解除绑定（软删除或 status=archived/paused）
+- [x] `/chatlist` 输出：label/chat_guid/workspace/lastActive（可选）
 
 ## Flow（极简但可恢复）
 

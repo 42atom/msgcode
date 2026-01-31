@@ -118,10 +118,10 @@ msgcode 2.0 命令帮助
 ## Implementation Phases
 
 ### Phase 1: 仅“选择与回显”（最小闭环）
-- [ ] 扩展 `BotType` 类型定义
-- [ ] 更新 `/bind` 命令支持可选的 `client` 参数（`/bind <dir> [client]`）
-- [ ] `/where` 回显当前 client（不存在则默认 claude）
-- [ ] `/model` 命令：查看/切换 client
+- [x] 扩展 `BotType` 类型定义
+- [x] 更新 `/bind` 命令支持可选的 `client` 参数（`/bind <dir> [client]`）
+- [x] `/where` 回显当前 client（不存在则默认 claude）
+- [x] `/model` 命令：查看/切换 client
 - [ ] 若 client 在本机不存在：直接回报并要求用户安装
 
 **验收**：

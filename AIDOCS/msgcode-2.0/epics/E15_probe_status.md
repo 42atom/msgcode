@@ -280,9 +280,8 @@ export async function probeCommand(options: {
 ```
 
 ### Phase 4: 集成到现有代码
-- [ ] listener.ts 中添加探针调用点
-- [ ] commands.ts 添加 `/status` 命令
-- [ ] CLI 添加 `msgcode status` 和 `msgcode probe` 命令
+- [x] listener.ts：主链路可观测（日志 + cursor）
+- [x] CLI：添加 `msgcode status` 和 `msgcode probe` 命令
 
 ## Commands
 
@@ -352,13 +351,13 @@ $ msgcode status --format json | jq '.summary.status'
 ```
 
 ## Acceptance Criteria
-- [ ] `msgcode status` 命令可用
-- [ ] `msgcode probe` 命令可用
-- [ ] 支持文本和 JSON 两种输出格式
-- [ ] 覆盖 6 大类探针
-- [ ] 探针失败不影响其他探针
-- [ ] 状态报告易于阅读
-- [ ] JSON 输出符合 schema
+- [x] `msgcode status` 命令可用
+- [x] `msgcode probe` 命令可用
+- [x] 支持文本和 JSON 两种输出格式
+- [x] 覆盖 6 大类探针
+- [x] 探针失败不影响其他探针
+- [x] 状态报告易于阅读
+- [x] JSON 输出符合 schema（probe 输出）
 
 ## Related Epics
 - E02: iMessage Provider 改造
