@@ -15,6 +15,15 @@ import { mkdir, copyFile } from "node:fs/promises";
 import { existsSync, accessSync, constants } from "node:fs";
 import { exec, spawn } from "node:child_process";
 
+// 导入 memory 子命令（M2）
+import {
+  createMemoryRememberCommand,
+  createMemoryIndexCommand,
+  createMemorySearchCommand,
+  createMemoryGetCommand,
+  createMemoryStatusCommand,
+} from "./cli/memory.js";
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const CONFIG_DIR = path.join(os.homedir(), ".config/msgcode");
@@ -80,15 +89,16 @@ program
   .description("查看系统状态报告")
   .option("-j, --json", "JSON 格式输出（短选项）")
   .action(async (options) => {
+    const startTime = Date.now();
     const { runAllProbes, formatReport } = await import("./probe/index.js");
     const report = await runAllProbes();
     const output = formatReport(report, {
       format: options.json ? "json" : "text",
       colorize: true,
-    });
+    }, "msgcode status", startTime);
     console.log(output);
 
-    // 根据状态设置退出码
+    // 根据状态设置退出码：pass=0, warning=2, error=1
     const exitCode = report.summary.status === "error" ? 1 : report.summary.status === "warning" ? 2 : 0;
     process.exit(exitCode);
   });
@@ -98,49 +108,72 @@ program
   .description("运行诊断探针（environment|permissions|config|routes|connections|resources）")
   .option("-j, --json", "JSON 格式输出（短选项）")
   .action(async (category: string | undefined, options) => {
+    const startTime = Date.now();
     const { runAllProbes, runSingleProbe, formatReport } = await import("./probe/index.js");
 
     if (category) {
       // 运行单个类别探针
       const report = await runSingleProbe(category);
+      const command = `msgcode probe ${category}`;
       const output = formatReport(report, {
         format: options.json ? "json" : "text",
         colorize: true,
-      });
+      }, command, startTime);
       console.log(output);
+      // 根据状态设置退出码
+      const exitCode = report.summary.status === "error" ? 1 : report.summary.status === "warning" ? 2 : 0;
+      process.exit(exitCode);
     } else {
       // 运行所有探针
       const report = await runAllProbes();
       const output = formatReport(report, {
         format: options.json ? "json" : "text",
         colorize: true,
-      });
+      }, "msgcode probe", startTime);
       console.log(output);
+      // 根据状态设置退出码
+      const exitCode = report.summary.status === "error" ? 1 : report.summary.status === "warning" ? 2 : 0;
+      process.exit(exitCode);
     }
-
-    // 根据状态设置退出码
-    const exitCode = options.json ? 0 : 0; // probe 命令总是成功
-    process.exit(exitCode);
   });
 
 program
-    .command("status")
-    .description("显示当前配置摘要")
-    .action(async () => {
-        const { statusCommand } = await import("./cli/status.js");
-        await statusCommand();
-    });
+  .command("doctor")
+  .description("聚合诊断 + 修复建议（JSON-first，用于自动化修复）")
+  .option("-j, --json", "JSON 格式输出（短选项）")
+  .action(async (options) => {
+    const startTime = Date.now();
+    const { runAllProbes, formatReport } = await import("./probe/index.js");
+    const report = await runAllProbes();
 
-program
-    .command("probe")
-    .description("运行系统健康检查")
-    .option("--json", "输出 JSON 格式")
-    .action(async (options) => {
-        const { probeCommand } = await import("./cli/probe.js");
-        await probeCommand(options.json === true);
-    });
+    // doctor 默认输出 JSON，除非用户明确要文本格式
+    const output = formatReport(report, {
+      format: options.json ? "json" : "json",  // doctor 默认 JSON
+      colorize: false,
+    }, "msgcode doctor", startTime);
+    console.log(output);
 
-program.parse();
+    // 根据状态设置退出码：pass=0, warning=2, error=1
+    const exitCode = report.summary.status === "error" ? 1 : report.summary.status === "warning" ? 2 : 0;
+    process.exit(exitCode);
+  });
+
+// Memory 命令组（M2）
+async function loadMemoryCommands() {
+  const { createMemoryCommand } = await import("./cli/memory.js");
+  program.addCommand(createMemoryCommand());
+}
+
+// 主入口（异步）
+async function main() {
+  await loadMemoryCommands();
+  program.parse();
+}
+
+main().catch((err) => {
+  console.error("CLI error:", err);
+  process.exit(1);
+});
 
 async function launchDaemon(): Promise<void> {
   await mkdir(CONFIG_DIR, { recursive: true });

@@ -155,24 +155,56 @@ CLI 输出与日志中：
 - `DATA_STATE_INVALID_JSON`：state.json 解析失败
 - `DATA_CRON_INVALID_JSON`：cron/jobs.json 解析失败（2.1）
 
-### 4.6 JOB（2.1 新增）
+### 4.6 TAX（高敏业务）
+- `TAX_CAPABILITY_DISABLED`：功能未启用
+- `TAX_LOGIN_REQUIRED`：未登录（host profile 未完成登录）
+- `TAX_CONFIRM_REQUIRED`：未提供 `--confirm`（尝试执行副作用动作）
+- `TAX_SITE_CHANGED`：页面结构变化导致自动化失效
+- `TAX_EXPORT_FAILED`：导出失败（CSV/PDF 下载失败）
+- `TAX_SUBMIT_FAILED`：提交失败（需落盘证据页/回执）
+
+### 4.7 RUNNER（本地模型）
+- `RUNNER_NOT_FOUND`：runnerId 不存在
+- `RUNNER_TIMEOUT`：执行超时
+- `RUNNER_FAILED`：非零退出码
+
+### 4.8 BROWSER（浏览器自动化）
+- `BROWSER_CAPABILITY_DISABLED`：浏览器能力未启用
+- `BROWSER_LOGIN_REQUIRED`：未在 host profile 登录
+- `BROWSER_CONFIRM_REQUIRED`：缺少 `--confirm` 但尝试执行副作用
+- `BROWSER_SITE_CHANGED`：站点结构变化导致 selector 失效
+- `BROWSER_EXPORT_FAILED`：导出失败
+- `BROWSER_SUBMIT_FAILED`：提交失败
+
+### 4.9 JOB（2.1 新增）
 - `JOB_NOT_FOUND`：job ID 不存在
 - `JOB_INVALID_SCHEDULE`：schedule 表达式非法（cron 语法/时区错误）
 - `JOB_ROUTE_ORPHANED`：route.chatGuid 在 routes.json 中不存在
 - `JOB_STUCK`：job 执行超时（防卡死阈值触发）
 
-### 4.7 RATE_LIMIT（预留）
+### 4.10 RATE_LIMIT（预留）
 - `RATE_LIMIT_EXCEEDED`：触发限流（未来扩展；用于防刷屏/防风暴）
 
-### 4.8 RUNTIME（补充）
+### 4.11 RUNTIME（补充）
 - `RUNTIME_SCHEDULER_STUCK`：调度器卡死/无法推进（理论上应自愈，但需可观测）
 
-### 4.9 MEMORY（2.1 新增）
+### 4.12 MEMORY（2.1 新增）
+
+#### 4.12.1 参数与路径错误
 - `MEMORY_WORKSPACE_NOT_FOUND`：workspaceId 不存在/无法解析
 - `MEMORY_FILE_NOT_FOUND`：指定的 memory 文件不存在
-- `MEMORY_INDEX_CORRUPTED`：index.sqlite 损坏，需 reindex
-- `MEMORY_FTS_DISABLED`：FTS5 不可用
 - `MEMORY_PATH_TRAVERSAL`：path 包含 `..` 或越界
+
+#### 4.12.2 索引与搜索错误
+- `MEMORY_INDEX_CORRUPTED`：index.sqlite 损坏，需 reindex
+- `MEMORY_FTS_DISABLED`：FTS5 不可用（平台不支持或编译时未启用）
+
+#### 4.12.3 运行时错误
+- `MEMORY_WRITE_FAILED`：写入 memory 文件失败（权限不足/磁盘满等）
+- `MEMORY_INDEX_FAILED`：索引操作失败（读取文件/分块/写入 FTS5 过程出错）
+- `MEMORY_SEARCH_FAILED`：搜索操作失败（FTS5 查询异常）
+- `MEMORY_READ_FAILED`：读取 memory 文件片段失败（权限不足/文件损坏等）
+- `MEMORY_STATUS_FAILED`：获取索引状态失败（数据库查询异常）
 
 ---
 

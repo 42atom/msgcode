@@ -16,6 +16,8 @@ export interface ProbeResult {
     message: string;
     /** 详细信息（禁止输出敏感内容：.env 值、用户消息等） */
     details?: Record<string, unknown>;
+    /** 修复建议（可选） */
+    fixHint?: string;
 }
 
 /**

@@ -1,6 +1,8 @@
 # Tax / Accounting Browser Workflow Spec（v2.1）
 
 > 目标：让 msgcode 能在**本机**完成“记账/报税”这类高敏业务的浏览器工作流，同时把风险锁死：**可审计**、**可恢复**、**默认无副作用**、**必须二次确认**。
+>
+> 本文定位：Domain Pack（业务包）。通用浏览器底座见：`AIDOCS/msgcode-2.1/browser_automation_spec_v2.1.md:1`。
 
 ## 0) 适用范围
 
@@ -14,6 +16,10 @@
 3. **证据优先**：每次执行都落盘“证据包”（截图/导出文件/请求上下文摘要）；日志只存 digest，不存隐私正文。
 4. **最小权限**：命令默认只读（抓取/导出）；任何副作用动作默认禁用，需要显式开关。
 5. **可恢复**：计划与证据均可落盘；daemon/CLI 中断后可从 `requestId` 继续（至少能重放计划、重跑导出）。
+
+补充（来自对 Clawdbot/OpenClaw 的拆解经验）：
+- **Default to Serial**：所有高敏步骤默认串行执行；并行只允许在“低风险、可重试”的子任务上显式开启（例如每日导出、索引更新）。
+- **可审计队列**：把“计划→执行”当作队列化指令，而不是 async/await 的隐式并发，避免 race condition 污染证据链条。
 
 ## 2) 权限与隔离（必须）
 
@@ -107,3 +113,17 @@
 
 - 允许 job 定时触发 `prepare(downloadStatements)`，但 `run` 仍需 owner `--confirm`（禁止无人值守提交）。
 
+## 7) Browser 采集策略：Semantic Snapshot vs Screenshot
+
+> 结论：**交互**优先用“语义快照”（ARIA/可访问树的文本化表示），**取证**必须保存截图/导出文件。
+
+- **Semantic Snapshot（推荐用于交互）**
+  - 优点：体积小、可检索、token 成本低、对“找按钮/填表单”更稳定。
+  - 适用：定位输入框/按钮、判断页面是否已登录、导航到目标页面。
+- **Screenshot / Export（必须用于取证）**
+  - 优点：可作为审计证据；站点结构变化时可用于调试/复盘。
+  - 适用：提交前后确认页、错误页、回执页、导出 CSV/PDF。
+
+约束：
+- `prepare` 阶段可生成语义快照（文本化）用于 plan diff，但不得替代“提交证据截图”。
+- `submit/payment` 类动作必须强制落盘 `before_submit.png` / `after_submit.png` 与回执文件（若可下载）。

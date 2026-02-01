@@ -121,8 +121,16 @@
 - `content`
 
 备注：
-- `chunks_fts.content` 是可检索文本（来自 memory md）。这是“索引副本”，不等于日志/诊断；不写到 `msgcode.log`。
+- `chunks_fts.content` 是可检索文本（来自 memory md）。这是"索引副本"，不等于日志/诊断；不写到 `msgcode.log`。
 - 索引中不存 iMessage sender/handle 等敏感身份字段（除非用户明确写进 memory 文件）。
+
+### workspaceId 生成策略（分阶段）
+- **P0（当前 v2.1）**：使用 workspace 目录名作为 `workspace_id`（如 `msgcode-test-workspace`）
+  - 简化实现，快速验证核心闭环
+  - **已知局限**：不同路径下同名目录会产生相同的 `workspaceId`（理论上可撞名，但 P0 可接受）
+- **P1（未来升级）**：使用稳定的 hash 策略（如 `sha256(realpath)[:12]`）
+  - 保证全局唯一性，支持 workspace 移动后仍保持相同 ID
+  - 需要配合数据迁移脚本（重命名已索引的 `workspace_id`）
 
 ### Chunk 策略（简单可用）
 - 优先按 `## ...` 标题分段（一段=一个标题块）。
@@ -291,9 +299,20 @@ P1（可选）：
 
 ---
 
-## MEMORY 错误码（对齐 CLI Contract，建议）
+## MEMORY 错误码（对齐 CLI Contract）
+
+### 参数与路径错误
 - `MEMORY_WORKSPACE_NOT_FOUND`：workspaceId 不存在/无法解析
 - `MEMORY_FILE_NOT_FOUND`：指定的 memory 文件不存在
+- `MEMORY_PATH_TRAVERSAL`：path 包含 `..` 或越界
+
+### 索引与搜索错误
 - `MEMORY_INDEX_CORRUPTED`：index.sqlite 损坏，需 reindex
 - `MEMORY_FTS_DISABLED`：FTS5 不可用
-- `MEMORY_PATH_TRAVERSAL`：path 包含 `..` 或越界
+
+### 运行时错误
+- `MEMORY_WRITE_FAILED`：写入 memory 文件失败
+- `MEMORY_INDEX_FAILED`：索引操作失败
+- `MEMORY_SEARCH_FAILED`：搜索操作失败
+- `MEMORY_READ_FAILED`：读取 memory 文件片段失败
+- `MEMORY_STATUS_FAILED`：获取索引状态失败

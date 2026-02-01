@@ -125,9 +125,9 @@ export async function runSingleProbe(
 /**
  * 格式化状态报告
  */
-export function formatReport(report: StatusReport, options: FormatOptions): string {
+export function formatReport(report: StatusReport, options: FormatOptions, command?: string, startTime?: number): string {
     if (options.format === "json") {
-        return formatJson(report);
+        return formatJson(report, command ?? "msgcode status", startTime ?? Date.now());
     }
     return formatText(report);
 }
