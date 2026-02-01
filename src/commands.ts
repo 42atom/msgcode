@@ -18,6 +18,7 @@ import crypto from "node:crypto";
 const execAsync = promisify(exec);
 
 let imsgClient: ImsgRpcClient | null = null;
+let jobScheduler: import("./jobs/scheduler.js").JobScheduler | null = null;
 const perChatQueue = new Map<string, Promise<void>>();
 
 async function keepAlive(): Promise<void> {
@@ -105,6 +106,52 @@ export async function startBot(): Promise<void> {
     const startTime = new Date(Date.now() - 60000).toISOString();
     await imsgClient.subscribe({ start: startTime });
   }
+
+  // M3.2-2: 初始化 JobScheduler（daemon 自动调度）
+  const { createJobScheduler } = await import("./jobs/scheduler.js");
+  const { getRouteByChatId } = await import("./routes/store.js");
+  const { executeJob } = await import("./jobs/runner.js");
+
+  // Lane queue：按 chatGuid 串行化执行（用户消息与 job 注入共享）
+  function enqueueLane<T>(laneId: string, fn: () => Promise<T>): Promise<T> {
+    const prev = perChatQueue.get(laneId) ?? Promise.resolve() as Promise<unknown>;
+    const next = prev.catch(() => {}).then(async () => {
+      if (process.env.DEBUG_TRACE === "1") {
+        logger.debug("Lane 执行开始", { module: "commands", laneId });
+      }
+      try {
+        return await fn();
+      } finally {
+        if (perChatQueue.get(laneId) === next) {
+          perChatQueue.delete(laneId);
+        }
+      }
+    }) as Promise<T>;
+    perChatQueue.set(laneId, next as Promise<void>);
+    return next;
+  }
+
+  jobScheduler = createJobScheduler({
+    getRouteFn: getRouteByChatId,
+    executeJobFn: async (job) => {
+      // 使用 lane queue 串行化同一 chatGuid 的执行
+      return enqueueLane(job.route.chatGuid, () => executeJob(job, {
+        delivery: true,
+        imsgSend: async (chatGuid, text) => {
+          if (!imsgClient) {
+            throw new Error("imsgClient 未初始化");
+          }
+          await imsgClient.send({ chat_guid: chatGuid, text });
+        },
+      }));
+    },
+    onTick: (info) => {
+      logger.info("Scheduler tick", { module: "commands", dueJobs: info.dueJobs.length });
+    },
+  });
+
+  await jobScheduler.start();
+  logger.info("JobScheduler 已启动", { module: "commands" });
 
   const { handleMessage } = await import("./listener.js");
 
@@ -202,6 +249,13 @@ export async function startBot(): Promise<void> {
 export async function stopBot(): Promise<void> {
   console.log("停止 msgcode...");
   logger.info("停止 msgcode", { module: "commands" });
+
+  // M3.2-2: 先停止 JobScheduler（优雅停止，等待当前执行完成）
+  if (jobScheduler) {
+    jobScheduler.stop();
+    jobScheduler = null;
+    logger.info("JobScheduler 已停止", { module: "commands" });
+  }
 
   if (imsgClient) {
     try {

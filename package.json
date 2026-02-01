@@ -24,6 +24,7 @@
     "@types/commander": "^2.12.0",
     "better-sqlite3": "^12.6.2",
     "commander": "^14.0.2",
+    "croner": "^9.1.0",
     "dotenv": "^16.4.0"
   },
   "devDependencies": {

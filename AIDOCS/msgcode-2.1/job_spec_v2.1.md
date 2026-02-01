@@ -144,7 +144,8 @@
 
 语义：
 - 使用 `croner`（或同类库）计算 `nextRunAtMs`。
-- `tz` 为空时：默认使用主机时区（或强制 UTC，需在实现时固定一条规则并写进 README）。
+- **`tz` 必填**：必须使用 IANA 时区标识（如 `Asia/Shanghai`、`America/New_York`）。
+- **禁止静默 fallback**：不允许使用系统时区作为默认值，避免系统时区变化导致 schedule 漂移。
 - **时区变化处理**：daemon 启动时与每次 tick 前都重算 `nextRunAtMs`（对 `cron`/`every`），避免系统时区改变后 schedule 漂移。
 
 ---

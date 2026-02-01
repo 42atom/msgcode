@@ -24,6 +24,9 @@ import {
   createMemoryStatusCommand,
 } from "./cli/memory.js";
 
+// 导入 job 子命令（M3）
+import { createJobCommand } from "./cli/jobs.js";
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const CONFIG_DIR = path.join(os.homedir(), ".config/msgcode");
@@ -164,9 +167,16 @@ async function loadMemoryCommands() {
   program.addCommand(createMemoryCommand());
 }
 
+// Job 命令组（M3）
+async function loadJobCommands() {
+  const { createJobCommand } = await import("./cli/jobs.js");
+  program.addCommand(createJobCommand());
+}
+
 // 主入口（异步）
 async function main() {
   await loadMemoryCommands();
+  await loadJobCommands();
   program.parse();
 }
 

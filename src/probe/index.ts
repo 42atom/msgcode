@@ -12,6 +12,7 @@ import {
     probeConnections,
     probeResources,
 } from "./probes/index.js";
+import { probeJobs } from "./probes/jobs.js";
 import { formatJson } from "./formatters/json.js";
 import { formatText } from "./formatters/text.js";
 import { safeProbe, aggregateStatus } from "./types.js";
@@ -27,6 +28,7 @@ const PROBE_CATEGORIES = [
     { name: "路由", key: "routes", probe: probeRoutes },
     { name: "连接", key: "connections", probe: probeConnections },
     { name: "资源", key: "resources", probe: probeResources },
+    { name: "任务", key: "jobs", probe: probeJobs },
 ] as const;
 
 /**
