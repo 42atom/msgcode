@@ -1,6 +1,6 @@
 # msgcode 2.1（Design Notes）
 
-> 目标：在不污染主链路（iMessage 收发 + 路由 + tmux 会话）的前提下，把“常驻能力”补齐：**Jobs/定时** + **机器可解析诊断**。
+> 目标：在不污染主链路（iMessage 收发 + 路由 + tmux 会话）的前提下，把"常驻能力"补齐：**Jobs/定时** + **机器可解析诊断**。
 
 ## 目录
 
@@ -16,9 +16,26 @@ AIDOCS/msgcode-2.1/
 ├── local_runners_spec_v2.1.md # Local runners（TTS/生图/视频/ASR）统一封装 v2.1
 ├── moltbot_cli_capability_gap_20260131.md # 与 moltbot(openclaw) CLI/能力差距对比
 ├── job_spec_v2.1.md       # Jobs（定时/周期任务）设计草案 v2.1
+├── jobs_m3_execution_plan.md # Jobs M3 执行计划与验收记录
 ├── memory_spec_v2.1.md    # Memory（分项目隔离 + 管家视图）设计草案 v2.1（FTS5/BM25）
 └── tax_browser_workflow_spec_v2.1.md # 记账/报税（高敏）浏览器工作流规范 v2.1
 ```
+
+## 实现进度（2026-02-01）
+
+| 里程碑 | 状态 | 说明 |
+|--------|------|------|
+| **M1** | ✅ 完成 | CLI Contract 收口到 Envelope（JSON-first）+ 退出码一致 |
+| **M2** | ✅ 完成 | Memory P0（Markdown SoT + FTS5）闭环成立 |
+| **M3** | ✅ 完成 | Jobs P0（daemon 生命周期 + lane 串行 + 落盘 + doctor 口径 + 错误码） |
+| **M4** | 🔄 规划中 | （待定义） |
+
+### 技术债记录
+
+| 缺口 | 优先级 | 说明 |
+|------|--------|------|
+| P0+ 成功路径验证 | P0+ | 需在 tmux+iMessage 环境验证 `runs.jsonl status:"ok"`（当前只验证了错误路径） |
+| daemon 停止策略优化 | P1 | `stopBot()` 使用 pkill -9 -f 过于粗暴，建议改用 pidfile 管理 |
 
 ## 约束（2.1 总原则）
 - JSON-first：所有状态/诊断都必须可机器解析（便于 agent/脚本自动解读）。

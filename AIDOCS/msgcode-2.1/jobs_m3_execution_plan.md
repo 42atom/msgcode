@@ -218,3 +218,52 @@ v2.1.2 (2-3周) - M3.3 可观测增强
 v2.2.0 (Q2)    - L1 本地能力
 v2.3.0 (Q3)    - L2 高敏浏览器
 ```
+
+---
+
+## 8. P0+ 成功路径验证（TODO）
+
+**状态**: 待补充（非阻塞 M4）
+
+**验收目标**：
+在有 tmux+iMessage 连接的真实环境中，验证成功路径跑通一次。
+
+**前置条件**：
+- 目标群已 `/start`，tmux session 存活
+- handleTmuxSend 能正常发送消息
+
+**验证步骤**：
+```bash
+# 1. 确认 tmux session 存活
+$ tmux list-sessions | grep msgcode
+
+# 2. 创建测试 job（每分钟执行）
+$ npx tsx src/cli.ts job add --name "P0-验证" \
+  --cron "*/1 * * * *" \
+  --text "Hello from M3-P0+" \
+  --chat-guid "<valid-chat-guid>" \
+  --tz Asia/Shanghai
+
+# 3. 等待执行（或手动触发）
+$ npx tsx src/cli.ts job run <id>
+
+# 4. 验证结果
+# - runs.jsonl 新增一条 status:"ok" 且 errorCode:null
+# - job.state.lastStatus == "ok"
+# - job.state.lastErrorCode == null
+```
+
+**成功标志**：
+```json
+{
+  "ts": "2026-xx-xx...",
+  "status": "ok",
+  "errorCode": null,
+  "errorMessage": null
+}
+```
+
+**当前状态**：
+- ✅ 错误路径已验证（TMUX_SESSION_DEAD 正确返回 errorCode）
+- ⏳ 成功路径等待真实环境验证
+
