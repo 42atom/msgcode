@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "requiredForStart": [
+    {
+      "id": "imsg",
+      "kind": "bin",
+      "pathEnv": "IMSG_PATH"
+    },
+    {
+      "id": "messages_db",
+      "kind": "fs_read",
+      "path": "~/Library/Messages/chat.db"
+    }
+  ],
+  "requiredForJobs": [
+    {
+      "id": "tmux",
+      "kind": "bin",
+      "cmd": "tmux -V"
+    }
+  ],
+  "optional": [
+    {
+      "id": "lmstudio",
+      "kind": "http",
+      "url": "http://127.0.0.1:1234/v1/models",
+      "description": "LM Studio API（可通过 LMSTUDIO_BASE_URL 覆盖）"
+    },
+    {
+      "id": "mlx_whisper",
+      "kind": "bin",
+      "cmd": "mlx-whisper --help"
+    },
+    {
+      "id": "whisper_model",
+      "kind": "fs_exists",
+      "path": "~/Models/whisper-large-v3-mlx"
+    },
+    {
+      "id": "sips",
+      "kind": "bin",
+      "cmd": "sips --version"
+    },
+    {
+      "id": "lmstudio_vision_model",
+      "kind": "model_loaded",
+      "description": "LM Studio Vision 模型（如 PaddleOCR-VL-1.5 或 GLM-4V）"
+    }
+  ]
+}
