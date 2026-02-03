@@ -14,6 +14,7 @@ import { config } from "./config.js";
 import { ImsgRpcClient } from "./imsg/rpc-client.js";
 import type { InboundMessage } from "./imsg/types.js";
 import crypto from "node:crypto";
+import { getVersion } from "./version.js";
 
 const execAsync = promisify(exec);
 
@@ -67,8 +68,42 @@ async function killMsgcodeTmuxSessions(): Promise<string[]> {
 }
 
 export async function startBot(): Promise<void> {
-  logger.info("启动 msgcode", { module: "commands" });
-  console.log("启动 msgcode...");
+  // M4-B: Preflight 校验（启动前检查依赖）
+  const { loadManifest } = await import("./deps/load.js");
+  const { runPreflight } = await import("./deps/preflight.js");
+
+  try {
+    const manifest = await loadManifest();
+    const preflightResult = await runPreflight(manifest);
+
+    // 检查 requiredForStart
+    const missingStart = preflightResult.requiredForStart.filter((r) => !r.available);
+    if (missingStart.length > 0) {
+      console.error("启动必需依赖缺失:");
+      for (const check of missingStart) {
+        console.error(`  - ${check.dependencyId}: ${check.error}`);
+      }
+      console.error("\n请解决缺失依赖后重试。运行 'msgcode preflight --json' 查看详情。");
+      process.exit(1);
+    }
+
+    // 记录 Jobs 依赖状态
+    const missingJobs = preflightResult.requiredForJobs.filter((r) => !r.available);
+    if (missingJobs.length > 0) {
+      logger.warn("Jobs 依赖缺失，定时任务将无法运行", {
+        module: "commands",
+        missing: missingJobs.map((r) => r.dependencyId),
+      });
+    }
+  } catch (preflightErr) {
+    console.error("依赖检查失败:", preflightErr instanceof Error ? preflightErr.message : String(preflightErr));
+    process.exit(1);
+  }
+
+  const version = getVersion();
+  logger.info(`msgcode v${version}`, { module: "commands", version, binPath: process.argv[1] });
+  console.log(`msgcode v${version}`);
+  console.log("");
 
   imsgClient = new ImsgRpcClient(config.imsgPath);
   await imsgClient.start();

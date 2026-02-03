@@ -119,8 +119,13 @@ export async function handleMessage(
   }
 
   // 空消息直接忽略（附件转发由后续能力处理）
-  const text = (message.text ?? "").trim();
-  if (!text) {
+  // E17: 过滤 iMessage 占位符字符（\uFFFC = Object Replacement Character）
+  const placeholderPattern = /[\uFFFC\uFFFD]/g;
+  const text = (message.text ?? "").trim().replace(placeholderPattern, "");
+  const hasAttachments = Boolean(message.attachments && message.attachments.length > 0);
+
+  // M4-A2: 有附件时（特别是语音）不直接忽略
+  if (!text && !hasAttachments) {
     shouldAdvanceCursor = true;
     return;
   }
@@ -222,6 +227,100 @@ export async function handleMessage(
   // 命令/转发交给对应 bot handler（默认 bot 直接走 tmux）
   const handler = getHandler(route.botType ?? "default");
 
+  // M4-A2: 处理附件（语音消息等）
+  let attachmentText = "";
+
+  // DEBUG: 检查附件信息
+  const attachmentsInfo = message.attachments?.map(a => ({
+    filename: a.filename,
+    mime: a.mime,
+    missing: a.missing,
+    path: a.path,
+  })) ?? [];
+  logger.info(`附件检查: hasAttachments=${hasAttachments}, count=${attachmentsInfo.length}, routeFound=${!!route}, projectDir=${route?.projectDir ?? 'null'}`, {
+    module: "listener",
+    chatId: message.chatId,
+    hasAttachments,
+    attachmentsCount: attachmentsInfo.length,
+    attachments: attachmentsInfo,
+    routeFound: !!route,
+    routeProjectDir: route?.projectDir ?? null,
+  });
+
+  if (hasAttachments && message.attachments) {
+    const { copyToVault, isAudioAttachment, isImageAttachment, formatAttachmentForTmux } = await import("./attachments/vault.js");
+    const { processAttachment, formatDerivedForTmux } = await import("./media/pipeline.js");
+
+    for (const attachment of message.attachments) {
+      // B2: 只处理允许的附件类型（使用 vault.ts 的类型检查，支持 mime/UTI/扩展名兜底）
+      const isAudio = isAudioAttachment(attachment);
+      const isImage = isImageAttachment(attachment);
+      const isAllowed = isAudio || isImage || attachment.mime === "application/pdf";
+
+      if (!isAllowed) {
+        continue;
+      }
+
+      // 复制到 vault
+      const msgId = message.id ?? "unknown";
+      const workspacePath = route.projectDir;
+      if (!workspacePath) {
+        logger.warn("路由缺少工作区路径，跳过附件", {
+          module: "listener",
+          chatId: message.chatId,
+        });
+        continue;
+      }
+      const copyResult = await copyToVault(workspacePath, msgId, attachment);
+
+      if (!copyResult.success || !copyResult.localPath || !copyResult.digest) {
+        // missing=true 或复制失败，记录但不崩溃
+        logger.warn("附件复制失败", {
+          module: "listener",
+          chatId: message.chatId,
+          error: copyResult.error,
+        });
+        continue;
+      }
+
+      // 格式化附件信息注入 tmux
+      const thisAttachmentText = formatAttachmentForTmux(attachment, copyResult.localPath, copyResult.digest) + "\n";
+      attachmentText += thisAttachmentText;
+
+      // MediaPipeline: 自动处理附件（ASR/读图/提取）
+      try {
+        const pipelineResult = await processAttachment(copyResult.localPath, attachment, workspacePath, text);
+
+        if (pipelineResult.derived) {
+          // B3: 追加派生文本到 tmux（读取全文，带截断控制）
+          const derivedText = await formatDerivedForTmux(pipelineResult.derived) + "\n";
+          attachmentText += derivedText;
+
+          logger.info("附件已生成派生文本", {
+            module: "listener",
+            chatId: message.chatId,
+            kind: pipelineResult.derived.kind,
+            status: pipelineResult.derived.status,
+          });
+        }
+      } catch (pipelineError) {
+        // Pipeline 失败不崩溃，只记录
+        logger.warn("附件处理失败", {
+          module: "listener",
+          chatId: message.chatId,
+          error: pipelineError instanceof Error ? pipelineError.message : String(pipelineError),
+        });
+      }
+
+      logger.info("附件已复制到 vault", {
+        module: "listener",
+        chatId: message.chatId,
+        localPath: copyResult.localPath,
+        skipped: copyResult.skipped,
+      });
+    }
+  }
+
   // DEBUG: Handler 调用追踪（需 DEBUG_TRACE=1 启用）
   if (process.env.DEBUG_TRACE === "1") {
     logger.debug("调用 Handler", {
@@ -234,13 +333,85 @@ export async function handleMessage(
   }
 
   try {
-    const result = await handler.handle(text, {
-      botType: route.botType ?? "default",
-      chatId: route.chatId,
-      groupName: route.groupName,
-      projectDir: route.projectDir,
-      originalMessage: message,
-    });
+    // M4-A2: 按 botType 分流构造输入（避免 4.7 reasoning 崩溃）
+    const botType = route.botType ?? "default";
+
+    // 声明 result 变量（在 if/else 外部，以便后续代码访问）
+    let result: Awaited<ReturnType<typeof handler.handle>>;
+
+    // botType=lmstudio（喂 4.7）：只进核心内容，禁止 [attachment] 元信息
+    if (botType === "lmstudio") {
+      // 只进：用户问题 + 证据（[图片文字]/[语音转写]）
+      let contentToHandle = (text || "").trim();
+
+      // 检查是否有 OCR 失败（包含错误信息的派生文本）
+      const hasOcrError =
+        attachmentText.includes("LM Studio 未返回文本内容") ||
+        attachmentText.includes("LM Studio API 错误") ||
+        attachmentText.includes("模型只输出 reasoning content") ||
+        attachmentText.includes("模型进程崩溃") ||
+        attachmentText.includes("The model has crashed");
+
+      if (hasOcrError) {
+        // P0: OCR 失败直接固定文案回复，不喂给 4.7（避免元叙事）
+        await sendText(ctx.imsgClient, message.chatId, "图片识别失败。想抽字请发送：ocr");
+        shouldAdvanceCursor = true;
+        return;
+      }
+
+      // 只追加派生文本（[图片文字]/[语音转写]），去掉标签本体，避免模型复述方括号块
+      const derivedEvidence = attachmentText
+        .split("\n")
+        .map(l => l.trim())
+        .filter(Boolean)
+        .filter(line => line.startsWith("[图片文字]") || line.startsWith("[语音转写]"))
+        .map(line => line.replace(/^\[[^\]]+\]\s*/g, "").trim())
+        .filter(Boolean);
+
+      // 若用户未附带问题但有证据（只发图/语音），给一个默认问题，避免模型进入“分析输入”模式
+      if (!contentToHandle && derivedEvidence.length > 0) {
+        contentToHandle = "请用一句话概括主要内容。";
+      }
+
+      if (derivedEvidence.length > 0) {
+        contentToHandle +=
+          (contentToHandle ? "\n\n" : "") +
+          "补充信息：" +
+          "\n" +
+          derivedEvidence.join("\n");
+      }
+
+      // 如果既没有文本也没有可处理的附件，跳过
+      if (!contentToHandle.trim()) {
+        shouldAdvanceCursor = true;
+        return;
+      }
+
+      result = await handler.handle(contentToHandle, {
+        botType,
+        chatId: route.chatId,
+        groupName: route.groupName,
+        projectDir: route.projectDir,
+        originalMessage: message,
+      });
+    } else {
+      // botType=default/tmux：保留完整格式（[attachment] + 派生文本）
+      const contentToHandle = text ? (attachmentText ? `${text}\n${attachmentText}` : text) : attachmentText;
+
+      // 如果既没有文本也没有可处理的附件，跳过
+      if (!contentToHandle.trim()) {
+        shouldAdvanceCursor = true;
+        return;
+      }
+
+      result = await handler.handle(contentToHandle, {
+        botType,
+        chatId: route.chatId,
+        groupName: route.groupName,
+        projectDir: route.projectDir,
+        originalMessage: message,
+      });
+    }
 
     // DEBUG: Handler 结果追踪（需 DEBUG_TRACE=1 启用）
     if (process.env.DEBUG_TRACE === "1") {
@@ -274,8 +445,52 @@ export async function handleMessage(
       return;
     }
 
-    if (result.response) {
+    // 若 handler 需要发送附件，则优先发送附件（可附带文本）
+    if (result.file?.path) {
+      const text = result.response ? result.response : undefined;
+      await ctx.imsgClient.send({ chat_guid: message.chatId, text, file: result.file.path });
+    } else if (result.response) {
       await sendText(ctx.imsgClient, message.chatId, result.response);
+    }
+
+    // 非阻塞的延迟任务（例如 TTS）
+    if (result.defer?.kind === "tts") {
+      const deferText = (result.defer.text || "").trim();
+      const projectDir = route.projectDir;
+      if (deferText && projectDir) {
+        // 不阻塞主流程：先让用户拿到即时回复，再后台生成语音附件
+        void (async () => {
+          try {
+            const { runTts } = await import("./runners/tts.js");
+            const tts = await runTts({
+              workspacePath: projectDir,
+              text: deferText,
+              model: result.defer?.options?.model,
+              voice: result.defer?.options?.voice,
+              instruct: result.defer?.options?.instruct,
+              speed: result.defer?.options?.speed,
+              temperature: result.defer?.options?.temperature,
+            });
+
+            if (!tts.success || !tts.audioPath) {
+              await sendText(
+                ctx.imsgClient,
+                message.chatId,
+                tts.error ? `语音生成失败: ${tts.error}` : "语音生成失败"
+              );
+              return;
+            }
+
+            await ctx.imsgClient.send({ chat_guid: message.chatId, file: tts.audioPath });
+          } catch (e) {
+            await sendText(
+              ctx.imsgClient,
+              message.chatId,
+              `语音生成异常: ${e instanceof Error ? e.message : String(e)}`
+            );
+          }
+        })();
+      }
     }
 
     shouldAdvanceCursor = true;
