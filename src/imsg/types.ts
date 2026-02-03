@@ -57,6 +57,12 @@ export interface Attachment {
   path?: string;
   /** 文件是否缺失 */
   missing?: boolean;
+  /** E17: UTI（Apple Uniform Type Identifier）- 用于 .caf 等音频识别 */
+  uti?: string;
+  /** E17: 原始传输文件名（比 filename 更可靠） */
+  transfer_name?: string;
+  /** E17: 文件大小（字节） */
+  total_bytes?: number;
 }
 
 // ============================================

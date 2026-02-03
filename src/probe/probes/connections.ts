@@ -35,23 +35,47 @@ export async function probeConnections(options?: ProbeOptions): Promise<ProbeRes
         issues.push("imsg 不可用");
     }
 
-    // 2. tmux 连接
+    // 2. tmux 连接（先检查二进制，再检查 server）
+    let tmuxInstalled = false;
+
+    // 2.1 检查 tmux 是否安装
     try {
         await withTimeout(
-            execAsync("tmux list-sessions"),
+            execAsync("tmux -V"),
             timeout,
-            "tmux list-sessions"
+            "tmux -V"
         );
-        details.tmux_available = true;
-
-        // 列出 msgcode 会话
-        const { stdout } = await execAsync("tmux list-sessions -F '#{session_name}'");
-        const sessions = stdout.trim().split("\n").filter(s => s.startsWith("msgcode-"));
-        details.tmux_msgcode_sessions = sessions.length;
+        tmuxInstalled = true;
+        details.tmux_installed = true;
     } catch {
-        details.tmux_available = false;
-        issues.push("tmux 不可用");
+        details.tmux_installed = false;
+        details.tmux_server_running = false;
+        issues.push("tmux 未安装");
     }
+
+    // 2.2 检查 tmux server 是否运行
+    if (tmuxInstalled) {
+        try {
+            await withTimeout(
+                execAsync("tmux list-sessions"),
+                timeout,
+                "tmux list-sessions"
+            );
+            details.tmux_server_running = true;
+
+            // 列出 msgcode 会话
+            const { stdout } = await execAsync("tmux list-sessions -F '#{session_name}'");
+            const sessions = stdout.trim().split("\n").filter(s => s.startsWith("msgcode-"));
+            details.tmux_msgcode_sessions = sessions.length;
+        } catch {
+            details.tmux_server_running = false;
+            // tmux 已安装但 server 没跑，给 warning（不影响可用性判定）
+            issues.push("tmux server 未运行（群里 /start 或运行 `tmux start-server` 启动）");
+        }
+    }
+
+    // tmux 的可用性判定：已安装即算可用（server 没跑只是 warning）
+    details.tmux_available = tmuxInstalled;
 
     // 3. Claude CLI
     try {

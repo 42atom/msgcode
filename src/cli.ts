@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { mkdir, copyFile } from "node:fs/promises";
 import { existsSync, accessSync, constants } from "node:fs";
 import { exec, spawn } from "node:child_process";
+import { getVersion, getVersionInfo, type VersionInfo } from "./version.js";
 
 // 导入 memory 子命令（M2）
 import {
@@ -36,7 +37,7 @@ const DAEMON_SCRIPT = path.join(__dirname, "daemon.ts");
 
 const program = new Command();
 
-program.name("msgcode").description("msgcode - iMessage-based bot (imsg RPC)").version("0.4.0");
+program.name("msgcode").description("msgcode - iMessage-based bot (imsg RPC)").version(getVersion());
 
 program
   .command("start [mode]")
@@ -161,6 +162,30 @@ program
     process.exit(exitCode);
   });
 
+program
+  .command("about")
+  .description("显示版本和配置信息")
+  .option("-j, --json", "JSON 格式输出（短选项）")
+  .action((options) => {
+    const versionInfo = getVersionInfo();
+
+    if (options.json) {
+      console.log(JSON.stringify(versionInfo, null, 2));
+    } else {
+      console.log(`msgcode v${versionInfo.appVersion}`);
+      console.log(`  Node: ${versionInfo.nodeVersion}`);
+      console.log(`  binPath: ${versionInfo.binPath}`);
+      console.log(`  cliEntry: ${versionInfo.cliEntry}`);
+      console.log(`  configPath: ${versionInfo.configPath}`);
+      if (versionInfo.imsgPath) {
+        console.log(`  imsgPath: ${versionInfo.imsgPath}`);
+      }
+      if (versionInfo.workspaceRoot) {
+        console.log(`  workspaceRoot: ${versionInfo.workspaceRoot}`);
+      }
+    }
+  });
+
 // Memory 命令组（M2）
 async function loadMemoryCommands() {
   const { createMemoryCommand } = await import("./cli/memory.js");
@@ -173,10 +198,24 @@ async function loadJobCommands() {
   program.addCommand(createJobCommand());
 }
 
+// Preflight 命令（M4-B）
+async function loadPreflightCommands() {
+  const { createPreflightCommand } = await import("./cli/preflight.js");
+  program.addCommand(createPreflightCommand());
+}
+
+// Run 命令组（M4-A1）
+async function loadRunCommands() {
+  const { createRunCommand } = await import("./cli/run.js");
+  program.addCommand(createRunCommand());
+}
+
 // 主入口（异步）
 async function main() {
   await loadMemoryCommands();
   await loadJobCommands();
+  await loadPreflightCommands();
+  await loadRunCommands();
   program.parse();
 }
 
@@ -189,6 +228,11 @@ async function launchDaemon(): Promise<void> {
   await mkdir(CONFIG_DIR, { recursive: true });
   await mkdir(LOG_DIR, { recursive: true });
 
+  const versionInfo = getVersionInfo();
+  console.log(`msgcode v${versionInfo.appVersion}`);
+  console.log(`  binPath: ${versionInfo.binPath}`);
+  console.log(`  cliEntry: ${versionInfo.cliEntry}`);
+  console.log("");
   console.log("后台启动 msgcode...");
 
   const env = {

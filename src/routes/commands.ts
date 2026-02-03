@@ -570,6 +570,9 @@ export async function handleChatlistCommand(options: CommandHandlerOptions): Pro
  * @returns 命令处理结果
  */
 export async function handleHelpCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  const entry = getRouteByChatId(options.chatId);
+  const isLmStudioBot = entry?.botType === "lmstudio";
+
   return {
     success: true,
     message: `msgcode 2.0 命令帮助\n` +
@@ -590,6 +593,22 @@ export async function handleHelpCommand(options: CommandHandlerOptions): Promise
       `  /snapshot            获取终端输出快照\n` +
       `  /esc                 发送 ESC 中断\n` +
       `  /clear               清空会话上下文\n` +
+      (isLmStudioBot
+        ? `\n` +
+          `语音（LM Studio Bot 专用）:\n` +
+          `  /tts <text>          把文本生成语音附件并回发\n` +
+          `  /voice <question>    先回答，再把回答转成语音附件回发\n` +
+          `  /mode                查看语音回复模式\n` +
+          `  /mode voice on|off|both|audio  设置语音模式\n` +
+          `  /mode style <desc>   设置语音风格描述（VoiceDesign）\n` +
+          `  /mode style-reset    清空语音风格（恢复默认）\n` +
+          `\n` +
+          `示例:\n` +
+          `  /tts 那真是太好了！保持这种好心情。\n` +
+          `  /voice 南京是哪里的城市？\n` +
+          `  /mode voice on\n` +
+          `  /mode style 温柔女声，语速稍慢\n`
+        : ``) +
       `\n` +
       `示例:\n` +
       `  /bind acme/ops claude   绑定到 $WORKSPACE_ROOT/acme/ops 并使用 claude\n` +

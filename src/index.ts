@@ -13,10 +13,12 @@ import { ImsgRpcClient } from "./imsg/rpc-client.js";
 import type { InboundMessage } from "./imsg/types.js";
 import { handleMessage } from "./listener.js";
 import { getActiveRoutes } from "./routes/store.js";
+import { getVersion } from "./version.js";
 
 function printBanner(): void {
+  const version = getVersion();
   console.log(`
-msgcode v0.4.0
+msgcode v${version}
 `);
   console.log(`配置:`);
   console.log(`  日志级别: ${config.logLevel}`);

@@ -27,7 +27,28 @@ export interface ChatState {
   lastSeenAt: string;
   /** 累计处理消息数 */
   messageCount: number;
+
+  /**
+   * 语音回复模式（仅影响本地 bot，如 botType=lmstudio）
+   * - text: 只回文字（默认）
+   * - audio: 只回语音附件
+   * - both: 同时回文字 + 语音附件（推荐）
+   */
+  voiceReplyMode?: VoiceReplyMode;
+
+  /**
+   * TTS 偏好（用于生成语音附件）
+   */
+  tts?: {
+    model?: string;        // CustomVoice | VoiceDesign | Base | repo/path
+    voice?: string;        // Serena/Vivian/...
+    instruct?: string;     // 风格描述（VoiceDesign 用）
+    speed?: number;        // 语速
+    temperature?: number;  // 采样温度
+  };
 }
+
+export type VoiceReplyMode = "text" | "audio" | "both";
 
 /**
  * StateStore 结构
@@ -137,6 +158,69 @@ export function saveState(data: StateStoreData): void {
 export function getChatState(chatGuid: string): ChatState | null {
   const data = loadState();
   return data.chats[chatGuid] || null;
+}
+
+export function getVoiceReplyMode(chatGuid: string): VoiceReplyMode {
+  const state = getChatState(chatGuid);
+  return state?.voiceReplyMode || "text";
+}
+
+export function setVoiceReplyMode(chatGuid: string, mode: VoiceReplyMode): void {
+  if (!chatGuid || chatGuid === "0") return;
+  const data = loadState();
+  if (!data.chats[chatGuid]) {
+    data.chats[chatGuid] = {
+      chatGuid,
+      lastSeenRowid: 0,
+      lastMessageId: "",
+      lastSeenAt: "",
+      messageCount: 0,
+    };
+  }
+  data.chats[chatGuid].voiceReplyMode = mode;
+  data.updatedAt = new Date().toISOString();
+  saveState(data);
+}
+
+export function getTtsPrefs(chatGuid: string): NonNullable<ChatState["tts"]> {
+  const state = getChatState(chatGuid);
+  const tts = state?.tts || {};
+  return {
+    model: tts.model,
+    voice: tts.voice,
+    instruct: tts.instruct,
+    speed: tts.speed,
+    temperature: tts.temperature,
+  };
+}
+
+export function setTtsPrefs(chatGuid: string, patch: Partial<NonNullable<ChatState["tts"]>>): void {
+  if (!chatGuid || chatGuid === "0") return;
+  const data = loadState();
+  if (!data.chats[chatGuid]) {
+    data.chats[chatGuid] = {
+      chatGuid,
+      lastSeenRowid: 0,
+      lastMessageId: "",
+      lastSeenAt: "",
+      messageCount: 0,
+    };
+  }
+  const current = data.chats[chatGuid].tts || {};
+  data.chats[chatGuid].tts = { ...current, ...patch };
+  data.updatedAt = new Date().toISOString();
+  saveState(data);
+}
+
+export function clearTtsPrefs(chatGuid: string): void {
+  if (!chatGuid || chatGuid === "0") return;
+  const data = loadState();
+  if (!data.chats[chatGuid]) return;
+  if (data.chats[chatGuid].tts) {
+    delete data.chats[chatGuid].tts;
+    data.updatedAt = new Date().toISOString();
+    saveState(data);
+  }
 }
 
 /**

@@ -201,7 +201,7 @@ export function saveRoutes(data: RouteStoreData): void {
 /**
  * 根据 chatId 查找路由
  *
- * 支持完整 chatGuid 或归一化 chatId 匹配
+ * 支持完整 chatGuid、归一化 chatId 或后缀匹配（兼容 imsg RPC 短 ID）
  */
 export function getRouteByChatId(chatId: string): RouteEntry | null {
   const data = loadRoutes();
@@ -215,6 +215,15 @@ export function getRouteByChatId(chatId: string): RouteEntry | null {
   // 归一化匹配
   for (const entry of Object.values(data.routes)) {
     if (entry.chatId === normalized || entry.chatGuid === chatId) {
+      return entry;
+    }
+  }
+
+  // 后缀匹配（兼容 imsg RPC 返回的短 ID，如 953e31）
+  const suffix = normalized.slice(-8); // 取后 8 位
+  for (const entry of Object.values(data.routes)) {
+    const entryNormalized = entry.chatGuid ? normalizeChatId(entry.chatGuid) : "";
+    if (entryNormalized.slice(-8) === suffix || entryNormalized.endsWith(normalized)) {
       return entry;
     }
   }
