@@ -143,6 +143,75 @@
 
 > 目标：让 agent “先搜定位，再拉细节”，避免一次把大文件喂进上下文。
 
+---
+
+## 记忆注入策略（默认关闭）
+
+### 为什么默认关闭
+- 防“串味”：通用问题（如“南京在哪里”）不应被旧记忆污染。
+- 防元叙事：给模型塞过多“路径/元信息/规则”容易触发分析循环（尤其本地模型）。
+- 防意外泄露：群聊里默认只允许 workspace scope；默认不注入可以把风险降到最低。
+
+### 注入开关（按 workspace）
+记忆注入必须是**workspace 级别开关**，默认 `off`：
+- `off`：不自动检索/注入记忆（仍可手动 `remember/index/search/get`）。
+- `on`：允许在满足“触发条件”时检索并注入少量片段。
+- `force`：仅对“本条消息”强制检索/注入（不改变长期配置）。
+
+### 配置落盘（Workspace Config）
+目标：让“开关与参数”掌握在用户手里，可被仪表盘/CLI/群内命令统一修改。
+
+建议配置文件（每个 workspace 一份）：
+- 路径：`<WORKSPACE>/.msgcode/config.json`
+- 默认：不存在即视为 `memory.inject.enabled=false`
+
+建议最小 schema（v1）：
+```jsonc
+{
+  "version": 1,
+  "memory": {
+    "enabled": true,
+    "inject": {
+      "enabled": false,
+      "topK": 3,
+      "maxChars": 1200
+    }
+  }
+}
+```
+
+约束：
+- 群内命令只能修改**当前群绑定 workspace** 的该文件（禁止跨群修改）。
+- “修改记忆内容”不需要 API：Markdown 就是 SoT，用户可直接编辑 `memory/*.md`。
+
+建议群内命令（仅影响当前 workspace）：
+- `/mem on`：开启本 workspace 的自动注入
+- `/mem off`：关闭本 workspace 的自动注入（默认）
+- `/mem force <query?>`：对当前消息强制注入（可选带 query）
+- `/mem status`：显示当前 workspace 的注入状态与参数（topK/maxChars）
+
+### 触发条件（on 状态下）
+满足任一条件才允许注入：
+1) 用户显式表达回忆意图：包含“记得/上次/之前/复盘/沿用方案/同样问题/还原现场”等关键词
+2) 用户引用精确 token：错误码、配置键、命令名、jobId、route label、文件名等
+3) 用户显式 `/mem force`
+
+### 注入流程（Two-step，严控上下文）
+1) `memory_search(query, scope=workspace, limit=topK)` 先定位
+2) 仅对 top1~2 命中执行 `memory_get(path, fromLine, lines)` 拉原文行段
+3) 严格限制注入预算：`maxChars`（建议 800~1500 chars，LMStudio 更保守）
+
+### 注入格式（像“证据”而不是“输入”）
+只注入“可定位证据”，避免路径/附件元信息堆叠：
+```
+可用记忆（只读，可能过时）:
+[memory/2026-02-01.md#L120] <heading>
+<excerpt...>
+```
+
+模型侧约束（system_prompt 里一条即可）：
+- “把记忆当线索；不相关则忽略；禁止复述/分析记忆块本身。”
+
 ### 1) memory_search（必须先用）
 输入：
 - `scope`: `workspace` | `all`

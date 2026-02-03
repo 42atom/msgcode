@@ -172,6 +172,21 @@ msgcode start debug
    - `/bind acme/ops`
    - `/start`
 
+### 6. 群内命令（输入 `/help` 查看）
+
+常用：
+- `/help`：显示命令帮助
+- `/bind <workspace>`：绑定当前群到工作区（例：`/bind mylife`）
+- `/start`：启动该群对应的 bot 会话
+
+语音（TTS）：
+- `/tts <text>`：把指定文本生成语音附件并回发
+- `/voice <question>`：先回答，再把“回答内容”转语音附件回发
+- `/mode`：查看语音回复模式
+- `/mode voice on|off|both|audio`：设置语音模式（`on` 等价 `both`）
+- `/mode style <desc>`：设置语音风格描述（VoiceDesign）
+- `/mode style-reset`：清空风格（恢复默认）
+
 ---
 
 ## 目录结构

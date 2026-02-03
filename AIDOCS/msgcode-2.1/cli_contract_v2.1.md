@@ -145,6 +145,12 @@ CLI 输出与日志中：
 - `DEP_CODEX_MISSING`：codex 不存在（当选择 codex client 时）
 - `DEP_OPENCODE_MISSING`：opencode 不存在（当选择 opencode client 时）
 
+### 4.3.1 DEPS（M4-B 新增：依赖清单系统）
+- `DEPS_MANIFEST_INVALID`：manifest.json 加载失败/格式错误
+- `DEPS_REQUIRED_MISSING`：requiredForStart 依赖缺失（启动失败）
+- `DEPS_CHECK_FAILED`：依赖检查失败（非致命，如 optional 缺失）
+- `DEPS_HTTP_UNREACHABLE`：HTTP 端点不可达（如 LM Studio API）
+
 ### 4.4 RUNTIME（运行态）
 - `RUNTIME_DAEMON_NOT_RUNNING`：daemon 未运行
 - `RUNTIME_IMSG_RPC_UNAVAILABLE`：imsg rpc 不可用/连接失败
@@ -239,7 +245,8 @@ CLI 输出与日志中：
 - [ ] `doctor`：新增并确保 `msgcode doctor --json` 输出 Envelope（含错误码与 fixHint）
 
 ### 6.2 需要补充的命令
-- [ ] `msgcode job *` 子命令（见 `AIDOCS/msgcode-2.1/job_spec_v2.1.md:1`）
+- [x] `msgcode preflight`（M4-B：依赖清单预检查）
+- [x] `msgcode job *` 子命令（见 `AIDOCS/msgcode-2.1/job_spec_v2.1.md:1`）
 - [ ] `msgcode routes validate --json`
 
 ### 6.3 需要收口的输出
