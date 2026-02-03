@@ -7,7 +7,9 @@
 ```
 AIDOCS/msgcode-2.1/lmstudio_prompts/
 ├── README.md
+├── glm-4.7_prompt_template_min_v1.jinja2
 ├── glm-4.6v_prompt_template_v1.jinja2
+├── glm-4.6v_prompt_template_min_v1.jinja2
 └── paddleocr-vl-1.5_prompt_template_v1.jinja2
 ```
 
