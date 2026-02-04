@@ -1,6 +1,6 @@
 {
   "name": "msgcode",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "iMessage-based AI Bot system for Mac",
   "type": "module",
   "bin": {
@@ -9,7 +9,9 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "start": "tsx src/index.ts",
-    "test": "LOG_FILE=false LOG_LEVEL=warn IMSG_PATH=/usr/bin/false PATH=\"$HOME/.bun/bin:$PATH\" bun test"
+    "test": "LOG_FILE=false LOG_LEVEL=warn IMSG_PATH=/usr/bin/false PATH=\"$HOME/.bun/bin:$PATH\" bun test",
+    "bdd": "NODE_ENV=test NODE_OPTIONS=\"--import tsx\" ./node_modules/.bin/cucumber-js --import 'features/**/*.ts' --format progress",
+    "test:all": "npm test && npm run bdd"
   },
   "keywords": [
     "imessage",
@@ -29,6 +31,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
+    "@cucumber/cucumber": "^11.3.0",
     "bun-types": "^1.3.5",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3"

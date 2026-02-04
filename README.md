@@ -10,6 +10,11 @@
 
 msgcode 是一个基于 iMessage 的本地 AI Bot 系统，通过群组路由实现多个 Bot/Agent 会话。无需云服务器，简化运维。
 
+### v2.2 文档索引
+
+- [路线图](./AIDOCS/msgcode-2.2/roadmap_v2.2.md) - 2.2 总路线图（里程碑/验收/风险）
+- [编排层规划](./AIDOCS/msgcode-2.2/orchestration_plan_v2.2.md) - Persona/Skills/Schedules 编排层
+
 ### 核心特性
 
 - **iMessage 集成**: 基于 `imsg rpc`（无 SDK / 无 AppleScript）

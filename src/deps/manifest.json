@@ -45,6 +45,12 @@
       "id": "lmstudio_vision_model",
       "kind": "model_loaded",
       "description": "LM Studio Vision 模型（如 PaddleOCR-VL-1.5 或 GLM-4V）"
+    },
+    {
+      "id": "codex",
+      "kind": "bin",
+      "cmd": "codex --version",
+      "description": "Codex CLI（执行臂，需要 egress-allowed）"
     }
   ]
 }

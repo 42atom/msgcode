@@ -1,6 +1,8 @@
 # Desktop Automation Plan（v2.2）
 
 > 一句话：不做 per-app 适配；走 macOS 通用可访问性（AX）+ 截图 + 动作原语；用一个 **menubar 宿主 App** 持有 TCC 权限，并通过本地 **Bridge** 把后台 agent/CLI 安全接入。
+>
+> 注：本文件内部里程碑 `M1–M4` 是 `AIDOCS/msgcode-2.2/roadmap_v2.2.md` 的 **M8（桌面执行）** 子阶段；不要与 2.2 全局里程碑混用。
 
 ## 0) 背景与问题（为什么要做）
 
@@ -26,14 +28,90 @@
 
 - `msgcode-desktop-host.app`（menubar）
   - 拿权限：Accessibility + Screen Recording
-  - 起本地服务：`UNIX socket` 或 `XPC`
+  - UI 技术：SwiftUI（必要时少量 AppKit）
+  - Bridge：Unix Domain Socket + JSON-RPC（P0）；XPC（P1 预留）
   - 执行 Desktop Primitives
   - 输出结构化结果 + 证据文件（截图/元素树）
+  - 兼作“薄仪表盘”（不编辑内容，只负责打开目录与触发 reload）
+  - Bridge 契约：见 `AIDOCS/msgcode-2.2/desktop_bridge_contract_v2.2.md`
 
 - `msgcode`（CLI/daemon）
   - 负责：计划、策略、循环（agent loop）
   - 不负责：拿权限、直接执行 AX/截图
   - 只负责调用：Bridge RPC
+
+### 1.3 Menubar Dashboard（禅意信息架构，P0）
+
+核心原则：
+- **Projects(workspaces) 是主维度**：先选 project，再看 persona/skills/schedules/policy
+- “文件系统即真相源”：UI 只做 **打开目录 / 校验有效性 / 触发 Reload**
+- 先做“可见 + 可控”，不做“自动托管”（会话启停先手动）
+
+Project 列表（每个 workspace 一行）：
+- 右侧状态点（仅展示）：
+  - green：会话活跃（session 存在且最近有活动）
+  - yellow：会话存在但 idle（超过阈值无活动）
+  - gray：未运行（无 session）
+
+菜单骨架（v1）：
+```
+msgcode — <projectName>  <OK|WARN|ERR>
+────────────────────────────────
+Status…
+Reload Config
+
+────────────────────────────────
+Projects
+  <project A>   ●
+  <project B>   ○
+  Open Workspace Folder
+  Open .msgcode Folder
+  Open Logs
+
+Diagnostics ▸
+  Doctor (JSON)
+  Preflight
+  Validate Project (config/personas/schedules)
+
+Policy
+  Mode: local-only / egress-allowed
+  Confirm: required (locked)
+
+Persona
+  Active: <personaId>
+  Open Personas Folder
+
+Skills (global)
+  Open Skills Folder  (~/.config/msgcode/skills/)
+  Validate Skills
+  Enabled (read-only): ...
+
+Voice Library (global)
+  Open Voices Folder  (~/.config/msgcode/voices/)
+  Validate Voices
+  Active (read-only): <voiceId>
+
+Schedules (workspace)
+  Open Schedules Folder  (<WORKSPACE>/.msgcode/schedules/)
+  Validate Schedules
+  Next Wake (read-only): ...
+
+Session (manual)
+  Open Snapshot
+  Stop Session
+
+Approvals
+  Pending: N
+  Open Queue…
+
+About…
+Quit
+```
+
+推荐排序（按常用程度，P0）：
+- 顶层：Status → Reload → Projects → Persona → Approvals → Quit
+- 次级：Skills / Schedules / Session
+- 末级：Diagnostics（仅故障排查时使用）
 
 ## 2) 能力定义（Desktop Primitives）
 

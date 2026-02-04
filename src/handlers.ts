@@ -12,9 +12,11 @@ import type { BotType } from "./router.js";
 import { runLmStudioChat } from "./lmstudio.js";
 import type { InboundMessage } from "./imsg/types.js";
 import { clearTtsPrefs, getTtsPrefs, getVoiceReplyMode, setTtsPrefs, setVoiceReplyMode } from "./state/store.js";
+import { loadWorkspaceConfig } from "./config/workspace.js";
+import { getActivePersona } from "./config/personas.js";
 
 // 导入 tmux 模块
-import { TmuxSession } from "./tmux/session.js";
+import { TmuxSession, type RunnerType } from "./tmux/session.js";
 import { sendSnapshot, sendEscape, sendClear } from "./tmux/sender.js";
 import { handleTmuxSend } from "./tmux/responder.js";
 
@@ -48,6 +50,7 @@ export interface HandlerContext {
     groupName: string;
     projectDir?: string;
     originalMessage: InboundMessage;
+    signal?: AbortSignal;
 }
 
 /**
@@ -60,11 +63,35 @@ export abstract class BaseHandler implements CommandHandler {
     async handle(message: string, context: HandlerContext): Promise<HandleResult> {
         const trimmed = message.trim();
 
+        // === 执行臂解析（workspace config → tmux runner）===
+        // BaseHandler 负责 tmux 交互：runner.default=codex 时切换到 Codex；否则默认 Claude
+        const resolveRunner = async (): Promise<{ runner: RunnerType; blockedReason?: string }> => {
+            if (!context.projectDir) return { runner: "claude" };
+            try {
+                const { getPolicyMode, getDefaultRunner } = await import("./config/workspace.js");
+                const mode = await getPolicyMode(context.projectDir);
+                const r = await getDefaultRunner(context.projectDir);
+                const runner: RunnerType = r === "codex" ? "codex" : "claude";
+                if (runner === "codex" && mode === "local-only") {
+                    return {
+                        runner,
+                        blockedReason:
+                            "当前策略模式为 local-only（禁止外网访问），无法使用 Codex 执行臂。\n\n请执行: /policy egress-allowed",
+                    };
+                }
+                return { runner };
+            } catch {
+                return { runner: "claude" };
+            }
+        };
+
         // === 公共命令 ===
 
-        // /start - 启动 tmux 会话并运行 Claude
+        // /start - 启动 tmux 会话（Claude/Codex）
         if (trimmed === "/start") {
-            const response = await TmuxSession.start(context.groupName, context.projectDir);
+            const r = await resolveRunner();
+            if (r.blockedReason) return { success: false, error: r.blockedReason };
+            const response = await TmuxSession.start(context.groupName, context.projectDir, r.runner);
             return { success: true, response };
         }
 
@@ -94,16 +121,20 @@ export abstract class BaseHandler implements CommandHandler {
 
         // /clear - 清空 Claude 上下文（E16-S7: kill+start）
         if (trimmed === "/clear") {
-            const response = await sendClear(context.groupName, context.projectDir);
+            const r = await resolveRunner();
+            if (r.blockedReason) return { success: false, error: r.blockedReason };
+            const response = await sendClear(context.groupName, context.projectDir, r.runner);
             return { success: true, response };
         }
 
         // === 非命令消息：转发给 Claude（请求-响应模式）===
         if (!trimmed.startsWith("/")) {
+            const r = await resolveRunner();
+            if (r.blockedReason) return { success: false, error: r.blockedReason };
             const result = await handleTmuxSend(
                 context.groupName,
                 trimmed,
-                { projectDir: context.projectDir, attachments: context.originalMessage.attachments }
+                { projectDir: context.projectDir, runner: r.runner, attachments: context.originalMessage.attachments, signal: context.signal }
             );
 
             if (result.error) {
@@ -128,7 +159,7 @@ export abstract class BaseHandler implements CommandHandler {
      */
     protected getHelp(extraCommands?: string[]): string {
         const commands = [
-            "• /start - 启动 tmux 会话 + Claude",
+            "• /start - 启动 tmux 会话（按 /model 选择执行臂）",
             "• /stop - 关闭 tmux 会话",
             "• /status - 查看会话状态",
             "• /snapshot - 获取终端输出",
@@ -210,9 +241,74 @@ export class FileHandler extends BaseHandler {
  * 使用 LM Studio 本地 OpenAI 兼容 API（不使用 lms CLI）
  * 不涉及 API key；只转发 content（忽略 reasoning_content）
  */
+
+/**
+ * 获取当前激活的 persona 内容
+ *
+ * @param projectDir 工作区路径
+ * @returns persona 内容（Markdown 文本），如果没有激活 persona 返回 undefined
+ */
+async function getActivePersonaContent(projectDir: string | undefined): Promise<string | undefined> {
+    if (!projectDir) {
+        return undefined;
+    }
+    try {
+        const workspaceConfig = await loadWorkspaceConfig(projectDir);
+        const activePersonaId = workspaceConfig["persona.active"];
+        if (!activePersonaId) {
+            return undefined;
+        }
+        const persona = await getActivePersona(projectDir, activePersonaId);
+        return persona?.content;
+    } catch {
+        return undefined;
+    }
+}
+
 export class LMStudioHandler implements CommandHandler {
     async handle(message: string, context: HandlerContext): Promise<HandleResult> {
         const trimmed = message.trim();
+
+        // M5-4 P0: slash 命令永远本地执行（/tts /voice /mode 等）
+        const isSlashCommand = trimmed.startsWith("/");
+
+        // M5-4: 检查 workspace config 决定是否路由到 Codex
+        // T2: 只对非 slash 命令进行 runner 分流，使用 tmux send-keys
+        if (!isSlashCommand && context.projectDir) {
+            try {
+                const { getPolicyMode, getDefaultRunner } = await import("./config/workspace.js");
+                const currentMode = await getPolicyMode(context.projectDir);
+                const currentRunner = await getDefaultRunner(context.projectDir);
+
+                // 如果 runner.default=codex，使用 handleTmuxSend（T2/T3）
+                if (currentRunner === "codex") {
+                    // local-only 时拒绝 codex 执行
+                    if (currentMode === "local-only") {
+                        return {
+                            success: false,
+                            error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex 执行臂。\n\n请执行: /policy egress-allowed",
+                        };
+                    }
+
+                    // T2: 使用 tmux send-keys 发送消息到 Codex 会话
+                    const { handleTmuxSend } = await import("./tmux/responder.js");
+                    const result = await handleTmuxSend(
+                        context.groupName,
+                        trimmed,
+                        { projectDir: context.projectDir, runner: "codex", attachments: context.originalMessage.attachments }
+                    );
+
+                    if (result.error) {
+                        return { success: false, error: result.error };
+                    }
+
+                    return { success: true, response: result.response || "（无回复）" };
+                }
+            } catch {
+                // 配置读取失败，继续使用本地模型
+            }
+        }
+
         const voiceMode = getVoiceReplyMode(context.chatId);
         const ttsPrefs = getTtsPrefs(context.chatId);
 
@@ -220,20 +316,44 @@ export class LMStudioHandler implements CommandHandler {
         if (trimmed === "help" || trimmed === "帮助" || trimmed === "/help" || trimmed === "/?") {
             const baseUrl = (process.env.LMSTUDIO_BASE_URL || "http://127.0.0.1:1234").replace(/\/+$/, "");
             const model = process.env.LMSTUDIO_MODEL || "(auto)";
+            // /help 里也显示当前 workspace 的策略与执行臂，避免“到底要不要 /start？”的误解
+            let mode: "local-only" | "egress-allowed" | "unknown" = "unknown";
+            let runner: "lmstudio" | "codex" | "claude-code" | "unknown" = "unknown";
+            if (context.projectDir) {
+                try {
+                    const { getPolicyMode, getDefaultRunner } = await import("./config/workspace.js");
+                    mode = await getPolicyMode(context.projectDir);
+                    runner = await getDefaultRunner(context.projectDir);
+                } catch {
+                    // ignore
+                }
+            }
+            const startLine = runner === "codex"
+                ? "/start  启动/恢复 Codex tmux 会话"
+                : "/start  已就绪（本地模型）";
+            const stopLine = runner === "codex"
+                ? "/stop   关闭 Codex tmux 会话"
+                : "/stop   无需停止（本地模型）";
+            const clearLine = runner === "codex"
+                ? "/clear  清空 Codex 会话（等价 kill+start）"
+                : "/clear  清空本地会话（本地模型无持久上下文）";
             return {
                 success: true,
                 response: [
                     "LM Studio Bot",
                     `BaseUrl: ${baseUrl}`,
                     `Model: ${model}`,
+                    context.projectDir ? `Workspace: ${context.projectDir}` : "",
+                    mode !== "unknown" ? `Policy: ${mode}` : "",
+                    runner !== "unknown" ? `Runner: ${runner}` : "",
                     "",
                     "直接发送消息即可与模型对话。",
                     "",
                     "可用命令:",
                     "help / 帮助 / /help  显示帮助",
-                    "/start  已就绪（本地模型无 tmux 会话）",
-                    "/stop   无需停止（本地模型无后台会话）",
-                    "/clear  清空本地会话（本地模型无持久上下文）",
+                    startLine,
+                    stopLine,
+                    clearLine,
                     "/tts <text>   朗读指定文本（生成语音附件）",
                     "/voice <q>    先让模型回答，再把回答转成语音附件",
                     "/mode          查看语音模式",
@@ -252,15 +372,124 @@ export class LMStudioHandler implements CommandHandler {
         }
 
         if (trimmed === "/start") {
-            return { success: true, response: "已就绪" };
+            // T1: 检查是否需要启动 tmux 会话（runner=codex 时）
+            if (context.projectDir) {
+                try {
+                    const { getDefaultRunner } = await import("./config/workspace.js");
+                    const currentRunner = await getDefaultRunner(context.projectDir);
+
+                    // 如果 runner=codex，启动 tmux 会话
+                    if (currentRunner === "codex") {
+                        // 检查策略模式
+                        const { getPolicyMode } = await import("./config/workspace.js");
+                        const currentMode = await getPolicyMode(context.projectDir);
+
+                        if (currentMode === "local-only") {
+                            return {
+                                success: false,
+                                error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex 执行臂。\n\n请执行: /policy egress-allowed",
+                            };
+                        }
+
+                        const response = await TmuxSession.start(context.groupName, context.projectDir, "codex");
+                        return { success: true, response };
+                    }
+                } catch {
+                    // 配置读取失败，使用默认行为
+                }
+            }
+            // runner=lmstudio 时，本地模型已就绪
+            return { success: true, response: "已就绪（本地模型）" };
         }
 
         if (trimmed === "/stop") {
-            return { success: true, response: "无需停止" };
+            // T1: 检查是否需要停止 tmux 会话（runner=codex 时）
+            if (context.projectDir) {
+                try {
+                    const { getDefaultRunner } = await import("./config/workspace.js");
+                    const currentRunner = await getDefaultRunner(context.projectDir);
+
+                    if (currentRunner === "codex") {
+                        const response = await TmuxSession.stop(context.groupName);
+                        return { success: true, response };
+                    }
+                } catch {
+                    // 配置读取失败，使用默认行为
+                }
+            }
+            return { success: true, response: "无需停止（本地模型）" };
         }
 
         if (trimmed === "/clear") {
+            // T1: 检查是否需要清空 tmux 会话（runner=codex 时）
+            if (context.projectDir) {
+                try {
+                    const { getDefaultRunner } = await import("./config/workspace.js");
+                    const currentRunner = await getDefaultRunner(context.projectDir);
+
+                    if (currentRunner === "codex") {
+                        const response = await sendClear(context.groupName, context.projectDir, "codex");
+                        return { success: true, response };
+                    }
+                } catch {
+                    // 配置读取失败，使用默认行为
+                }
+            }
             return { success: true, response: "已清空（本地模型无持久上下文）" };
+        }
+
+        if (trimmed === "/status") {
+            // T1: 检查是否需要查询 tmux 会话状态（runner=codex 时）
+            if (context.projectDir) {
+                try {
+                    const { getDefaultRunner } = await import("./config/workspace.js");
+                    const currentRunner = await getDefaultRunner(context.projectDir);
+
+                    if (currentRunner === "codex") {
+                        const response = await TmuxSession.status(context.groupName);
+                        return { success: true, response };
+                    }
+                } catch {
+                    // 配置读取失败，使用默认行为
+                }
+            }
+            return { success: true, response: "本地模型运行中" };
+        }
+
+        if (trimmed === "/snapshot") {
+            // T1: 检查是否需要获取 tmux 快照（runner=codex 时）
+            if (context.projectDir) {
+                try {
+                    const { getDefaultRunner } = await import("./config/workspace.js");
+                    const currentRunner = await getDefaultRunner(context.projectDir);
+
+                    if (currentRunner === "codex") {
+                        const response = await sendSnapshot(context.groupName);
+                        return { success: true, response };
+                    }
+                } catch {
+                    // 配置读取失败，使用默认行为
+                }
+            }
+            return { success: true, response: "本地模型无终端快照" };
+        }
+
+        if (trimmed === "/esc") {
+            // T1: 检查是否需要发送 ESC（runner=codex 时）
+            if (context.projectDir) {
+                try {
+                    const { getDefaultRunner } = await import("./config/workspace.js");
+                    const currentRunner = await getDefaultRunner(context.projectDir);
+
+                    if (currentRunner === "codex") {
+                        const response = await sendEscape(context.groupName);
+                        return { success: true, response };
+                    }
+                } catch {
+                    // 配置读取失败，使用默认行为
+                }
+            }
+            return { success: true, response: "本地模型无 ESC 中断" };
         }
 
         if (trimmed === "/mode" || trimmed === "mode") {
@@ -347,8 +576,10 @@ export class LMStudioHandler implements CommandHandler {
             }
             try {
                 const useMcp = process.env.LMSTUDIO_ENABLE_MCP === "1";
+                const personaContent = await getActivePersonaContent(context.projectDir);
                 const answer = await runLmStudioChat({
                     prompt: question,
+                    system: personaContent,
                     ...(useMcp && context.projectDir ? { workspace: context.projectDir } : {}),
                 });
                 const cleanAnswer = (answer || "").trim();
@@ -377,8 +608,10 @@ export class LMStudioHandler implements CommandHandler {
         try {
             // P0: 只在 MCP 真正启用时才传递 workspace（避免注入 MCP 规则导致元叙事）
             const useMcp = process.env.LMSTUDIO_ENABLE_MCP === "1";
+            const personaContent = await getActivePersonaContent(context.projectDir);
             const response = await runLmStudioChat({
                 prompt: trimmed,
+                system: personaContent,
                 ...(useMcp && context.projectDir ? { workspace: context.projectDir } : {}),
             });
             const clean = (response || "").trim();
@@ -418,6 +651,75 @@ export class LMStudioHandler implements CommandHandler {
                 error: error instanceof Error ? error.message : "调用失败",
             };
         }
+    }
+}
+
+/**
+ * M5-3: Codex Handler（Codex 执行臂）
+ *
+ * 使用 codex exec 非交互模式处理消息
+ * 参数：--skip-git-repo-check --sandbox read-only --color never --output-last-message <tmp>
+ */
+export class CodexHandler implements CommandHandler {
+    async handle(message: string, context: HandlerContext): Promise<HandleResult> {
+        const trimmed = message.trim();
+
+        // M5-4: 检查策略模式
+        if (context.projectDir) {
+            const { getPolicyMode, getDefaultRunner } = await import("./config/workspace.js");
+            const currentMode = await getPolicyMode(context.projectDir);
+            const currentRunner = await getDefaultRunner(context.projectDir);
+
+            // local-only 时拒绝 codex 执行
+            if (currentMode === "local-only" && currentRunner === "codex") {
+                return {
+                    success: false,
+                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex 执行臂。\n\n请执行: /policy egress-allowed",
+                };
+            }
+        }
+
+        // help 命令
+        if (trimmed === "help" || trimmed === "帮助" || trimmed === "/help" || trimmed === "/?") {
+            return {
+                success: true,
+                response: [
+                    "Codex Bot（远程执行臂）",
+                    "",
+                    "直接发送消息即可与 Codex 对话。",
+                    "",
+                    "可用命令:",
+                    "help / 帮助 / /help  显示帮助",
+                    "",
+                    "注意:",
+                    "- 使用 codex exec 非交互模式",
+                    "- 默认沙箱模式: read-only（无副作用）",
+                    "- 超时时间: 60秒",
+                ].join("\n"),
+            };
+        }
+
+        // 执行 codex
+        const { runCodexExec } = await import("./runners/codex.js");
+
+        const result = await runCodexExec({
+            workspacePath: context.projectDir || process.cwd(),
+            prompt: trimmed,
+            timeoutMs: 60000,
+            sandbox: "read-only",
+        });
+
+        if (!result.success) {
+            return {
+                success: false,
+                error: result.error || "Codex 执行失败",
+            };
+        }
+
+        return {
+            success: true,
+            response: result.response || "（Codex 无返回）",
+        };
     }
 }
 

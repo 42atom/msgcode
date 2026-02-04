@@ -21,6 +21,186 @@ const execAsync = promisify(exec);
 let imsgClient: ImsgRpcClient | null = null;
 let jobScheduler: import("./jobs/scheduler.js").JobScheduler | null = null;
 const perChatQueue = new Map<string, Promise<void>>();
+const perChatAbort = new Map<string, AbortController>();
+
+// ============================================
+// Control Lane: 只读命令快车道（P0）
+// ============================================
+
+// 白名单：只读命令（秒回、不抢占、不破坏游标安全）
+const CONTROL_READONLY_COMMANDS = /^\/(status|where|help)(\s|$)/;
+
+const FAST_REPLIED_TTL_MS = 5 * 60 * 1000; // 5 分钟 TTL
+const fastReplied = new Map<string, number>();
+
+/**
+ * 生成快车道消息的 key
+ *
+ * P1: 如果既没有 id 也没有 rowid，禁用 control lane（返回空字符串）
+ * 避免极端情况下生成 chatId:undefined 导致误判
+ */
+function fastReplyKey(message: InboundMessage): string {
+  if (message.id) {
+    return message.id;
+  }
+  if (message.rowid !== undefined) {
+    return `${message.chatId}:${message.rowid}`;
+  }
+  // 既没有 id 也没有 rowid，禁用 control lane
+  return "";
+}
+
+/**
+ * 标记消息已通过快车道回复
+ */
+function markFastReplied(message: InboundMessage): void {
+  const key = fastReplyKey(message);
+  if (!key) return; // 没有有效 key，禁用 control lane
+  fastReplied.set(key, Date.now());
+  // 定期清理过期条目
+  pruneFastReplied(Date.now());
+}
+
+/**
+ * 检查消息是否已通过快车道回复
+ */
+function wasFastReplied(message: InboundMessage): boolean {
+  const key = fastReplyKey(message);
+  if (!key) return false; // 没有有效 key，视为未快回
+  const timestamp = fastReplied.get(key);
+  if (!timestamp) return false;
+
+  // 检查是否过期
+  const now = Date.now();
+  if (now - timestamp > FAST_REPLIED_TTL_MS) {
+    fastReplied.delete(key);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * 清理过期的快车道记录
+ */
+function pruneFastReplied(now: number): void {
+  for (const [key, timestamp] of fastReplied.entries()) {
+    if (now - timestamp > FAST_REPLIED_TTL_MS) {
+      fastReplied.delete(key);
+    }
+  }
+}
+
+/**
+ * 在快车道处理只读命令（/status /where /help）
+ *
+ * - 不等待队列，立即回复
+ * - 不调用 abort（不抢占长任务）
+ * - 不更新游标（由队列里的同名消息负责）
+ * - 处理成功后标记为 fastReplied
+ */
+async function handleControlCommandInFastLane(message: InboundMessage): Promise<void> {
+  return handleControlCommandInFastLaneWithClient(message);
+}
+
+type FastLaneSendClient = Pick<ImsgRpcClient, "send">;
+
+async function handleControlCommandInFastLaneWithClient(
+  message: InboundMessage,
+  clientOverride?: FastLaneSendClient
+): Promise<void> {
+  const client = clientOverride ?? imsgClient;
+  if (!client) {
+    return;
+  }
+
+  const text = (message.text ?? "").trim();
+  const command = text.split(/\s+/)[0]; // 提取命令部分（/status /where /help）
+
+  let sendSuccessful = false; // 标记是否成功发送
+  let sentText: string | undefined; // 跟踪实际发送的文本（P0: 只有发送非空文本才 markFastReplied）
+
+  try {
+    let responseText: string;
+
+    if (command === "/status") {
+      // /status: 使用现有 handler
+      const { routeByChatId } = await import("./router.js");
+      const { getHandler } = await import("./handlers.js");
+
+      const route = routeByChatId(message.chatId);
+      if (!route) {
+        const errorMsg = "未绑定工作区，请先发送 /bind <工作区路径>";
+        await client.send({ chat_guid: message.chatId, text: errorMsg });
+        sendSuccessful = true;
+        sentText = errorMsg;
+        return;
+      }
+
+      const handler = getHandler(route.botType ?? "default");
+      const result = await handler.handle("/status", {
+        botType: route.botType ?? "default",
+        chatId: route.chatId,
+        groupName: route.groupName,
+        projectDir: route.projectDir,
+        originalMessage: message,
+      });
+
+      responseText = result.success && result.response ? result.response : result.error || "命令执行失败";
+
+    } else if (command === "/where" || command === "/help") {
+      // /where /help: 使用路由命令处理器
+      const { handleRouteCommand } = await import("./routes/commands.js");
+      const routeCommandName = command.slice(1); // 去掉前导斜杠
+
+      const result = await handleRouteCommand(routeCommandName, {
+        chatId: message.chatId,
+        args: [],
+      });
+
+      responseText = result.message;
+    } else {
+      responseText = "未知命令";
+    }
+
+    // 发送回复
+      await client.send({ chat_guid: message.chatId, text: responseText });
+      sendSuccessful = true;
+      sentText = responseText;
+
+  } catch (error) {
+    logger.error(`Control Lane 快车道执行失败: ${command}`, {
+      module: "commands",
+      chatId: message.chatId,
+      command,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    // 出错时也尝试回复用户
+    const errorMsg = `命令执行出错: ${error instanceof Error ? error.message : String(error)}`;
+    await client.send({ chat_guid: message.chatId, text: errorMsg });
+    sendSuccessful = true;
+    sentText = errorMsg;
+  } finally {
+    // P0: 只有成功发送了非空文本后才标记为已快回，避免重复回复
+    // 保险丝：即使 handler 返回空文本，queue lane 仍会处理（不吞回复）
+    if (sendSuccessful && sentText && sentText.trim().length > 0) {
+      markFastReplied(message);
+    }
+  }
+}
+
+/**
+ * 检查消息是否已通过快车道回复（供 listener.ts 使用）
+ */
+export { wasFastReplied };
+
+// 仅用于测试（BDD/Cucumber）
+export const __test = process.env.NODE_ENV === "test"
+  ? {
+    clearFastReplied: () => fastReplied.clear(),
+    markFastReplied,
+    handleControlCommandInFastLaneForTest: handleControlCommandInFastLaneWithClient,
+  }
+  : undefined;
 
 async function keepAlive(): Promise<void> {
   await new Promise<void>(() => {});
@@ -199,6 +379,35 @@ export async function startBot(): Promise<void> {
     const text = (message.text ?? "").trim();
     const textLength = text.length;
     const textDigest = text ? crypto.createHash("sha256").update(text).digest("hex").slice(0, 12) : "";
+    const isSlashCommand = text.startsWith("/");
+
+    // P0：控制面命令抢占（远程手机端必须能随时 /status /stop /esc）
+    // 规则：只有中断命令才抢占当前任务（/esc /stop /clear）
+    // 其他 slash command（如 /status）排队到任务结束后回复
+    const isInterrupt = /^\/(esc|stop|clear)(\s|$)/.test(text);
+    if (isInterrupt) {
+      const controller = perChatAbort.get(chatKey);
+      if (controller && !controller.signal.aborted) {
+        controller.abort();
+      }
+    }
+
+    // ============================================
+    // Control Lane: 只读命令快车道（/status /where /help）
+    // ============================================
+    const isControlCommand = CONTROL_READONLY_COMMANDS.test(text);
+    if (isControlCommand) {
+      // 快车道：立即异步回复（不等待队列）
+      handleControlCommandInFastLane(message).catch((err: unknown) => {
+        logger.error("Control Lane 快车道处理失败", {
+          module: "commands",
+          chatId: chatKey,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+      // 仍然入队（为了后续按序推进 cursor）
+      // 队列里检测到 wasFastReplied 时会跳过实际处理
+    }
 
     // E16: trace 队列状态
     if (process.env.DEBUG_TRACE === "1") {
@@ -227,6 +436,8 @@ export async function startBot(): Promise<void> {
         }
       })
       .then(async () => {
+        const controller = new AbortController();
+        perChatAbort.set(chatKey, controller);
         if (process.env.DEBUG_TRACE === "1") {
           logger.debug("开始处理消息", {
             module: "commands",
@@ -234,7 +445,14 @@ export async function startBot(): Promise<void> {
             rowid: message.rowid,
           });
         }
-        await handleMessage(message, { imsgClient: imsgClient! });
+        try {
+          await handleMessage(message, { imsgClient: imsgClient!, signal: controller.signal });
+        } finally {
+          // 只清理自己的 controller（避免并发覆盖）
+          if (perChatAbort.get(chatKey) === controller) {
+            perChatAbort.delete(chatKey);
+          }
+        }
       })
       .catch((error: unknown) => {
         logger.error("处理消息失败", {

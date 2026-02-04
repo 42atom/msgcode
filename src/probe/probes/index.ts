@@ -10,3 +10,4 @@ export { probeConnections } from "./connections.js";
 export { probeResources } from "./resources.js";
 export { probeJobs } from "./jobs.js";
 export { probeDeps } from "./deps.js";
+export { probeCodex } from "./runner.js";

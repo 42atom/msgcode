@@ -36,6 +36,12 @@ vendor/imsg/
 *.tmp
 *.bak
 
+# Release / pack artifacts
+*.tgz
+
+# Local planning scratchpads
+task_plan.md
+
 # Reference materials (not tracked)
 refs/
 ref/

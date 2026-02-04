@@ -4,7 +4,7 @@
  * 将用户消息发送到 Claude Code (tmux)
  */
 
-import { TmuxSession } from "./session.js";
+import { TmuxSession, type RunnerType } from "./session.js";
 import type { Attachment } from "../imsg/types.js";
 
 /**
@@ -37,11 +37,10 @@ export async function sendMessage(
 
         // 发送普通消息（如果有）
         if (message.trim()) {
-            // 转义特殊字符
-            const escapedMessage = escapeMessage(message);
-            await TmuxSession.sendCommand(sessionName, escapedMessage);
-            // Claude 需要额外一次 Enter 确认
-            await TmuxSession.sendCommand(sessionName, "");
+            // P0: 使用 sendTextLiteral + sendEnter，直接发送原文（-l 字面量模式无需转义）
+            await TmuxSession.sendTextLiteral(sessionName, message);
+            await new Promise(resolve => setTimeout(resolve, 50)); // 延迟防止UI吞键
+            await TmuxSession.sendEnter(sessionName);
         }
 
         return { success: true };
@@ -88,7 +87,7 @@ export async function sendEscape(groupName: string): Promise<string> {
  *
  * 杀掉现有会话并重新启动，彻底清空上下文
  */
-export async function sendClear(groupName: string, projectDir?: string): Promise<string> {
+export async function sendClear(groupName: string, projectDir: string | undefined, runner: RunnerType = "claude"): Promise<string> {
     const exists = await TmuxSession.exists(groupName);
 
     // E16-S7: 无论会话是否存在，都执行 kill+start
@@ -101,23 +100,9 @@ export async function sendClear(groupName: string, projectDir?: string): Promise
         }
     }
 
-    // 再 start
-    const startResult = await TmuxSession.start(groupName, projectDir);
+    // 再 start（默认 claude；由调用方决定是否传 codex）
+    const startResult = await TmuxSession.start(groupName, projectDir, runner);
     return `已清空上下文（kill+start）\n${startResult}`;
-}
-
-/**
- * 转义消息中的特殊字符
- */
-function escapeMessage(message: string): string {
-    // tmux send-keys 需要转义的字符
-    return message
-        .replace(/\\/g, "\\\\")    // 反斜杠
-        .replace(/"/g, '\\"')      // 双引号
-        .replace(/\$/g, "\\$")     // 美元符号
-        .replace(/;/g, "\\;")      // 分号
-        .replace(/\(/g, "\\(")     // 左括号
-        .replace(/\)/g, "\\)");    // 右括号
 }
 
 /**
@@ -140,8 +125,10 @@ export async function sendAttachmentsToSession(
         if (!filePath) {
             continue;
         }
-        await TmuxSession.sendCommand(sessionName, `请分析这个文件: ${filePath}`);
-        await TmuxSession.sendCommand(sessionName, "");
+        // P0: 使用 sendTextLiteral + sendEnter 避免Enter被吞
+        await TmuxSession.sendTextLiteral(sessionName, `请分析这个文件: ${filePath}`);
+        await new Promise(resolve => setTimeout(resolve, 50)); // 延迟防止UI吞键
+        await TmuxSession.sendEnter(sessionName);
         await sleep(500);
     }
 }

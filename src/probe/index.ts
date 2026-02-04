@@ -14,6 +14,7 @@ import {
 } from "./probes/index.js";
 import { probeJobs } from "./probes/jobs.js";
 import { probeDeps } from "./probes/deps.js";
+import { probeCodex } from "./probes/runner.js";
 import { formatJson } from "./formatters/json.js";
 import { formatText } from "./formatters/text.js";
 import { safeProbe, aggregateStatus } from "./types.js";
@@ -31,6 +32,7 @@ const PROBE_CATEGORIES = [
     { name: "资源", key: "resources", probe: probeResources },
     { name: "任务", key: "jobs", probe: probeJobs },
     { name: "依赖", key: "deps", probe: probeDeps },
+    { name: "执行臂", key: "runner", probe: probeCodex },
 ] as const;
 
 /**

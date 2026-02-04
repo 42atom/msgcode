@@ -19,11 +19,13 @@ import {
 } from "./routes/commands.js";
 import { logger } from "./logger/index.js";
 import { updateLastSeen } from "./state/store.js";
+import { getMemoryInjectConfig } from "./config/workspace.js";
 import crypto from "node:crypto";
 
 export interface ListenerConfig {
   imsgClient: ImsgRpcClient;
   debug?: boolean;
+  signal?: AbortSignal;
 }
 
 // ============================================
@@ -100,6 +102,333 @@ function updateCursor(message: InboundMessage): void {
 }
 
 // ============================================
+// M6-ACK-P0: 长任务回执机制
+// ============================================
+
+const ACKNOWLEDGEMENT_TEXT = "收到，执行中…请等我回复。";
+
+function getAcknowledgementDelayMs(): number {
+  const raw = process.env.MSGCODE_ACK_DELAY_MS;
+  if (raw !== undefined) {
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return parsed;
+    }
+  }
+  return 8000; // 默认 8 秒（Codex/长任务更常见）
+}
+
+/**
+ * 判断是否应该发送回执
+ *
+ * 规则：
+ * - 仅对非 slash 命令（不以 / 开头）
+ * - 排除 /start /stop /status /esc /clear 等系统命令
+ */
+function shouldSendAcknowledgement(content: string): boolean {
+  const trimmed = content.trim();
+  // 不是 slash 命令才需要回执
+  return !trimmed.startsWith("/");
+}
+
+/**
+ * 包装 handler 调用，添加回执机制
+ *
+ * @param imsgClient iMessage RPC 客户端
+ * @param chatGuid 聊天 GUID
+ * @param content 消息内容
+ * @param handlerFn handler 调用函数
+ * @returns handler 结果
+ */
+async function withAcknowledgement<T>(
+  imsgClient: ImsgRpcClient,
+  chatGuid: string,
+  content: string,
+  handlerFn: () => Promise<T>
+): Promise<T> {
+  // 检查是否需要回执
+  const needsAck = shouldSendAcknowledgement(content);
+
+  if (!needsAck) {
+    // 不需要回执，直接调用 handler
+    return await handlerFn();
+  }
+
+  // 需要回执：启动 3s 定时器
+  let ackSent = false;
+  let timer: NodeJS.Timeout | undefined;
+
+  const sendAck = async () => {
+    if (!ackSent) {
+      ackSent = true;
+      try {
+        await sendText(imsgClient, chatGuid, ACKNOWLEDGEMENT_TEXT);
+        logger.debug("已发送长任务回执", {
+          module: "listener",
+          chatId: chatGuid,
+        });
+      } catch (error) {
+        logger.warn("回执发送失败", {
+          module: "listener",
+          chatId: chatGuid,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  };
+
+  // 超过阈值后发送回执
+  timer = setTimeout(sendAck, getAcknowledgementDelayMs());
+
+  try {
+    // 调用 handler
+    const result = await handlerFn();
+
+    // handler 完成，清除定时器
+    if (timer) {
+      clearTimeout(timer);
+    }
+
+    return result;
+  } catch (error) {
+    // handler 失败，清除定时器
+    if (timer) {
+      clearTimeout(timer);
+    }
+
+    // 如果是取消错误，不需要发送错误消息（已在上层处理）
+    if ((error as any)?.message === "__CANCELLED__") {
+      throw error;
+    }
+
+    // 其他错误，正常抛出（上层会处理错误回复）
+    throw error;
+  }
+}
+
+// 仅用于测试（BDD/Cucumber）
+export const __test = process.env.NODE_ENV === "test"
+  ? {
+    withAcknowledgement,
+    shouldSendAcknowledgement,
+    getAcknowledgementDelayMs,
+    ACKNOWLEDGEMENT_TEXT,
+  }
+  : undefined;
+
+// ============================================
+// M5-3: 记忆注入闸门与检索注入闭环
+// ============================================
+
+/**
+ * 记忆注入触发关键词（默认关闭，只在匹配关键词时触发）
+ */
+const MEMORY_TRIGGER_KEYWORDS = ["上次", "记得", "复盘", "错误码", "命令", "之前", "历史"];
+
+/**
+ * 记忆注入结果
+ */
+interface MemoryInjectResult {
+  /** 是否注入了记忆 */
+  injected: boolean;
+  /** 注入后的内容（如果有注入） */
+  content: string;
+  /** 调试信息 */
+  debug?: {
+    /** 命中关键词 */
+    hitKeyword?: string;
+    /** 检索结果数 */
+    hitCount: number;
+    /** 注入字符数 */
+    injectedChars: number;
+    /** 使用的文件路径（不含绝对路径） */
+    usedPaths: string[];
+    /** 跳过原因 */
+    skippedReason?: string;
+    /** 强制注入标志 */
+    forced?: boolean;
+  };
+}
+
+/**
+ * 记忆注入辅助函数
+ *
+ * @param content 原始内容
+ * @param projectDir 工作目录路径
+ * @param force 是否强制注入（/mem force 标志）
+ * @returns 注入结果
+ */
+async function injectMemory(
+  content: string,
+  projectDir: string,
+  force: boolean = false
+): Promise<MemoryInjectResult> {
+  const debug = process.env.MEMORY_DEBUG === "1";
+
+  // 1. 获取记忆注入配置
+  const memConfig = await getMemoryInjectConfig(projectDir);
+
+  // 2. 如果未启用且非强制，直接返回
+  if (!memConfig.enabled && !force) {
+    if (debug) {
+      return {
+        injected: false,
+        content,
+        debug: {
+          hitCount: 0,
+          injectedChars: 0,
+          usedPaths: [],
+          skippedReason: "记忆注入未启用",
+        },
+      };
+    }
+    return { injected: false, content };
+  }
+
+  // 3. 检查触发关键词（强制注入时跳过关键词检查）
+  const hitKeyword = MEMORY_TRIGGER_KEYWORDS.find(kw => content.includes(kw));
+  if (!hitKeyword && !force) {
+    if (debug) {
+      return {
+        injected: false,
+        content,
+        debug: {
+          hitCount: 0,
+          injectedChars: 0,
+          usedPaths: [],
+          skippedReason: "未命中触发关键词",
+        },
+      };
+    }
+    return { injected: false, content };
+  }
+
+  // 4. 提取搜索查询（使用原始内容，避免噪声）
+  const query = content.trim().slice(0, 200); // 限制查询长度
+
+  try {
+    // 5. 调用 memory_search
+    const { createMemoryStore } = await import("./memory/store.js");
+    const path = await import("node:path");
+    const store = createMemoryStore();
+
+    // 使用 workspace basename 作为 workspaceId（与 memory index 一致，避免跨 workspace 泄露）
+    const workspaceId = path.basename(projectDir);
+    const results = store.search(workspaceId, query, memConfig.topK);
+    store.close();
+
+    if (results.length === 0) {
+      if (debug) {
+        return {
+          injected: false,
+          content,
+          debug: {
+            hitKeyword,
+            hitCount: 0,
+            injectedChars: 0,
+            usedPaths: [],
+            skippedReason: "无搜索结果",
+            forced: force,
+          },
+        };
+      }
+      return { injected: false, content };
+    }
+
+    // 6. 格式化证据块（[记忆] xxx，不含绝对路径/附件元信息）
+    const evidenceBlocks: string[] = [];
+    let injectedChars = 0;
+    const usedPaths: string[] = [];
+
+    for (const result of results) {
+      // 格式: [记忆] file.ts:123-456: snippet
+      const block = `[记忆] ${result.path}:${result.startLine}-${result.startLine + result.lines - 1}\n${result.snippet.trim()}`;
+
+      // 检查字符数限制
+      if (injectedChars + block.length > memConfig.maxChars) {
+        break; // 已达上限，停止添加
+      }
+
+      evidenceBlocks.push(block);
+      injectedChars += block.length;
+      usedPaths.push(result.path);
+    }
+
+    if (evidenceBlocks.length === 0) {
+      if (debug) {
+        return {
+          injected: false,
+          content,
+          debug: {
+            hitKeyword,
+            hitCount: results.length,
+            injectedChars: 0,
+            usedPaths: [],
+            skippedReason: "证据块超出字符限制",
+            forced: force,
+          },
+        };
+      }
+      return { injected: false, content };
+    }
+
+    // 7. 注入证据块（在用户问题之前）
+    const injectedContent =
+      "相关记忆：\n" +
+      evidenceBlocks.join("\n\n") +
+      "\n\n" +
+      "用户问题：" +
+      "\n" +
+      content;
+
+    if (debug) {
+      logger.debug("记忆注入已触发", {
+        module: "listener",
+        hitKeyword,
+        hitCount: results.length,
+        injectedChars,
+        usedPaths,
+        forced: force,
+      });
+    }
+
+    return {
+      injected: true,
+      content: injectedContent,
+      debug: {
+        hitKeyword,
+        hitCount: results.length,
+        injectedChars,
+        usedPaths,
+        forced: force,
+      },
+    };
+  } catch (error) {
+    // 搜索失败不影响主流程
+    logger.warn("记忆注入失败", {
+      module: "listener",
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    if (debug) {
+      return {
+        injected: false,
+        content,
+        debug: {
+          hitKeyword,
+          hitCount: 0,
+          injectedChars: 0,
+          usedPaths: [],
+          skippedReason: `搜索失败: ${error instanceof Error ? error.message : String(error)}`,
+          forced: force,
+        },
+      };
+    }
+    return { injected: false, content };
+  }
+}
+
+// ============================================
 // 入口：处理单条消息
 // ============================================
 
@@ -112,6 +441,18 @@ export async function handleMessage(
   let shouldAdvanceCursor = false;
 
   try {
+    // Control Lane: 检查是否已通过快车道回复（/status /where /help 秒回）
+    // 如果是快车道已回复的消息，只推进游标，跳过实际处理
+    const { wasFastReplied } = await import("./commands.js");
+    if (wasFastReplied(message)) {
+      shouldAdvanceCursor = true;
+      return;
+    }
+
+  if (ctx.signal?.aborted) {
+    shouldAdvanceCursor = true;
+    return;
+  }
   // 自己发的消息不处理（避免回声循环）
   if (message.isFromMe) {
     shouldAdvanceCursor = true;
@@ -332,6 +673,23 @@ export async function handleMessage(
     });
   }
 
+  // M5-3: 记忆注入闸门（检查 /mem force 标志和触发关键词）
+  const memForceFlag = /\b--force-mem\b|\bforce-mem\b|\b--mem-force\b/i.test(text);
+  let baseContent = text; // 默认使用原始文本
+
+  if (route.projectDir) {
+    const memResult = await injectMemory(text, route.projectDir, memForceFlag);
+    if (memResult.injected) {
+      baseContent = memResult.content;
+      if (memResult.debug && process.env.MEMORY_DEBUG === "1") {
+        logger.debug("记忆注入结果", {
+          module: "listener",
+          ...memResult.debug,
+        });
+      }
+    }
+  }
+
   try {
     // M4-A2: 按 botType 分流构造输入（避免 4.7 reasoning 崩溃）
     const botType = route.botType ?? "default";
@@ -341,8 +699,8 @@ export async function handleMessage(
 
     // botType=lmstudio（喂 4.7）：只进核心内容，禁止 [attachment] 元信息
     if (botType === "lmstudio") {
-      // 只进：用户问题 + 证据（[图片文字]/[语音转写]）
-      let contentToHandle = (text || "").trim();
+      // M5-3: 使用记忆注入后的内容（baseContent 已包含可能的记忆证据块）
+      let contentToHandle = (baseContent || "").trim();
 
       // 检查是否有 OCR 失败（包含错误信息的派生文本）
       const hasOcrError =
@@ -368,7 +726,7 @@ export async function handleMessage(
         .map(line => line.replace(/^\[[^\]]+\]\s*/g, "").trim())
         .filter(Boolean);
 
-      // 若用户未附带问题但有证据（只发图/语音），给一个默认问题，避免模型进入“分析输入”模式
+      // 若用户未附带问题但有证据（只发图/语音），给一个默认问题，避免模型进入"分析输入"模式
       if (!contentToHandle && derivedEvidence.length > 0) {
         contentToHandle = "请用一句话概括主要内容。";
       }
@@ -387,13 +745,19 @@ export async function handleMessage(
         return;
       }
 
-      result = await handler.handle(contentToHandle, {
-        botType,
-        chatId: route.chatId,
-        groupName: route.groupName,
-        projectDir: route.projectDir,
-        originalMessage: message,
-      });
+      result = await withAcknowledgement(
+        ctx.imsgClient,
+        message.chatId,
+        contentToHandle,
+        () => handler.handle(contentToHandle, {
+          botType,
+          chatId: route.chatId,
+          groupName: route.groupName,
+          projectDir: route.projectDir,
+          originalMessage: message,
+          signal: ctx.signal,
+        })
+      );
     } else {
       // botType=default/tmux：保留完整格式（[attachment] + 派生文本）
       const contentToHandle = text ? (attachmentText ? `${text}\n${attachmentText}` : text) : attachmentText;
@@ -404,13 +768,19 @@ export async function handleMessage(
         return;
       }
 
-      result = await handler.handle(contentToHandle, {
-        botType,
-        chatId: route.chatId,
-        groupName: route.groupName,
-        projectDir: route.projectDir,
-        originalMessage: message,
-      });
+      result = await withAcknowledgement(
+        ctx.imsgClient,
+        message.chatId,
+        contentToHandle,
+        () => handler.handle(contentToHandle, {
+          botType,
+          chatId: route.chatId,
+          groupName: route.groupName,
+          projectDir: route.projectDir,
+          originalMessage: message,
+          signal: ctx.signal,
+        })
+      );
     }
 
     // DEBUG: Handler 结果追踪（需 DEBUG_TRACE=1 启用）
@@ -430,6 +800,16 @@ export async function handleMessage(
     }
 
     if (!result.success) {
+      // P0: 允许被上游抢占（例如用户发 /status /stop 中断长任务）
+      // 取消不应回错误消息，否则会刷屏。
+      if (result.error === "__CANCELLED__") {
+        logger.info("handler 已取消（被新命令抢占）", {
+          module: "listener",
+          chatId: message.chatId,
+        });
+        shouldAdvanceCursor = true;
+        return;
+      }
       logger.error("handler 处理失败", {
         module: "listener",
         chatId: message.chatId,

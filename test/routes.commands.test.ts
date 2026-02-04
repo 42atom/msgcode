@@ -273,7 +273,7 @@ describe("路由命令处理器", () => {
       const result = await handleHelpCommand(options);
 
       expect(result.success).toBe(true);
-      expect(result.message).toContain("msgcode 2.0 命令帮助");
+      expect(result.message).toContain("msgcode 2.2 命令帮助");
       expect(result.message).toContain("/bind");
       expect(result.message).toContain("/where");
       expect(result.message).toContain("/unbind");
@@ -371,7 +371,7 @@ describe("路由命令处理器", () => {
       const result = await handleRouteCommand("help", options);
 
       expect(result.success).toBe(true);
-      expect(result.message).toContain("msgcode 2.0 命令帮助");
+      expect(result.message).toContain("msgcode 2.2 命令帮助");
     });
 
     it("拒绝未知命令", async () => {
