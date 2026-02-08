@@ -122,6 +122,11 @@ export class ImsgRpcClient extends EventEmitter {
   private isRunning = false;
   private imsgPath: string;
 
+  // 去重：跟踪最后收到的消息
+  private lastMessageId = "";
+  private lastMessageTime = 0;
+  private readonly DEDUP_WINDOW_MS = 100; // 100ms 去重窗口
+
   constructor(imsgPath: string) {
     super();
     this.imsgPath = imsgPath;
@@ -295,6 +300,26 @@ export class ImsgRpcClient extends EventEmitter {
         });
         return;
       }
+
+      // 去重：imsg RPC v0.4.0 可能发送重复通知
+      // 使用 message.id + chat_id 组合作为唯一标识
+      const messageId = `${messageObj.id}_${messageObj.chat_id}`;
+      const now = Date.now();
+
+      if (
+        messageId === this.lastMessageId &&
+        now - this.lastMessageTime < this.DEDUP_WINDOW_MS
+      ) {
+        logger.debug("跳过重复消息", {
+          module: "imsg-rpc",
+          messageId,
+          elapsed: now - this.lastMessageTime,
+        });
+        return;
+      }
+
+      this.lastMessageId = messageId;
+      this.lastMessageTime = now;
 
       // 使用适配器转换为统一的 InboundMessage
       (this as EventEmitter).emit("message", fromImsgRpcMessage(messageObj));

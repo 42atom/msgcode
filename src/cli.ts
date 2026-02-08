@@ -16,18 +16,6 @@ import { existsSync, accessSync, constants } from "node:fs";
 import { exec, spawn } from "node:child_process";
 import { getVersion, getVersionInfo, type VersionInfo } from "./version.js";
 
-// 导入 memory 子命令（M2）
-import {
-  createMemoryRememberCommand,
-  createMemoryIndexCommand,
-  createMemorySearchCommand,
-  createMemoryGetCommand,
-  createMemoryStatusCommand,
-} from "./cli/memory.js";
-
-// 导入 job 子命令（M3）
-import { createJobCommand } from "./cli/jobs.js";
-
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const CONFIG_DIR = path.join(os.homedir(), ".config/msgcode");
@@ -212,10 +200,31 @@ async function loadRunCommands() {
 
 // 主入口（异步）
 async function main() {
-  await loadMemoryCommands();
-  await loadJobCommands();
-  await loadPreflightCommands();
-  await loadRunCommands();
+  // P0: 仅按需加载子命令，避免在“未初始化配置”时也强制 import 导致 CLI 直接崩溃。
+  // 例：用户首次使用时需要能运行 `msgcode init` 来生成 ~/.config/msgcode/.env。
+  const argv = process.argv.slice(2);
+  const top = (argv[0] ?? "").toLowerCase();
+
+  if (top === "memory") {
+    await loadMemoryCommands();
+  }
+  if (top === "job" || top === "jobs") {
+    await loadJobCommands();
+  }
+  if (top === "preflight") {
+    await loadPreflightCommands();
+  }
+  if (top === "run") {
+    await loadRunCommands();
+  }
+
+  // 对于 help（无参数或 --help），也加载一遍子命令，让帮助信息完整
+  if (!top || top === "-h" || top === "--help" || top === "help") {
+    await loadMemoryCommands();
+    await loadJobCommands();
+    await loadPreflightCommands();
+    await loadRunCommands();
+  }
   program.parse();
 }
 
@@ -233,6 +242,21 @@ async function launchDaemon(): Promise<void> {
   console.log(`  binPath: ${versionInfo.binPath}`);
   console.log(`  cliEntry: ${versionInfo.cliEntry}`);
   console.log("");
+
+  // 单实例守护：若已有 daemon 在跑，则不重复启动
+  try {
+    const { acquireSingletonLock } = await import("./runtime/singleton.js");
+    const lock = await acquireSingletonLock("msgcode-daemon");
+    if (!lock.acquired) {
+      console.log(`msgcode 已在运行 (pid: ${lock.pid ?? "unknown"})`);
+      return;
+    }
+    // 这里不 release：真正的 daemon 进程会重新 acquire 并管理 pidfile
+    await lock.release();
+  } catch {
+    // best-effort：锁机制失败时继续启动（避免误伤）
+  }
+
   console.log("后台启动 msgcode...");
 
   const env = {

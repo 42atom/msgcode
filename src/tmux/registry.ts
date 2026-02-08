@@ -12,6 +12,8 @@ import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { logger } from "../logger/index.js";
+import type { RunnerTypeOld, RunnerType } from "./session.js";
+import { normalizeRunnerType } from "./session.js";
 
 // ============================================
 // Schema
@@ -27,8 +29,10 @@ export interface SessionRecord {
   groupName: string;
   /** 项目目录路径 */
   projectDir?: string;
-  /** 执行臂类型 */
-  runner: "claude" | "codex";
+  /** 执行臂类型（使用 RunnerTypeOld 兼容历史数据） */
+  runner: RunnerTypeOld;
+  /** 运行时分类（归一化后的值，可选，用于新数据） */
+  runnerType?: "tmux" | "direct";
   /** 创建时间（毫秒时间戳） */
   createdAtMs: number;
   /** 更新时间（毫秒时间戳） */
@@ -173,19 +177,50 @@ async function writeRegistry(registry: SessionRegistry): Promise<void> {
 // ============================================
 
 /**
- * 获取指定会话记录
+ * 校验 runnerType 是否有效，无效则返回 normalize 结果
+ *
+ * 守卫：防止坏数据把系统带偏
  */
-export async function getSession(sessionName: string): Promise<SessionRecord | null> {
-  const registry = await readRegistry();
-  return registry.sessions.find(s => s.sessionName === sessionName) || null;
+function validateOrNormalizeRunnerType(record: SessionRecord): "tmux" | "direct" {
+  // 优先使用 runnerType，但必须校验
+  if (record.runnerType === "tmux" || record.runnerType === "direct") {
+    return record.runnerType;
+  }
+
+  // runnerType 缺失或无效：fallback normalize
+  return normalizeRunnerType(record.runner);
 }
 
 /**
- * 获取指定群组的会话记录
+ * 获取指定会话记录（归一化：确保 runnerType 字段有效）
+ */
+export async function getSession(sessionName: string): Promise<SessionRecord | null> {
+  const registry = await readRegistry();
+  const record = registry.sessions.find(s => s.sessionName === sessionName);
+  if (!record) return null;
+
+  // 读时迁移：校验 runnerType，无效则从 runner 推断
+  const runnerType = validateOrNormalizeRunnerType(record);
+  if (runnerType !== record.runnerType) {
+    return { ...record, runnerType };
+  }
+  return record;
+}
+
+/**
+ * 获取指定群组的会话记录（归一化：确保 runnerType 字段有效）
  */
 export async function getSessionByGroupName(groupName: string): Promise<SessionRecord | null> {
   const registry = await readRegistry();
-  return registry.sessions.find(s => s.groupName === groupName) || null;
+  const record = registry.sessions.find(s => s.groupName === groupName);
+  if (!record) return null;
+
+  // 读时迁移：校验 runnerType，无效则从 runner 推断
+  const runnerType = validateOrNormalizeRunnerType(record);
+  if (runnerType !== record.runnerType) {
+    return { ...record, runnerType };
+  }
+  return record;
 }
 
 /**
@@ -193,12 +228,18 @@ export async function getSessionByGroupName(groupName: string): Promise<SessionR
  *
  * - 更新现有记录时，保留 lastStopAtMs（不覆盖）
  * - 新建记录时，lastStopAtMs 初始化为 0
+ * - 写入策略：双写 runner（旧）+ runnerType（新，强制 normalize）
+ *
+ * 守卫：runnerType 强制从 record.runner 推断，不信任外部传入
  */
-export async function upsertSession(record: Omit<SessionRecord, "createdAtMs" | "updatedAtMs" | "lastStartAtMs" | "lastStopAtMs">): Promise<void> {
+export async function upsertSession(record: Omit<SessionRecord, "createdAtMs" | "updatedAtMs" | "lastStartAtMs" | "lastStopAtMs" | "runnerType">): Promise<void> {
   const registry = await readRegistry();
   const now = Date.now();
 
   const existingIndex = registry.sessions.findIndex(s => s.sessionName === record.sessionName);
+
+  // 强制从 record.runner 推断 runnerType（守卫：不信任外部传入）
+  const runnerType: "tmux" | "direct" = normalizeRunnerType(record.runner);
 
   if (existingIndex >= 0) {
     // 更新现有记录：保留 lastStopAtMs
@@ -206,6 +247,7 @@ export async function upsertSession(record: Omit<SessionRecord, "createdAtMs" | 
     registry.sessions[existingIndex] = {
       ...existing,
       ...record,
+      runnerType,  // 双写：新字段（强制归一化）
       lastStartAtMs: now,
       updatedAtMs: now,
       // 保留现有的 lastStopAtMs，不被覆盖
@@ -214,6 +256,7 @@ export async function upsertSession(record: Omit<SessionRecord, "createdAtMs" | 
     // 创建新记录：lastStopAtMs 初始化为 0
     registry.sessions.push({
       ...record,
+      runnerType,  // 双写：新字段（强制归一化）
       createdAtMs: now,
       updatedAtMs: now,
       lastStartAtMs: now,

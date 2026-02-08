@@ -2,7 +2,8 @@
  * msgcode: Codex Runner（M5-3: Codex 执行臂）
  *
  * 使用 codex exec 非交互模式
- * 固定参数：--skip-git-repo-check --sandbox read-only --color never --output-last-message <tmp>
+ * 固定参数：--skip-git-repo-check --color never --output-last-message <tmp>
+ * sandbox：默认 danger-full-access（不限制执行能力；远程执行场景需要）
  * 超时/错误处理带 fixHint
  * 安全：使用 spawn + 参数数组，避免 shell 命令注入
  */
@@ -23,8 +24,8 @@ export interface CodexExecOptions {
   prompt: string;
   /** 超时时间（毫秒），默认 60000 (60秒) */
   timeoutMs?: number;
-  /** 沙箱模式，默认 read-only */
-  sandbox?: "read-only" | "workspace-write";
+  /** 沙箱模式，默认 danger-full-access */
+  sandbox?: "read-only" | "workspace-write" | "danger-full-access";
 }
 
 /**
@@ -52,7 +53,7 @@ export async function runCodexExec(options: CodexExecOptions): Promise<CodexExec
     workspacePath,
     prompt,
     timeoutMs = 60000,
-    sandbox = "read-only",
+    sandbox = "danger-full-access",
   } = options;
 
   // 1. 生成临时文件路径用于输出

@@ -97,8 +97,8 @@ async function readFirstLine(filePath: string): Promise<string> {
             stream.destroy();
         };
 
-        stream.on("data", (chunk: string) => {
-            buf += chunk;
+        stream.on("data", (chunk: string | Buffer) => {
+            buf += typeof chunk === "string" ? chunk : chunk.toString("utf8");
             const newline = buf.indexOf("\n");
             if (newline !== -1) {
                 const line = buf.slice(0, newline);
@@ -154,8 +154,8 @@ async function readUtf8FromOffset(filePath: string, start: number): Promise<stri
     const stream = createReadStream(filePath, { encoding: "utf8", start });
     return await new Promise<string>((resolve, reject) => {
         let data = "";
-        stream.on("data", (chunk: string) => {
-            data += chunk;
+        stream.on("data", (chunk: string | Buffer) => {
+            data += typeof chunk === "string" ? chunk : chunk.toString("utf8");
         });
         stream.on("end", () => resolve(data));
         stream.on("error", reject);

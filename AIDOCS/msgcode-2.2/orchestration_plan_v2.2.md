@@ -184,22 +184,20 @@ workspace 里只记录“启用哪些”：
 {
   "id": "ymvoice",
   "name": "我的默认音色",
-  "engine": "qwen3-tts",
-  "kind": "builtin",          // builtin | clone | voicedesign
-  "builtin": { "voice": "Serena" },
-  "voicedesign": { "instruct": "温柔女声，语速稍慢" },
-  "defaults": { "speed": 1.05, "temperature": 0.4, "gainDb": 9 }
+  "engine": "indextts",
+  "kind": "clone",            // clone（P0）
+  "clone": {
+    "refAudio": "ymvoice.m4a", // 参考音频（必需）
+    "refText": "可选台词"       // 可选：IndexTTS 不强制台词精确对齐
+  },
+  "defaults": { "speed": 0, "emoAlpha": 0.4, "gainDb": 9 }
 }
 ```
 
 校验口径（P0）：
-- `kind=builtin`：必须有 `builtin.voice`
 - `kind=clone`：
-  - 必须存在 **且仅存在 1 组** “同名配对文件”（同一个 `<stem>`）：
-    - `<stem>.<m4a|wav|mp3|caf>`
-    - `<stem>.txt`
-  -（P0 不支持多组参考；P1 才考虑通过 voice.json 指定 stem）
-- `kind=voicedesign`：必须有 `voicedesign.instruct`
+  - 必须存在 `clone.refAudio` 指向的参考音频文件
+  - `clone.refText` 可选（IndexTTS 可不依赖精确台词）
 - 任一非法 → 标记 invalid，且不可选为默认
 
 切换策略（P0）：

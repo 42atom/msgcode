@@ -44,6 +44,11 @@ describe("listener (2.0)", () => {
     if (!config.whitelist.emails.includes("test@example.com")) {
       config.whitelist.emails.push("test@example.com");
     }
+
+    // 测试只验证控制面路由，不验证群聊 owner 收口策略
+    // 避免开发机真实 ~/.config/msgcode/.env 打开 owner-only 导致用例被安全模块拦截
+    config.ownerOnlyInGroup = false;
+    config.ownerIdentifiers = [];
   });
 
   afterEach(() => {
@@ -105,4 +110,3 @@ describe("listener (2.0)", () => {
     expect(imsg.sent[1].text).toContain(path.join(TEST_WORKSPACE_ROOT, "acme/ops"));
   });
 });
-

@@ -151,6 +151,13 @@ export class FileTransport implements Transport {
                 parts.push(`textPreview="${String(meta.textPreview).slice(0, 30)}"`);
             }
             if (meta.rowid !== undefined) parts.push(`rowid=${meta.rowid}`);
+
+            // Phase 6: 添加常用错误字段输出（P1 日志可观测性）
+            if (meta.error) parts.push(`error=${String(meta.error).slice(0, 200)}`);
+            if (meta.reason) parts.push(`reason=${String(meta.reason)}`);
+            if (meta.retry !== undefined) parts.push(`retry=${meta.retry}`);
+            if (meta.status !== undefined) parts.push(`status=${meta.status}`);
+
             if (parts.length) metaStr = ` [${parts.join(" ")}]`;
         }
 

@@ -16,6 +16,8 @@ import {
 } from "./store.js";
 import { getChatState } from "../state/store.js";
 import { join } from "node:path";
+import fs from "node:fs";
+import os from "node:os";
 
 /**
  * E13: 有效的 ModelClient 列表
@@ -89,6 +91,241 @@ function isValidRelativePath(path: string): boolean {
   }
 
   return true;
+}
+
+// ============================================
+// 群聊安全：owner 收口（写入 ~/.config/msgcode/.env）
+// ============================================
+
+function getUserEnvPath(): string {
+  return join(os.homedir(), ".config", "msgcode", ".env");
+}
+
+function normalizePhone(value: string): string {
+  return value.replace(/\D/g, "");
+}
+
+function splitCsv(value: string): string[] {
+  return value
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean);
+}
+
+function upsertEnvLine(lines: string[], key: string, value: string): string[] {
+  const prefix = `${key}=`;
+  let replaced = false;
+  const next = lines.map(line => {
+    if (line.startsWith(prefix) && !replaced) {
+      replaced = true;
+      return `${key}=${value}`;
+    }
+    return line;
+  });
+  if (!replaced) next.push(`${key}=${value}`);
+  return next;
+}
+
+function readEnvLines(filePath: string): string[] {
+  try {
+    if (!fs.existsSync(filePath)) return [];
+    const raw = fs.readFileSync(filePath, "utf8");
+    return raw.split(/\r?\n/);
+  } catch {
+    return [];
+  }
+}
+
+function writeEnvLines(filePath: string, lines: string[]): void {
+  const dir = join(os.homedir(), ".config", "msgcode");
+  fs.mkdirSync(dir, { recursive: true });
+  const content = lines.join("\n").replace(/\n+$/, "\n");
+  const tmp = `${filePath}.tmp.${Date.now()}`;
+  fs.writeFileSync(tmp, content, "utf8");
+  fs.renameSync(tmp, filePath);
+}
+
+function readEnvValue(lines: string[], key: string): string | null {
+  const prefix = `${key}=`;
+  for (const line of lines) {
+    if (line.startsWith(prefix)) return line.slice(prefix.length).trim();
+  }
+  return null;
+}
+
+function upsertCsvEnvValue(
+  lines: string[],
+  key: string,
+  rawItem: string,
+  kind: "email" | "phone"
+): string[] {
+  const current = readEnvValue(lines, key) ?? "";
+  const items = splitCsv(current);
+
+  const exists = items.some(existing => {
+    if (kind === "email") {
+      return existing.toLowerCase() === rawItem.toLowerCase();
+    }
+    const a = normalizePhone(existing);
+    const b = normalizePhone(rawItem);
+    if (!a || !b) return false;
+    return a.includes(b) || b.includes(a);
+  });
+
+  if (exists) return lines;
+
+  const nextValue = items.length === 0 ? rawItem : `${items.join(",")},${rawItem}`;
+  return upsertEnvLine(lines, key, nextValue);
+}
+
+function validateOwnerIdentifier(value: string): { ok: true } | { ok: false; reason: string } {
+  const trimmed = value.trim();
+  if (!trimmed) return { ok: false, reason: "owner 不能为空" };
+  // 邮箱 or 电话（仅做弱校验）
+  if (trimmed.includes("@")) return { ok: true };
+  if (normalizePhone(trimmed).length >= 6) return { ok: true };
+  return { ok: false, reason: "owner 格式不合法：请输入邮箱或电话号码（handle）" };
+}
+
+export async function handleOwnerCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  const { args } = options;
+  const envPath = getUserEnvPath();
+
+  // 查看当前状态
+  if (args.length === 0) {
+    const owner = process.env.MSGCODE_OWNER || "";
+    const enabled = process.env.MSGCODE_OWNER_ONLY_IN_GROUP || "0";
+    return {
+      success: true,
+      message: `owner 配置\n` +
+        `\n` +
+        `MSGCODE_OWNER_ONLY_IN_GROUP=${enabled}\n` +
+        `MSGCODE_OWNER=${owner || "<未设置>"}\n` +
+        `\n` +
+        `配置文件: ${envPath}\n` +
+        `\n` +
+        `用法:\n` +
+        `  /owner <你的邮箱或电话>\n` +
+        `  /owner-only on|off|status\n` +
+        `\n` +
+        `修改后需要重启 msgcode 才会生效`,
+    };
+  }
+
+  const requestedOwner = args[0] ?? "";
+  const check = validateOwnerIdentifier(requestedOwner);
+  if (!check.ok) {
+    return { success: false, message: `设置失败: ${check.reason}` };
+  }
+
+  const owner = requestedOwner.trim();
+  let lines = readEnvLines(envPath);
+  lines = upsertEnvLine(lines, "MSGCODE_OWNER", owner);
+
+  // 确保白名单包含 owner，避免“owner-only 打开后仍被白名单拦截”
+  if (owner.includes("@")) {
+    lines = upsertCsvEnvValue(lines, "MY_EMAIL", owner, "email");
+  } else {
+    lines = upsertCsvEnvValue(lines, "MY_PHONE", owner, "phone");
+  }
+
+  try {
+    writeEnvLines(envPath, lines);
+    return {
+      success: true,
+      message: `已写入 owner 配置\n` +
+        `\n` +
+        `MSGCODE_OWNER=${owner}\n` +
+        `\n` +
+        `下一步:\n` +
+        `1) 重启 msgcode\n` +
+        `2) 群里执行 /owner-only on（可选）\n` +
+        `3) 再执行 /clear 清理会话`,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `写入失败: ${error instanceof Error ? error.message : String(error)}\n` +
+        `\n` +
+        `请手动编辑: ${envPath}`,
+    };
+  }
+}
+
+export async function handleOwnerOnlyCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  const { args } = options;
+  const envPath = getUserEnvPath();
+
+  const raw = (args[0] ?? "status").trim().toLowerCase();
+  const currentEnabled = process.env.MSGCODE_OWNER_ONLY_IN_GROUP || "0";
+  const currentOwner = process.env.MSGCODE_OWNER || "";
+
+  if (raw === "status") {
+    return {
+      success: true,
+      message: `owner-only 状态\n` +
+        `\n` +
+        `MSGCODE_OWNER_ONLY_IN_GROUP=${currentEnabled}\n` +
+        `MSGCODE_OWNER=${currentOwner || "<未设置>"}\n` +
+        `\n` +
+        `配置文件: ${envPath}`,
+    };
+  }
+
+  const enable =
+    raw === "on" || raw === "1" || raw === "true" || raw === "yes" || raw === "enable";
+  const disable =
+    raw === "off" || raw === "0" || raw === "false" || raw === "no" || raw === "disable";
+
+  if (!enable && !disable) {
+    return {
+      success: false,
+      message: `用法错误\n` +
+        `\n` +
+        `  /owner-only on\n` +
+        `  /owner-only off\n` +
+        `  /owner-only status`,
+    };
+  }
+
+  // 启用时必须已配置 owner（避免把自己锁死）
+  if (enable && !currentOwner) {
+    // 允许“先写 env 再重启”的工作流：从文件里读取一次
+    const fromFile = readEnvValue(readEnvLines(envPath), "MSGCODE_OWNER") ?? "";
+    if (fromFile) {
+      // 文件里已有 owner，允许继续写 owner-only 开关
+    } else {
+    return {
+      success: false,
+      message: `启用失败：未设置 MSGCODE_OWNER\n` +
+        `\n` +
+        `请先执行:\n` +
+        `  /owner <你的邮箱或电话>`,
+    };
+    }
+  }
+
+  let lines = readEnvLines(envPath);
+  lines = upsertEnvLine(lines, "MSGCODE_OWNER_ONLY_IN_GROUP", enable ? "1" : "0");
+
+  try {
+    writeEnvLines(envPath, lines);
+    return {
+      success: true,
+      message: `已写入 owner-only 配置\n` +
+        `\n` +
+        `MSGCODE_OWNER_ONLY_IN_GROUP=${enable ? "1" : "0"}\n` +
+        `\n` +
+        `修改后需要重启 msgcode 才会生效`,
+    };
+  } catch (error) {
+    return {
+      success: false,
+      message: `写入失败: ${error instanceof Error ? error.message : String(error)}\n` +
+        `\n` +
+        `请手动编辑: ${envPath}`,
+    };
+  }
 }
 
 // ============================================
@@ -169,13 +406,23 @@ export async function handleBindCommand(options: CommandHandlerOptions): Promise
       modelClient,
     });
 
+    // P0: 显示实际的 runner（从 config.json 读取）
+    let displayModelClient = modelClient || "claude";
+    try {
+      const { getDefaultRunner } = await import("../config/workspace.js");
+      const actualRunner = await getDefaultRunner(entry.workspacePath);
+      displayModelClient = actualRunner;
+    } catch {
+      // 读取失败，使用传入的 modelClient
+    }
+
     return {
       success: true,
       message: `绑定成功\n` +
         `\n` +
         `工作目录: ${entry.workspacePath}\n` +
         `标签: ${entry.label}\n` +
-        `模型客户端: ${entry.modelClient || "claude"}\n` +
+        `模型客户端: ${displayModelClient}\n` +
         `\n` +
         `现在可以发送消息开始使用`,
     };
@@ -229,13 +476,24 @@ export async function handleWhereCommand(options: CommandHandlerOptions): Promis
     return new Date(ts).toLocaleString("zh-CN");
   };
 
+  // P0: 显示实际的 runner（从 config.json 读取），而不是 modelClient
+  // 这样确保显示与实际使用的客户端一致
+  let displayModelClient = entry.modelClient || "claude";
+  try {
+    const { getDefaultRunner } = await import("../config/workspace.js");
+    const actualRunner = await getDefaultRunner(entry.workspacePath);
+    displayModelClient = actualRunner;
+  } catch {
+    // 读取失败，使用 modelClient
+  }
+
   return {
     success: true,
     message: `当前绑定\n` +
       `\n` +
       `工作目录: ${entry.workspacePath}\n` +
       `标签: ${entry.label}\n` +
-      `模型客户端: ${entry.modelClient || "claude"}\n` +
+      `模型客户端: ${displayModelClient}\n` +
       `状态: ${entry.status}\n` +
       `绑定时间: ${formatTime(entry.createdAt)}\n` +
       `更新时间: ${formatTime(entry.updatedAt)}`,
@@ -340,6 +598,11 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
     setDefaultRunner,
   } = await import("../config/workspace.js");
 
+  function formatPolicyMode(mode: "local-only" | "egress-allowed"): string {
+    if (mode === "egress-allowed") return `full（外网已开；raw=${mode}）`;
+    return `limit（仅本地；raw=${mode}）`;
+  }
+
   // 优先使用 RouteStore（动态绑定）；fallback 到 GROUP_* 静态配置（不破现网）
   const entry = getRouteByChatId(chatId);
   const fallback = !entry ? routeByChatId(chatId) : null;
@@ -364,14 +627,20 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
       success: true,
       message: `执行臂配置\n` +
         `\n` +
-        `策略模式: ${currentMode}\n` +
+        `策略模式: ${formatPolicyMode(currentMode)}\n` +
         `默认执行臂: ${currentRunner}\n` +
         `工作目录: ${label || projectDir}\n` +
         `\n` +
         `可用执行臂:\n` +
         `  lmstudio    本地模型（默认）\n` +
+        `  mlx         MLX LM Server（工具闭环推荐）\n` +
         `  codex       Codex CLI（需要 egress-allowed）\n` +
         `  claude-code Claude Code CLI（需要 egress-allowed）\n` +
+        `\n` +
+        `计划中（planned）:\n` +
+        `  llama       llama-server / llama.cpp（*.gguf）\n` +
+        `  claude      Anthropic Claude API\n` +
+        `  openai      OpenAI API（GPT-4, o1, etc.）\n` +
         `\n` +
         `使用 /model <runner> 切换执行臂\n` +
         `使用 /policy <mode> 切换策略模式`,
@@ -379,15 +648,38 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
   }
 
   // 有参数：切换执行臂
-  const requestedRunner = args[0] as "lmstudio" | "codex" | "claude-code";
+  const requestedRunner = args[0];
 
-  if (requestedRunner !== "lmstudio" && requestedRunner !== "codex" && requestedRunner !== "claude-code") {
+  // 校验：拒绝 planned 执行臂
+  const plannedRunners = ["llama", "claude", "openai"];
+  const validRunners = ["lmstudio", "mlx", "codex", "claude-code"];
+
+  if (plannedRunners.includes(requestedRunner)) {
+    return {
+      success: false,
+      message: `"${requestedRunner}" 执行臂尚未实现。\n` +
+        `\n` +
+        `计划中的执行臂:\n` +
+        `  llama       llama-server / llama.cpp（*.gguf）\n` +
+        `  claude      Anthropic Claude API\n` +
+        `  openai      OpenAI API（GPT-4, o1, etc.）\n` +
+        `\n` +
+        `目前可用的执行臂:\n` +
+        `  lmstudio    本地模型\n` +
+        `  mlx         MLX LM Server（工具闭环推荐）\n` +
+        `  codex       Codex CLI\n` +
+        `  claude-code Claude Code CLI`,
+    };
+  }
+
+  if (!validRunners.includes(requestedRunner)) {
     return {
       success: false,
       message: `无效的执行臂: ${requestedRunner}\n` +
         `\n` +
         `可用的执行臂:\n` +
         `  lmstudio    本地模型\n` +
+        `  mlx         MLX LM Server（工具闭环推荐）\n` +
         `  codex       Codex CLI\n` +
         `  claude-code Claude Code CLI`,
     };
@@ -397,7 +689,12 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
     // M5-1: 检查策略模式，local-only 时禁止 codex/claude-code
     const currentMode = await getPolicyMode(projectDir);
     const oldRunner = await getDefaultRunner(projectDir); // 切换前保存
-    const result = await setDefaultRunner(projectDir, requestedRunner, currentMode);
+    // 类型收窄：requestedRunner 已经过上面的校验，确保是有效值
+    const result = await setDefaultRunner(
+      projectDir,
+      requestedRunner as "lmstudio" | "mlx" | "codex" | "claude-code",
+      currentMode
+    );
 
     if (!result.success) {
       return {
@@ -437,6 +734,24 @@ export async function handlePolicyCommand(options: CommandHandlerOptions): Promi
   const { chatId, args } = options;
   const { getPolicyMode, setPolicyMode } = await import("../config/workspace.js");
 
+  function describePolicyMode(mode: "local-only" | "egress-allowed"): { short: "limit" | "full"; label: string; raw: string } {
+    if (mode === "egress-allowed") {
+      return { short: "full", label: "外网已开", raw: mode };
+    }
+    return { short: "limit", label: "仅本地", raw: mode };
+  }
+
+  function normalizePolicyMode(input: string): "local-only" | "egress-allowed" | null {
+    const v = input.trim().toLowerCase();
+    if (["on", "full", "egress", "egress-allowed", "allow", "open"].includes(v)) {
+      return "egress-allowed";
+    }
+    if (["off", "limit", "local", "local-only", "deny", "closed"].includes(v)) {
+      return "local-only";
+    }
+    return null;
+  }
+
   // 优先使用 RouteStore（动态绑定）；fallback 到 GROUP_* 静态配置（不破现网）
   const entry = getRouteByChatId(chatId);
   const fallback = !entry ? routeByChatId(chatId) : null;
@@ -455,46 +770,60 @@ export async function handlePolicyCommand(options: CommandHandlerOptions): Promi
   // 无参数：查看当前策略模式
   if (args.length === 0) {
     const currentMode = await getPolicyMode(projectDir);
+    const current = describePolicyMode(currentMode);
 
     return {
       success: true,
       message: `策略模式\n` +
         `\n` +
-        `当前模式: ${currentMode}\n` +
+        `当前: ${current.short}（${current.label}；raw=${current.raw}）\n` +
         `工作目录: ${label || projectDir}\n` +
         `\n` +
         `可用模式:\n` +
-        `  local-only      仅本地模式（禁止外网访问）\n` +
-        `  egress-allowed 允许外网访问（可使用 codex/claude-code）\n` +
+        `  full   外网已开（可使用 codex/claude-code；= egress-allowed）\n` +
+        `  limit  仅本地（禁止外网访问；= local-only）\n` +
         `\n` +
-        `使用 /policy <mode> 切换模式`,
+        `用法:\n` +
+        `  /policy full   开外网\n` +
+        `  /policy limit  仅本地`,
     };
   }
 
   // 有参数：切换策略模式
-  const requestedMode = args[0] as "local-only" | "egress-allowed";
+  const requestedMode = normalizePolicyMode(args[0] ?? "");
 
-  if (requestedMode !== "local-only" && requestedMode !== "egress-allowed") {
+  if (!requestedMode) {
     return {
       success: false,
-      message: `无效的策略模式: ${requestedMode}\n` +
+      message: `无效的策略模式: ${args[0]}\n` +
         `\n` +
         `可用模式:\n` +
-        `  local-only      仅本地模式\n` +
-        `  egress-allowed 允许外网访问`,
+        `  on / egress-allowed   允许外网访问\n` +
+        `  off / local-only      仅本地模式`,
     };
   }
 
   try {
     const oldMode = await getPolicyMode(projectDir);
+    const oldDesc = describePolicyMode(oldMode);
+    const newDesc = describePolicyMode(requestedMode);
     await setPolicyMode(projectDir, requestedMode);
+
+    if (oldMode === requestedMode) {
+      return {
+        success: true,
+        message: `策略模式未变更\n` +
+          `\n` +
+          `当前: ${newDesc.short}（${newDesc.label}；raw=${newDesc.raw}）`,
+      };
+    }
 
     return {
       success: true,
       message: `已切换策略模式\n` +
         `\n` +
-        `旧模式: ${oldMode}\n` +
-        `新模式: ${requestedMode}\n` +
+        `旧模式: ${oldDesc.short}（${oldDesc.label}；raw=${oldDesc.raw}）\n` +
+        `新模式: ${newDesc.short}（${newDesc.label}；raw=${newDesc.raw}）\n` +
         `\n` +
         `${requestedMode === "egress-allowed"
           ? "现在可以使用 codex/claude-code 执行臂了"
@@ -544,6 +873,11 @@ export async function handleRouteCommand(
       return handleMemCommand(options);
     case "policy":
       return handlePolicyCommand(options);
+    // 群聊 owner 收口
+    case "owner":
+      return handleOwnerCommand(options);
+    case "ownerOnly":
+      return handleOwnerOnlyCommand(options);
     // v2.2: Persona commands
     case "personaList":
       return handlePersonaListCommand(options);
@@ -563,12 +897,26 @@ export async function handleRouteCommand(
     // v2.2: Reload command
     case "reload":
       return handleReloadCommand(options);
+    // Tool Bus 统计与灰度
+    case "toolstats":
+      return handleToolstatsCommand(options);
+    case "toolAllowList":
+      return handleToolAllowListCommand(options);
+    case "toolAllowAdd":
+      return handleToolAllowAddCommand(options);
+    case "toolAllowRemove":
+      return handleToolAllowRemoveCommand(options);
+    // Phase 4B: Steer/FollowUp commands
+    case "steer":
+      return handleSteerCommand(options);
+    case "next":
+      return handleNextCommand(options);
     default:
       return {
         success: false,
         message: `未知命令: /${command}\n` +
           `\n` +
-          `可用命令: /bind, /where, /unbind, /info, /model, /chatlist, /mem, /cursor, /reset-cursor, /help, /persona, /schedule, /reload`,
+          `可用命令: /bind, /where, /unbind, /info, /model, /policy, /owner, /owner-only, /chatlist, /mem, /cursor, /reset-cursor, /help, /persona, /schedule, /reload, /steer, /next`,
       };
   }
 }
@@ -597,6 +945,10 @@ export function isRouteCommand(text: string): boolean {
     trimmed === "/mem" ||
     trimmed.startsWith("/policy ") ||
     trimmed === "/policy" ||
+    trimmed.startsWith("/owner ") ||
+    trimmed === "/owner" ||
+    trimmed.startsWith("/owner-only ") ||
+    trimmed === "/owner-only" ||
     trimmed === "/help" ||
     // v2.2: Persona commands
     trimmed === "/persona" ||
@@ -604,7 +956,15 @@ export function isRouteCommand(text: string): boolean {
     trimmed === "/schedule" ||
     trimmed.startsWith("/schedule ") ||
     // v2.2: Reload command
-    trimmed === "/reload"
+    trimmed === "/reload" ||
+    // v2.2: Tool Bus commands
+    trimmed === "/toolstats" ||
+    trimmed.startsWith("/tool ") ||
+    // Phase 4B: Steer/FollowUp commands
+    trimmed.startsWith("/steer ") ||
+    trimmed === "/steer" ||
+    trimmed.startsWith("/next ") ||
+    trimmed === "/next"
   );
 }
 
@@ -693,6 +1053,24 @@ export function parseRouteCommand(text: string): { command: string; args: string
     return { command: "policy", args: [] };
   }
 
+  if (trimmed === "/owner") {
+    return { command: "owner", args: [] };
+  }
+
+  if (trimmed.startsWith("/owner ")) {
+    const parts = trimmed.split(/\s+/);
+    return { command: "owner", args: parts.slice(1) };
+  }
+
+  if (trimmed === "/owner-only") {
+    return { command: "ownerOnly", args: [] };
+  }
+
+  if (trimmed.startsWith("/owner-only ")) {
+    const parts = trimmed.split(/\s+/);
+    return { command: "ownerOnly", args: parts.slice(1) };
+  }
+
   // v2.2: Persona commands
   if (trimmed === "/persona") {
     return { command: "personaList", args: [] };
@@ -736,6 +1114,48 @@ export function parseRouteCommand(text: string): { command: string; args: string
   // v2.2: Reload command
   if (trimmed === "/reload") {
     return { command: "reload", args: [] };
+  }
+
+  // v2.2: Tool Bus commands
+  if (trimmed === "/toolstats") {
+    return { command: "toolstats", args: [] };
+  }
+
+  if (trimmed.startsWith("/tool ")) {
+    const parts = trimmed.split(/\s+/);
+    const subCommand = parts[1]; // allow
+    if (subCommand === "allow") {
+      const action = parts[2]; // list, add, remove
+      if (action === "list") {
+        return { command: "toolAllowList", args: [] };
+      } else if (action === "add") {
+        return { command: "toolAllowAdd", args: parts.slice(3) };
+      } else if (action === "remove") {
+        return { command: "toolAllowRemove", args: parts.slice(3) };
+      }
+    }
+    // Invalid subcommand, default to list
+    return { command: "toolAllowList", args: [] };
+  }
+
+  // Phase 4B: Steer command
+  if (trimmed.startsWith("/steer ")) {
+    const parts = trimmed.split(/\s+/);
+    return { command: "steer", args: parts.slice(1) };
+  }
+
+  if (trimmed === "/steer") {
+    return { command: "steer", args: [] };
+  }
+
+  // Phase 4B: Next command
+  if (trimmed.startsWith("/next ")) {
+    const parts = trimmed.split(/\s+/);
+    return { command: "next", args: parts.slice(1) };
+  }
+
+  if (trimmed === "/next") {
+    return { command: "next", args: [] };
   }
 
   return null;
@@ -800,7 +1220,9 @@ export async function handleHelpCommand(options: CommandHandlerOptions): Promise
       `  /where               查看当前群组绑定\n` +
       `  /unbind              解除当前群组绑定\n` +
       `  /model [runner]      查看或切换执行臂\n` +
-      `  /policy [mode]       查看或切换策略模式\n` +
+      `  /policy [mode]       查看或切换策略模式（full/limit）\n` +
+      `  /owner [id]          设置/查看群聊 owner（收口信任边界）\n` +
+      `  /owner-only on|off   开关：群聊只允许 owner 触发执行\n` +
       `  /info                查看处理状态\n` +
       `  /chatlist            列出所有已绑定的群组\n` +
       `\n` +
@@ -822,12 +1244,17 @@ export async function handleHelpCommand(options: CommandHandlerOptions): Promise
       `\n` +
       `会话管理:\n` +
       `  /help                显示命令帮助\n` +
-      `  /start               启动 Claude 会话\n` +
-      `  /stop                停止 Claude 会话\n` +
+      `  /start               启动 tmux 会话（按 /model 选择执行臂）\n` +
+      `  /stop                停止 tmux 会话\n` +
       `  /status              查看会话状态（秒回）\n` +
+      `  /loglevel [level]    查看/设置日志级别（秒回；debug/info/warn/error/reset）\n` +
       `  /snapshot            获取终端输出快照\n` +
       `  /esc                 发送 ESC 中断\n` +
       `  /clear               清空会话上下文\n` +
+      `\n` +
+      `干预机制（Phase 4B）:\n` +
+      `  /steer <msg>         紧急转向：当前工具执行后立即注入\n` +
+      `  /next <msg>          轮后消息：当前轮完成后作为下一轮用户消息\n` +
       (isLmStudioBot
         ? `\n` +
           `语音（LM Studio Bot 专用）:\n` +
@@ -835,8 +1262,8 @@ export async function handleHelpCommand(options: CommandHandlerOptions): Promise
           `  /voice <question>    先回答，再把回答转成语音附件回发\n` +
           `  /mode                查看语音回复模式\n` +
           `  /mode voice on|off|both|audio  设置语音模式\n` +
-          `  /mode style <desc>   设置语音风格描述（VoiceDesign）\n` +
-          `  /mode style-reset    清空语音风格（恢复默认）\n` +
+          `  /mode style <desc>   设置语气/情绪提示（用于 emoAuto；不走 IndexTTS emo_text）\n` +
+          `  /mode style-reset    清空语气/情绪描述（恢复默认）\n` +
           `\n` +
           `示例:\n` +
           `  /tts 那真是太好了！保持这种好心情。\n` +
@@ -850,7 +1277,7 @@ export async function handleHelpCommand(options: CommandHandlerOptions): Promise
       `  /where                  查看当前绑定\n` +
       `  /model                  查看当前执行臂和策略模式\n` +
       `  /model codex            切换到 Codex 执行臂\n` +
-      `  /policy egress-allowed  允许外网访问\n` +
+      `  /policy full            允许外网访问（= egress-allowed）\n` +
       `  /info                   查看处理状态\n` +
       `  /chatlist               查看所有绑定\n` +
       `  /mem status             查看记忆注入状态\n` +
@@ -1450,5 +1877,289 @@ export async function handleReloadCommand(options: CommandHandlerOptions): Promi
   return {
     success: true,
     message: results.join("\n"),
+  };
+}
+
+// ============================================
+// Tool Bus 统计与灰度命令（P0）
+// ============================================
+
+/**
+ * 处理 /toolstats 命令
+ *
+ * 显示工具执行统计（只读）
+ */
+export async function handleToolstatsCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  const { getToolStats } = await import("../tools/telemetry.js");
+
+  // 默认窗口：最近 1 小时
+  const windowMs = 3600000;
+  const stats = getToolStats(windowMs);
+
+  if (stats.totalCalls === 0) {
+    return {
+      success: true,
+      message: `工具执行统计（最近 1 小时）\n` +
+        `\n` +
+        `暂无执行记录\n` +
+        `\n` +
+        `提示：执行 /tts 等工具命令后会产生统计数据`,
+    };
+  }
+
+  const lines: string[] = [
+    `工具执行统计（最近 1 小时）`,
+    ``,
+    `总调用: ${stats.totalCalls}`,
+    `成功: ${stats.successCount} | 失败: ${stats.failureCount}`,
+    `成功率: ${(stats.successRate * 100).toFixed(1)}%`,
+    `平均耗时: ${stats.avgDurationMs.toFixed(0)}ms`,
+    ``,
+    `按工具:`,
+  ];
+
+  // 按工具分布
+  for (const [tool, data] of Object.entries(stats.byTool)) {
+    lines.push(`  ${tool}: ${data.calls} 次, ${(data.successRate * 100).toFixed(0)}% 成功, ${data.avgMs.toFixed(0)}ms 平均`);
+  }
+
+  // 调用源分布
+  if (Object.keys(stats.bySource).length > 0) {
+    lines.push(``);
+    lines.push(`按调用源:`);
+    for (const [source, count] of Object.entries(stats.bySource)) {
+      lines.push(`  ${source}: ${count} 次`);
+    }
+  }
+
+  // Top 错误码
+  if (stats.topErrorCodes.length > 0) {
+    lines.push(``);
+    lines.push(`Top 错误码:`);
+    for (const { code, count } of stats.topErrorCodes) {
+      lines.push(`  ${code}: ${count} 次`);
+    }
+  }
+
+  return {
+    success: true,
+    message: lines.join("\n"),
+  };
+}
+
+/**
+ * 处理 /tool allow list 命令
+ *
+ * 显示当前允许的工具列表
+ */
+export async function handleToolAllowListCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  const entry = getRouteByChatId(options.chatId);
+  if (!entry) {
+    return {
+      success: false,
+      message: `未绑定工作区，请先使用 /bind <dir> 绑定工作区`,
+    };
+  }
+
+  const { getToolPolicy } = await import("../config/workspace.js");
+  const policy = await getToolPolicy(entry.workspacePath);
+
+  return {
+    success: true,
+    message: `工具灰度配置\n` +
+      `\n` +
+      `模式: ${policy.mode}\n` +
+      `\n` +
+      `允许的工具: ${policy.allow.join(", ") || "<无>"}\n` +
+      `\n` +
+      `需确认的工具: ${policy.requireConfirm.join(", ") || "<无>"}\n` +
+      `\n` +
+      `用法:\n` +
+      `  /tool allow list      查看当前配置\n` +
+      `  /tool allow add <t>   添加工具（需要 /reload 生效）\n` +
+      `  /tool allow remove <t> 移除工具（需要 /reload 生效）\n` +
+      `\n` +
+      `可用工具: tts, asr, vision, mem, shell, browser`,
+  };
+}
+
+/**
+ * 处理 /tool allow add <tool> 命令
+ *
+ * 添加工具到允许列表
+ */
+export async function handleToolAllowAddCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  const toolName = options.args[0];
+  if (!toolName) {
+    return {
+      success: false,
+      message: `用法: /tool allow add <tool>\n` +
+        `\n` +
+        `可用工具: tts, asr, vision, mem, shell, browser`,
+    };
+  }
+
+  const validTools = ["tts", "asr", "vision", "mem", "shell", "browser"];
+  if (!validTools.includes(toolName)) {
+    return {
+      success: false,
+      message: `无效工具: ${toolName}\n` +
+        `\n` +
+        `可用工具: ${validTools.join(", ")}`,
+    };
+  }
+
+  const entry = getRouteByChatId(options.chatId);
+  if (!entry) {
+    return {
+      success: false,
+      message: `未绑定工作区，请先使用 /bind <dir> 绑定工作区`,
+    };
+  }
+
+  const { getToolPolicy, setToolingAllow } = await import("../config/workspace.js");
+  const policy = await getToolPolicy(entry.workspacePath);
+
+  if (policy.allow.includes(toolName as any)) {
+    return {
+      success: true,
+      message: `工具 ${toolName} 已在允许列表中\n` +
+        `\n` +
+        `当前允许: ${policy.allow.join(", ")}`,
+    };
+  }
+
+  const newAllow = [...policy.allow, toolName];
+  await setToolingAllow(entry.workspacePath, newAllow as any);
+
+  return {
+    success: true,
+    message: `已添加工具到允许列表\n` +
+      `\n` +
+      `工具: ${toolName}\n` +
+      `\n` +
+      `执行 /reload 使配置生效`,
+  };
+}
+
+/**
+ * 处理 /tool allow remove <tool> 命令
+ *
+ * 从允许列表移除工具
+ */
+export async function handleToolAllowRemoveCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  const toolName = options.args[0];
+  if (!toolName) {
+    return {
+      success: false,
+      message: `用法: /tool allow remove <tool>`,
+    };
+  }
+
+  const entry = getRouteByChatId(options.chatId);
+  if (!entry) {
+    return {
+      success: false,
+      message: `未绑定工作区，请先使用 /bind <dir> 绑定工作区`,
+    };
+  }
+
+  const { getToolPolicy, setToolingAllow } = await import("../config/workspace.js");
+  const policy = await getToolPolicy(entry.workspacePath);
+
+  if (!policy.allow.includes(toolName as any)) {
+    return {
+      success: true,
+      message: `工具 ${toolName} 不在允许列表中\n` +
+        `\n` +
+        `当前允许: ${policy.allow.join(", ")}`,
+    };
+  }
+
+  const newAllow = policy.allow.filter(t => t !== toolName);
+  await setToolingAllow(entry.workspacePath, newAllow as any);
+
+  return {
+    success: true,
+    message: `已从允许列表移除工具\n` +
+      `\n` +
+      `工具: ${toolName}\n` +
+      `\n` +
+      `执行 /reload 使配置生效`,
+  };
+}
+
+// ============================================
+// Phase 4B: Steer/FollowUp Commands
+// ============================================
+
+/**
+ * 处理 /steer <msg> 命令
+ *
+ * 紧急转向：当前工具执行后立即注入，跳过剩余工具
+ *
+ * @param options 命令选项
+ * @returns 命令处理结果
+ */
+export async function handleSteerCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  const { chatId, args } = options;
+  const message = args.join(" ");
+
+  if (!message) {
+    return {
+      success: false,
+      message: `用法: /steer <message>\n` +
+        `\n` +
+        `紧急转向：当前工具执行完成后立即注入干预消息\n` +
+        `跳过剩余的工具调用，直接进入总结阶段`,
+    };
+  }
+
+  const { pushSteer } = await import("../steering-queue.js");
+  const interventionId = pushSteer(chatId, message);
+
+  return {
+    success: true,
+    message: `已添加紧急转向干预\n` +
+      `\n` +
+      `消息: ${message}\n` +
+      `ID: ${interventionId.slice(0, 8)}\n` +
+      `\n` +
+      `干预将在当前工具执行后生效`,
+  };
+}
+
+/**
+ * 处理 /next <msg> 命令
+ *
+ * 轮后消息：当前轮完整结束后再处理
+ *
+ * @param options 命令选项
+ * @returns 命令处理结果
+ */
+export async function handleNextCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  const { chatId, args } = options;
+  const message = args.join(" ");
+
+  if (!message) {
+    return {
+      success: false,
+      message: `用法: /next <message>\n` +
+        `\n` +
+        `轮后消息：当前轮完成后自动作为下一轮用户消息`,
+    };
+  }
+
+  const { pushFollowUp } = await import("../steering-queue.js");
+  const interventionId = pushFollowUp(chatId, message);
+
+  return {
+    success: true,
+    message: `已添加轮后消息\n` +
+      `\n` +
+      `消息: ${message}\n` +
+      `ID: ${interventionId.slice(0, 8)}\n` +
+      `\n` +
+      `消息将在当前轮完成后自动处理`,
   };
 }

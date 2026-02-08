@@ -131,7 +131,7 @@ export class MemoryChunker {
         isHeading = true;
         headingLevel = headingMatch[1].length;
         // 提取标题内容（去掉 # 号和前后空格）
-        heading = trimmed.replace(/^#+\s*/, "").trim() || null;
+        heading = trimmed.replace(/^#+\s*/, "").trim() || undefined;
       }
 
       return {

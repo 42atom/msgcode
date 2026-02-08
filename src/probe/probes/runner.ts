@@ -9,6 +9,7 @@
  */
 
 import type { ProbeResult, ProbeOptions } from "../types.js";
+import type { WorkspaceConfig } from "../../config/workspace.js";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { existsSync } from "node:fs";
@@ -72,7 +73,7 @@ export async function probeCodex(options?: ProbeOptions): Promise<ProbeResult> {
 
   // 2. 检查当前 workspace 配置
   let currentMode: "local-only" | "egress-allowed" = "local-only";
-  let currentRunner: "lmstudio" | "codex" | "claude-code" = "lmstudio";
+  let currentRunner: NonNullable<WorkspaceConfig["runner.default"]> = "lmstudio";
   let hasWorkspaceConfig = false;
 
   // 尝试从第一个活跃路由获取 workspace
@@ -111,7 +112,7 @@ export async function probeCodex(options?: ProbeOptions): Promise<ProbeResult> {
     fixHint = "请执行: codex login";
     status = "warning"; // 已安装但未登录是 warning
   } else if (currentRunner === "codex" && currentMode === "local-only") {
-    fixHint = "当前选择了需要外网的执行臂，但策略模式为 local-only。请执行: /policy egress-allowed";
+    fixHint = "当前选择了需要外网的执行臂，但策略模式为 local-only。请执行: /policy on （或 /policy egress-allowed）";
     status = "error";
   }
 

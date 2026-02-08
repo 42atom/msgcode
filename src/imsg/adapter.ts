@@ -47,6 +47,7 @@ export function fromImsgRpcMessage(message: ImsgRpcMessage): InboundMessage {
     senderName: undefined,
     handle: message.sender || undefined,
     rowid: message.id, // E14: 传递 rowid 用于游标管理
+    isGroup: typeof message.is_group === "boolean" ? message.is_group : undefined,
   };
 }
 

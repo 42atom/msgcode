@@ -10,6 +10,7 @@
 import { exec } from "node:child_process";
 import { existsSync } from "node:fs";
 import { open } from "node:fs/promises";
+import { join } from "node:path";
 import { promisify } from "node:util";
 import type { Dependency, DependencyManifest, PreflightResult, DependencyCheckResult } from "./types.js";
 
@@ -23,6 +24,15 @@ const execAsync = promisify(exec);
  * 展开路径中的 ~
  */
 function expandPath(path: string): string {
+  // 支持少量 env 占位符（P0：IndexTTS 用得最多）
+  if (path.includes("$INDEX_TTS_ROOT")) {
+    const root = process.env.INDEX_TTS_ROOT
+      ? expandPath(process.env.INDEX_TTS_ROOT)
+      : (process.env.HOME ? join(process.env.HOME, "Models", "index-tts") : "");
+    if (root) {
+      path = path.replaceAll("$INDEX_TTS_ROOT", root);
+    }
+  }
   if (path.startsWith("~/")) {
     return process.env.HOME + path.slice(1);
   }
@@ -50,6 +60,26 @@ async function checkBinDependency(dep: Dependency): Promise<DependencyCheckResul
       binPath = process.env[dep.pathEnv];
       if (!binPath) {
         result.error = `环境变量 ${dep.pathEnv} 未设置`;
+        return result;
+      }
+    }
+
+    // 特殊处理：IndexTTS Python（用 INDEX_TTS_PYTHON 验证 import）
+    if (dep.id === "indexts_python" && binPath) {
+      const expandedPath = expandPath(binPath);
+      if (!existsSync(expandedPath)) {
+        result.error = `文件不存在: ${expandedPath}`;
+        return result;
+      }
+      try {
+        await execAsync(`${expandedPath} -c "import indextts"`, { timeout: 8000 });
+        result.available = true;
+        result.details = { path: expandedPath };
+        return result;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        result.error = `IndexTTS Python 不可用（import indextts 失败）: ${message}`;
+        result.details = { path: expandedPath };
         return result;
       }
     }
@@ -294,11 +324,17 @@ async function checkModelLoadedDependency(dep: Dependency): Promise<DependencyCh
     const data = await response.json() as { data?: Array<{ id: string }> };
     const models = data.data || [];
 
-    // 检查是否有任何 vision-capable 模型已加载
-    // 常见 vision 模型：glm-4v, glm-4v-plus, paddlespeech-vl, etc.
+    // 检查是否有任何 vision 模型已加载
+    // 常见命名：glm-4v / glm-4.6v / *-vl
     const visionModels = models.filter(m => {
       const id = m.id.toLowerCase();
-      return id.includes("vision") || id.includes("vl") || id.includes("4v") || id.includes("paddle");
+      return (
+        id.includes("vision") ||
+        id.includes("vl") ||
+        id.includes("4v") ||
+        id.includes("4.6v") ||
+        id.includes("glmv")
+      );
     });
 
     if (visionModels.length > 0) {
@@ -307,7 +343,7 @@ async function checkModelLoadedDependency(dep: Dependency): Promise<DependencyCh
         models: visionModels.map(m => m.id),
       };
     } else {
-      result.error = "未找到已加载的 Vision 模型（请在 LM Studio 中加载 PaddleOCR-VL-1.5 或 GLM-4V）";
+      result.error = "未找到已加载的 Vision 模型（请在 LM Studio 中加载 GLM-4.6V）";
     }
 
     return result;

@@ -10,7 +10,7 @@ import { Command } from "commander";
 import { randomUUID } from "node:crypto";
 import type { Envelope, Diagnostic } from "../memory/types.js";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { runAsr } from "../runners/asr.js";
 import { runTts } from "../runners/tts.js";
 
@@ -57,7 +57,12 @@ function createEnvelope<T>(
  */
 function getWorkspacePath(label: string): string {
   const workspaceRoot = process.env.WORKSPACE_ROOT || join(process.env.HOME || "", "msgcode-workspaces");
-  return join(workspaceRoot, label);
+  const raw = String(label || "").trim();
+  if (!raw) return join(workspaceRoot, raw);
+  if (raw === "~") return process.env.HOME ? process.env.HOME : raw;
+  if (raw.startsWith("~/")) return process.env.HOME ? join(process.env.HOME, raw.slice(2)) : raw;
+  if (isAbsolute(raw)) return resolve(raw);
+  return join(workspaceRoot, raw);
 }
 
 // ============================================
@@ -72,7 +77,7 @@ function createAsrCommand(): Command {
 
   cmd
     .description("本地音频转写（使用 mlx-whisper）")
-    .requiredOption("--workspace <label>", "工作区标签（如 mylife）")
+    .requiredOption("--workspace <labelOrPath>", "工作区标签或绝对路径（如 mylife 或 /Users/.../mylife）")
     .requiredOption("--input <file>", "输入音频文件路径")
     .option("--json", "JSON 格式输出")
     .option("--dry-run", "模拟运行（输出计划写入的文件）")
@@ -226,11 +231,9 @@ function createTtsCommand(): Command {
   const cmd = new Command("tts");
 
   cmd
-    .description("本地文本转语音（Qwen3-TTS MLX）")
-    .requiredOption("--workspace <label>", "工作区标签（如 mylife）")
+    .description("本地文本转语音（IndexTTS）")
+    .requiredOption("--workspace <labelOrPath>", "工作区标签或绝对路径（如 mylife 或 /Users/.../mylife）")
     .requiredOption("--text <text>", "要朗读的文本")
-    .option("--voice <voice>", "音色（默认 Serena）")
-    .option("--model <model>", "模型 preset（CustomVoice/Base/VoiceDesign）或 repo/path")
     .option("--format <format>", "输出格式（wav|m4a，默认 m4a）", "m4a")
     .option("--json", "JSON 格式输出")
     .option("--dry-run", "模拟运行（仅输出计划写入的文件）")
@@ -278,8 +281,6 @@ function createTtsCommand(): Command {
         const result = await runTts({
           workspacePath,
           text: options.text,
-          voice: options.voice,
-          model: options.model,
           format: options.format === "wav" ? "wav" : "m4a",
         });
 

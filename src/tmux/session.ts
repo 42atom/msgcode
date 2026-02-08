@@ -1,7 +1,12 @@
 /**
  * msgcode: tmux 会话管理
  *
- * 管理与 Claude Code / Codex 的 tmux 会话（T1: 支持 Codex 执行臂）
+ * 管理与 Coder CLI / Claude CLI 的 tmux 会话。
+ *
+ * 关键约束：
+ * - Runtime runner：仅区分 "tmux" | "direct"
+ * - tmux 内具体 CLI：通过 runnerOld 区分（"codex" | "claude-code" | "claude"(legacy)）
+ * - 注意：不存在 "claude-code" 可执行文件；这里的 "claude-code" 表示 `claude --dangerously-skip-permissions`
  */
 
 import { exec, spawn } from "node:child_process";
@@ -16,9 +21,40 @@ const READY_WAIT_TIMEOUT_MS = 15000; // /start 等待就绪的上限（Codex 首
 const STARTUP_SLOW_THRESHOLD_MS = 10000; // 超过该阈值视为启动异常
 
 /**
- * 执行臂类型
+ * 旧执行臂类型（存储层兼容）
+ *
+ * - 用于 SessionRecord.runner 字段存储（兼容历史数据）
+ * - 逐步废弃，新代码应使用 RunnerType（运行时分类）+ runnerOld（具体 CLI）
  */
-export type RunnerType = "claude" | "codex";
+export type RunnerTypeOld = "claude" | "codex" | "claude-code";
+
+/**
+ * 运行时执行臂分类
+ *
+ * - tmux: 需要 tmux 会话管理（codex / claude CLI）
+ * - direct: 直接调用 provider（mlx / lmstudio / llama / openai / ...）
+ */
+export type RunnerType = "tmux" | "direct";
+
+/**
+ * 归一化 runnerOld → runnerType（守卫：不信任外部传入）
+ */
+export function normalizeRunnerType(runner: RunnerTypeOld): RunnerType {
+    // 本文件只管理 tmux 会话；历史 runnerOld 均归到 tmux。
+    // direct providers 不会写入 tmux registry。
+    void runner;
+    return "tmux";
+}
+
+function normalizeRunnerOldFamily(runnerOld: RunnerTypeOld): "claude" | "codex" {
+    return runnerOld === "codex" ? "codex" : "claude";
+}
+
+function getRunnerOldDisplayName(runnerOld: RunnerTypeOld): string {
+    if (runnerOld === "codex") return "Codex";
+    if (runnerOld === "claude-code") return "Claude Code";
+    return "Claude";
+}
 
 /**
  * 校验路径是否安全（防止路径遍历和命令注入）
@@ -62,11 +98,11 @@ export class TmuxSession {
     private static sessions = new Map<string, SessionState>();
 
     /**
-     * 从 pane 输出中尽力推断当前执行臂类型（用于 /start 切换执行臂时的兼容）
+     * 从 pane 输出中尽力推断当前 CLI（用于 /start 切换执行臂时的兼容）
      *
      * 注意：这里只做 best-effort，不追求 100% 准确。
      */
-    private static detectRunnerFromPaneOutput(paneOutput: string): RunnerType | null {
+    private static detectRunnerFromPaneOutput(paneOutput: string): RunnerTypeOld | null {
         // Claude 的特征
         if (paneOutput.includes("How can I help?") || paneOutput.includes("bypass permissions") || paneOutput.includes("╭")) {
             return "claude";
@@ -93,7 +129,7 @@ export class TmuxSession {
     /**
      * 会话状态（T1: 支持 Codex ready 检测）
      */
-    private static async getStatus(sessionName: string, runner: RunnerType = "claude"): Promise<SessionStatus> {
+    private static async getStatus(sessionName: string, runnerOld: RunnerTypeOld = "claude"): Promise<SessionStatus> {
         try {
             const { stdout } = await execAsync(`tmux list-sessions -F "#{session_name}"`, { timeout: 5000 });
             if (!stdout.split("\n").includes(sessionName)) {
@@ -108,12 +144,13 @@ export class TmuxSession {
                 { timeout: 5000 }
             );
 
-            if (runner === "claude") {
+            const family = normalizeRunnerOldFamily(runnerOld);
+            if (family === "claude") {
                 // Claude 就绪标志：出现 "How can I help?" 或 "╭"
                 if (paneOutput.includes("How can I help?") || paneOutput.includes("╭")) {
                     return SessionStatus.Ready;
                 }
-            } else if (runner === "codex") {
+            } else if (family === "codex") {
                 // Codex 就绪标志：检查是否有命令提示符
                 // Codex CLI 在 --no-alt-screen 模式下通常会显示 > 或 $ 提示符
                 // 或者输出结束于新行后跟提示符
@@ -153,18 +190,29 @@ export class TmuxSession {
     }
 
     /**
-     * 启动 tmux 会话并运行 Claude/Codex（T1: 支持多执行臂）
+     * 启动 tmux 会话并运行 CLI（T1: 支持多执行臂）
      *
      * 会话已存在：恢复会话，更新工作目录
      * 会话不存在：创建新会话
      *
      * @param groupName 组名
      * @param projectDir 项目目录
-     * @param runner 执行臂类型（claude 或 codex）
+     * @param runnerType 运行时执行臂分类（tmux/direct）
+     * @param runnerOld tmux 内具体 CLI（codex/claude-code/claude）
      */
-    static async start(groupName: string, projectDir: string | undefined, runner: RunnerType = "claude"): Promise<string> {
+    static async start(
+        groupName: string,
+        projectDir: string | undefined,
+        runnerType: RunnerType = "tmux",
+        runnerOld?: RunnerTypeOld
+    ): Promise<string> {
+        if (runnerType !== "tmux") {
+            throw new Error(`TmuxSession.start 仅支持 tmux 执行臂，当前: ${runnerType}`);
+        }
+
         const sessionName = this.getSessionName(groupName);
-        const state: SessionState = { groupName, projectDir, status: SessionStatus.Starting, runner };
+        const desiredRunnerOld: RunnerTypeOld = runnerOld ?? "claude-code";
+        const state: SessionState = { groupName, projectDir, status: SessionStatus.Starting, runnerType, runnerOld: desiredRunnerOld };
         this.sessions.set(sessionName, state);
         const startTime = Date.now();
 
@@ -181,12 +229,15 @@ export class TmuxSession {
             // 尝试识别实际执行臂；如与期望不一致，则重启会话（用户已切换 /model）
             const paneOutput = await this.capturePane(sessionName, 120);
             const actualRunner = this.detectRunnerFromPaneOutput(paneOutput);
-            if (actualRunner && actualRunner !== runner) {
+            if (
+                actualRunner &&
+                normalizeRunnerOldFamily(actualRunner) !== normalizeRunnerOldFamily(desiredRunnerOld)
+            ) {
                 logger.info("检测到执行臂切换，重启 tmux 会话", {
                     module: "tmux",
                     sessionName,
                     actualRunner,
-                    desiredRunner: runner,
+                    desiredRunner: desiredRunnerOld,
                 });
                 try {
                     await execAsync(`tmux kill-session -t ${sessionName}`, { timeout: 5000 });
@@ -207,11 +258,11 @@ export class TmuxSession {
                     await new Promise(r => setTimeout(r, 50)); // 延迟防止UI吞键
                     await this.sendEnter(sessionName);
                 }
-                const status = await this.getStatus(sessionName, actualRunner ?? runner);
+                const status = await this.getStatus(sessionName, actualRunner ?? desiredRunnerOld);
                 const statusText = status === SessionStatus.Ready ? "已就绪" : "正在启动";
-                const runnerName = (actualRunner ?? runner) === "claude" ? "Claude" : "Codex";
+                const runnerName = getRunnerOldDisplayName(actualRunner ?? desiredRunnerOld);
                 // 同步缓存（避免 /status 口径漂移）
-                state.runner = actualRunner ?? runner;
+                state.runnerOld = actualRunner ?? desiredRunnerOld;
                 state.status = status;
 
                 // Session Registry: 记录会话信息
@@ -220,7 +271,7 @@ export class TmuxSession {
                         sessionName,
                         groupName,
                         projectDir,
-                        runner: actualRunner ?? runner,
+                        runner: actualRunner ?? desiredRunnerOld,
                     });
                 } catch (error) {
                     logger.warn("Session registry 更新失败（不影响主流程）", {
@@ -244,16 +295,31 @@ export class TmuxSession {
             // 注意：这里仍用 execAsync，需要 shell 转义；sendCommand 则无需
             await execAsync(`tmux new-session -d -s ${sessionName} ${dirArg}`, { timeout: 5000 });
 
-            // T1: 根据执行臂启动不同的命令
-            if (runner === "claude") {
-                // Claude: 使用 sendTextLiteral + sendEnter 避免启动时Enter被吞
+            // T1: 根据 runnerOld 启动不同的命令
+            if (normalizeRunnerOldFamily(desiredRunnerOld) === "claude") {
+                // Claude / Claude Code: 启动 claude CLI（不注入模型参数）
                 await this.sendTextLiteral(sessionName, "claude --dangerously-skip-permissions");
                 await new Promise(r => setTimeout(r, 50)); // 延迟防止UI吞键
                 await this.sendEnter(sessionName);
+
                 // 等待 Claude 启动，然后发送 Enter 跳过可能的确认对话框
                 await new Promise(r => setTimeout(r, 2000));
-                await this.sendEnter(sessionName);  // 发送 Enter 键
-            } else if (runner === "codex") {
+                await this.sendEnter(sessionName);
+
+                // fail-fast：检测启动错误（典型：claude 未安装 / PATH 缺失 / 装错包）
+                await new Promise(r => setTimeout(r, 600));
+                const paneOutput = await this.capturePane(sessionName, 80);
+                if (paneOutput.includes("command not found: claude")) {
+                    throw new Error(
+                        "claude CLI 未安装或不在 PATH。请确认已安装 Anthropic Claude CLI（命令为 claude）。"
+                    );
+                }
+                if (paneOutput.toLowerCase().includes("wrong package")) {
+                    throw new Error(
+                        "claude CLI 安装异常（Wrong package）。请按提示重新安装正确的包（例如：npm install -g @anthropic-ai/claude-code），并确保 PATH 指向 claude。"
+                    );
+                }
+            } else if (desiredRunnerOld === "codex") {
                 // Codex: 优先按 workspace 精确恢复会话（避免 resume --last 误捡子目录会话导致“串味/变慢”）
                 // - 如果能找到同 cwd 的最近 rollout 文件：读取 session_meta.id → codex resume <id>
                 // - 否则：启动新会话 codex
@@ -326,14 +392,19 @@ export class TmuxSession {
             }
 
             // 等待就绪
-            const ready = await this.waitForReady(sessionName, runner, READY_WAIT_TIMEOUT_MS);
+            const ready = await this.waitForReady(sessionName, desiredRunnerOld, READY_WAIT_TIMEOUT_MS);
             state.status = ready ? SessionStatus.Ready : SessionStatus.Starting;
 
             const dirInfo = projectDir ? `\n工作目录: ${projectDir}` : "";
-            const runnerName = runner === "claude" ? "Claude" : "Codex";
+            const runnerName = getRunnerOldDisplayName(desiredRunnerOld);
             const elapsed = Date.now() - startTime;
             if (!ready && elapsed > STARTUP_SLOW_THRESHOLD_MS) {
-                logger.warn(`${runnerName} 启动异常: ${elapsed}ms 未就绪`, { module: "tmux", sessionName, elapsed, runner });
+                logger.warn(`${runnerName} 启动异常: ${elapsed}ms 未就绪`, {
+                    module: "tmux",
+                    sessionName,
+                    elapsed,
+                    runnerOld: desiredRunnerOld,
+                });
             }
             const readyInfo = ready
                 ? `\n${runnerName} 已就绪`
@@ -347,7 +418,7 @@ export class TmuxSession {
                     sessionName,
                     groupName,
                     projectDir,
-                    runner,
+                    runner: desiredRunnerOld,
                 });
             } catch (error) {
                 logger.warn("Session registry 更新失败（不影响主流程）", {
@@ -425,7 +496,7 @@ export class TmuxSession {
             // tmux 存在但 registry 无记录：提示用户重新登记
             const paneOutput = await this.capturePane(sessionName, 120);
             const runner = this.detectRunnerFromPaneOutput(paneOutput);
-            const runnerName = runner === "codex" ? "Codex" : "Claude";
+            const runnerName = runner ? getRunnerOldDisplayName(runner) : "Claude";
             return `tmux 会话 "${sessionName}" 正在运行（未登记）\n执行臂: ${runnerName}\n\n提示：请发送 /start 重新登记`;
         }
 
@@ -433,7 +504,7 @@ export class TmuxSession {
             // tmux 不存在
             if (registryRecord) {
                 // registry 有记录但 tmux 不存在：显示 stopped 并保留历史信息
-                const runnerName = registryRecord.runner === "claude" ? "Claude" : "Codex";
+                const runnerName = getRunnerOldDisplayName(registryRecord.runner);
                 const dirInfo = registryRecord.projectDir ? `\n工作目录: ${registryRecord.projectDir}` : "";
                 return `tmux 会话 "${sessionName}" 未运行\n上次执行臂: ${runnerName}${dirInfo}`;
             }
@@ -441,15 +512,15 @@ export class TmuxSession {
         }
 
         // 4. 正常情况：tmux 存在且 registry 有记录
-        const runner = registryRecord?.runner || "claude";
-        const status = await this.getStatus(sessionName, runner);
+        const runnerOld: RunnerTypeOld = registryRecord?.runner || "claude";
+        const status = await this.getStatus(sessionName, runnerOld);
 
         if (status === SessionStatus.Stopped) {
             return `tmux 会话 "${sessionName}" 未运行`;
         }
 
         const dirInfo = registryRecord?.projectDir ? `\n工作目录: ${registryRecord.projectDir}` : "";
-        const runnerName = runner === "claude" ? "Claude" : "Codex";
+        const runnerName = getRunnerOldDisplayName(runnerOld);
         const statusText = status === SessionStatus.Ready ? `${runnerName} 已就绪` : "正在启动";
         return `tmux 会话 "${sessionName}" 正在运行\n执行臂: ${runnerName}${dirInfo}\n状态: ${statusText}`;
     }
@@ -457,9 +528,26 @@ export class TmuxSession {
     /**
      * 获取会话状态（用于 responder 在发送前做 fail-fast）
      */
-    static async getRunnerStatus(groupName: string, runner: RunnerType): Promise<SessionStatus> {
+    static async getRunnerStatus(groupName: string, runnerType: RunnerType, runnerOld?: RunnerTypeOld): Promise<SessionStatus> {
         const sessionName = this.getSessionName(groupName);
-        return this.getStatus(sessionName, runner);
+        if (runnerType !== "tmux") {
+            return SessionStatus.Stopped;
+        }
+
+        // 优先从 registry 读取 runnerOld（真相源）；fallback 到探测；再 fallback 到入参/默认值
+        let registryRecord: Awaited<ReturnType<typeof getSession>> | null = null;
+        try {
+            registryRecord = await getSession(sessionName);
+        } catch {
+            registryRecord = null;
+        }
+        const inferredRunnerOld: RunnerTypeOld =
+            registryRecord?.runner ??
+            this.detectRunnerFromPaneOutput(await this.capturePane(sessionName, 120)) ??
+            runnerOld ??
+            "claude-code";
+
+        return this.getStatus(sessionName, inferredRunnerOld);
     }
 
     /**
@@ -645,14 +733,14 @@ export class TmuxSession {
     }
 
     /**
-     * 等待 Claude/Codex 就绪（T1: 支持多执行臂）
+     * 等待 tmux CLI 就绪（T1: 支持多执行臂）
      */
-    private static async waitForReady(sessionName: string, runner: RunnerType, timeout: number): Promise<boolean> {
+    private static async waitForReady(sessionName: string, runnerOld: RunnerTypeOld, timeout: number): Promise<boolean> {
         const start = Date.now();
         const checkInterval = 1000; // 每秒检查一次
 
         while (Date.now() - start < timeout) {
-            const status = await this.getStatus(sessionName, runner);
+            const status = await this.getStatus(sessionName, runnerOld);
             if (status === SessionStatus.Ready) {
                 return true;
             }
@@ -668,8 +756,8 @@ export class TmuxSession {
     static async exists(groupName: string): Promise<boolean> {
         const sessionName = this.getSessionName(groupName);
         const state = this.sessions.get(sessionName);
-        const runner = state?.runner || "claude";
-        const status = await this.getStatus(sessionName, runner);
+        const runnerOld = state?.runnerOld || "claude";
+        const status = await this.getStatus(sessionName, runnerOld);
         return status !== SessionStatus.Stopped;
     }
 }
@@ -681,5 +769,6 @@ interface SessionState {
     groupName: string;
     projectDir?: string;
     status: SessionStatus;
-    runner: RunnerType;
+    runnerType: RunnerType;
+    runnerOld: RunnerTypeOld;
 }

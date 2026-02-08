@@ -34,6 +34,7 @@ describe("imsg adapter", () => {
         expect(mapped.isFromMe).toBe(false);
         expect(mapped.sender).toBe("wan@example.com");
         expect(mapped.handle).toBe("wan@example.com");
+        expect(mapped.isGroup).toBe(false);
         expect(mapped.attachments?.[0]?.filename).toBe("file.txt");
         expect(mapped.attachments?.[0]?.mime).toBe("text/plain");
         expect(mapped.attachments?.[0]?.path).toBe("/tmp/file.txt");

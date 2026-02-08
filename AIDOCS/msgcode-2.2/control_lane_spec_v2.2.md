@@ -9,7 +9,7 @@
 当前已具备：
 - per-chat 串行队列（`perChatQueue`）保证游标安全与输出不乱序
 - 中断命令收口：只允许 `/esc /stop /clear` 抢占并 abort
-- 长任务回执（3s）降低“无反馈焦虑”
+- 长任务回执（默认 15s；可用 `MSGCODE_ACK_DELAY_MS` 覆盖）降低“无反馈焦虑”
 - `/status` 快车道已有雏形（fast lane + 入队仅推进游标）
 
 但体验缺口：
@@ -23,6 +23,7 @@
   - `/status`
   - `/where`
   - `/help`
+  - `/loglevel`
 - **不抢占**：只读命令不得 abort 当前任务，不得向 tmux 注入 ESC，不得 kill 会话
 - **不重复回复**：同一条只读命令不允许“快车道回一次，排队后再回一次”
 - **游标安全**：不允许为了秒回而提前 `updateCursor`，避免重启后丢消息
@@ -46,7 +47,7 @@
 
 ```txt
 CONTROL_READONLY_COMMANDS:
-  ^/(status|where|help)(\s|$)
+  ^/(status|where|help|loglevel)(\s|$)
 ```
 
 ### 4.2 “已快回”去重键
@@ -76,6 +77,7 @@ Fast handler 行为：
 - `/status`：调用现有 handler（会最终调用 `TmuxSession.status()`）
 - `/where`：调用现有 route 命令处理（`handleRouteCommand`）或复用同一逻辑
 - `/help`：返回帮助文本（已有实现）
+- `/loglevel`：查看/设置日志级别（只读命令快车道；不抢占）
 
 ### 5.2 Queue Lane 去重（src/listener.ts）
 
@@ -114,4 +116,3 @@ Fast handler 行为：
 
 - 无 route 绑定时：
   - `/where` 或 `/status` 应提示 `/bind <dir>`（不刷屏，保持简短）
-

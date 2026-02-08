@@ -32,6 +32,7 @@ export interface LogEntry {
     level: LogLevel;
     message: string;
     module?: string;
+    traceId?: string;  // 链路追踪 ID，用于关联完整请求流程
     meta?: Record<string, any>;
 }
 
@@ -71,11 +72,11 @@ export interface LoggerOptions {
  * Logger 类
  */
 export class Logger {
-    private level: LogLevel;
+    private _level: LogLevel;  // 重命名为 _level 避免 private 访问问题
     private transports: Transport[];
 
     constructor(options: LoggerOptions = {}) {
-        this.level = options.level ?? "info";
+        this._level = options.level ?? "info";
         this.transports = options.transports ?? [];
     }
 
@@ -83,13 +84,13 @@ export class Logger {
      * 判断是否应该输出该级别的日志
      */
     private shouldLog(level: LogLevel): boolean {
-        return LevelPriority[level] >= LevelPriority[this.level];
+        return LevelPriority[level] >= LevelPriority[this._level];
     }
 
     /**
      * 记录日志
      */
-    private log(level: LogLevel, message: string, meta?: Record<string, any>): void {
+    private log(level: LogLevel, message: string, meta?: Record<string, any>, traceId?: string): void {
         if (!this.shouldLog(level)) {
             return;
         }
@@ -104,6 +105,7 @@ export class Logger {
             level,
             message,
             module: meta?.module,
+            traceId,  // 添加 traceId
             meta,
         };
 
@@ -121,36 +123,62 @@ export class Logger {
     /**
      * DEBUG 级别日志
      */
-    debug(message: string, meta?: Record<string, any>): void {
-        this.log("debug", message, meta);
+    debug(message: string, meta?: Record<string, any>, traceId?: string): void {
+        this.log("debug", message, meta, traceId);
     }
 
     /**
      * INFO 级别日志
      */
-    info(message: string, meta?: Record<string, any>): void {
-        this.log("info", message, meta);
+    info(message: string, meta?: Record<string, any>, traceId?: string): void {
+        this.log("info", message, meta, traceId);
     }
 
     /**
      * WARN 级别日志
      */
-    warn(message: string, meta?: Record<string, any>): void {
-        this.log("warn", message, meta);
+    warn(message: string, meta?: Record<string, any>, traceId?: string): void {
+        this.log("warn", message, meta, traceId);
     }
 
     /**
      * ERROR 级别日志
      */
-    error(message: string, meta?: Record<string, any>): void {
-        this.log("error", message, meta);
+    error(message: string, meta?: Record<string, any>, traceId?: string): void {
+        this.log("error", message, meta, traceId);
     }
 
     /**
      * 设置日志级别
      */
     setLevel(level: LogLevel): void {
-        this.level = level;
+        this._level = level;
+    }
+
+    /**
+     * 重置日志级别到 settings.json 的值（用于 /loglevel reset）
+     */
+    async resetLevelFromSettings(): Promise<void> {
+        // 如果 ENV 已设置，不重置（ENV 优先级最高）
+        if (process.env.LOG_LEVEL) {
+            return;
+        }
+
+        try {
+            const { readSettings } = await import("../config/settings.js");
+            const settings = await readSettings();
+            if (settings.logLevel) {
+                this._level = settings.logLevel;
+                currentLevelSource = "settings";
+            } else {
+                this._level = "info";
+                currentLevelSource = "default";
+            }
+        } catch {
+            // settings 读取失败，恢复默认值
+            this._level = "info";
+            currentLevelSource = "default";
+        }
     }
 
     /**
@@ -170,14 +198,25 @@ export class Logger {
             }
         }
     }
+
+    /**
+     * 获取当前日志级别
+     */
+    getCurrentLevel(): LogLevel {
+        return this._level;
+    }
 }
 
 /**
  * 创建 Logger 单例
+ *
+ * 注意：这里是同步初始化，只从 ENV 读取。
+ * settings.json 的读取在 initLoggerFromSettings() 中异步进行。
  */
 function createLogger(): Logger {
-    // 从环境变量读取日志级别
-    const level = (process.env.LOG_LEVEL ?? "info") as LogLevel;
+    // 1. 优先从环境变量读取日志级别
+    const envLevel = process.env.LOG_LEVEL as LogLevel | undefined;
+    const level = envLevel ?? "info";
 
     // 验证日志级别
     const validLevels: LogLevel[] = ["debug", "info", "warn", "error"];
@@ -219,6 +258,76 @@ function createLogger(): Logger {
  * Logger 单例
  */
 export const logger = createLogger();
+
+/**
+ * 导出便捷函数：设置日志级别
+ */
+export function setLogLevel(level: LogLevel): void {
+    logger.setLevel(level);
+}
+
+/**
+ * 导出便捷函数：重置日志级别
+ */
+export async function resetLogLevel(): Promise<void> {
+    await logger.resetLevelFromSettings();
+}
+
+/**
+ * 记录当前日志级别的来源
+ */
+let currentLevelSource: "env" | "settings" | "default" = "default";
+
+/**
+ * 从 settings.json 初始化日志级别（异步）
+ *
+ * 优先级：ENV > settings.json > 默认值
+ * 如果 ENV 已设置，settings.json 会被忽略
+ */
+export async function initLoggerFromSettings(): Promise<void> {
+    // 如果 ENV 已设置，不读取 settings（ENV 优先级最高）
+    if (process.env.LOG_LEVEL) {
+        currentLevelSource = "env";
+        return;
+    }
+
+    try {
+        const { readSettings } = await import("../config/settings.js");
+        const settings = await readSettings();
+        if (settings.logLevel) {
+            logger.setLevel(settings.logLevel);
+            currentLevelSource = "settings";
+        }
+    } catch {
+        // settings 读取失败，保持默认值
+        currentLevelSource = "default";
+    }
+}
+
+/**
+ * 获取当前日志级别的来源（用于 /loglevel 命令）
+ *
+ * 优先级：ENV > settings > logger 当前值
+ * 注意：这里返回的"当前级别"是按照优先级确定的，不一定是 logger 的实际级别
+ */
+export function getLogLevelSource(): { level: string; source: "env" | "settings" | "default" } {
+    // 1. 优先级最高：ENV
+    if (process.env.LOG_LEVEL) {
+        const envLevel = process.env.LOG_LEVEL as LogLevel;
+        const validLevels: LogLevel[] = ["debug", "info", "warn", "error"];
+        if (validLevels.includes(envLevel)) {
+            return { level: envLevel, source: "env" };
+        }
+    }
+
+    // 2. 次优先级：settings.json (通过 currentLevelSource 判断)
+    if (currentLevelSource === "settings") {
+        return { level: logger.getCurrentLevel(), source: "settings" };
+    }
+
+    // 3. 默认值
+    return { level: logger.getCurrentLevel(), source: "default" };
+}
 
 /**
  * 进程退出时关闭日志

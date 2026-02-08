@@ -28,10 +28,11 @@ const perChatAbort = new Map<string, AbortController>();
 // ============================================
 
 // 白名单：只读命令（秒回、不抢占、不破坏游标安全）
-const CONTROL_READONLY_COMMANDS = /^\/(status|where|help)(\s|$)/;
+const CONTROL_READONLY_COMMANDS = /^\/(status|where|help|loglevel)(\s|$)/;
 
 const FAST_REPLIED_TTL_MS = 5 * 60 * 1000; // 5 分钟 TTL
 const fastReplied = new Map<string, number>();
+const fastInFlight = new Set<string>();
 
 /**
  * 生成快车道消息的 key
@@ -40,11 +41,11 @@ const fastReplied = new Map<string, number>();
  * 避免极端情况下生成 chatId:undefined 导致误判
  */
 function fastReplyKey(message: InboundMessage): string {
-  if (message.id) {
-    return message.id;
-  }
   if (message.rowid !== undefined) {
     return `${message.chatId}:${message.rowid}`;
+  }
+  if (message.id) {
+    return message.id;
   }
   // 既没有 id 也没有 rowid，禁用 control lane
   return "";
@@ -113,6 +114,19 @@ async function handleControlCommandInFastLaneWithClient(
     return;
   }
 
+  // P0: 防止同一条消息被 imsg 重复推送导致快车道重复回复
+  // 以 rowid 优先做幂等 key，缺失时降级到 message.id
+  const key = fastReplyKey(message);
+  if (key) {
+    if (wasFastReplied(message)) {
+      return;
+    }
+    if (fastInFlight.has(key)) {
+      return;
+    }
+    fastInFlight.add(key);
+  }
+
   const text = (message.text ?? "").trim();
   const command = text.split(/\s+/)[0]; // 提取命令部分（/status /where /help）
 
@@ -147,6 +161,10 @@ async function handleControlCommandInFastLaneWithClient(
 
       responseText = result.success && result.response ? result.response : result.error || "命令执行失败";
 
+    } else if (command === "/loglevel") {
+      // /loglevel: 日志级别命令
+      responseText = await handleLogLevelCommand(text);
+
     } else if (command === "/where" || command === "/help") {
       // /where /help: 使用路由命令处理器
       const { handleRouteCommand } = await import("./routes/commands.js");
@@ -180,6 +198,9 @@ async function handleControlCommandInFastLaneWithClient(
     sendSuccessful = true;
     sentText = errorMsg;
   } finally {
+    if (key) {
+      fastInFlight.delete(key);
+    }
     // P0: 只有成功发送了非空文本后才标记为已快回，避免重复回复
     // 保险丝：即使 handler 返回空文本，queue lane 仍会处理（不吞回复）
     if (sendSuccessful && sentText && sentText.trim().length > 0) {
@@ -193,10 +214,86 @@ async function handleControlCommandInFastLaneWithClient(
  */
 export { wasFastReplied };
 
+/**
+ * 处理 /loglevel 命令
+ *
+ * 用法：
+ * - /loglevel: 返回当前级别 + 来源
+ * - /loglevel debug|info|warn|error: 立即生效 + 持久化
+ * - /loglevel reset: 删除持久化配置
+ *
+ * 优先级：ENV > settings.json > 默认值
+ */
+async function handleLogLevelCommand(text: string): Promise<string> {
+  const { getLogLevelSource, setLogLevel, resetLogLevel } = await import("./logger/index.js");
+  const { setLogLevel: setSettingsLogLevel, resetLogLevel: resetSettingsLogLevel } = await import("./config/settings.js");
+  const validLevels = ["debug", "info", "warn", "error"];
+
+  // 解析参数
+  const parts = text.split(/\s+/);
+  const arg = parts[1]; // debug|info|warn|error|reset
+
+  if (!arg) {
+    // /loglevel: 返回当前级别 + 来源
+    const { level, source } = getLogLevelSource();
+    const sourceText = {
+      env: "环境变量 (LOG_LEVEL)",
+      settings: "settings.json (持久化)",
+      default: "默认值",
+    }[source];
+    return `当前日志级别: ${level}\n来源: ${sourceText}`;
+  }
+
+  if (arg === "reset") {
+    // /loglevel reset: 删除持久化配置
+    await resetSettingsLogLevel();
+    const envLevel = process.env.LOG_LEVEL;
+    if (envLevel) {
+      // ENV 优先，重置 settings 不影响当前进程
+      return `已重置 settings.json\n注意: 当前进程仍受 ENV 覆盖 (LOG_LEVEL=${envLevel})，重启后生效`;
+    }
+    // 恢复默认级别
+    setLogLevel("info");
+    return "已重置日志级别为: info (默认值)";
+  }
+
+  // 验证级别参数
+  if (!validLevels.includes(arg)) {
+    return `无效级别: ${arg}\n有效级别: ${validLevels.join(", ")}`;
+  }
+
+  const newLevel = arg as "debug" | "info" | "warn" | "error";
+
+  // 检查 ENV 是否已设置
+  if (process.env.LOG_LEVEL) {
+    // ENV 优先级最高，警告用户
+    await setSettingsLogLevel(newLevel);
+    return `已写入 settings.json\n但当前进程仍受 ENV 覆盖 (LOG_LEVEL=${process.env.LOG_LEVEL})\n重启后生效: ${newLevel}`;
+  }
+
+  // 立即生效 + 持久化
+  setLogLevel(newLevel);
+  await setSettingsLogLevel(newLevel);
+  return `日志级别已设置为: ${newLevel} (立即生效 + 已持久化)`;
+}
+
+/**
+ * 检查消息是否正在快车道处理中（用于防止队列车道竞态）
+ *
+ * @param message InboundMessage
+ * @returns 如果消息正在快车道处理中返回 true，否则返回 false
+ */
+export function isFastLaneInFlight(message: InboundMessage): boolean {
+  const key = fastReplyKey(message);
+  if (!key) return false; // 没有有效 key，视为未在处理中
+  return fastInFlight.has(key);
+}
+
 // 仅用于测试（BDD/Cucumber）
 export const __test = process.env.NODE_ENV === "test"
   ? {
     clearFastReplied: () => fastReplied.clear(),
+    clearFastInFlight: () => fastInFlight.clear(),
     markFastReplied,
     handleControlCommandInFastLaneForTest: handleControlCommandInFastLaneWithClient,
   }
@@ -213,6 +310,8 @@ async function killMsgcodeProcesses(): Promise<void> {
     "tsx.*src/cli.ts",
     "node.*tsx.*msgcode",
     "npm exec tsx src/index.ts",
+    // IndexTTS 常驻 worker（避免 daemon 重启后遗留孤儿进程）
+    "indexts_worker\\.py",
   ];
 
   for (const pattern of patterns) {
@@ -284,6 +383,10 @@ export async function startBot(): Promise<void> {
   logger.info(`msgcode v${version}`, { module: "commands", version, binPath: process.argv[1] });
   console.log(`msgcode v${version}`);
   console.log("");
+
+  // 从 settings.json 初始化日志级别（如果 ENV 未设置）
+  const { initLoggerFromSettings } = await import("./logger/index.js");
+  await initLoggerFromSettings();
 
   imsgClient = new ImsgRpcClient(config.imsgPath);
   await imsgClient.start();

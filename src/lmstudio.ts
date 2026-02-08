@@ -871,9 +871,12 @@ function normalizeJsonishEnvelope(input: string): string {
 const AIDOCS_ROOT = "/Users/admin/GitProjects/AIDOCS";
 
 /**
- * Tool 定义（OpenAI function calling schema）
+ * P1: Tool 定义（OpenAI function calling schema）
+ *
+ * 注意：这些工具仅在 tool-calls 模式下可用（P1 预留）
+ * P0 模式下，请使用显式斜杠命令（如 /tts, /asr, /vision）
  */
-export const AIDOCS_TOOLS = [
+const AIDOCS_TOOLS = [
     {
         type: "function",
         function: {
@@ -922,6 +925,52 @@ export const AIDOCS_TOOLS = [
         }
     }
 ] as const;
+
+export type AidocsToolDef = (typeof AIDOCS_TOOLS)[number];
+
+/**
+ * 获取 LLM 可用工具列表（基于 workspace 配置）
+ *
+ * Autonomous (autonomous 模式): 返回完整工具列表，模型可自主编排调用
+ * - 模型可通过 tool_calls 自动调用所有工具（含 shell/browser）
+ * - 默认全信任，不要求确认
+ *
+ * P0 (explicit 模式): 返回空数组，不向 LLM 提供任何工具定义
+ * - 用户通过显式斜杠命令触发工具（如 /tts, /asr, /vision）
+ * - 避免依赖 tool_calls 的"玄学"稳定性
+ *
+ * P1 (tool-calls 模式): 返回配置的工具列表（预留，暂未启用）
+ *
+ * @param workspacePath 工作区路径
+ * @returns 工具定义数组（autonomous 为完整工具，explicit 为空）
+ */
+export async function getToolsForLlm(workspacePath?: string): Promise<readonly AidocsToolDef[]> {
+    // 如果没有提供工作区路径，返回空数组（保守默认）
+    if (!workspacePath) {
+        return [];
+    }
+
+    try {
+        const { getToolPolicy } = await import("./config/workspace.js");
+        const policy = await getToolPolicy(workspacePath);
+
+        // Autonomous 模式：向 LLM 提供完整工具列表
+        if (policy.mode === "autonomous") {
+            return AIDOCS_TOOLS;
+        }
+
+        // P0: explicit 模式下，不向 LLM 提供任何工具定义
+        if (policy.mode === "explicit") {
+            return [];
+        }
+
+        // P1: tool-calls 模式下，返回配置的工具列表（预留）
+        return AIDOCS_TOOLS;
+    } catch {
+        // 读取配置失败时，保守返回空数组
+        return [];
+    }
+}
 
 const DEFAULT_ALLOWED_TOOL_NAMES = new Set(
     AIDOCS_TOOLS.map(t => t.function.name)
@@ -1172,6 +1221,7 @@ export interface LmStudioToolLoopOptions {
     system?: string;
     tools?: readonly unknown[];
     allowRoot?: string;
+    workspacePath?: string; // P0: 用于读取 workspace 配置以确定工具策略
     baseUrl?: string;
     model?: string;
     timeoutMs?: number;
@@ -1278,7 +1328,9 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
     }
     messages.push({ role: "user", content: options.prompt });
 
-    const tools = options.tools || AIDOCS_TOOLS;
+    // P0: 获取基于 workspace 配置的工具列表（explicit 模式下为空）
+    const workspaceRootForTools = options.workspacePath || root;
+    const tools = options.tools ?? await getToolsForLlm(workspaceRootForTools);
 
     // 1) 第一次：允许工具调用
     const r1 = await callChatCompletionsRaw({

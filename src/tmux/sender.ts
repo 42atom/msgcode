@@ -6,6 +6,7 @@
 
 import { TmuxSession, type RunnerType } from "./session.js";
 import type { Attachment } from "../imsg/types.js";
+import { withRemoteHintIfNeeded } from "./remote_hint.js";
 
 /**
  * 消息发送结果
@@ -37,8 +38,9 @@ export async function sendMessage(
 
         // 发送普通消息（如果有）
         if (message.trim()) {
+            const payload = withRemoteHintIfNeeded(sessionName, message);
             // P0: 使用 sendTextLiteral + sendEnter，直接发送原文（-l 字面量模式无需转义）
-            await TmuxSession.sendTextLiteral(sessionName, message);
+            await TmuxSession.sendTextLiteral(sessionName, payload);
             await new Promise(resolve => setTimeout(resolve, 50)); // 延迟防止UI吞键
             await TmuxSession.sendEnter(sessionName);
         }
@@ -86,8 +88,22 @@ export async function sendEscape(groupName: string): Promise<string> {
  * 发送 /clear 清空上下文（E16-S7: kill+start 语义）
  *
  * 杀掉现有会话并重新启动，彻底清空上下文
+ *
+ * @param groupName 群组名称
+ * @param projectDir 项目目录
+ * @param runner 执行臂类型（必须为 "tmux"）
+ * @param runnerOld 具体执行臂（codex/claude-code）
  */
-export async function sendClear(groupName: string, projectDir: string | undefined, runner: RunnerType = "claude"): Promise<string> {
+export async function sendClear(
+    groupName: string,
+    projectDir: string | undefined,
+    runner: RunnerType,
+    runnerOld?: "codex" | "claude-code"
+): Promise<string> {
+    if (runner !== "tmux") {
+        throw new Error(`sendClear 仅支持 tmux 执行臂，当前: ${runner}`);
+    }
+
     const exists = await TmuxSession.exists(groupName);
 
     // E16-S7: 无论会话是否存在，都执行 kill+start
@@ -100,8 +116,8 @@ export async function sendClear(groupName: string, projectDir: string | undefine
         }
     }
 
-    // 再 start（默认 claude；由调用方决定是否传 codex）
-    const startResult = await TmuxSession.start(groupName, projectDir, runner);
+    // 再 start（传入具体执行臂）
+    const startResult = await TmuxSession.start(groupName, projectDir, runner, runnerOld);
     return `已清空上下文（kill+start）\n${startResult}`;
 }
 
@@ -126,7 +142,8 @@ export async function sendAttachmentsToSession(
             continue;
         }
         // P0: 使用 sendTextLiteral + sendEnter 避免Enter被吞
-        await TmuxSession.sendTextLiteral(sessionName, `请分析这个文件: ${filePath}`);
+        const payload = withRemoteHintIfNeeded(sessionName, `请分析这个文件: ${filePath}`);
+        await TmuxSession.sendTextLiteral(sessionName, payload);
         await new Promise(resolve => setTimeout(resolve, 50)); // 延迟防止UI吞键
         await TmuxSession.sendEnter(sessionName);
         await sleep(500);

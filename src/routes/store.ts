@@ -31,7 +31,7 @@ export interface RouteEntry {
   /** Bot 类型 */
   botType: BotType;
   /** E13: 模型客户端（本机可执行） */
-  modelClient?: "claude" | "codex" | "opencode";
+  modelClient?: ModelClient;
   /** 绑定状态 */
   status: "active" | "archived" | "paused";
   /** ISO 8601 创建时间 */

@@ -40,9 +40,8 @@ export interface ChatState {
    * TTS 偏好（用于生成语音附件）
    */
   tts?: {
-    model?: string;        // CustomVoice | VoiceDesign | Base | repo/path
-    voice?: string;        // Serena/Vivian/...
-    instruct?: string;     // 风格描述（VoiceDesign 用）
+    // 仅本地使用：用于把回答“演出化”（如语气/情绪、语速）
+    instruct?: string;     // 语气/情绪描述（IndexTTS emo_text）
     speed?: number;        // 语速
     temperature?: number;  // 采样温度
   };
@@ -186,8 +185,6 @@ export function getTtsPrefs(chatGuid: string): NonNullable<ChatState["tts"]> {
   const state = getChatState(chatGuid);
   const tts = state?.tts || {};
   return {
-    model: tts.model,
-    voice: tts.voice,
     instruct: tts.instruct,
     speed: tts.speed,
     temperature: tts.temperature,

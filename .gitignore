@@ -48,3 +48,4 @@ ref/
 
 # Built binaries (not tracked)
 vendor/imsg/
+.alma-snapshots

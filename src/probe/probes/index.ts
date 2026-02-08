@@ -11,3 +11,5 @@ export { probeResources } from "./resources.js";
 export { probeJobs } from "./jobs.js";
 export { probeDeps } from "./deps.js";
 export { probeCodex } from "./runner.js";
+export { probeTts } from "./tts.js";
+export { probeInbound } from "./inbound.js";

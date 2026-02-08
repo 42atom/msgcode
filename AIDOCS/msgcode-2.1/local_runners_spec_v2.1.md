@@ -47,12 +47,12 @@
       ],
       "timeoutMs": 300000
     },
-    "tts.qwen3": {
+    "tts.indextts": {
       "kind": "exec",
-      "command": "python3",
-      "cwd": "{{MODEL_ROOT}}/qwen3-tts/app",
+      "command": "{{MODEL_ROOT}}/index-tts/.venv/bin/python",
+      "cwd": "{{MODEL_ROOT}}/index-tts",
       "args": [
-        "qwen3_tts_cli.py",
+        "scripts/indexts_cli.py",
         "--model-root", "{{MODEL_ROOT}}",
         "--text", "{{TEXT}}",
         "--out", "{{OUTPUT}}"
@@ -123,7 +123,7 @@
 ## 跟 Jobs 的关系（自动化）
 Jobs v2.1 可以把 payload 扩展为：
 - `payload.kind="runRunner"`
-- `payload.runnerId="asr.mlx_whisper"|"tts.qwen3"|...`
+- `payload.runnerId="asr.mlx_whisper"|"tts.indextts"|...`
 - `payload.args`（结构化参数）
 
 这会让 “定时生成日报配音 / 每晚跑一次视频” 变成纯配置。
@@ -142,4 +142,3 @@ Jobs v2.1 可以把 payload 扩展为：
   - 同样的 `MODEL_ROOT`
   - 安装同样的依赖（python/venv）
   - msgcode 自动落盘与回发
-

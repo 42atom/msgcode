@@ -194,11 +194,10 @@ function getImageMimeType(filePath: string): string {
 // ============================================
 
 /**
- * 调用 LM Studio OpenAI 兼容 API 进行 OCR（带重试机制）
+ * 调用 LM Studio OpenAI 兼容 API 进行 Vision/OCR（带重试机制）
  *
  * P0-3: 硬策略处理 content 为空的情况：
  * - 如果 content 为空但有 reasoning_content → 视为失败（不要用 reasoning 做 OCR 文本）
- * - 对于非 OCR 模型（4.6V）：content 为空直接失败
  *
  * 重试机制：模型刚加载时可能不稳定，遇到 5xx 错误自动重试
  */
@@ -207,6 +206,7 @@ async function callLmStudioVisionOcr(
   mimeType: string,
   modelId: string,
   timeoutMs: number,
+  explicitOcr: boolean,
   userQuery?: string
 ): Promise<{ success: boolean; text?: string; error?: string; hasReasoningOnly?: boolean }> {
   // 重试配置：最多 2 次重试（总共 3 次尝试）
@@ -223,7 +223,7 @@ async function callLmStudioVisionOcr(
       await new Promise(resolve => setTimeout(resolve, retryDelays[attempt - 1]));
     }
 
-    const result = await callLmStudioVisionOcrOnce(imagePath, mimeType, modelId, timeoutMs, userQuery);
+    const result = await callLmStudioVisionOcrOnce(imagePath, mimeType, modelId, timeoutMs, explicitOcr, userQuery);
 
     if (result.success) {
       if (attempt > 0) {
@@ -268,6 +268,7 @@ async function callLmStudioVisionOcrOnce(
   mimeType: string,
   modelId: string,
   timeoutMs: number,
+  explicitOcr: boolean,
   userQuery?: string
 ): Promise<{ success: boolean; text?: string; error?: string; hasReasoningOnly?: boolean }> {
   const baseUrl = (config.lmstudioBaseUrl || "http://127.0.0.1:1234").replace(/\/+$/, "");
@@ -282,15 +283,14 @@ async function callLmStudioVisionOcrOnce(
   const base64Image = imageResult.base64;
   const dataUrl = `data:${mimeType};base64,${base64Image}`;
 
-  // 根据模型类型生成不同的提示词
-  // - paddleocr-vl-1.5: 纯 OCR，只输出图片中的文字原文
-  // - GLM-4.6V: 视觉理解，简洁回答问题
+  // 根据用户意图生成不同的提示词（统一使用 GLM-4.6V 模型）
+  // - /ocr 模式：纯抽字，只输出图片中的文字原文（分行）
+  // - 普通模式：视觉理解，简洁回答问题
   let prompt = "";
-  const isOcrModel = modelId.includes("paddleocr") || modelId.includes("ocr");
 
-  if (isOcrModel) {
-    // OCR 模型：只输出图片中的文字原文，不要任何解释
-    prompt = "请提取这张图片中的所有文字内容，直接输出文字原文，不要添加任何解释、说明或格式。";
+  if (explicitOcr) {
+    // /ocr 模式：只输出图片中的文字原文，分行显示，不要任何解释
+    prompt = "请提取这张图片中的所有文字内容，按原文分行输出，只输出文字原文，不要添加任何解释、说明或格式。";
   } else if (userQuery && userQuery.trim()) {
     // 视觉模型 + 用户提问：简洁回答，禁止分析过程
     prompt = `基于这张图片回答：${userQuery}\n\n要求：只输出最终答案，一句话说清楚，禁止分析、禁止解释、禁止列举细节。`;
@@ -319,7 +319,7 @@ async function callLmStudioVisionOcrOnce(
       },
     ],
     temperature: 0,
-    max_tokens: 500,  // GLM-4.6V 限制输出长度，避免过长分析
+    max_tokens: 500,  // 限制输出长度，避免过长分析
   };
 
   try {
@@ -378,12 +378,9 @@ async function callLmStudioVisionOcrOnce(
     // content 为空或未定义
     if (reasoningContent && typeof reasoningContent === "string") {
       // P0-3: 只有 reasoning_content，说明模型被截断/未完成
-      // - 对于 OCR 模型：这是失败（不要用 reasoning 做 OCR 文本，会带崩 4.7）
-      // - 对于视觉模型：这是失败（没有最终答案）
       logger.warn("Vision API 只返回 reasoning content，未返回最终答案（视为失败）", {
         module: "vision_ocr",
         model: modelId,
-        isOcrModel,
         reasoningLength: reasoningContent.length,
       });
       // 返回特殊标记，触发 fallback
@@ -425,14 +422,12 @@ export async function runVisionOcr(options: VisionOcrOptions): Promise<VisionOcr
     maxBytes = parseInt(process.env.VISION_MAX_BYTES || String(VISION_MAX_BYTES), 10),
   } = options;
 
-  // P0-1: 默认使用 4.6V（视觉理解），只有明确 "ocr" 时才用 paddleocr（纯抽字）
-  const visionModel = process.env.LMSTUDIO_VISION_MODEL || "huihui-glm-4.6v-flash-abliterated-mlx";
-  const ocrModel = "paddleocr-vl-1.5";
+  // 统一使用 LMSTUDIO_VISION_MODEL（GLM-4.6V），不再切换模型
+  const modelId = process.env.LMSTUDIO_VISION_MODEL || "huihui-glm-4.6v-flash-abliterated-mlx";
   const userQuery = (options.userQuery || "").trim();
 
-  // 检测是否明确要求 OCR
+  // 检测是否明确要求 OCR（决定输出模式：纯抽字 vs 理解回答）
   const explicitOcr = /ocr/i.test(userQuery);
-  const modelId = explicitOcr ? ocrModel : visionModel;
 
   // 1. 检查文件存在
   if (!existsSync(imagePath)) {
@@ -515,7 +510,7 @@ export async function runVisionOcr(options: VisionOcrOptions): Promise<VisionOcr
   }
 
   // 7. 调用 LM Studio Vision API
-  const ocrResult = await callLmStudioVisionOcr(actualImagePath, mimeType, modelId, timeoutMs, options.userQuery);
+  const ocrResult = await callLmStudioVisionOcr(actualImagePath, mimeType, modelId, timeoutMs, explicitOcr, options.userQuery);
 
   if (!ocrResult.success || !ocrResult.text) {
     result.error = ocrResult.error || "识别失败";

@@ -20,12 +20,38 @@ import {
 import { logger } from "./logger/index.js";
 import { updateLastSeen } from "./state/store.js";
 import { getMemoryInjectConfig } from "./config/workspace.js";
+import { AutoTtsLane } from "./runners/tts/auto-lane.js";
 import crypto from "node:crypto";
 
 export interface ListenerConfig {
   imsgClient: ImsgRpcClient;
   debug?: boolean;
   signal?: AbortSignal;
+}
+
+// ============================================
+// Auto TTS Lane（后台自动语音回复，必须串行）
+// ============================================
+
+let autoTtsLane: AutoTtsLane | null = null;
+
+function getAutoTtsLane(imsgClient: ImsgRpcClient): AutoTtsLane {
+  if (autoTtsLane) return autoTtsLane;
+
+  autoTtsLane = new AutoTtsLane({
+    runTts: async (opts) => {
+      const { runTts } = await import("./runners/tts.js");
+      return await runTts(opts);
+    },
+    sendText: async (chatId, text) => {
+      await sendText(imsgClient, chatId, text);
+    },
+    sendFile: async (chatId, filePath) => {
+      await imsgClient.send({ chat_guid: chatId, text: "", file: filePath });
+    },
+  });
+
+  return autoTtsLane;
 }
 
 // ============================================
@@ -105,7 +131,9 @@ function updateCursor(message: InboundMessage): void {
 // M6-ACK-P0: 长任务回执机制
 // ============================================
 
-const ACKNOWLEDGEMENT_TEXT = "收到，执行中…请等我回复。";
+// NOTE: 回执文案尽量短，避免打断用户阅读节奏
+//       （智能体/长任务：先给“我在处理”的信号即可）
+const ACKNOWLEDGEMENT_TEXT = "嗯，等下…";
 
 function getAcknowledgementDelayMs(): number {
   const raw = process.env.MSGCODE_ACK_DELAY_MS;
@@ -115,7 +143,7 @@ function getAcknowledgementDelayMs(): number {
       return parsed;
     }
   }
-  return 8000; // 默认 8 秒（Codex/长任务更常见）
+  return 15000; // 默认 15 秒（更接近“真的在忙”，减少打断感）
 }
 
 /**
@@ -441,7 +469,23 @@ export async function handleMessage(
   let shouldAdvanceCursor = false;
 
   try {
-    // Control Lane: 检查是否已通过快车道回复（/status /where /help 秒回）
+    // E17: 预处理文本（用于后续检查）
+    // E17: 过滤 iMessage 占位符字符（\uFFFC = Object Replacement Character）
+    const placeholderPattern = /[\uFFFC\uFFFD]/g;
+    const text = (message.text ?? "").trim().replace(placeholderPattern, "");
+    const hasAttachments = Boolean(message.attachments && message.attachments.length > 0);
+
+    // P0: Control Lane 竞态防护 - 如果消息正在快车道处理中，直接返回
+    // 避免队列车道在竞态窗口里"补刀回复"（例如 fast lane 已秒回 /loglevel，但 queue lane 又回一次“未知命令”）
+    if (/^\/(status|where|help|loglevel)(\s|$)/.test(text)) {
+      const { isFastLaneInFlight } = await import("./commands.js");
+      if (isFastLaneInFlight(message)) {
+        shouldAdvanceCursor = true;
+        return;
+      }
+    }
+
+    // Control Lane: 检查是否已通过快车道回复（/status /where /help /loglevel 秒回）
     // 如果是快车道已回复的消息，只推进游标，跳过实际处理
     const { wasFastReplied } = await import("./commands.js");
     if (wasFastReplied(message)) {
@@ -458,12 +502,6 @@ export async function handleMessage(
     shouldAdvanceCursor = true;
     return;
   }
-
-  // 空消息直接忽略（附件转发由后续能力处理）
-  // E17: 过滤 iMessage 占位符字符（\uFFFC = Object Replacement Character）
-  const placeholderPattern = /[\uFFFC\uFFFD]/g;
-  const text = (message.text ?? "").trim().replace(placeholderPattern, "");
-  const hasAttachments = Boolean(message.attachments && message.attachments.length > 0);
 
   // M4-A2: 有附件时（特别是语音）不直接忽略
   if (!text && !hasAttachments) {
@@ -712,7 +750,7 @@ export async function handleMessage(
 
       if (hasOcrError) {
         // P0: OCR 失败直接固定文案回复，不喂给 4.7（避免元叙事）
-        await sendText(ctx.imsgClient, message.chatId, "图片识别失败。想抽字请发送：ocr");
+        await sendText(ctx.imsgClient, message.chatId, "图片识别失败。若要纯抽字请发：ocr");
         shouldAdvanceCursor = true;
         return;
       }
@@ -827,7 +865,7 @@ export async function handleMessage(
 
     // 若 handler 需要发送附件，则优先发送附件（可附带文本）
     if (result.file?.path) {
-      const text = result.response ? result.response : undefined;
+      const text = result.response ? result.response : "";
       await ctx.imsgClient.send({ chat_guid: message.chatId, text, file: result.file.path });
     } else if (result.response) {
       await sendText(ctx.imsgClient, message.chatId, result.response);
@@ -838,38 +876,33 @@ export async function handleMessage(
       const deferText = (result.defer.text || "").trim();
       const projectDir = route.projectDir;
       if (deferText && projectDir) {
-        // 不阻塞主流程：先让用户拿到即时回复，再后台生成语音附件
-        void (async () => {
-          try {
-            const { runTts } = await import("./runners/tts.js");
-            const tts = await runTts({
-              workspacePath: projectDir,
-              text: deferText,
-              model: result.defer?.options?.model,
-              voice: result.defer?.options?.voice,
-              instruct: result.defer?.options?.instruct,
-              speed: result.defer?.options?.speed,
-              temperature: result.defer?.options?.temperature,
-            });
-
-            if (!tts.success || !tts.audioPath) {
-              await sendText(
-                ctx.imsgClient,
-                message.chatId,
-                tts.error ? `语音生成失败: ${tts.error}` : "语音生成失败"
-              );
-              return;
-            }
-
-            await ctx.imsgClient.send({ chat_guid: message.chatId, file: tts.audioPath });
-          } catch (e) {
-            await sendText(
-              ctx.imsgClient,
-              message.chatId,
-              `语音生成异常: ${e instanceof Error ? e.message : String(e)}`
-            );
-          }
+        // 不阻塞主流程：先让用户拿到即时回复，再后台生成语音附件。
+        //
+        // P0：自动语音回复必须“串行 + 最新覆盖”，否则会出现：
+        // - 多条 TTS 并发 → IndexTTS worker 内存暴涨 / SIGKILL
+        // - 音频乱序/重复发送（用户感知为“先发合并音频，再发分段音频”）
+        const autoTimeoutMs = (() => {
+          const raw = (process.env.TTS_AUTO_TIMEOUT_MS || "").trim();
+          if (!raw) return 120_000;
+          const n = Number(raw);
+          if (!Number.isFinite(n) || n <= 0) return 120_000;
+          return Math.floor(n);
         })();
+
+        getAutoTtsLane(ctx.imsgClient).enqueue({
+          chatId: message.chatId,
+          workspacePath: projectDir,
+          text: deferText,
+          createdAtMs: Date.now(),
+          options: {
+            timeoutMs: autoTimeoutMs,
+            // P0: 不默认走 IndexTTS 内置 emo_text（慢且易抖）
+            // 将风格作为情绪分析提示（emoAuto 由后端默认策略决定）
+            instruct: result.defer?.options?.instruct,
+            speed: result.defer?.options?.speed,
+            temperature: result.defer?.options?.temperature,
+          },
+        });
       }
     }
 

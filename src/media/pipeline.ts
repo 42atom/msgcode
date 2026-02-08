@@ -10,9 +10,11 @@
 import { mkdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { randomUUID } from "node:crypto";
 import type { ImsgAttachment } from "../attachments/vault.js";
 import { isAudioAttachment, isImageAttachment } from "../attachments/vault.js";
 import { resolveMlxWhisper } from "../runners/utils.js";
+import { executeTool } from "../tools/bus.js";
 
 // ============================================
 // 配置常量
@@ -20,9 +22,9 @@ import { resolveMlxWhisper } from "../runners/utils.js";
 
 const ASR_MAX_BYTES = parseInt(process.env.ASR_MAX_BYTES || "26214400"); // 25MB
 const ASR_TIMEOUT_MS = parseInt(process.env.ASR_TIMEOUT_MS || "300000"); // 5 分钟
-const AUTO_MEDIA = process.env.AUTO_MEDIA === "1";
-const AUTO_ASR = process.env.AUTO_ASR === "1";
-const AUTO_VISION = process.env.AUTO_VISION === "1"; // M4-IMG-P0: 自动视觉处理
+const AUTO_MEDIA = process.env.AUTO_MEDIA !== "0"; // 默认开启
+const AUTO_ASR = process.env.AUTO_ASR !== "0"; // 默认开启
+const AUTO_VISION = process.env.AUTO_VISION !== "0"; // 默认开启 // M4-IMG-P0: 自动视觉处理
 
 // ============================================
 // 类型定义
@@ -136,6 +138,10 @@ async function calculateDigest(filePath: string): Promise<string> {
 
 /**
  * 处理音频附件（ASR 转写）
+ *
+ * P0: ASR 属于媒体预处理，不属于 LLM 工具决策
+ * - 通过 digest 去重避免重复处理
+ * - Tool Bus 策略检查已在 pipeline 入口完成（source="media-pipeline"）
  */
 async function processAudio(
   vaultPath: string,
@@ -221,6 +227,8 @@ async function processAudio(
 
 /**
  * 处理图片附件（M4-IMG-P0: Vision OCR）
+ *
+ * P0: 通过 Tool Bus 执行，明确"自动 OCR 属于预处理，不属于 LLM 工具决策"
  */
 async function processImage(
   vaultPath: string,
@@ -239,37 +247,44 @@ async function processImage(
     return result;
   }
 
-  try {
-    const { runVisionOcr } = await import("../runners/vision_ocr.js");
-
-    const ocrResult = await runVisionOcr({
+  // P0: 通过 Tool Bus 执行（source="media-pipeline"）
+  const requestId = randomUUID();
+  const toolResult = await executeTool(
+    "vision",
+    { imagePath: vaultPath, userQuery },
+    {
       workspacePath,
-      imagePath: vaultPath,
-      userQuery,
-    });
-
-    if (ocrResult.success && ocrResult.textPath && ocrResult.textPreview) {
-      result.status = "ok";
-      result.textPath = ocrResult.textPath;
-      result.textPreview = ocrResult.textPreview;
-    } else {
-      const errorMsg = ocrResult.error || "OCR 失败";
-
-      // 区分"模型能力边界"和"真正的错误"
-      // paddleocr-vl-1.5 对极小图/纯色图会报：too blurry、尺寸不够、image too small 等
-      const isModelCapabilityBoundary = /too blurry|尺寸不够|image too small|resolution too low|low quality|blurry/i.test(errorMsg);
-
-      if (isModelCapabilityBoundary) {
-        result.status = "unavailable";
-        result.reason = errorMsg;
-      } else {
-        result.status = "error";
-        result.error = errorMsg;
-      }
+      source: "media-pipeline",
+      requestId,
     }
-  } catch (err) {
+  );
+
+  if (!toolResult.ok) {
+    const errorMsg = toolResult.error?.message || "OCR 失败";
+
+    // 区分"模型能力边界"和"真正的错误"
+    // 一些 OCR/Vision 模型对极小图/纯色图会报：too blurry、尺寸不够、image too small 等
+    const isModelCapabilityBoundary = /too blurry|尺寸不够|image too small|resolution too low|low quality|blurry/i.test(errorMsg);
+
+    if (isModelCapabilityBoundary) {
+      result.status = "unavailable";
+      result.reason = errorMsg;
+    } else {
+      result.status = "error";
+      result.error = errorMsg;
+    }
+    return result;
+  }
+
+  // 成功：提取 textPath 和 preview
+  const textPath = (toolResult.data as { textPath?: string })?.textPath;
+  if (textPath) {
+    result.status = "ok";
+    result.textPath = textPath;
+    result.textPreview = await readFilePreview(textPath, 300);
+  } else {
     result.status = "error";
-    result.error = err instanceof Error ? err.message : String(err);
+    result.error = "Tool Bus 未返回 textPath";
   }
 
   return result;

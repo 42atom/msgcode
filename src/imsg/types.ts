@@ -43,6 +43,8 @@ export interface InboundMessage {
   handle?: string;
   /** E14: 消息 rowid（用于游标管理） */
   rowid?: number;
+  /** 是否群聊（用于安全策略/风控；来自 imsg RPC 的 is_group） */
+  isGroup?: boolean;
 }
 
 /**
