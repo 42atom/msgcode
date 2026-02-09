@@ -13,7 +13,8 @@ export type ToolName =
   | "vision"
   | "mem"
   | "shell"
-  | "browser";
+  | "browser"
+  | "desktop";  // T6.1: Desktop Bridge (msgcode-desktopctl)
 
 export type ToolDataMap = {
   tts: { audioPath: string };
@@ -22,6 +23,8 @@ export type ToolDataMap = {
   mem: Record<string, unknown>;
   shell: { exitCode: number | null; stdout: string; stderr: string };
   browser: Record<string, unknown>;
+  // T6.1: Desktop tool data (exitCode + stdout + stderr from desktopctl)
+  desktop: { exitCode: number | null; stdout: string; stderr: string };
 };
 
 export type ToolSource =
@@ -64,7 +67,7 @@ export interface ToolResult<TTool extends ToolName = ToolName> {
     message: string;
   };
   artifacts?: Array<{
-    kind: "tts" | "asr" | "vision" | "log";
+    kind: "tts" | "asr" | "vision" | "log" | "desktop";
     path: string;
     digest?: string;
   }>;
