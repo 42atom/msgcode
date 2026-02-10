@@ -11,6 +11,7 @@ import Cocoa
 import OSLog
 import ApplicationServices
 import CryptoKit
+import Carbon.HIToolbox  // 提供 kVK_* 常量
 
 // MARK: - Data Extension for SHA256
 
@@ -18,6 +19,263 @@ extension Data {
     /// 计算 SHA256 哈希
     func sha256() -> Data {
         return Data(SHA256.hash(data: self))
+    }
+}
+
+// MARK: - Event Writer（T10）
+
+/// 事件写入器：NDJSON 格式写入 events.ndjson
+/// 线程安全：使用串行队列保证写入顺序
+class EventWriter {
+    private let logger = Logger(subsystem: "com.msgcode.desktop.host", category: "EventWriter")
+    private let fileHandle: FileHandle
+    private let queue: DispatchQueue
+    private let evidenceDir: String
+
+    /// 初始化事件写入器
+    /// - Parameter evidenceDir: 证据目录路径
+    init?(evidenceDir: String) {
+        self.evidenceDir = evidenceDir
+        self.queue = DispatchQueue(label: "com.msgcode.desktop.host.eventwriter", qos: .utility)
+
+        let eventsPath = "\(evidenceDir)/events.ndjson"
+
+        // 创建文件（若不存在）
+        FileManager.default.createFile(atPath: eventsPath, contents: nil)
+
+        guard let handle = try? FileHandle(forWritingTo: URL(fileURLWithPath: eventsPath)) else {
+            return nil
+        }
+
+        self.fileHandle = handle
+    }
+
+    /// 写入事件（NDJSON 单行 JSON）
+    /// - Parameter event: 事件字典
+    func write(_ event: [String: Any]) {
+        queue.async { [weak self] in
+            guard let self = self else { return }
+
+            do {
+                let jsonData = try JSONSerialization.data(withJSONObject: event, options: [])
+                let line = jsonData + Data([0x0A])  // 添加换行符
+
+                self.fileHandle.write(line)
+                self.fileHandle.synchronizeFile()  // 立即落盘
+            } catch {
+                self.logger.error("Failed to write event: \(error)")
+            }
+        }
+    }
+
+    /// 关闭写入器
+    func close() {
+        queue.sync { [weak self] in
+            self?.fileHandle.closeFile()
+        }
+    }
+
+    deinit {
+        close()
+    }
+}
+
+// MARK: - RunTree Index（T12）
+
+/// RunTree 索引写入器：NDJSON 格式写入 index.ndjson
+/// 线程安全：使用串行队列保证写入顺序
+class RunTreeIndex {
+    private let logger = Logger(subsystem: "com.msgcode.desktop.host", category: "RunTreeIndex")
+    private let fileHandle: FileHandle
+    private let queue: DispatchQueue
+    private let workspacePath: String
+
+    /// 初始化 RunTree 索引写入器
+    /// - Parameter workspacePath: 工作区路径
+    init?(workspacePath: String) {
+        self.workspacePath = workspacePath
+        self.queue = DispatchQueue(label: "com.msgcode.desktop.host.runtree", qos: .utility)
+
+        // 创建 desktop 目录
+        let desktopDir = "\(workspacePath)/artifacts/desktop"
+        try? FileManager.default.createDirectory(atPath: desktopDir, withIntermediateDirectories: true)
+
+        let indexPath = "\(desktopDir)/index.ndjson"
+
+        // 创建文件（若不存在）
+        FileManager.default.createFile(atPath: indexPath, contents: nil)
+
+        guard let handle = try? FileHandle(forWritingTo: URL(fileURLWithPath: indexPath)) else {
+            return nil
+        }
+
+        // 追加到文件末尾
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: indexPath) as [FileAttributeKey: Any],
+           let fileSize = attrs[.size] as? UInt64, fileSize > 0 {
+            try? handle.seek(toOffset: fileSize)
+        }
+
+        self.fileHandle = handle
+    }
+
+    /// 写入执行记录（NDJSON 单行 JSON）
+    /// - Parameters:
+    ///   - executionId: 执行 ID
+    ///   - requestId: 请求 ID
+    ///   - method: 方法名
+    ///   - ok: 是否成功
+    ///   - errorCode: 错误码（可选）
+    ///   - evidenceDir: 证据目录
+    func append(
+        executionId: String,
+        requestId: String,
+        method: String,
+        ok: Bool,
+        errorCode: String? = nil,
+        evidenceDir: String
+    ) {
+        queue.async { [weak self] in
+            guard let self = self else { return }
+
+            // ISO 8601 时间戳
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime]
+            let timestamp = formatter.string(from: Date())
+
+            // 计算相对路径（相对于 workspacePath）
+            let relativeEvidenceDir = evidenceDir.replacingOccurrences(of: self.workspacePath + "/", with: "")
+
+            var record: [String: Any] = [
+                "ts": timestamp,
+                "executionId": executionId,
+                "requestId": requestId,
+                "method": method,
+                "ok": ok,
+                "evidenceDir": relativeEvidenceDir,
+                "eventsPath": "events.ndjson"
+            ]
+
+            if let code = errorCode {
+                record["errorCode"] = code
+            }
+
+            do {
+                let jsonData = try JSONSerialization.data(withJSONObject: record, options: [])
+                let line = jsonData + Data([0x0A])  // 添加换行符
+
+                self.fileHandle.write(line)
+                self.fileHandle.synchronizeFile()  // 立即落盘
+            } catch {
+                self.logger.error("Failed to write RunTree index: \(error)")
+            }
+        }
+    }
+
+    /// 关闭写入器
+    func close() {
+        queue.sync { [weak self] in
+            self?.fileHandle.closeFile()
+        }
+    }
+
+    deinit {
+        close()
+    }
+}
+
+// MARK: - Event Types（T10）
+
+/// 事件类型枚举
+enum EventType: String {
+    case start = "desktop.start"
+    case stop = "desktop.stop"
+    case error = "desktop.error"
+    case observe = "desktop.observe"  // T10: observe 专用事件
+}
+
+/// 构建事件字典
+struct Event {
+    /// 构建 start 事件
+    static func start(
+        executionId: String,
+        method: String,
+        params: [String: Any]? = nil
+    ) -> [String: Any] {
+        var event: [String: Any] = [
+            "type": EventType.start.rawValue,
+            "timestamp": ISO8601DateFormatter().string(from: Date()),
+            "executionId": executionId,
+            "method": method
+        ]
+        if let params = params {
+            event["params"] = params
+        }
+        return event
+    }
+
+    /// 构建 stop 事件
+    static func stop(
+        executionId: String,
+        method: String,
+        result: [String: Any]? = nil
+    ) -> [String: Any] {
+        var event: [String: Any] = [
+            "type": EventType.stop.rawValue,
+            "timestamp": ISO8601DateFormatter().string(from: Date()),
+            "executionId": executionId,
+            "method": method
+        ]
+        if let result = result {
+            event["result"] = result
+        }
+        return event
+    }
+
+    /// 构建 error 事件
+    static func error(
+        executionId: String,
+        method: String,
+        errorCode: String,
+        errorMessage: String
+    ) -> [String: Any] {
+        return [
+            "type": EventType.error.rawValue,
+            "timestamp": ISO8601DateFormatter().string(from: Date()),
+            "executionId": executionId,
+            "method": method,
+            "error": [
+                "code": errorCode,
+                "message": errorMessage
+            ]
+        ]
+    }
+
+    /// 构建 observe 事件（T10）
+    static func observe(
+        executionId: String,
+        permissionsMissing: [String]? = nil,
+        screenshotPath: String? = nil,
+        axPath: String? = nil,
+        envPath: String? = nil
+    ) -> [String: Any] {
+        var event: [String: Any] = [
+            "type": EventType.observe.rawValue,
+            "timestamp": ISO8601DateFormatter().string(from: Date()),
+            "executionId": executionId
+        ]
+        if let perms = permissionsMissing, !perms.isEmpty {
+            event["permissionsMissing"] = perms
+        }
+        if let sp = screenshotPath {
+            event["screenshotPath"] = sp
+        }
+        if let ap = axPath {
+            event["axPath"] = ap
+        }
+        if let ep = envPath {
+            event["envPath"] = ep
+        }
+        return event
     }
 }
 
@@ -77,7 +335,17 @@ class BridgeServer: NSObject, NSXPCListenerDelegate {
     private let requestsLock = NSLock()  // 保护 activeRequests/abortedRequests 的线程安全
     // T8.6: token store（内存存储，进程重启后清空）
     private var issuedTokens: [String: TokenRecord] = [:]
-    private let tokensLock = NSLock()  // 保护 issuedTokens 的线程安全
+    private var consumedTokens: Set<String> = []  // 已消费 token（用于区分 reuse vs invalid）
+    private let tokensLock = NSLock()  // 保护 issuedTokens/consumedTokens 的线程安全
+
+    /// 每个 method 参与 digest 计算的核心参数 key（allowlist）
+    /// 显式排除 meta/confirm：只有列出的 key 参与 digest
+    private static let digestKeysByMethod: [String: [String]] = [
+        "desktop.click":     ["target"],
+        "desktop.typeText":  ["target", "text"],
+        "desktop.hotkey":    ["keys"],
+        "desktop.waitUntil": ["condition"],
+    ]
     private let launchdMode: Bool
 
     /// 初始化 Bridge Server
@@ -193,11 +461,14 @@ class BridgeServer: NSObject, NSXPCListenerDelegate {
         case invalid
         case used
         case expired
-        case mismatch
+        case mismatch(details: [String: Any])
     }
 
     /// desktop.confirm.issue: 签发一次性确认令牌
     internal func handleConfirmIssue(id: String, params: [String: Any], peer: PeerIdentity) -> String {
+        NSLog("=== handleConfirmIssue called ===")
+        NSLog("id: \(id), peer: \(peer.auditTokenDigest)")
+
         // 解析 intent
         guard let intent = params["intent"] as? [String: Any] else {
             return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing intent")
@@ -215,8 +486,8 @@ class BridgeServer: NSObject, NSXPCListenerDelegate {
         let ttlMs = params["ttlMs"] as? Int ?? 60000
         let expiresAt = Date().addingTimeInterval(Double(ttlMs) / 1000.0)
 
-        // 计算 paramsDigest
-        let paramsDigest = computeParamsDigest(params: intentParams)
+        // 计算 paramsDigest（统一入口：issue 和 validate 调用同一函数）
+        let (paramsDigest, _) = computeScopeDigest(method: method, fullParams: intentParams)
 
         // 生成 token
         let token = UUID().uuidString
@@ -229,7 +500,16 @@ class BridgeServer: NSObject, NSXPCListenerDelegate {
         // 存储到 token store
         tokensLock.lock()
         issuedTokens[token] = record
+        let allTokensAfter = Array(issuedTokens.keys).joined(separator: ", ")
         tokensLock.unlock()
+
+        // 调试：使用 NSLog 输出（避免文件权限问题）
+        NSLog("=== TOKEN ISSUE ===")
+        NSLog("Token: \(token)")
+        NSLog("Peer: \(peer.auditTokenDigest) (pid: \(peer.pid))")
+        NSLog("Method: \(method)")
+        NSLog("Digest: \(paramsDigest)")
+        NSLog("All tokens after issue: [\(allTokensAfter)]")
 
         // 格式化 expiresAt 为 ISO 8601
         let formatter = ISO8601DateFormatter()
@@ -257,13 +537,15 @@ class BridgeServer: NSObject, NSXPCListenerDelegate {
         tokensLock.lock()
         defer { tokensLock.unlock() }
 
-        guard let record = issuedTokens[token] else {
-            return .invalid
+        // 检查是否已消费（reuse）
+        if consumedTokens.contains(token) {
+            logger.info("Token reuse detected: \(token.prefix(8))...")
+            return .used
         }
 
-        // 检查是否已使用
-        if record.used {
-            return .used
+        guard let record = issuedTokens[token] else {
+            logger.error("Token not found: \(token.prefix(8))...")
+            return .invalid
         }
 
         // 检查是否过期
@@ -271,23 +553,36 @@ class BridgeServer: NSObject, NSXPCListenerDelegate {
             return .expired
         }
 
-        // 检查 peer 绑定
-        if record.peer.auditTokenDigest != peer.auditTokenDigest {
-            return .mismatch
+        // peer 绑定：降级为审计日志（不拒绝）
+        // 原因：desktopctl 是 CLI 代理，每次调用是独立进程，auditTokenDigest 必然不同
+        // 安全由 method + paramsDigest + ttl + single-use 保障
+        if record.peer.auditTokenDigest != "internal" && record.peer.auditTokenDigest != peer.auditTokenDigest {
+            logger.info("Peer differs (audit only): token=\(record.peer.auditTokenDigest), request=\(peer.auditTokenDigest)")
         }
 
         // 检查 method 绑定
+        NSLog("Method check: record.method=\(record.scope.method), request.method=\(method)")
         if record.scope.method != method {
-            return .mismatch
+            NSLog("Method MISMATCH!")
+            return .mismatch(details: [
+                "expectedMethod": record.scope.method,
+                "actualMethod": method,
+                "reason": "method_mismatch",
+            ])
         }
 
-        // 检查 paramsDigest 绑定（排除 meta 和 confirm 字段，只绑定操作参数）
-        var paramsForDigest = params
-        paramsForDigest.removeValue(forKey: "meta")
-        paramsForDigest.removeValue(forKey: "confirm")
-        let paramsDigest = computeParamsDigest(params: paramsForDigest)
-        if record.scope.paramsDigest != paramsDigest {
-            return .mismatch
+        // 检查 paramsDigest（统一入口：与 handleConfirmIssue 调用同一函数）
+        NSLog("Digest check starts...")
+        let (computedDigest, digestKeys) = computeScopeDigest(method: method, fullParams: params)
+
+        if record.scope.paramsDigest != computedDigest {
+            logger.error("Digest mismatch: expected=\(record.scope.paramsDigest), actual=\(computedDigest), keys=\(digestKeys)")
+            return .mismatch(details: [
+                "expectedDigest": record.scope.paramsDigest,
+                "actualDigest": computedDigest,
+                "method": method,
+                "digestKeys": digestKeys,
+            ])
         }
 
         return .success
@@ -302,28 +597,1547 @@ class BridgeServer: NSObject, NSXPCListenerDelegate {
             return false
         }
 
-        // 标记 used 并删除
-        var consumedRecord = record
-        consumedRecord.used = true
-        issuedTokens[token] = consumedRecord  // 先标记 used
-        issuedTokens.removeValue(forKey: token)  // 再删除（single-use）
+        // 移入 consumed 集合（保留痕迹，用于 reuse 检测）
+        consumedTokens.insert(token)
+        issuedTokens.removeValue(forKey: token)
 
         return true
     }
 
-    /// 计算 paramsDigest（canonical JSON + SHA256 前 16 hex）
-    private func computeParamsDigest(params: [String: Any]) -> String {
-        // 使用 JSONSerialization 排序 key（canonical JSON）
-        guard let jsonData = try? JSONSerialization.data(withJSONObject: params, options: [.sortedKeys]) else {
-            return "INVALID_JSON"
+    // MARK: - Token Digest 统一入口
+
+    /// 统一 digest 入口：handleConfirmIssue 和 validateToken 必须调用同一函数
+    ///
+    /// 策略：allowlist（只取核心 action 参数），显式排除 meta/confirm
+    ///
+    /// - Parameters:
+    ///   - method: 目标 RPC 方法名（非 confirm.issue）
+    ///   - fullParams: 完整请求参数
+    /// - Returns: (digest: SHA256 前 16 hex, keys: 参与计算的 key 列表)
+    private func computeScopeDigest(method: String, fullParams: [String: Any]) -> (digest: String, keys: [String]) {
+        var actionParams: [String: Any] = [:]
+        let usedKeys: [String]
+
+        if let allowedKeys = BridgeServer.digestKeysByMethod[method] {
+            // 白名单模式：只提取核心 action 参数
+            for key in allowedKeys {
+                if let value = fullParams[key] {
+                    actionParams[key] = value
+                }
+            }
+            usedKeys = allowedKeys.sorted()
+        } else {
+            // 兜底：排除 meta/confirm（未知方法）
+            actionParams = fullParams
+            actionParams.removeValue(forKey: "meta")
+            actionParams.removeValue(forKey: "confirm")
+            usedKeys = actionParams.keys.sorted()
         }
 
-        // 计算 SHA256
-        let digest = jsonData.sha256()
+        // canonical JSON + SHA256 前 16 hex
+        guard let jsonData = try? JSONSerialization.data(withJSONObject: actionParams, options: [.sortedKeys]) else {
+            return ("INVALID_JSON", usedKeys)
+        }
+        let hash = jsonData.sha256()
+        let hex = hash.map { String(format: "%02x", $0) }.joined()
+        return (String(hex.prefix(16)), usedKeys)
+    }
 
-        // 转换为 hex 并取前 16 字符
-        let hex = digest.map { String(format: "%02x", $0) }.joined()
-        return String(hex.prefix(16))
+    // MARK: - T9.M0.1: JSON-RPC 可复用入口（进程内直接调用）
+
+    /// 处理 JSON-RPC 请求（同步，用于进程内直接调用）
+    /// - Parameters:
+    ///   - requestJson: JSON-RPC 2.0 请求字符串
+    ///   - peer: 调用者身份信息（进程内调用可传入 nil，使用当前进程）
+    /// - Returns: JSON-RPC 2.0 响应字符串
+    /// 处理 JSON-RPC 请求（同步，用于进程内直接调用）
+    /// - Parameters:
+    ///   - requestJson: JSON-RPC 2.0 请求字符串
+    ///   - peer: 调用者身份信息（进程内调用传入 nil）
+    /// - Returns: JSON-RPC 2.0 响应字符串
+    func handleJsonRpc(requestJson: String, peer: PeerIdentity? = nil) -> String {
+        // 解析 JSON-RPC 请求
+        guard let (id, method, params) = JSONRPC.parseRequest(requestJson) else {
+            return JSONRPC.error(id: "", code: BridgeError.invalidRequest.code, message: "Invalid JSON-RPC request")
+        }
+
+        // 检查 service 是否停止
+        guard isAccepting else {
+            return JSONRPC.error(id: id, code: BridgeError.hostStopped.code, message: "Host is stopped")
+        }
+
+        // 注册请求
+        registerRequest(id)
+
+        // T9.M0.4: 直接传递 peer（可能为 nil，表示 internal 调用）
+        let response = routeRequest(id: id, method: method, params: params, peer: peer)
+        unregisterRequest(id)
+        return response
+    }
+
+    /// 路由 JSON-RPC 请求到具体方法处理器（从 BridgeServerAdapter 提取）
+    /// - Parameters:
+    ///   - id: 请求 ID
+    ///   - method: 方法名
+    ///   - params: 参数字典
+    ///   - peer: 调用者身份（nil 表示进程内 internal 调用）
+    /// - Returns: JSON-RPC 响应字符串
+    private func routeRequest(id: String, method: String, params: [String: Any], peer: PeerIdentity?) -> String {
+        // T9.M0.4: allowlist 验证（需要 workspacePath）
+        // T9.M0.4: 进程内调用（peer == nil）跳过 allowlist 验证（信任自己）
+        // T9.M0.4: 外部调用（peer != nil）必须通过 allowlist 验证
+        if let meta = params["meta"] as? [String: Any],
+           let workspacePath = meta["workspacePath"] as? String {
+            // 进程内调用跳过 allowlist 验证（信任自己）
+            if let p = peer {
+                // 外部调用：验证 allowlist
+                if !validateAllowlist(workspacePath: workspacePath, callerPid: p.pid) {
+                    return JSONRPC.error(id: id, code: BridgeError.callerNotAllowed.code, message: "Caller not allowed by allowlist")
+                }
+            }
+        }
+
+        // T9.M0.4: 如果 peer 是 nil，创建一个 synthetic peer 用于 handlers（需要 pid 等信息）
+        let effectivePeer: PeerIdentity
+        if let p = peer {
+            effectivePeer = p
+        } else {
+            // 进程内调用：使用当前进程信息
+            effectivePeer = PeerIdentity(
+                pid: getpid(),
+                auditTokenDigest: "internal",
+                signingId: Bundle.main.bundleIdentifier,
+                teamId: nil
+            )
+        }
+
+        // 方法路由
+        switch method {
+        case "desktop.health":
+            return handleHealth(id: id, params: params, peer: effectivePeer)
+        case "desktop.doctor":
+            return handleDoctor(id: id, params: params, peer: effectivePeer)
+        case "desktop.observe":
+            return handleObserve(id: id, params: params)
+        case "desktop.find":
+            return handleFind(id: id, params: params)
+        case "desktop.click":
+            return handleClick(id: id, params: params, peer: effectivePeer)
+        case "desktop.typeText":
+            return handleTypeText(id: id, params: params, peer: effectivePeer)
+        case "desktop.hotkey":
+            return handleHotkey(id: id, params: params, peer: effectivePeer)
+        case "desktop.waitUntil":
+            return handleWaitUntil(id: id, params: params)
+        case "desktop.abort":
+            return handleAbort(id: id, params: params)
+        case "desktop.confirm.issue":
+            return handleConfirmIssue(id: id, params: params, peer: effectivePeer)
+        default:
+            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Unknown method: \(method)")
+        }
+    }
+
+    // MARK: - T5.1: Allowlist 验证（从 BridgeServerAdapter 提取）
+
+    /// 验证 allowlist（T9.M0.3: 修复 stub，实现完整校验逻辑）
+    /// - Parameter workspacePath: 工作区路径
+    /// - Returns: true 允许，false 拒绝
+    /// - Parameter callerPid: 调用者进程 ID（用于 pid:* 规则匹配）
+    private func validateAllowlist(workspacePath: String, callerPid: pid_t) -> Bool {
+        let allowlistPath = "\(workspacePath)/allowlist.json"
+
+        // 文件不存在：默认允许
+        guard FileManager.default.fileExists(atPath: allowlistPath) else {
+            logger.log("Allowlist not found, allowing by default")
+            return true
+        }
+
+        // 读取 allowlist.json
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: allowlistPath)),
+              let allowlist = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            logger.log("Failed to parse allowlist.json, denying")
+            return false
+        }
+
+        // 检查 callers 数组
+        guard let callers = allowlist["callers"] as? [String] else {
+            logger.log("Missing 'callers' in allowlist, treating as empty (deny all)")
+            return false
+        }
+
+        // 空数组：拒绝所有
+        if callers.isEmpty {
+            logger.log("Allowlist is empty, denying all callers (pid: \(callerPid))")
+            return false
+        }
+
+        // 检查通配符
+        if callers.contains("*") {
+            logger.log("Allowlist wildcard *, allowing (pid: \(callerPid))")
+            return true
+        }
+
+        // 检查 pid:* 规则
+        for rule in callers {
+            if rule.hasPrefix("pid:") {
+                let ruleStr = String(rule.dropFirst(4))
+                if let targetPid = pid_t(ruleStr) {
+                    if callerPid == targetPid {
+                        logger.log("Allowlist pid:\(targetPid) matched, allowing (pid: \(callerPid))")
+                        return true
+                    }
+                }
+            }
+        }
+
+        // 没有匹配规则：拒绝
+        logger.log("Allowlist no matching rule, denying (pid: \(callerPid))")
+        return false
+    }
+
+    // MARK: - 方法处理器（从 BridgeServerAdapter 提取）
+
+    /// desktop.health: 返回 Host 版本和权限状态
+    private func handleHealth(id: String, params: [String: Any], peer: PeerIdentity) -> String {
+        // meta 是必需的，但 health 不需要使用它
+        guard params["meta"] is [String: Any] else {
+            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing meta")
+        }
+
+        let accessibility = AXIsProcessTrusted()
+        let screenRecording = CGPreflightScreenCaptureAccess()
+
+        // T8.6.4.1: 构造 peer 信息（peer 稳定性证据）
+        var peerData: [String: Any] = [
+            "pid": peer.pid,
+            "auditTokenDigest": peer.auditTokenDigest
+        ]
+        if let signingId = peer.signingId {
+            peerData["signingId"] = signingId
+        }
+        if let teamId = peer.teamId {
+            peerData["teamId"] = teamId
+        }
+
+        let result: [String: Any] = [
+            "hostVersion": "0.1.0",
+            "macos": ProcessInfo.processInfo.operatingSystemVersionString,
+            "permissions": [
+                "accessibility": accessibility ? "granted" : "denied",
+                "screenRecording": screenRecording ? "granted" : "denied"
+            ],
+            "bridge": [
+                "schemaVersion": 1
+            ],
+            "peer": peerData
+        ]
+
+        return JSONRPC.success(id: id, result: result)
+    }
+
+    /// desktop.doctor: 详细诊断权限状态
+    private func handleDoctor(id: String, params: [String: Any], peer: PeerIdentity) -> String {
+        let accessibility = AXIsProcessTrusted()
+        let screenRecording = CGPreflightScreenCaptureAccess()
+
+        var issues: [String] = []
+        if !accessibility {
+            issues.append("Accessibility permission denied")
+        }
+        if !screenRecording {
+            issues.append("Screen Recording permission denied")
+        }
+
+        // P0.5: 添加 peer 信息
+        var peerData: [String: Any] = [
+            "pid": peer.pid,
+            "auditTokenDigest": peer.auditTokenDigest
+        ]
+        if let signingId = peer.signingId {
+            peerData["signingId"] = signingId
+        }
+        if let teamId = peer.teamId {
+            peerData["teamId"] = teamId
+        }
+
+        let result: [String: Any] = [
+            "permissions": [
+                "accessibility": [
+                    "granted": accessibility,
+                    "required": true,
+                    "purpose": "AX observe/find/action"
+                ],
+                "screenRecording": [
+                    "granted": screenRecording,
+                    "required": true,
+                    "purpose": "Screenshot capture"
+                ]
+            ],
+            "issues": issues,
+            "healthy": issues.isEmpty,
+            "peer": peerData
+        ]
+
+        return JSONRPC.success(id: id, result: result)
+    }
+
+    /// desktop.observe: 截图 + AX 树，落盘证据
+    private func handleObserve(id: String, params: [String: Any]) -> String {
+        guard let meta = params["meta"] as? [String: Any] else {
+            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing meta")
+        }
+
+        guard let workspacePath = meta["workspacePath"] as? String else {
+            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing workspacePath")
+        }
+
+        // 创建证据目录
+        let executionId = UUID().uuidString
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let dateStr = dateFormatter.string(from: Date())
+
+        let evidenceDir = "\(workspacePath)/artifacts/desktop/\(dateStr)/\(executionId)"
+
+        do {
+            try FileManager.default.createDirectory(atPath: evidenceDir, withIntermediateDirectories: true)
+        } catch {
+            return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Failed to create evidence directory: \(error)")
+        }
+
+        // T10: 创建事件写入器
+        guard let eventWriter = EventWriter(evidenceDir: evidenceDir) else {
+            return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Failed to create event writer")
+        }
+
+        // T10: 写入 start 事件
+        eventWriter.write(Event.start(executionId: executionId, method: "desktop.observe"))
+
+        // T12: 创建 RunTree 索引
+        guard let runTreeIndex = RunTreeIndex(workspacePath: workspacePath) else {
+            return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Failed to create RunTree index")
+        }
+
+        // Host 信息
+        let hostPid = ProcessInfo.processInfo.processIdentifier
+        let hostBundleId = Bundle.main.bundleIdentifier ?? "com.msgcode.desktop.host"
+
+        // 落盘 env.json（T10: 增加 eventsPath）
+        let envPath = "\(evidenceDir)/env.json"
+        let env: [String: Any] = [
+            "host": [
+                "pid": hostPid,
+                "bundleId": hostBundleId
+            ],
+            "eventsPath": "events.ndjson"
+        ]
+        do {
+            let envData = try JSONSerialization.data(withJSONObject: env, options: .prettyPrinted)
+            try envData.write(to: URL(fileURLWithPath: envPath))
+        } catch {
+            return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Failed to write env.json: \(error)")
+        }
+
+        // 检查权限
+        var permissionsMissing: [String] = []
+        let accessibility = AXIsProcessTrusted()
+        let screenRecording = CGPreflightScreenCaptureAccess()
+
+        if !accessibility {
+            permissionsMissing.append("accessibility")
+        }
+        if !screenRecording {
+            permissionsMissing.append("screenRecording")
+        }
+
+        // 检查是否有缺失权限
+        if !permissionsMissing.isEmpty {
+            eventWriter.write(Event.observe(executionId: executionId, permissionsMissing: permissionsMissing))
+            eventWriter.write(Event.stop(executionId: executionId, method: "desktop.observe"))
+            runTreeIndex.append(executionId: executionId, requestId: id, method: "desktop.observe", ok: true, evidenceDir: evidenceDir)
+
+            let result: [String: Any] = [
+                "executionId": executionId,
+                "permissionsMissing": permissionsMissing,
+                "evidence": [
+                    "dir": evidenceDir,
+                    "envPath": "env.json",
+                    "eventsPath": "events.ndjson"
+                ]
+            ]
+            return JSONRPC.success(id: id, result: result)
+        }
+
+        // 获取截图（如果有权限）
+        var screenshotPath: String? = nil
+        if screenRecording {
+            if let screenshot = captureScreenshot() {
+                screenshotPath = "\(evidenceDir)/screenshot.png"
+                do {
+                    try screenshot.write(to: URL(fileURLWithPath: screenshotPath!))
+                } catch {
+                    logger.error("Failed to write screenshot: \(error)")
+                }
+            }
+        }
+
+        // 获取 AX 树（如果有权限）
+        var axPath: String? = nil
+        if accessibility {
+            if let axTree = buildAXTree(evidenceDir: evidenceDir) {
+                axPath = "ax.json"
+            }
+        }
+
+        // T10: 写入 observe 事件
+        eventWriter.write(Event.observe(
+            executionId: executionId,
+            permissionsMissing: permissionsMissing.isEmpty ? nil : permissionsMissing,
+            screenshotPath: screenshotPath,
+            axPath: axPath,
+            envPath: "env.json"
+        ))
+
+        // T10: 写入 stop 事件
+        eventWriter.write(Event.stop(executionId: executionId, method: "desktop.observe"))
+
+        // T12: 写入 RunTree 索引
+        runTreeIndex.append(executionId: executionId, requestId: id, method: "desktop.observe", ok: true, evidenceDir: evidenceDir)
+
+        // 构建返回结果
+        var result: [String: Any] = [
+            "executionId": executionId,
+            "evidence": [
+                "dir": evidenceDir,
+                "envPath": "env.json",
+                "eventsPath": "events.ndjson"
+            ]
+        ]
+
+        if !permissionsMissing.isEmpty {
+            result["permissionsMissing"] = permissionsMissing
+        }
+
+        if let sp = screenshotPath {
+            result["evidence"] = [
+                "dir": evidenceDir,
+                "screenshotPath": "screenshot.png",
+                "axPath": axPath,
+                "envPath": "env.json",
+                "eventsPath": "events.ndjson"
+            ]
+        }
+
+        return JSONRPC.success(id: id, result: result)
+    }
+
+    /// desktop.find: 查找 UI 元素
+    private func handleFind(id: String, params: [String: Any]) -> String {
+        guard let meta = params["meta"] as? [String: Any] else {
+            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing meta")
+        }
+
+        guard let workspacePath = meta["workspacePath"] as? String else {
+            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing workspacePath")
+        }
+
+        guard let selector = params["selector"] as? [String: Any] else {
+            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing selector")
+        }
+
+        // 创建证据目录
+        let executionId = UUID().uuidString
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let dateStr = dateFormatter.string(from: Date())
+
+        let evidenceDir = "\(workspacePath)/artifacts/desktop/\(dateStr)/\(executionId)"
+
+        do {
+            try FileManager.default.createDirectory(atPath: evidenceDir, withIntermediateDirectories: true)
+        } catch {
+            return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Failed to create evidence directory: \(error)")
+        }
+
+        // T10: 创建事件写入器
+        guard let eventWriter = EventWriter(evidenceDir: evidenceDir) else {
+            return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Failed to create event writer")
+        }
+
+        // T10: 写入 start 事件
+        eventWriter.write(Event.start(executionId: executionId, method: "desktop.find", params: params))
+
+        // 解析 selector 参数
+        let selectorByRole = selector["byRole"] as? String
+        let selectorTitleContains = selector["titleContains"] as? String
+        let selectorValueContains = selector["valueContains"] as? String
+        let limit = (selector["limit"] as? Int) ?? 50
+
+        // 检查 Accessibility 权限
+        guard AXIsProcessTrusted() else {
+            return JSONRPC.error(id: id, code: BridgeError.permissionMissing.code, message: "Accessibility permission required")
+        }
+
+        // 获取系统级 AX 元素
+        let systemWideElement = AXUIElementCreateSystemWide()
+
+        // 尝试获取前台应用
+        var frontmostApp: [String: Any]? = nil
+        if let frontmostAppProcess = NSWorkspace.shared.frontmostApplication {
+            frontmostApp = [
+                "bundleId": frontmostAppProcess.bundleIdentifier ?? "",
+                "pid": frontmostAppProcess.processIdentifier
+            ]
+        }
+
+        // 获取根元素（前台应用或系统级）
+        var unwrappedRootElement = systemWideElement
+        if let frontmost = NSWorkspace.shared.frontmostApplication {
+            let frontmostElement = AXUIElementCreateApplication(frontmost.processIdentifier)
+            if let role = copyAXValue(frontmostElement, attribute: kAXRoleAttribute) as? String {
+                unwrappedRootElement = frontmostElement
+            }
+        }
+
+        // 遍历 AX 树，查找匹配元素
+        var elementRefs: [[String: Any]] = []
+        var nodesVisited = 0
+
+        func traverse(_ element: AXUIElement, depth: Int) {
+            nodesVisited += 1
+
+            // 提取元素属性
+            let role = copyAXValue(element, attribute: kAXRoleAttribute) as? String
+            let title = copyAXValue(element, attribute: kAXTitleAttribute) as? String
+            let value = copyAXValue(element, attribute: kAXValueAttribute)
+
+            // 检查位置和大小
+            var position: [String: Any]? = nil
+            var size: [String: Any]? = nil
+            if let pos = copyAXValue(element, attribute: kAXPositionAttribute) as? [String: Any] {
+                position = pos
+            }
+            if let sz = copyAXValue(element, attribute: kAXSizeAttribute) as? [String: Any] {
+                size = sz
+            }
+
+            // 检查匹配
+            var matches = true
+
+            if let byRole = selectorByRole {
+                if role != byRole {
+                    matches = false
+                }
+            }
+
+            if let titleContains = selectorTitleContains {
+                if let t = title, !t.contains(titleContains) {
+                    matches = false
+                } else if title == nil {
+                    matches = false
+                }
+            }
+
+            if let valueContains = selectorValueContains {
+                if let v = value as? String, !v.contains(valueContains) {
+                    matches = false
+                } else if !(value is String) {
+                    matches = false
+                }
+            }
+
+            // 如果匹配且未达到 limit，添加到结果
+            if matches && elementRefs.count < limit {
+                var frame: [String: Any]? = nil
+                if let pos = position, let sz = size {
+                    if let x = pos["x"] as? Int, let y = pos["y"] as? Int,
+                       let w = sz["width"] as? Int, let h = sz["height"] as? Int {
+                        frame = ["x": x, "y": y, "width": w, "height": h]
+                    }
+                }
+
+                // 生成 fingerprint
+                var fingerprintParts: [String] = []
+                if let r = role { fingerprintParts.append(r) }
+                if let t = title { fingerprintParts.append(t) }
+                if let f = frame {
+                    fingerprintParts.append("x=\(f["x"] ?? 0),y=\(f["y"] ?? 0),w=\(f["width"] ?? 0),h=\(f["height"] ?? 0)")
+                }
+                let fingerprint = fingerprintParts.joined(separator: "|")
+
+                var elementRef: [String: Any] = [
+                    "elementId": "e:\(elementRefs.count + 1)",
+                    "fingerprint": fingerprint
+                ]
+
+                if let r = role { elementRef["role"] = r }
+                if let t = title { elementRef["title"] = t }
+                if let v = value { elementRef["value"] = v }
+                if let f = frame { elementRef["frame"] = f }
+
+                elementRefs.append(elementRef)
+            }
+
+            // 递归遍历子元素（深度限制 20）
+            if depth < 20 {
+                if let children = copyAXValue(element, attribute: kAXChildrenAttribute) as? [AXUIElement] {
+                    for child in children {
+                        traverse(child, depth: depth + 1)
+                        if elementRefs.count >= limit {
+                            break
+                        }
+                    }
+                }
+            }
+        }
+
+        traverse(unwrappedRootElement, depth: 0)
+
+        // 写入 ax.json
+        let axPath = "\(evidenceDir)/ax.json"
+        do {
+            var selectorData: [String: Any] = [:]
+            if let byRole = selectorByRole { selectorData["byRole"] = byRole }
+            if let titleContains = selectorTitleContains { selectorData["titleContains"] = titleContains }
+            if let valueContains = selectorValueContains { selectorData["valueContains"] = valueContains }
+            selectorData["limit"] = limit
+
+            let axData: [String: Any] = [
+                "executionId": executionId,
+                "elementRefs": elementRefs,
+                "matched": elementRefs.count,
+                "nodesVisited": nodesVisited,
+                "selector": selectorData
+            ]
+            let jsonData = try JSONSerialization.data(withJSONObject: axData, options: .prettyPrinted)
+            try jsonData.write(to: URL(fileURLWithPath: axPath))
+        } catch {
+            logger.error("Failed to write ax.json: \(error)")
+        }
+
+        // 构建返回结果
+        let result: [String: Any] = [
+            "executionId": executionId,
+            "elementRefs": elementRefs,
+            "matched": elementRefs.count,
+            "evidence": [
+                "dir": evidenceDir,
+                "axPath": "ax.json"
+            ]
+        ]
+
+        return JSONRPC.success(id: id, result: result)
+    }
+
+    // MARK: - T14.3A: UI 操作方法实现
+
+    /// desktop.click: 点击 UI 元素（支持 confirm token）
+    private func handleClick(id: String, params: [String: Any], peer: PeerIdentity) -> String {
+        // 解析参数
+        guard let meta = params["meta"] as? [String: Any],
+              let workspacePath = meta["workspacePath"] as? String else {
+            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing meta/workspacePath")
+        }
+
+        let requestId = meta["requestId"] as? String ?? UUID().uuidString
+
+        // 解析 confirm
+        guard let confirm = params["confirm"] as? [String: Any] else {
+            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing confirm object")
+        }
+
+        // 验证 token
+        let token: String
+        if let t = confirm["token"] as? String {
+            token = t
+        } else if let phrase = confirm["phrase"] as? String {
+            // 短语确认（用于非 token 场景）
+            guard phrase == "CONFIRM" || phrase.hasPrefix("CONFIRM:") else {
+                return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Invalid confirm phrase")
+            }
+            token = ""  // 短语确认不需要 token
+        } else {
+            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing confirm.token or confirm.phrase")
+        }
+
+        // 如果有 token，验证它
+        if !token.isEmpty {
+            let validation = validateToken(token: token, method: "desktop.click", params: params, peer: peer)
+            switch validation {
+            case .success:
+                break  // 继续
+            case .invalid:
+                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Invalid token, re-issue required", details: ["reason": "invalid"])
+            case .used:
+                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Token already consumed, re-issue required", details: ["reason": "used"])
+            case .expired:
+                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Token expired, re-issue required", details: ["reason": "expired"])
+            case .mismatch(let details):
+                var mismatchDetails = details
+                mismatchDetails["reason"] = "mismatch"
+                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Token scope mismatch, re-issue required", details: mismatchDetails)
+            }
+        }
+
+        // 解析 target
+        guard let target = params["target"] as? [String: Any],
+              let selector = target["selector"] as? [String: Any] else {
+            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing target/selector")
+        }
+
+        // 创建证据目录
+        let executionId = UUID().uuidString
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let dateStr = dateFormatter.string(from: Date())
+        let evidenceDir = "\(workspacePath)/artifacts/desktop/\(dateStr)/\(executionId)"
+
+        do {
+            try FileManager.default.createDirectory(atPath: evidenceDir, withIntermediateDirectories: true)
+        } catch {
+            return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Failed to create evidence directory: \(error)")
+        }
+
+        // 创建事件写入器
+        guard let eventWriter = EventWriter(evidenceDir: evidenceDir) else {
+            return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Failed to create event writer")
+        }
+
+        // 写入 start 事件
+        eventWriter.write(Event.start(executionId: executionId, method: "desktop.click", params: params))
+
+        // 检查 Accessibility 权限
+        guard AXIsProcessTrusted() else {
+            eventWriter.write(Event.error(executionId: executionId, method: "desktop.click", errorCode: "PERMISSION_MISSING", errorMessage: "Accessibility permission required"))
+            eventWriter.write(Event.stop(executionId: executionId, method: "desktop.click"))
+            return JSONRPC.error(id: id, code: BridgeError.permissionMissing.code, message: "Accessibility permission required")
+        }
+
+        // 注册请求（用于 abort）
+        registerRequest(requestId)
+
+        // 查找元素
+        guard let element = findElement(selector: selector) else {
+            eventWriter.write(Event.error(executionId: executionId, method: "desktop.click", errorCode: "ELEMENT_NOT_FOUND", errorMessage: "No matching element found"))
+            eventWriter.write(Event.stop(executionId: executionId, method: "desktop.click"))
+            unregisterRequest(id)
+            return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Element not found")
+        }
+
+        // 检查是否被中止
+        if isRequestAborted(requestId) {
+            eventWriter.write(Event.error(executionId: executionId, method: "desktop.click", errorCode: "DESKTOP_ABORTED", errorMessage: "Request aborted"))
+            eventWriter.write(Event.stop(executionId: executionId, method: "desktop.click"))
+            unregisterRequest(id)
+            return JSONRPC.error(id: id, code: "DESKTOP_ABORTED", message: "Request aborted")
+        }
+
+        // 消费 token
+        if !token.isEmpty {
+            if !consumeToken(token: token) {
+                eventWriter.write(Event.error(executionId: executionId, method: "desktop.click", errorCode: "TOKEN_CONSUME_FAILED", errorMessage: "Failed to consume token"))
+                eventWriter.write(Event.stop(executionId: executionId, method: "desktop.click"))
+                unregisterRequest(id)
+                return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Failed to consume token")
+            }
+        }
+
+        // 执行点击（使用 AXPress）
+        let pressError = AXUIElementPerformAction(element, kAXPressAction as CFString)
+        if pressError != .success {
+            eventWriter.write(Event.error(executionId: executionId, method: "desktop.click", errorCode: "CLICK_FAILED", errorMessage: "AXUIElementPerformAction failed: \(pressError.rawValue)"))
+            eventWriter.write(Event.stop(executionId: executionId, method: "desktop.click"))
+            unregisterRequest(id)
+            return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Click action failed: \(pressError.rawValue)")
+        }
+
+        // 写入 stop 事件
+        eventWriter.write(Event.stop(executionId: executionId, method: "desktop.click", result: ["clicked": true]))
+
+        // T12: 写入 RunTree 索引
+        if let runTreeIndex = RunTreeIndex(workspacePath: workspacePath) {
+            runTreeIndex.append(executionId: executionId, requestId: id, method: "desktop.click", ok: true, evidenceDir: evidenceDir)
+        }
+
+        unregisterRequest(id)
+
+        return JSONRPC.success(id: id, result: [
+            "executionId": executionId,
+            "clicked": true,
+            "evidence": ["dir": evidenceDir, "eventsPath": "events.ndjson"]
+        ])
+    }
+
+    /// desktop.typeText: 输入文本（剪贴板 + ⌘V，支持 confirm token）
+    private func handleTypeText(id: String, params: [String: Any], peer: PeerIdentity) -> String {
+        NSLog("=== handleTypeText called ===")
+        NSLog("id: \(id), peer: \(peer.auditTokenDigest)")
+
+        // 解析参数
+        guard let meta = params["meta"] as? [String: Any],
+              let workspacePath = meta["workspacePath"] as? String else {
+            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing meta/workspacePath")
+        }
+
+        let requestId = meta["requestId"] as? String ?? UUID().uuidString
+
+        // 解析 confirm
+        guard let confirm = params["confirm"] as? [String: Any] else {
+            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing confirm object")
+        }
+
+        // 验证 token
+        let token: String
+        if let t = confirm["token"] as? String {
+            token = t
+        } else if let phrase = confirm["phrase"] as? String {
+            guard phrase == "CONFIRM" || phrase.hasPrefix("CONFIRM:") else {
+                return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Invalid confirm phrase")
+            }
+            token = ""
+        } else {
+            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing confirm.token or confirm.phrase")
+        }
+
+        // 如果有 token，验证它
+        if !token.isEmpty {
+            let validation = validateToken(token: token, method: "desktop.typeText", params: params, peer: peer)
+            switch validation {
+            case .success:
+                break
+            case .invalid:
+                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Invalid token, re-issue required", details: ["reason": "invalid"])
+            case .used:
+                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Token already consumed, re-issue required", details: ["reason": "used"])
+            case .expired:
+                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Token expired, re-issue required", details: ["reason": "expired"])
+            case .mismatch(let details):
+                var mismatchDetails = details
+                mismatchDetails["reason"] = "mismatch"
+                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Token scope mismatch, re-issue required", details: mismatchDetails)
+            }
+        }
+
+        // 解析 text
+        guard let text = params["text"] as? String else {
+            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing text parameter")
+        }
+
+        // 解析 target（可选）
+        let target = params["target"] as? [String: Any]
+        let selector = target?["selector"] as? [String: Any]
+
+        // 创建证据目录
+        let executionId = UUID().uuidString
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let dateStr = dateFormatter.string(from: Date())
+        let evidenceDir = "\(workspacePath)/artifacts/desktop/\(dateStr)/\(executionId)"
+
+        do {
+            try FileManager.default.createDirectory(atPath: evidenceDir, withIntermediateDirectories: true)
+        } catch {
+            return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Failed to create evidence directory: \(error)")
+        }
+
+        // 创建事件写入器
+        guard let eventWriter = EventWriter(evidenceDir: evidenceDir) else {
+            return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Failed to create event writer")
+        }
+
+        // 写入 start 事件
+        eventWriter.write(Event.start(executionId: executionId, method: "desktop.typeText", params: params))
+
+        // 检查 Accessibility 权限
+        guard AXIsProcessTrusted() else {
+            eventWriter.write(Event.error(executionId: executionId, method: "desktop.typeText", errorCode: "PERMISSION_MISSING", errorMessage: "Accessibility permission required"))
+            eventWriter.write(Event.stop(executionId: executionId, method: "desktop.typeText"))
+            return JSONRPC.error(id: id, code: BridgeError.permissionMissing.code, message: "Accessibility permission required")
+        }
+
+        // 注册请求（用于 abort）
+        registerRequest(requestId)
+
+        // 如果有 selector，先点击目标元素
+        if let selector = selector {
+            guard let element = findElement(selector: selector) else {
+                eventWriter.write(Event.error(executionId: executionId, method: "desktop.typeText", errorCode: "ELEMENT_NOT_FOUND", errorMessage: "No matching element found"))
+                eventWriter.write(Event.stop(executionId: executionId, method: "desktop.typeText"))
+                unregisterRequest(id)
+                return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Element not found")
+            }
+
+            // 点击元素
+            let pressError = AXUIElementPerformAction(element, kAXPressAction as CFString)
+            if pressError != .success {
+                eventWriter.write(Event.error(executionId: executionId, method: "desktop.typeText", errorCode: "CLICK_FAILED", errorMessage: "AXUIElementPerformAction failed: \(pressError.rawValue)"))
+                eventWriter.write(Event.stop(executionId: executionId, method: "desktop.typeText"))
+                unregisterRequest(id)
+                return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Click action failed: \(pressError.rawValue)")
+            }
+
+            // 等待一小段时间让焦点稳定
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+
+        // 检查是否被中止
+        if isRequestAborted(requestId) {
+            eventWriter.write(Event.error(executionId: executionId, method: "desktop.typeText", errorCode: "DESKTOP_ABORTED", errorMessage: "Request aborted"))
+            eventWriter.write(Event.stop(executionId: executionId, method: "desktop.typeText"))
+            unregisterRequest(id)
+            return JSONRPC.error(id: id, code: "DESKTOP_ABORTED", message: "Request aborted")
+        }
+
+        // 消费 token
+        if !token.isEmpty {
+            if !consumeToken(token: token) {
+                eventWriter.write(Event.error(executionId: executionId, method: "desktop.typeText", errorCode: "TOKEN_CONSUME_FAILED", errorMessage: "Failed to consume token"))
+                eventWriter.write(Event.stop(executionId: executionId, method: "desktop.typeText"))
+                unregisterRequest(id)
+                return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Failed to consume token")
+            }
+        }
+
+        // 复制文本到剪贴板
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+
+        // 发送 ⌘V 快捷键
+        sendHotkey(modifiers: .maskCommand, keyCode: UInt32(kVK_ANSI_V))
+
+        // 写入 stop 事件
+        eventWriter.write(Event.stop(executionId: executionId, method: "desktop.typeText", result: ["text": text, "method": "clipboard+cmd+v"]))
+
+        // T12: 写入 RunTree 索引
+        if let runTreeIndex = RunTreeIndex(workspacePath: workspacePath) {
+            runTreeIndex.append(executionId: executionId, requestId: id, method: "desktop.typeText", ok: true, evidenceDir: evidenceDir)
+        }
+
+        unregisterRequest(id)
+
+        return JSONRPC.success(id: id, result: [
+            "executionId": executionId,
+            "text": text,
+            "method": "clipboard+cmd+v",
+            "evidence": ["dir": evidenceDir, "eventsPath": "events.ndjson"]
+        ])
+    }
+
+    /// desktop.hotkey: 发送快捷键（支持 confirm token）
+    private func handleHotkey(id: String, params: [String: Any], peer: PeerIdentity) -> String {
+        // 解析参数
+        guard let meta = params["meta"] as? [String: Any],
+              let workspacePath = meta["workspacePath"] as? String else {
+            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing meta/workspacePath")
+        }
+
+        let requestId = meta["requestId"] as? String ?? UUID().uuidString
+
+        // 解析 confirm
+        guard let confirm = params["confirm"] as? [String: Any] else {
+            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing confirm object")
+        }
+
+        // 验证 token
+        let token: String
+        if let t = confirm["token"] as? String {
+            token = t
+        } else if let phrase = confirm["phrase"] as? String {
+            guard phrase == "CONFIRM" || phrase.hasPrefix("CONFIRM:") else {
+                return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Invalid confirm phrase")
+            }
+            token = ""
+        } else {
+            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing confirm.token or confirm.phrase")
+        }
+
+        // 如果有 token，验证它
+        if !token.isEmpty {
+            let validation = validateToken(token: token, method: "desktop.hotkey", params: params, peer: peer)
+            switch validation {
+            case .success:
+                break
+            case .invalid:
+                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Invalid token, re-issue required", details: ["reason": "invalid"])
+            case .used:
+                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Token already consumed, re-issue required", details: ["reason": "used"])
+            case .expired:
+                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Token expired, re-issue required", details: ["reason": "expired"])
+            case .mismatch(let details):
+                var mismatchDetails = details
+                mismatchDetails["reason"] = "mismatch"
+                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Token scope mismatch, re-issue required", details: mismatchDetails)
+            }
+        }
+
+        // 解析 keys
+        guard let keys = params["keys"] as? [String] else {
+            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing keys parameter")
+        }
+
+        // 创建证据目录
+        let executionId = UUID().uuidString
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let dateStr = dateFormatter.string(from: Date())
+        let evidenceDir = "\(workspacePath)/artifacts/desktop/\(dateStr)/\(executionId)"
+
+        do {
+            try FileManager.default.createDirectory(atPath: evidenceDir, withIntermediateDirectories: true)
+        } catch {
+            return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Failed to create evidence directory: \(error)")
+        }
+
+        // 创建事件写入器
+        guard let eventWriter = EventWriter(evidenceDir: evidenceDir) else {
+            return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Failed to create event writer")
+        }
+
+        // 写入 start 事件
+        eventWriter.write(Event.start(executionId: executionId, method: "desktop.hotkey", params: params))
+
+        // 注册请求（用于 abort）
+        registerRequest(requestId)
+
+        // 检查是否被中止
+        if isRequestAborted(requestId) {
+            eventWriter.write(Event.error(executionId: executionId, method: "desktop.hotkey", errorCode: "DESKTOP_ABORTED", errorMessage: "Request aborted"))
+            eventWriter.write(Event.stop(executionId: executionId, method: "desktop.hotkey"))
+            unregisterRequest(id)
+            return JSONRPC.error(id: id, code: "DESKTOP_ABORTED", message: "Request aborted")
+        }
+
+        // 消费 token
+        if !token.isEmpty {
+            if !consumeToken(token: token) {
+                eventWriter.write(Event.error(executionId: executionId, method: "desktop.hotkey", errorCode: "TOKEN_CONSUME_FAILED", errorMessage: "Failed to consume token"))
+                eventWriter.write(Event.stop(executionId: executionId, method: "desktop.hotkey"))
+                unregisterRequest(id)
+                return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Failed to consume token")
+            }
+        }
+
+        // 解析并执行快捷键
+        for key in keys {
+            // 支持 enter 和 cmd+v
+            if key == "enter" {
+                sendHotkey(modifiers: [], keyCode: UInt32(kVK_Return))
+            } else if key == "cmd+v" || key == "command+v" {
+                sendHotkey(modifiers: .maskCommand, keyCode: UInt32(kVK_ANSI_V))
+            } else if key == "tab" {
+                sendHotkey(modifiers: [], keyCode: UInt32(kVK_Tab))
+            } else if key == "space" {
+                sendHotkey(modifiers: [], keyCode: UInt32(kVK_Space))
+            } else if key == "escape" || key == "esc" {
+                sendHotkey(modifiers: [], keyCode: UInt32(kVK_Escape))
+            } else if key.hasPrefix("cmd+") || key.hasPrefix("command+") {
+                // 解析 cmd+x 格式
+                let keyChar = key.dropFirst(4)
+                if let keyCode = keyCodeForChar(keyChar.first ?? Character("")) {
+                    sendHotkey(modifiers: .maskCommand, keyCode: keyCode)
+                }
+            } else if key.count == 1 {
+                // 单字符按键
+                if let keyCode = keyCodeForChar(key.first ?? Character("")) {
+                    sendHotkey(modifiers: [], keyCode: keyCode)
+                }
+            } else {
+                eventWriter.write(Event.error(executionId: executionId, method: "desktop.hotkey", errorCode: "UNSUPPORTED_KEY", errorMessage: "Unsupported key: \(key)"))
+            }
+        }
+
+        // 写入 stop 事件
+        eventWriter.write(Event.stop(executionId: executionId, method: "desktop.hotkey", result: ["keys": keys]))
+
+        // T12: 写入 RunTree 索引
+        if let runTreeIndex = RunTreeIndex(workspacePath: workspacePath) {
+            runTreeIndex.append(executionId: executionId, requestId: id, method: "desktop.hotkey", ok: true, evidenceDir: evidenceDir)
+        }
+
+        unregisterRequest(id)
+
+        return JSONRPC.success(id: id, result: [
+            "executionId": executionId,
+            "keys": keys,
+            "evidence": ["dir": evidenceDir, "eventsPath": "events.ndjson"]
+        ])
+    }
+
+    /// desktop.waitUntil: 等待 UI 条件成立（轮询 + find，支持 abort/timeout）
+    private func handleWaitUntil(id: String, params: [String: Any]) -> String {
+        // 解析参数
+        guard let meta = params["meta"] as? [String: Any],
+              let workspacePath = meta["workspacePath"] as? String else {
+            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing meta/workspacePath")
+        }
+
+        let requestId = meta["requestId"] as? String ?? UUID().uuidString
+        let timeoutMs = (params["timeoutMs"] as? Int) ?? 10000
+        let pollIntervalMs: UInt64 = 200  // 每 200ms 轮询一次
+        let startTime = Date()
+
+        // 解析 condition
+        guard let condition = params["condition"] as? [String: Any] else {
+            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing condition")
+        }
+
+        // 创建证据目录
+        let executionId = UUID().uuidString
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd"
+        let dateStr = dateFormatter.string(from: Date())
+        let evidenceDir = "\(workspacePath)/artifacts/desktop/\(dateStr)/\(executionId)"
+
+        do {
+            try FileManager.default.createDirectory(atPath: evidenceDir, withIntermediateDirectories: true)
+        } catch {
+            return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Failed to create evidence directory: \(error)")
+        }
+
+        // 创建事件写入器
+        guard let eventWriter = EventWriter(evidenceDir: evidenceDir) else {
+            return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Failed to create event writer")
+        }
+
+        // 写入 start 事件
+        eventWriter.write(Event.start(executionId: executionId, method: "desktop.waitUntil", params: params))
+
+        // 检查 Accessibility 权限
+        guard AXIsProcessTrusted() else {
+            eventWriter.write(Event.error(executionId: executionId, method: "desktop.waitUntil", errorCode: "PERMISSION_MISSING", errorMessage: "Accessibility permission required"))
+            eventWriter.write(Event.stop(executionId: executionId, method: "desktop.waitUntil"))
+            return JSONRPC.error(id: id, code: BridgeError.permissionMissing.code, message: "Accessibility permission required")
+        }
+
+        // 注册请求（用于 abort）
+        registerRequest(requestId)
+
+        // 轮询检查条件
+        var conditionMet = false
+        var iterations = 0
+
+        while Date().timeIntervalSince(startTime) < Double(timeoutMs) / 1000.0 {
+            iterations += 1
+
+            // 检查是否被中止
+            if isRequestAborted(requestId) {
+                eventWriter.write(Event.error(executionId: executionId, method: "desktop.waitUntil", errorCode: "DESKTOP_ABORTED", errorMessage: "Request aborted after \(iterations) iterations"))
+                eventWriter.write(Event.stop(executionId: executionId, method: "desktop.waitUntil"))
+                unregisterRequest(id)
+                return JSONRPC.error(id: id, code: "DESKTOP_ABORTED", message: "Request aborted after \(iterations) iterations")
+            }
+
+            // 检查条件：selectorExists
+            if let selectorExists = condition["selectorExists"] as? [String: Any] {
+                if findElement(selector: selectorExists) != nil {
+                    conditionMet = true
+                    break
+                }
+            }
+
+            // 检查条件：valueContains
+            if let valueContains = condition["valueContains"] as? [String: Any] {
+                if let selector = valueContains["selector"] as? [String: Any],
+                   let expectedValue = valueContains["value"] as? String {
+                    if let element = findElement(selector: selector),
+                       let actualValue = copyAXValue(element, attribute: kAXValueAttribute) as? String {
+                        if actualValue.contains(expectedValue) {
+                            conditionMet = true
+                            break
+                        }
+                    }
+                }
+            }
+
+            // 等待下一次轮询
+            usleep(useconds_t(pollIntervalMs * 1000))
+        }
+
+        // 注销请求
+        unregisterRequest(id)
+
+        if conditionMet {
+            // 写入 stop 事件（成功）
+            eventWriter.write(Event.stop(executionId: executionId, method: "desktop.waitUntil", result: ["conditionMet": true, "iterations": iterations]))
+
+            // T12: 写入 RunTree 索引
+            if let runTreeIndex = RunTreeIndex(workspacePath: workspacePath) {
+                runTreeIndex.append(executionId: executionId, requestId: id, method: "desktop.waitUntil", ok: true, evidenceDir: evidenceDir)
+            }
+
+            return JSONRPC.success(id: id, result: [
+                "executionId": executionId,
+                "conditionMet": true,
+                "iterations": iterations,
+                "evidence": ["dir": evidenceDir, "eventsPath": "events.ndjson"]
+            ])
+        } else {
+            // 超时
+            eventWriter.write(Event.error(executionId: executionId, method: "desktop.waitUntil", errorCode: "TIMEOUT", errorMessage: "Condition not met after \(iterations) iterations"))
+            eventWriter.write(Event.stop(executionId: executionId, method: "desktop.waitUntil"))
+
+            return JSONRPC.error(id: id, code: "DESKTOP_TIMEOUT", message: "Condition not met after \(iterations) iterations")
+        }
+    }
+
+    /// desktop.abort: 中止正在执行的请求
+    private func handleAbort(id: String, params: [String: Any]) -> String {
+        guard let meta = params["meta"] as? [String: Any],
+              let requestId = meta["requestId"] as? String else {
+            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing requestId in meta")
+        }
+
+        if abortRequest(requestId) {
+            return JSONRPC.success(id: id, result: ["aborted": true])
+        } else {
+            return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Request not found or already aborted")
+        }
+    }
+
+    // MARK: - T14.3A: UI 操作辅助方法
+
+    /// 查找 UI 元素（根据 selector）
+    private func findElement(selector: [String: Any]) -> AXUIElement? {
+        // 检查 Accessibility 权限
+        guard AXIsProcessTrusted() else {
+            return nil
+        }
+
+        // 解析 selector 参数
+        let selectorByRole = selector["byRole"] as? String
+        let selectorTitleContains = selector["titleContains"] as? String
+        let selectorValueContains = selector["valueContains"] as? String
+
+        // 获取系统级 AX 元素
+        let systemWideElement = AXUIElementCreateSystemWide()
+
+        // 获取前台应用作为根元素
+        var rootElement = systemWideElement
+        if let frontmost = NSWorkspace.shared.frontmostApplication {
+            let frontmostElement = AXUIElementCreateApplication(frontmost.processIdentifier)
+            if let role = copyAXValue(frontmostElement, attribute: kAXRoleAttribute) as? String {
+                rootElement = frontmostElement
+            }
+        }
+
+        // 遍历 AX 树查找元素
+        var foundElement: AXUIElement? = nil
+
+        func traverse(_ element: AXUIElement, depth: Int) {
+            // 深度限制 20
+            guard depth < 20 else { return }
+            guard foundElement == nil else { return }  // 已找到，停止遍历
+
+            // 提取元素属性
+            let role = copyAXValue(element, attribute: kAXRoleAttribute) as? String
+            let title = copyAXValue(element, attribute: kAXTitleAttribute) as? String
+            let value = copyAXValue(element, attribute: kAXValueAttribute)
+
+            // 检查匹配
+            var matches = true
+
+            if let byRole = selectorByRole {
+                if role != byRole {
+                    matches = false
+                }
+            }
+
+            if let titleContains = selectorTitleContains {
+                if let t = title, !t.contains(titleContains) {
+                    matches = false
+                } else if title == nil {
+                    matches = false
+                }
+            }
+
+            if let valueContains = selectorValueContains {
+                if let v = value as? String, !v.contains(valueContains) {
+                    matches = false
+                } else if !(value is String) {
+                    matches = false
+                }
+            }
+
+            if matches {
+                foundElement = element
+                return
+            }
+
+            // 递归遍历子元素
+            if let children = copyAXValue(element, attribute: kAXChildrenAttribute) as? [AXUIElement] {
+                for child in children {
+                    traverse(child, depth: depth + 1)
+                    if foundElement != nil {
+                        return
+                    }
+                }
+            }
+        }
+
+        traverse(rootElement, depth: 0)
+        return foundElement
+    }
+
+    /// 发送快捷键
+    private func sendHotkey(modifiers: CGEventFlags, keyCode: UInt32) {
+        let source = CGEventSource(stateID: .hidSystemState)
+
+        // 创建按键按下事件
+        if let keyDown = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(keyCode), keyDown: true) {
+            keyDown.flags = modifiers
+            keyDown.post(tap: .cghidEventTap)
+        }
+
+        // 小延迟
+        Thread.sleep(forTimeInterval: 0.001)
+
+        // 创建按键释放事件
+        if let keyUp = CGEvent(keyboardEventSource: source, virtualKey: CGKeyCode(keyCode), keyDown: false) {
+            keyUp.flags = modifiers
+            keyUp.post(tap: .cghidEventTap)
+        }
+    }
+
+    /// 将字符转换为虚拟键码
+    private func keyCodeForChar(_ char: Character) -> UInt32? {
+        switch char {
+        case "a": return UInt32(kVK_ANSI_A)
+        case "b": return UInt32(kVK_ANSI_B)
+        case "c": return UInt32(kVK_ANSI_C)
+        case "d": return UInt32(kVK_ANSI_D)
+        case "e": return UInt32(kVK_ANSI_E)
+        case "f": return UInt32(kVK_ANSI_F)
+        case "g": return UInt32(kVK_ANSI_G)
+        case "h": return UInt32(kVK_ANSI_H)
+        case "i": return UInt32(kVK_ANSI_I)
+        case "j": return UInt32(kVK_ANSI_J)
+        case "k": return UInt32(kVK_ANSI_K)
+        case "l": return UInt32(kVK_ANSI_L)
+        case "m": return UInt32(kVK_ANSI_M)
+        case "n": return UInt32(kVK_ANSI_N)
+        case "o": return UInt32(kVK_ANSI_O)
+        case "p": return UInt32(kVK_ANSI_P)
+        case "q": return UInt32(kVK_ANSI_Q)
+        case "r": return UInt32(kVK_ANSI_R)
+        case "s": return UInt32(kVK_ANSI_S)
+        case "t": return UInt32(kVK_ANSI_T)
+        case "u": return UInt32(kVK_ANSI_U)
+        case "v": return UInt32(kVK_ANSI_V)
+        case "w": return UInt32(kVK_ANSI_W)
+        case "x": return UInt32(kVK_ANSI_X)
+        case "y": return UInt32(kVK_ANSI_Y)
+        case "z": return UInt32(kVK_ANSI_Z)
+        case "0": return UInt32(kVK_ANSI_0)
+        case "1": return UInt32(kVK_ANSI_1)
+        case "2": return UInt32(kVK_ANSI_2)
+        case "3": return UInt32(kVK_ANSI_3)
+        case "4": return UInt32(kVK_ANSI_4)
+        case "5": return UInt32(kVK_ANSI_5)
+        case "6": return UInt32(kVK_ANSI_6)
+        case "7": return UInt32(kVK_ANSI_7)
+        case "8": return UInt32(kVK_ANSI_8)
+        case "9": return UInt32(kVK_ANSI_9)
+        case " ": return UInt32(kVK_Space)
+        case "\n": return 36  // kVK_Return
+        case "\t": return 48  // kVK_Tab
+        case "\u{1B}": return 53  // kVK_Escape (ASCII 27 = ESC)
+        default: return nil
+        }
+    }
+
+    // MARK: - 截图辅助方法
+
+    /// 捕获屏幕截图
+    private func captureScreenshot() -> Data? {
+        let mainScreen = NSScreen.main
+        guard let frame = mainScreen?.frame else {
+            return nil
+        }
+
+        let rect = CGRect(origin: .zero, size: frame.size)
+        guard let cgImage = CGDisplayCreateImage(CGMainDisplayID(), rect: rect) else {
+            return nil
+        }
+
+        let bitmapRep = NSBitmapImageRep(cgImage: cgImage)
+        guard let pngData = bitmapRep.representation(using: .png, properties: [:]) else {
+            return nil
+        }
+
+        return pngData
+    }
+
+    /// 构建 AX 树（简化版，仅用于 desktop.observe）
+    private func buildAXTree(evidenceDir: String) -> [String: Any]? {
+        // 检查 Accessibility 权限
+        guard AXIsProcessTrusted() else {
+            return nil
+        }
+
+        // 获取系统级 AX 元素
+        let systemWideElement = AXUIElementCreateSystemWide()
+
+        // 获取前台应用
+        var frontmostApp: [String: Any]? = nil
+        var frontmostAppElement: AXUIElement? = nil
+
+        if let frontmost = NSWorkspace.shared.frontmostApplication {
+            frontmostApp = [
+                "bundleId": frontmost.bundleIdentifier ?? "",
+                "pid": frontmost.processIdentifier
+            ]
+            frontmostAppElement = AXUIElementCreateApplication(frontmost.processIdentifier)
+        }
+
+        // 使用前台应用作为根元素，回退到系统级
+        let unwrappedRootElement = frontmostAppElement ?? systemWideElement
+        let rootRole = (frontmostApp != nil) ? "Application" : "System"
+
+        // 序列化 AX 树（简化版，深度限制 20，节点限制 1000）
+        let maxDepth = 20
+        let maxNodes = 1000
+        var nodeCount = 0
+
+        func serialize(_ element: AXUIElement, depth: Int) -> [String: Any]? {
+            guard depth < maxDepth, nodeCount < maxNodes else {
+                return nil
+            }
+
+            nodeCount += 1
+
+            let role = copyAXValue(element, attribute: kAXRoleAttribute) as? String ?? "Unknown"
+            var result: [String: Any] = ["role": role]
+
+            // 提取常用属性
+            let attrs: [(String, String)] = [
+                ("AXTitle", kAXTitleAttribute),
+                ("AXValue", kAXValueAttribute),
+                ("AXPlaceholderValue", kAXPlaceholderValueAttribute)
+            ]
+
+            for (key, attr) in attrs {
+                if let value = copyAXValue(element, attribute: attr) {
+                    result[key] = value
+                }
+            }
+
+            // 提取位置和大小
+            if let position = copyAXValue(element, attribute: kAXPositionAttribute) as? [String: Any],
+               let size = copyAXValue(element, attribute: kAXSizeAttribute) as? [String: Any] {
+                result["frame"] = ["position": position, "size": size]
+            }
+
+            // 递归处理子元素（限制 20 个）
+            if depth < 10 {
+                if let children = copyAXValue(element, attribute: kAXChildrenAttribute) as? [AXUIElement] {
+                    var childResults: [[String: Any]] = []
+                    for child in children.prefix(20) {
+                        if let childTree = serialize(child, depth: depth + 1) {
+                            childResults.append(childTree)
+                        }
+                        if nodeCount >= maxNodes {
+                            break
+                        }
+                    }
+                    if !childResults.isEmpty {
+                        result["children"] = childResults
+                    }
+                }
+            }
+
+            return result
+        }
+
+        let tree = serialize(unwrappedRootElement, depth: 0)
+
+        // 落盘 ax.json
+        var result: [String: Any] = [:]
+        if let treeData = tree {
+            result["tree"] = treeData
+        }
+        if let frontmost = frontmostApp {
+            result["frontmost"] = frontmost
+        }
+
+        let axPath = "\(evidenceDir)/ax.json"
+        do {
+            let jsonData = try JSONSerialization.data(withJSONObject: result, options: .prettyPrinted)
+            try jsonData.write(to: URL(fileURLWithPath: axPath))
+            return result
+        } catch {
+            logger.error("Failed to write ax.json: \(error)")
+            return nil
+        }
+    }
+
+    /// 复制 AX 属性值
+    private func copyAXValue(_ element: AXUIElement, attribute: String) -> Any? {
+        var value: AnyObject?
+        let error = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+
+        guard error == .success else {
+            return nil
+        }
+
+        guard let unwrappedValue = value else {
+            return nil
+        }
+
+        // 转换为 Swift 原生类型
+        if let str = unwrappedValue as? String { return str }
+        if let num = unwrappedValue as? Int { return num }
+        if let num = unwrappedValue as? Double { return num }
+        if let bool = unwrappedValue as? Bool { return bool }
+        if let dict = unwrappedValue as? [String: Any] { return dict }
+
+        // CFArray 转换
+        if CFGetTypeID(unwrappedValue as CFTypeRef) == CFArrayGetTypeID() {
+            let cfArray = unwrappedValue as! CFArray
+            var result: [Any] = []
+            let count = CFArrayGetCount(cfArray)
+            for i in 0..<count {
+                if let item = CFArrayGetValueAtIndex(cfArray, i) {
+                    let axElement = unsafeBitCast(item, to: AXUIElement.self)
+                    result.append(axElement)
+                }
+            }
+            return result
+        }
+
+        // AXValue 转换
+        if CFGetTypeID(unwrappedValue as CFTypeRef) == AXValueGetTypeID() {
+            let axValue = unwrappedValue as! AXValue
+            let type = AXValueGetType(axValue)
+
+            switch type {
+            case .cgPoint:
+                var point = CGPoint.zero
+                if AXValueGetValue(axValue, .cgPoint, &point) {
+                    return ["x": Int(point.x), "y": Int(point.y)]
+                }
+            case .cgSize:
+                var size = CGSize.zero
+                if AXValueGetValue(axValue, .cgSize, &size) {
+                    return ["width": Int(size.width), "height": Int(size.height)]
+                }
+            case .cgRect:
+                var rect = CGRect.zero
+                if AXValueGetValue(axValue, .cgRect, &rect) {
+                    return [
+                        "x": Int(rect.origin.x),
+                        "y": Int(rect.origin.y),
+                        "width": Int(rect.size.width),
+                        "height": Int(rect.size.height)
+                    ]
+                }
+            default:
+                break
+            }
+        }
+
+        return String(describing: unwrappedValue)
     }
 }
 
@@ -381,1205 +2195,26 @@ class BridgeServerAdapter: NSObject, BridgeXPCProtocol {
         return identity
     }
 
-    /// 验证 allowlist（T5.1）
-    /// - Parameter workspacePath: 工作区路径
-    /// - Returns: true 允许，false 拒绝
-    private func validateAllowlist(workspacePath: String) -> Bool {
-        let allowlistPath = "\(workspacePath)/allowlist.json"
-
-        // 文件不存在：默认允许
-        guard FileManager.default.fileExists(atPath: allowlistPath) else {
-            logger.log("Allowlist not found, allowing by default")
-            return true
-        }
-
-        // 读取 allowlist.json
-        guard let data = try? Data(contentsOf: URL(fileURLWithPath: allowlistPath)),
-              let allowlist = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            logger.log("Failed to parse allowlist.json, denying")
-            return false
-        }
-
-        // 检查 callers 数组
-        guard let callers = allowlist["callers"] as? [String] else {
-            logger.log("Missing 'callers' in allowlist, treating as empty (deny all)")
-            return false
-        }
-
-        // 空数组：拒绝所有
-        if callers.isEmpty {
-            logger.log("Allowlist is empty, denying all callers")
-            return false
-        }
-
-        // 提取 peer 信息
-        let peer = extractPeerIdentity()
-
-        // 检查是否匹配 allowlist 中的任何规则
-        let allowed = callers.contains { rule in
-            if rule == "*" {
-                return true
-            }
-            if rule.hasPrefix("pid:") {
-                let ruleStr = rule.dropFirst(4)
-                if let targetPid = pid_t(ruleStr) {
-                    return peer.pid == targetPid
-                }
-            }
-            return false
-        }
-
-        if allowed {
-            logger.log("Caller allowed by allowlist (pid: \(peer.pid))")
-        } else {
-            logger.log("Caller denied by allowlist (pid: \(peer.pid))")
-        }
-
-        return allowed
-    }
-
-    /// 接收 JSON-RPC 请求并返回响应
+    /// 接收 JSON-RPC 请求并返回响应（T9.M0.2: 简化为直接调用 server.handleJsonRpc）
     func sendMessage(_ requestJson: String, reply: @escaping (String) -> Void) {
         logger.log("Received request: \(requestJson.prefix(100))...")
 
-        // 解析 JSON-RPC 请求
-        guard let (id, method, params) = JSONRPC.parseRequest(requestJson) else {
-            reply(JSONRPC.error(id: "", code: BridgeError.invalidRequest.code, message: "Invalid JSON-RPC request"))
-            return
-        }
-
         // 检查 service 是否停止
         guard server.isAccepting else {
-            reply(JSONRPC.error(id: id, code: BridgeError.hostStopped.code, message: "Host is stopped"))
+            reply(JSONRPC.error(id: "", code: BridgeError.hostStopped.code, message: "Host is stopped"))
             return
         }
 
-        // T5.1: allowlist 验证（需要 workspacePath）
-        if let meta = params["meta"] as? [String: Any],
-           let workspacePath = meta["workspacePath"] as? String {
-            if !validateAllowlist(workspacePath: workspacePath) {
-                reply(JSONRPC.error(id: id, code: BridgeError.callerNotAllowed.code, message: "Caller not allowed by allowlist"))
-                return
-            }
-        }
-
-        // 注册请求
-        server.registerRequest(id)
-
-        // 处理请求（异步，避免阻塞 XPC 线程）
-        // T8.6: 提取 peer 信息用于 token 签发/校验
+        // T9.M0.2: 提取 peer 信息
         let peer = extractPeerIdentity()
+
+        // T9.M0.2: 异步调用 server.handleJsonRpc（单一真相源）
         DispatchQueue.global(qos: .userInitiated).async { [weak server] in
-            let response = self.handleRequest(id: id, method: method, params: params, peer: peer)
-            server?.unregisterRequest(id)
+            let response = server?.handleJsonRpc(requestJson: requestJson, peer: peer) ?? JSONRPC.error(id: "", code: BridgeError.internalError.code, message: "Server not available")
             reply(response)
         }
     }
 
-    /// 处理具体方法
-    private func handleRequest(id: String, method: String, params: [String: Any], peer: PeerIdentity) -> String {
-        switch method {
-        case "desktop.health":
-            return handleHealth(id: id, params: params, peer: peer)
-        case "desktop.doctor":
-            return handleDoctor(id: id, params: params, peer: peer)
-        case "desktop.observe":
-            return handleObserve(id: id, params: params)
-        case "desktop.find":
-            return handleFind(id: id, params: params)
-        case "desktop.click":
-            return handleClick(id: id, params: params, peer: peer)
-        case "desktop.typeText":
-            return handleTypeText(id: id, params: params, peer: peer)
-        case "desktop.hotkey":
-            return handleHotkey(id: id, params: params, peer: peer)
-        case "desktop.waitUntil":
-            return handleWaitUntil(id: id, params: params)
-        case "desktop.abort":
-            return handleAbort(id: id, params: params)
-        case "desktop.confirm.issue":
-            return server.handleConfirmIssue(id: id, params: params, peer: peer)
-        default:
-            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Unknown method: \(method)")
-        }
-    }
-
-    // MARK: - P0 方法实现
-
-    /// desktop.health: 返回 Host 版本和权限状态
-    private func handleHealth(id: String, params: [String: Any], peer: PeerIdentity) -> String {
-        // meta 是必需的，但 health 不需要使用它
-        guard params["meta"] is [String: Any] else {
-            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing meta")
-        }
-
-        let accessibility = AXIsProcessTrusted()
-        let screenRecording = CGPreflightScreenCaptureAccess()
-
-        // T8.6.4.1: 构造 peer 信息（peer 稳定性证据）
-        var peerData: [String: Any] = [
-            "pid": peer.pid,
-            "auditTokenDigest": peer.auditTokenDigest
-        ]
-        if let signingId = peer.signingId {
-            peerData["signingId"] = signingId
-        }
-        if let teamId = peer.teamId {
-            peerData["teamId"] = teamId
-        }
-
-        let result: [String: Any] = [
-            "hostVersion": "0.1.0",
-            "macos": ProcessInfo.processInfo.operatingSystemVersionString,
-            "permissions": [
-                "accessibility": accessibility ? "granted" : "denied",
-                "screenRecording": screenRecording ? "granted" : "denied"
-            ],
-            "bridge": [
-                "schemaVersion": 1
-            ],
-            "peer": peerData  // T8.6.4.1: 添加 peer 信息
-        ]
-
-        return JSONRPC.success(id: id, result: result)
-    }
-
-    /// desktop.doctor: 详细诊断权限状态
-    private func handleDoctor(id: String, params: [String: Any], peer: PeerIdentity) -> String {
-        let accessibility = AXIsProcessTrusted()
-        let screenRecording = CGPreflightScreenCaptureAccess()
-
-        var issues: [String] = []
-        if !accessibility {
-            issues.append("Accessibility permission denied")
-        }
-        if !screenRecording {
-            issues.append("Screen Recording permission denied")
-        }
-
-        // P0.5: 添加 peer 信息（与 desktop.health 对齐）
-        var peerData: [String: Any] = [
-            "pid": peer.pid,
-            "auditTokenDigest": peer.auditTokenDigest
-        ]
-        if let signingId = peer.signingId {
-            peerData["signingId"] = signingId
-        }
-        if let teamId = peer.teamId {
-            peerData["teamId"] = teamId
-        }
-
-        let result: [String: Any] = [
-            "permissions": [
-                "accessibility": [
-                    "granted": accessibility,
-                    "required": true,
-                    "purpose": "AX observe/find/action"
-                ],
-                "screenRecording": [
-                    "granted": screenRecording,
-                    "required": true,
-                    "purpose": "Screenshot capture"
-                ]
-            ],
-            "issues": issues,
-            "healthy": issues.isEmpty,
-            "peer": peerData  // P0.5: 添加 peer 信息
-        ]
-
-        return JSONRPC.success(id: id, result: result)
-    }
-
-    /// desktop.observe: 截图 + AX 树，落盘证据
-    private func handleObserve(id: String, params: [String: Any]) -> String {
-        guard let meta = params["meta"] as? [String: Any] else {
-            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing meta")
-        }
-
-        guard let workspacePath = meta["workspacePath"] as? String else {
-            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing workspacePath")
-        }
-
-        // 创建证据目录
-        let executionId = UUID().uuidString
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        let dateStr = dateFormatter.string(from: Date())
-
-        let evidenceDir = "\(workspacePath)/artifacts/desktop/\(dateStr)/\(executionId)"
-
-        do {
-            try FileManager.default.createDirectory(atPath: evidenceDir, withIntermediateDirectories: true)
-        } catch {
-            return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Failed to create evidence directory: \(error)")
-        }
-
-        // 提取 peer 身份信息
-        let peer = extractPeerIdentity()
-
-        // Host 信息
-        let hostPid = ProcessInfo.processInfo.processIdentifier
-        let hostBundleId = Bundle.main.bundleIdentifier ?? "com.msgcode.desktop.host"
-
-        // 落盘 env.json
-        let envPath = "\(evidenceDir)/env.json"
-        var peerData: [String: Any] = [
-            "pid": peer.pid,
-            "auditTokenDigest": peer.auditTokenDigest
-        ]
-        if let signingId = peer.signingId {
-            peerData["signingId"] = signingId
-        }
-        if let teamId = peer.teamId {
-            peerData["teamId"] = teamId
-        }
-
-        let envData: [String: Any] = [
-            "executionId": executionId,
-            "timestamp": ISO8601DateFormatter().string(from: Date()),
-            "workspacePath": workspacePath,
-            "peer": peerData,
-            "host": [
-                "pid": hostPid,
-                "bundleId": hostBundleId,
-                "version": "0.1.0"
-            ],
-            "permissions": [
-                "accessibility": AXIsProcessTrusted(),
-                "screenRecording": CGPreflightScreenCaptureAccess()
-            ]
-        ]
-
-        do {
-            let jsonData = try JSONSerialization.data(withJSONObject: envData, options: [.prettyPrinted])
-            try jsonData.write(to: URL(fileURLWithPath: envPath))
-        } catch {
-            return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Failed to write env.json: \(error)")
-        }
-
-        // T7.0 + T7.1: 截图 + AX 树（有界遍历）
-        let accessibilityGranted = AXIsProcessTrusted()
-        let screenRecordingGranted = CGPreflightScreenCaptureAccess()
-        var permissionsMissing: [String] = []
-        if !accessibilityGranted { permissionsMissing.append("accessibility") }
-        if !screenRecordingGranted { permissionsMissing.append("screenRecording") }
-
-        // 截图 (observe.png)
-        var screenshotPath: String? = nil
-        if screenRecordingGranted {
-            if captureScreenshot(to: evidenceDir) {
-                screenshotPath = "observe.png"
-            }
-        }
-
-        // AX 树 (ax.json)
-        var axPath: String? = nil
-        if accessibilityGranted {
-            if serializeAXTree(to: evidenceDir) != nil {
-                axPath = "ax.json"
-            }
-        }
-
-        // 构建证据返回（诚实返回）
-        var evidence: [String: Any] = [
-            "dir": evidenceDir,
-            "envPath": "env.json"
-        ]
-
-        if let sp = screenshotPath {
-            evidence["screenshotPath"] = sp
-        }
-        if let ap = axPath {
-            evidence["axPath"] = ap
-        }
-
-        if !permissionsMissing.isEmpty {
-            evidence["permissionsMissing"] = permissionsMissing
-        }
-
-        let result: [String: Any] = [
-            "executionId": executionId,
-            "evidence": evidence
-        ]
-
-        return JSONRPC.success(id: id, result: result)
-    }
-
-    /// desktop.find: 查找 UI 元素（T8.1）
-    private func handleFind(id: String, params: [String: Any]) -> String {
-        // 检查 Accessibility 权限
-        guard AXIsProcessTrusted() else {
-            return JSONRPC.error(id: id, code: BridgeError.permissionMissing.code, message: "Accessibility permission required")
-        }
-
-        // 解析 meta
-        guard let meta = params["meta"] as? [String: Any] else {
-            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing meta")
-        }
-
-        guard let workspacePath = meta["workspacePath"] as? String else {
-            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing workspacePath")
-        }
-
-        // 解析 selector（可选）
-        var selectorByRole: String? = nil
-        var selectorTitleContains: String? = nil
-        var selectorValueContains: String? = nil
-        var limit = 10
-
-        if let selector = params["selector"] as? [String: Any] {
-            if let byRole = selector["byRole"] as? String {
-                selectorByRole = byRole
-            }
-            if let titleContains = selector["titleContains"] as? String {
-                selectorTitleContains = titleContains
-            }
-            if let valueContains = selector["valueContains"] as? String {
-                selectorValueContains = valueContains
-            }
-            if let lim = selector["limit"] as? Int {
-                limit = lim
-            }
-        }
-
-        // 创建证据目录
-        let executionId = UUID().uuidString
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd"
-        let dateStr = dateFormatter.string(from: Date())
-
-        let evidenceDir = "\(workspacePath)/artifacts/desktop/\(dateStr)/\(executionId)"
-
-        do {
-            try FileManager.default.createDirectory(atPath: evidenceDir, withIntermediateDirectories: true)
-        } catch {
-            return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Failed to create evidence directory: \(error)")
-        }
-
-        // T7.A4: 获取前台应用作为根元素
-        var rootElement: AXUIElement?
-
-        if #available(macOS 14.0, *) {
-            let workspace = NSWorkspace.shared
-            if let app = workspace.frontmostApplication {
-                logger.log("Find in frontmost app: \(app.bundleIdentifier ?? "unknown") (pid: \(app.processIdentifier))")
-                rootElement = AXUIElementCreateApplication(app.processIdentifier)
-            }
-        }
-
-        // 兜底：如果无法获取前台应用，使用 systemWide
-        if rootElement == nil {
-            logger.log("Failed to get frontmost app, falling back to systemWide")
-            rootElement = AXUIElementCreateSystemWide()
-        }
-
-        guard let unwrappedRootElement = rootElement else {
-            return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "Failed to create root element")
-        }
-
-        // 遍历 AX 树查找匹配元素
-        var elementRefs: [[String: Any]] = []
-        var nodesVisited = 0
-        let maxNodes = 5000
-
-        func traverse(_ element: AXUIElement, depth: Int) {
-            // 检查是否被中止
-            if server.isRequestAborted(id) {
-                return
-            }
-
-            // 边界检查
-            guard nodesVisited < maxNodes else { return }
-            nodesVisited += 1
-
-            // 提取元素属性
-            let role = copyAXValue(element, attribute: kAXRoleAttribute) as? String
-            let title = copyAXValue(element, attribute: kAXTitleAttribute) as? String
-            let value = copyAXValue(element, attribute: kAXValueAttribute)
-            let position = copyAXValue(element, attribute: kAXPositionAttribute) as? [String: Any]
-            let size = copyAXValue(element, attribute: kAXSizeAttribute) as? [String: Any]
-
-            // 应用 selector 过滤
-            var matches = true
-
-            if let byRole = selectorByRole {
-                if role != byRole {
-                    matches = false
-                }
-            }
-
-            if let titleContains = selectorTitleContains {
-                if let t = title, !t.contains(titleContains) {
-                    matches = false
-                } else if title == nil {
-                    matches = false
-                }
-            }
-
-            if let valueContains = selectorValueContains {
-                if let v = value as? String, !v.contains(valueContains) {
-                    matches = false
-                } else if !(value is String) {
-                    matches = false
-                }
-            }
-
-            // 如果匹配且未达到 limit，添加到结果
-            if matches && elementRefs.count < limit {
-                var frame: [String: Any]? = nil
-                if let pos = position, let sz = size {
-                    if let x = pos["x"] as? Int, let y = pos["y"] as? Int,
-                       let w = sz["width"] as? Int, let h = sz["height"] as? Int {
-                        frame = ["x": x, "y": y, "width": w, "height": h]
-                    }
-                }
-
-                // 生成 fingerprint（role + title + frame 的拼接）
-                var fingerprintParts: [String] = []
-                if let r = role { fingerprintParts.append(r) }
-                if let t = title { fingerprintParts.append(t) }
-                if let f = frame {
-                    fingerprintParts.append("x=\(f["x"] ?? 0),y=\(f["y"] ?? 0),w=\(f["width"] ?? 0),h=\(f["height"] ?? 0)")
-                }
-                let fingerprint = fingerprintParts.joined(separator: "|")
-
-                var elementRef: [String: Any] = [
-                    "elementId": "e:\(elementRefs.count + 1)",
-                    "fingerprint": fingerprint
-                ]
-
-                if let r = role { elementRef["role"] = r }
-                if let t = title { elementRef["title"] = t }
-                if let v = value { elementRef["value"] = v }
-                if let f = frame { elementRef["frame"] = f }
-
-                elementRefs.append(elementRef)
-            }
-
-            // 递归遍历子元素（深度限制 20，避免过深）
-            if depth < 20 {
-                if let children = copyAXValue(element, attribute: kAXChildrenAttribute) as? [AXUIElement] {
-                    for child in children {
-                        traverse(child, depth: depth + 1)
-                        // 达到 limit 后停止
-                        if elementRefs.count >= limit {
-                            break
-                        }
-                    }
-                }
-            }
-        }
-
-        // 开始遍历
-        traverse(unwrappedRootElement, depth: 0)
-
-        // 写入 ax.json（证据）
-        let axPath = "\(evidenceDir)/ax.json"
-        do {
-            var selectorData: [String: Any] = [:]
-            if let byRole = selectorByRole { selectorData["byRole"] = byRole }
-            if let titleContains = selectorTitleContains { selectorData["titleContains"] = titleContains }
-            if let valueContains = selectorValueContains { selectorData["valueContains"] = valueContains }
-            selectorData["limit"] = limit
-
-            let axData: [String: Any] = [
-                "executionId": executionId,
-                "elementRefs": elementRefs,
-                "matched": elementRefs.count,
-                "nodesVisited": nodesVisited,
-                "selector": selectorData
-            ]
-            let jsonData = try JSONSerialization.data(withJSONObject: axData, options: .prettyPrinted)
-            try jsonData.write(to: URL(fileURLWithPath: axPath))
-            logger.log("AX find result written to: \(axPath)")
-        } catch {
-            logger.error("Failed to write ax.json: \(error)")
-        }
-
-        // 构建返回结果
-        let result: [String: Any] = [
-            "executionId": executionId,
-            "elementRefs": elementRefs,
-            "matched": elementRefs.count,
-            "evidence": [
-                "dir": evidenceDir,
-                "axPath": "ax.json"
-            ]
-        ]
-
-        return JSONRPC.success(id: id, result: result)
-    }
-
-    /// desktop.click: 点击元素（T8.2）
-    private func handleClick(id: String, params: [String: Any], peer: PeerIdentity) -> String {
-        // T8.6: confirm gate 验证（token 优先，phrase 回退）
-        guard let confirm = params["confirm"] as? [String: Any] else {
-            return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Missing confirm object")
-        }
-
-        // 步骤 1: 验证 token（不消费）
-        if let token = confirm["token"] as? String {
-            let validationResult = server.validateToken(
-                token: token,
-                method: "desktop.click",
-                params: params,
-                peer: peer
-            )
-            switch validationResult {
-            case .success:
-                break  // token 有效，继续检查权限
-            case .invalid:
-                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Invalid token")
-            case .used:
-                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Token already used")
-            case .expired:
-                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Token expired")
-            case .mismatch:
-                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Token scope mismatch")
-            }
-        } else if let phrase = confirm["phrase"] as? String {
-            // Fallback to phrase validation
-            guard phrase == "CONFIRM" || phrase.hasPrefix("CONFIRM:") else {
-                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "confirm.phrase must be 'CONFIRM' or 'CONFIRM:<requestId>'")
-            }
-        }
-
-        // 步骤 2: 检查 Accessibility 权限
-        guard AXIsProcessTrusted() else {
-            return JSONRPC.error(id: id, code: BridgeError.permissionMissing.code, message: "Accessibility permission required")
-        }
-
-        // 步骤 3: 消费 token（仅在权限通过后）
-        if let token = confirm["token"] as? String {
-            guard server.consumeToken(token: token) else {
-                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Failed to consume token")
-            }
-        }
-
-        // 解析 meta
-        guard let meta = params["meta"] as? [String: Any] else {
-            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing meta")
-        }
-
-        guard let workspacePath = meta["workspacePath"] as? String else {
-            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing workspacePath")
-        }
-
-        // 解析 target
-        guard let target = params["target"] as? [String: Any] else {
-            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing target")
-        }
-
-        // 获取目标元素（优先 elementRef，fallback 到 selector）
-        var targetElement: AXUIElement?
-        var targetDescription = ""
-
-        if let elementRef = target["elementRef"] as? [String: Any] {
-            // TODO T8.1: 实现通过 elementId 查找元素的逻辑
-            // P0 先返回错误，提示使用 selector
-            return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: "elementRef lookup not implemented, use selector instead")
-        } else if let selector = target["selector"] as? [String: Any] {
-            // 使用 selector 查找元素（复用 find 逻辑）
-            guard let found = findElementBySelector(selector, limit: 1) else {
-                return JSONRPC.error(id: id, code: BridgeError.elementNotFound.code, message: "Element not found by selector")
-            }
-            targetElement = found.element
-            targetDescription = found.description
-        } else {
-            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "target must contain elementRef or selector")
-        }
-
-        guard let element = targetElement else {
-            return JSONRPC.error(id: id, code: BridgeError.elementNotFound.code, message: "Failed to resolve target element")
-        }
-
-        // 检查是否被中止
-        if server.isRequestAborted(id) {
-            return JSONRPC.error(id: id, code: BridgeError.aborted.code, message: "Request was aborted")
-        }
-
-        // 执行 AXPress 动作
-        let result = AXUIElementPerformAction(element, kAXPressAction as CFString)
-
-        if result != .success {
-            let errorMessage = "AXPress failed: \(result.rawValue)"
-            return JSONRPC.error(id: id, code: BridgeError.internalError.code, message: errorMessage)
-        }
-
-        // 创建证据目录（可选，P0 最小化）
-        let executionId = UUID().uuidString
-        let evidenceDir = "\(workspacePath)/artifacts/desktop/\(Date().yyyyMMdd)/\(executionId)"
-        try? FileManager.default.createDirectory(atPath: evidenceDir, withIntermediateDirectories: true)
-
-        let responseData: [String: Any] = [
-            "executionId": executionId,
-            "clicked": true,
-            "target": targetDescription,
-            "evidence": [
-                "dir": evidenceDir
-            ]
-        ]
-
-        return JSONRPC.success(id: id, result: responseData)
-    }
-
-    /// desktop.typeText: 输入文本（T8.2）
-    private func handleTypeText(id: String, params: [String: Any], peer: PeerIdentity) -> String {
-        // T8.6: confirm gate 验证（token 优先，phrase 回退）
-        guard let confirm = params["confirm"] as? [String: Any] else {
-            return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Missing confirm object")
-        }
-
-        // 步骤 1: 验证 token（不消费）
-        if let token = confirm["token"] as? String {
-            let validationResult = server.validateToken(
-                token: token,
-                method: "desktop.typeText",
-                params: params,
-                peer: peer
-            )
-            switch validationResult {
-            case .success:
-                break  // token 有效，继续检查权限
-            case .invalid:
-                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Invalid token")
-            case .used:
-                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Token already used")
-            case .expired:
-                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Token expired")
-            case .mismatch:
-                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Token scope mismatch")
-            }
-        } else if let phrase = confirm["phrase"] as? String {
-            // 回退到 phrase 验证（兼容 T8）
-            guard phrase == "CONFIRM" || phrase.hasPrefix("CONFIRM:") else {
-                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "confirm.phrase must be 'CONFIRM' or 'CONFIRM:<requestId>'")
-            }
-        } else {
-            return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "confirm.token or confirm.phrase required")
-        }
-
-        // 步骤 2: 检查 Accessibility 权限
-        guard AXIsProcessTrusted() else {
-            return JSONRPC.error(id: id, code: BridgeError.permissionMissing.code, message: "Accessibility permission required")
-        }
-
-        // 步骤 3: 消费 token（仅在权限通过后）
-        if let token = confirm["token"] as? String {
-            guard server.consumeToken(token: token) else {
-                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Failed to consume token")
-            }
-        }
-
-        // 解析 meta
-        guard let meta = params["meta"] as? [String: Any] else {
-            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing meta")
-        }
-
-        guard let workspacePath = meta["workspacePath"] as? String else {
-            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing workspacePath")
-        }
-
-        // 解析 text
-        guard let text = params["text"] as? String else {
-            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing text")
-        }
-
-        // 解析 target（可选）
-        var targetElement: AXUIElement? = nil
-        if let target = params["target"] as? [String: Any] {
-            if let selector = target["selector"] as? [String: Any] {
-                if let found = findElementBySelector(selector, limit: 1) {
-                    targetElement = found.element
-                    // 尝试聚焦
-                    if let element = targetElement {
-                        _ = AXUIElementSetAttributeValue(element, kAXFocusedAttribute as CFString, kCFBooleanTrue)
-                    }
-                }
-            }
-        }
-
-        // P0 稳定方案：剪贴板粘贴
-        // 1. 写入剪贴板
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
-
-        // 2. 调用 hotkey cmd+v
-        sendHotkey(keys: ["cmd", "v"])
-
-        // 创建证据目录
-        let executionId = UUID().uuidString
-        let evidenceDir = "\(workspacePath)/artifacts/desktop/\(Date().yyyyMMdd)/\(executionId)"
-        try? FileManager.default.createDirectory(atPath: evidenceDir, withIntermediateDirectories: true)
-
-        let responseData: [String: Any] = [
-            "executionId": executionId,
-            "typed": true,
-            "textLength": text.count,
-            "method": "clipboard+paste",
-            "evidence": [
-                "dir": evidenceDir
-            ]
-        ]
-
-        return JSONRPC.success(id: id, result: responseData)
-    }
-
-    /// desktop.hotkey: 发送快捷键（T8.2）
-    private func handleHotkey(id: String, params: [String: Any], peer: PeerIdentity) -> String {
-        // T8.6: confirm gate 验证（token 优先，phrase 回退）
-        guard let confirm = params["confirm"] as? [String: Any] else {
-            return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Missing confirm object")
-        }
-
-        // 步骤 1: 验证 token（不消费）
-        if let token = confirm["token"] as? String {
-            let validationResult = server.validateToken(
-                token: token,
-                method: "desktop.hotkey",
-                params: params,
-                peer: peer
-            )
-            switch validationResult {
-            case .success:
-                break  // token 有效，继续检查权限
-            case .invalid:
-                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Invalid token")
-            case .used:
-                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Token already used")
-            case .expired:
-                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Token expired")
-            case .mismatch:
-                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Token scope mismatch")
-            }
-        } else if let phrase = confirm["phrase"] as? String {
-            // 回退到 phrase 验证（兼容 T8）
-            guard phrase == "CONFIRM" || phrase.hasPrefix("CONFIRM:") else {
-                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "confirm.phrase must be 'CONFIRM' or 'CONFIRM:<requestId>'")
-            }
-        } else {
-            return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "confirm.token or confirm.phrase required")
-        }
-
-        // 步骤 2: 检查 Accessibility 权限
-        guard AXIsProcessTrusted() else {
-            return JSONRPC.error(id: id, code: BridgeError.permissionMissing.code, message: "Accessibility permission required")
-        }
-
-        // 步骤 3: 消费 token（仅在权限通过后）
-        if let token = confirm["token"] as? String {
-            guard server.consumeToken(token: token) else {
-                return JSONRPC.error(id: id, code: BridgeError.confirmRequired.code, message: "Failed to consume token")
-            }
-        }
-
-        // 解析 meta
-        guard let meta = params["meta"] as? [String: Any] else {
-            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing meta")
-        }
-
-        guard let workspacePath = meta["workspacePath"] as? String else {
-            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing workspacePath")
-        }
-
-        // 解析 keys
-        guard let keys = params["keys"] as? [String] else {
-            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing keys")
-        }
-
-        // 发送快捷键
-        sendHotkey(keys: keys)
-
-        // 创建证据目录
-        let executionId = UUID().uuidString
-        let evidenceDir = "\(workspacePath)/artifacts/desktop/\(Date().yyyyMMdd)/\(executionId)"
-        try? FileManager.default.createDirectory(atPath: evidenceDir, withIntermediateDirectories: true)
-
-        let responseData: [String: Any] = [
-            "executionId": executionId,
-            "sent": true,
-            "keys": keys,
-            "evidence": [
-                "dir": evidenceDir
-            ]
-        ]
-
-        return JSONRPC.success(id: id, result: responseData)
-    }
-
-    /// desktop.waitUntil: 等待 UI 条件成立（T8.3）
-    private func handleWaitUntil(id: String, params: [String: Any]) -> String {
-        // 解析 meta
-        guard let meta = params["meta"] as? [String: Any] else {
-            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing meta")
-        }
-
-        guard let workspacePath = meta["workspacePath"] as? String else {
-            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing workspacePath")
-        }
-
-        // 解析 condition（T8 P0: 只支持 selectorExists）
-        guard let condition = params["condition"] as? [String: Any],
-              let selector = condition["selectorExists"] as? [String: Any] else {
-            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing condition.selectorExists")
-        }
-
-        // 解析 timeout 和 pollInterval
-        let timeoutMs = params["timeoutMs"] as? Int ?? 15000
-        let pollIntervalMs = params["pollMs"] as? Int ?? 500
-
-        let startTime = Date()
-        let deadline = startTime.addingTimeInterval(Double(timeoutMs) / 1000.0)
-
-        // 轮询查找元素
-        var matchedCount = 0
-        var lastError: String? = nil
-
-        while Date() < deadline {
-            // 检查是否被中止
-            if server.isRequestAborted(id) {
-                return JSONRPC.error(id: id, code: BridgeError.aborted.code, message: "Request was aborted")
-            }
-
-            // 尝试查找元素
-            if let found = findElementBySelector(selector, limit: 1) {
-                let elapsedMs = Int(Date().timeIntervalSince(startTime) * 1000)
-
-                // 创建证据目录
-                let executionId = UUID().uuidString
-                let evidenceDir = "\(workspacePath)/artifacts/desktop/\(Date().yyyyMMdd)/\(executionId)"
-                try? FileManager.default.createDirectory(atPath: evidenceDir, withIntermediateDirectories: true)
-
-                let responseData: [String: Any] = [
-                    "executionId": executionId,
-                    "satisfied": true,
-                    "matched": 1,
-                    "elapsedMs": elapsedMs,
-                    "evidence": [
-                        "dir": evidenceDir
-                    ]
-                ]
-
-                return JSONRPC.success(id: id, result: responseData)
-            }
-
-            // 等待下次轮询
-            Thread.sleep(forTimeInterval: Double(pollIntervalMs) / 1000.0)
-        }
-
-        // 超时
-        let elapsedMs = Int(Date().timeIntervalSince(startTime) * 1000)
-        return JSONRPC.error(id: id, code: BridgeError.timeout.code, message: "Timeout after \(elapsedMs)ms")
-    }
-
-    /// desktop.abort: 中止指定请求（T8.3）
-    private func handleAbort(id: String, params: [String: Any]) -> String {
-        // 解析 targetRequestId
-        guard let targetRequestId = params["targetRequestId"] as? String else {
-            return JSONRPC.error(id: id, code: BridgeError.invalidRequest.code, message: "Missing targetRequestId")
-        }
-
-        // 标记请求为已中止
-        let wasAborted = server.abortRequest(targetRequestId)
-
-        let responseData: [String: Any] = [
-            "aborted": true,
-            "targetRequestId": targetRequestId,
-            "wasPresent": wasAborted
-        ]
-
-        return JSONRPC.success(id: id, result: responseData)
-    }
-
-    // MARK: - T8.2 辅助函数
-
-    /// 通过 selector 查找元素（返回第一个匹配）
-    private func findElementBySelector(_ selector: [String: Any], limit: Int) -> (element: AXUIElement, description: String)? {
-        // 检查 Accessibility 权限
-        guard AXIsProcessTrusted() else { return nil }
-
-        // 获取 frontmost root
-        var rootElement: AXUIElement?
-        if #available(macOS 14.0, *) {
-            if let app = NSWorkspace.shared.frontmostApplication {
-                rootElement = AXUIElementCreateApplication(app.processIdentifier)
-            }
-        }
-        if rootElement == nil {
-            rootElement = AXUIElementCreateSystemWide()
-        }
-
-        guard let root = rootElement else { return nil }
-
-        // 解析 selector
-        let byRole = selector["byRole"] as? String
-        let titleContains = selector["titleContains"] as? String
-        let valueContains = selector["valueContains"] as? String
-
-        // 遍历查找
-        var found: (element: AXUIElement, description: String)? = nil
-
-        func traverse(_ element: AXUIElement, depth: Int) {
-            guard found == nil, depth < 20 else { return }
-
-            let role = copyAXValue(element, attribute: kAXRoleAttribute) as? String
-            let title = copyAXValue(element, attribute: kAXTitleAttribute) as? String
-            let value = copyAXValue(element, attribute: kAXValueAttribute)
-
-            // 应用 selector 过滤
-            var matches = true
-            if let byRole = byRole, role != byRole { matches = false }
-            if let titleContains = titleContains {
-                if let t = title, !t.contains(titleContains) { matches = false }
-                else if title == nil { matches = false }
-            }
-            if let valueContains = valueContains {
-                if let v = value as? String, !v.contains(valueContains) { matches = false }
-                else if !(value is String) { matches = false }
-            }
-
-            if matches {
-                var desc = role ?? "Unknown"
-                if let t = title { desc += "('\(t)')" }
-                found = (element, desc)
-                return
-            }
-
-            // 递归子元素
-            if let children = copyAXValue(element, attribute: kAXChildrenAttribute) as? [AXUIElement] {
-                for child in children {
-                    traverse(child, depth: depth + 1)
-                    if found != nil { break }
-                }
-            }
-        }
-
-        traverse(root, depth: 0)
-        return found
-    }
-
-    /// 发送快捷键组合
-    private func sendHotkey(keys: [String]) {
-        // CGEventKeyCode 映射
-        let keyMap: [String: CGKeyCode] = [
-            "cmd": 0x37,      // kVK_Command
-            "v": 0x09,        // kVK_ANSI_V
-            "enter": 0x24,    // kVK_Return
-            "c": 0x08,        // kVK_ANSI_C
-            "a": 0x00,        // kVK_ANSI_A
-            "x": 0x07,        // kVK_ANSI_X
-            "z": 0x06,        // kVK_ANSI_Z
-            "shift": 0x38,    // kVK_Shift
-            "option": 0x3A,   // kVK_Option
-            "control": 0x3B   // kVK_Control
-        ]
-
-        // 分离修饰键和普通键
-        var modifiers: [CGKeyCode] = []
-        var normalKey: CGKeyCode? = nil
-
-        for key in keys {
-            if let code = keyMap[key.lowercased()] {
-                if ["cmd", "shift", "option", "control"].contains(key.lowercased()) {
-                    modifiers.append(code)
-                } else {
-                    normalKey = code
-                }
-            }
-        }
-
-        guard let key = normalKey else {
-            logger.error("No valid key found in: \(keys)")
-            return
-        }
-
-        // 创建事件源
-        guard let source = CGEventSource(stateID: .combinedSessionState) else {
-            logger.error("Failed to create event source")
-            return
-        }
-
-        // 按下修饰键
-        for modifier in modifiers {
-            let eventDown = CGEvent(keyboardEventSource: source, virtualKey: modifier, keyDown: true)
-            eventDown?.flags = .maskCommand
-            eventDown?.post(tap: .cghidEventTap)
-        }
-
-        // 按下/释放普通键
-        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: true)
-        keyDown?.flags = .maskCommand
-        keyDown?.post(tap: .cghidEventTap)
-
-        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: key, keyDown: false)
-        keyUp?.flags = .maskCommand
-        keyUp?.post(tap: .cghidEventTap)
-
-        // 释放修饰键
-        for modifier in modifiers.reversed() {
-            let eventUp = CGEvent(keyboardEventSource: source, virtualKey: modifier, keyDown: false)
-            eventUp?.flags = .maskCommand
-            eventUp?.post(tap: .cghidEventTap)
-        }
-    }
-
-    // MARK: - T7.0 辅助函数
-
-    /// 截取屏幕截图（T7.0）
-    private func captureScreenshot(to evidenceDir: String) -> Bool {
-        // 检查 Screen Recording 权限
-        guard CGPreflightScreenCaptureAccess() else {
-            logger.log("Screen Recording permission denied")
-            return false
-        }
-
-        // 获取主显示器 ID
-        let displayId = CGMainDisplayID()
-
-        // 截取屏幕图像
-        guard let image = CGDisplayCreateImage(displayId) else {
-            logger.log("Failed to capture display image")
-            return false
-        }
-
-        // 转换为 NSImage
-        let nsImage = NSImage(cgImage: image, size: NSZeroSize)
-
-        // 转换为 PNG Data
-        guard let tiffData = nsImage.tiffRepresentation,
-              let bitmap = NSBitmapImageRep(data: tiffData),
-              let pngData = bitmap.representation(using: .png, properties: [:]) else {
-            logger.log("Failed to convert screenshot to PNG")
-            return false
-        }
-
-        let screenshotPath = "\(evidenceDir)/observe.png"
-        do {
-            try pngData.write(to: URL(fileURLWithPath: screenshotPath))
-            logger.log("Screenshot saved to: \(screenshotPath)")
-            return true
-        } catch {
-            logger.error("Failed to save screenshot: \(error)")
-            return false
-        }
-    }
-
-    /// 序列化 AX 树为 JSON（T7.1：有界遍历）
-    private func serializeAXTree(to evidenceDir: String) -> [String: Any]? {
-        // 检查 Accessibility 权限
-        guard AXIsProcessTrusted() else {
-            logger.log("Accessibility permission denied")
-            return nil
-        }
-
-        // T7.A4: 获取前台应用作为根元素（替代 systemWide）
-        var frontmostApp: [String: Any]?
-        var rootElement: AXUIElement?
-
-        // 方法 1: 通过 NSWorkspace 获取前台应用
-        if #available(macOS 14.0, *) {
-            let workspace = NSWorkspace.shared
-            if let app = workspace.frontmostApplication {
-                frontmostApp = [
-                    "bundleId": app.bundleIdentifier ?? "",
-                    "pid": app.processIdentifier
-                ]
-                logger.log("Frontmost app: \(app.bundleIdentifier ?? "unknown") (pid: \(app.processIdentifier))")
-
-                // 创建应用级 AX 元素
-                let appElement = AXUIElementCreateApplication(app.processIdentifier)
-                rootElement = appElement
-            }
-        }
-
-        // 兜底：如果无法获取前台应用，使用 systemWide
-        if rootElement == nil {
-            logger.log("Failed to get frontmost app, falling back to systemWide")
-            rootElement = AXUIElementCreateSystemWide()
-        }
-
-        guard let unwrappedRootElement = rootElement else {
-            logger.error("Failed to create root element")
-            return nil
-        }
-
-        // T7.1: 遍历边界配置（统一限制参数）
-        let maxDepth = 50
-        let maxNodes = 5000
-        let childLimit = 50
-        let wallClockTimeoutMs = 10000
-
-        let startTime = Date()
-        let deadline = startTime.addingTimeInterval(Double(wallClockTimeoutMs) / 1000.0)
-
-        // 遍历状态
-        var traversal = AXTraversal(
-            nodesVisited: 0,
-            maxDepth: 0,
-            truncated: false,
-            startTime: startTime,
-            timeoutMs: wallClockTimeoutMs,
-            maxNodes: maxNodes
-        )
-
-        // 确定根节点角色
-        let rootRole = (frontmostApp != nil) ? "Application" : "System"
-
-        // 序列化 AX 树（有界遍历）
-        let tree = serializeAXElement(
-            unwrappedRootElement,
-            role: rootRole,
-            depth: 0,
-            maxDepth: maxDepth,
-            maxNodes: maxNodes,
-            childLimit: childLimit,
-            deadline: deadline,
-            traversal: &traversal
-        )
-
-        // 计算遍历元数据
-        let endTime = Date()
-        let elapsedMs = Int(endTime.timeIntervalSince(startTime) * 1000)
-
-        var result: [String: Any] = [:]
-
-        if let treeData = tree {
-            result["tree"] = treeData
-        }
-
-        // 添加前台应用信息
-        if let frontmost = frontmostApp {
-            result["frontmost"] = frontmost
-        }
-
-        // T7.1: 写入 traversal 元数据（统一限制参数）
-        result["traversal"] = [
-            "nodesVisited": traversal.nodesVisited,
-            "depth": traversal.maxDepth,
-            "elapsedMs": elapsedMs,
-            "truncated": traversal.truncated,
-            "limits": [
-                "maxDepth": maxDepth,
-                "maxNodes": maxNodes,
-                "childLimit": childLimit,
-                "timeoutMs": wallClockTimeoutMs
-            ]
-        ]
-
-        // T7.0: 写入 ax.json 到证据目录
-        let axPath = "\(evidenceDir)/ax.json"
-        do {
-            let jsonData = try JSONSerialization.data(withJSONObject: result, options: .prettyPrinted)
-            try jsonData.write(to: URL(fileURLWithPath: axPath))
-            logger.log("AX tree written to: \(axPath)")
-        } catch {
-            logger.error("Failed to write ax.json: \(error)")
-            return nil
-        }
-
-        return result
-    }
 }
 
 // MARK: - T7.1 AX 遍历状态
