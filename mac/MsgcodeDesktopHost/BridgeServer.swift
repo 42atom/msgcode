@@ -985,7 +985,7 @@ class BridgeServer: NSObject, NSXPCListenerDelegate {
         // 获取 AX 树（如果有权限）
         var axPath: String? = nil
         if accessibility {
-            if let axTree = buildAXTree(evidenceDir: evidenceDir) {
+            if buildAXTree(evidenceDir: evidenceDir) != nil {
                 axPath = "ax.json"
             }
         }
@@ -1019,7 +1019,7 @@ class BridgeServer: NSObject, NSXPCListenerDelegate {
             result["permissionsMissing"] = permissionsMissing
         }
 
-        if let sp = screenshotPath {
+        if screenshotPath != nil {
             result["evidence"] = [
                 "dir": evidenceDir,
                 "screenshotPath": "screenshot.png",
@@ -1082,20 +1082,11 @@ class BridgeServer: NSObject, NSXPCListenerDelegate {
         // 获取系统级 AX 元素
         let systemWideElement = AXUIElementCreateSystemWide()
 
-        // 尝试获取前台应用
-        var frontmostApp: [String: Any]? = nil
-        if let frontmostAppProcess = NSWorkspace.shared.frontmostApplication {
-            frontmostApp = [
-                "bundleId": frontmostAppProcess.bundleIdentifier ?? "",
-                "pid": frontmostAppProcess.processIdentifier
-            ]
-        }
-
         // 获取根元素（前台应用或系统级）
         var unwrappedRootElement = systemWideElement
         if let frontmost = NSWorkspace.shared.frontmostApplication {
             let frontmostElement = AXUIElementCreateApplication(frontmost.processIdentifier)
-            if let role = copyAXValue(frontmostElement, attribute: kAXRoleAttribute) as? String {
+            if copyAXValue(frontmostElement, attribute: kAXRoleAttribute) != nil {
                 unwrappedRootElement = frontmostElement
             }
         }
@@ -1817,7 +1808,7 @@ class BridgeServer: NSObject, NSXPCListenerDelegate {
         var rootElement = systemWideElement
         if let frontmost = NSWorkspace.shared.frontmostApplication {
             let frontmostElement = AXUIElementCreateApplication(frontmost.processIdentifier)
-            if let role = copyAXValue(frontmostElement, attribute: kAXRoleAttribute) as? String {
+            if copyAXValue(frontmostElement, attribute: kAXRoleAttribute) != nil {
                 rootElement = frontmostElement
             }
         }
@@ -1993,7 +1984,6 @@ class BridgeServer: NSObject, NSXPCListenerDelegate {
 
         // 使用前台应用作为根元素，回退到系统级
         let unwrappedRootElement = frontmostAppElement ?? systemWideElement
-        let rootRole = (frontmostApp != nil) ? "Application" : "System"
 
         // 序列化 AX 树（简化版，深度限制 20，节点限制 1000）
         let maxDepth = 20
