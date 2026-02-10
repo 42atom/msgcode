@@ -4,6 +4,44 @@
 
 ---
 
+## Desktop Quickstart（3 步）
+
+> msgcode v2.2 支持 Desktop Bridge，实现 Mac 本地 UI 自动化（截图/AX树/点击/输入/快捷键）。
+
+### 步骤 1: 启动 Desktop Host
+
+```bash
+# 打开 MsgcodeDesktopHost.app（首次需授予权限）
+open mac/MsgcodeDesktopHost/MsgcodeDesktopHost.app
+
+# 或通过 Menubar 验证：点击 "Doctor" 查看权限状态
+```
+
+### 步骤 2: 检查权限
+
+系统设置 → 隐私与安全性 → 辅助功能 ✓
+系统设置 → 隐私与安全性 → 屏幕录制 ✓
+
+### 步骤 3: 发起请求
+
+```bash
+# 健康检查
+npx tsx src/cli.ts /desktop health
+
+# 截图 + AX 树（落盘到 workspace/artifacts/desktop/）
+npx tsx src/cli.ts /desktop observe
+
+# 查找 UI 元素
+npx tsx src/cli.ts /desktop find --byRole AXButton --titleContains "Send"
+
+# 点击元素（需 confirm）
+npx tsx src/cli.ts /desktop click --selector '{"byRole": "AXButton"}' --phrase "CONFIRM"
+```
+
+**完整文档**: [docs/desktop/](./docs/desktop/)
+
+---
+
 ## 简介
 
 msgcode 是一个基于 iMessage 的本地 AI Bot 系统，通过群组路由实现多个 Bot/Agent 会话。无需云服务器，简化运维。
@@ -13,6 +51,7 @@ msgcode 是一个基于 iMessage 的本地 AI Bot 系统，通过群组路由实
 - **iMessage 集成**: 基于 `imsg rpc`（无 SDK / 无 AppleScript）
 - **群组路由**: 不同群组 → 对应工作区
 - **双向通信**: iMessage → tmux → Claude/LM Studio → iMessage
+- **JSONL 读取**: claude 和 claude-code 优先 JSONL 日志读取（pane 为 fallback），确保响应完整准确
 - **安全机制**: 白名单验证 + owner 收口
 
 ---
@@ -96,6 +135,8 @@ msgcode start debug
 5. 检查 Terminal/IDE 是否有 "完全磁盘访问权限"
 6. 检查 `IMSG_PATH` 是否正确
 
+**JSONL 读取规则**：claude 和 claude-code 优先从 JSONL 日志读取（`~/.claude/projects/**/*.jsonl`），确保响应完整准确。如果 JSONL 文件不存在或读取失败，自动 fallback 到 tmux pane 读屏。
+
 ### 消息发送者身份不对？
 
 多设备 iCloud 同步可能导致身份冲突。建议：
@@ -110,8 +151,9 @@ msgcode start debug
 ### 需要更多诊断？
 
 - `/info` 查看处理状态
-- `/model` 切换执行臂（lmstudio/codex/claude-code）
+- `/model` 切换执行臂（支持 lmstudio、codex、claude-code）
 - `/policy` 切换策略模式（本地/外网）
+- `/loglevel <level>` 调整日志级别（如 debug/info/warn/error）
 
 ---
 
@@ -139,7 +181,7 @@ msgcode v2.2 引入了 Tool Bus 统一工具执行闸门，提供结构化日志
 3. 生效配置：重新加载配置
 4. 灰度后：全量回归测试
 
-详细说明见 [AIDOCS 规划文档](./AIDOCS/msgcode-2.2/README.md)。
+详细说明以仓库内文档为准（开源导出默认不包含 `AIDOCS/`）。
 
 ---
 
@@ -184,27 +226,25 @@ msgcode v2.2+ 支持 MLX LM Server 作为独立的 provider，专门用于 GLM4.
 
 ## 文档索引
 
+### Desktop Bridge
+
 | 文档 | 说明 |
 |------|------|
-| [v2.2 规划](./AIDOCS/msgcode-2.2/README.md) | 2.2 总路线图、Slash Commands、Persona/Schedules |
-| [路线图](./AIDOCS/msgcode-2.2/roadmap_v2.2.md) | 里程碑/验收/风险 |
-| [编排层规划](./AIDOCS/msgcode-2.2/orchestration_plan_v2.2.md) | Persona/Skills/Schedules 编排层 |
-| [控制车道规范](./AIDOCS/msgcode-2.2/control_lane_spec_v2.2.md) | 只读命令快车道（/status /where /help /loglevel 秒回） |
-| [会话注册规范](./AIDOCS/msgcode-2.2/session_registry_spec_v2.2.md) | tmux 会话元数据落盘（重启不丢 /status 口径） |
-| [Desktop Bridge](./AIDOCS/msgcode-2.2/desktop_bridge_contract_v2.2.md) | Desktop Host/Bridge 的 JSON-RPC 契约 |
-| [MLX Lab](./scripts/mlx-lab/README.md) | MLX LM Server 实验脚本与冒烟测试 |
-[GLM4.7FLASH工具规划参数参考](https://unsloth.ai/docs/basics/tool-calling-
-    guide-for-local-llms))
-[本地运行](https://unsloth.ai/docs/models/glm-4.7-flash)
----
+| [完整文档](./docs/desktop/) | Desktop 能力总入口 |
+| [API 契约](./docs/desktop/contract.md) | JSON-RPC 2.0 契约（**API 真相源**） |
+| [Recipes](./recipes/desktop/) | 自动化流程示例 |
+| [Security](./SECURITY.md) | 安全模型与威胁假设 |
+| [Releasing](./RELEASING.md) | 开源发布与快速验收 |
 
-## 依赖
+### 内部规划（不随开源导出）
+
+仓库内存在 `AIDOCS/`（内部规划、验收记录、过程资产），默认不随开源导出/打包。
+
+### 依赖
 
 - `imsg`: iMessage RPC（建议源码构建并固定版本）
 - `tmux`: 终端多路复用器
 - `claude`: Claude Code CLI 工具
-
----
 
 ## 维护声明
 
@@ -222,4 +262,4 @@ MIT
 
 ---
 
-*更新: 2026-02-06*
+*更新: 2026-02-10*
