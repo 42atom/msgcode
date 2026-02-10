@@ -1,0 +1,12 @@
+# Open-source export: exclude internal planning + local runtime state
+# Usage: git archive --format=tar HEAD | gzip > msgcode-src.tgz
+
+AIDOCS/ export-ignore
+artifacts/ export-ignore
+.msgcode/ export-ignore
+.agent/ export-ignore
+
+# Desktop build products (should also be ignored by .gitignore)
+mac/**/.build/ export-ignore
+mac/**/*.app export-ignore
+

@@ -1,0 +1,82 @@
+{
+  "id": "finder_search_v0",
+  "name": "Finder Search Demo",
+  "description": "在 Finder 中搜索文件并打开（演示 recipe 流程）",
+  "version": "0.1.0",
+  "author": "msgcode",
+  "steps": [
+    {
+      "op": "desktop.observe",
+      "params": {
+        "options": {
+          "includeScreenshot": true,
+          "includeAxTree": false
+        }
+      }
+    },
+    {
+      "op": "desktop.find",
+      "params": {
+        "selector": {
+          "byRole": "AXTextField",
+          "titleContains": "Search"
+        },
+        "limit": 1
+      }
+    },
+    {
+      "op": "desktop.confirm.issue",
+      "params": {
+        "intent": {
+          "method": "desktop.typeText",
+          "params": {
+            "target": {
+              "elementRef": {
+                "elementId": "$lastFind",
+                "fingerprint": "$lastFingerprint"
+              }
+            },
+            "text": "*.txt"
+          }
+        },
+        "ttlMs": 60000
+      }
+    },
+    {
+      "op": "desktop.typeText",
+      "params": {
+        "target": {
+          "selector": {
+            "byRole": "AXTextField",
+            "titleContains": "Search"
+          }
+        },
+        "text": "*.txt",
+        "confirm": {
+          "tokenRef": "$lastToken"
+        }
+      }
+    },
+    {
+      "op": "desktop.hotkey",
+      "params": {
+        "keys": ["enter"],
+        "confirm": {
+          "tokenRef": "$lastToken"
+        }
+      }
+    },
+    {
+      "op": "desktop.waitUntil",
+      "params": {
+        "condition": {
+          "selectorExists": {
+            "byRole": "AXTable",
+            "titleContains": "Search"
+          }
+        },
+        "timeoutMs": 10000
+      }
+    }
+  ]
+}

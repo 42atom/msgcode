@@ -1,0 +1,101 @@
+{
+  "id": "terminal_echo_v0",
+  "name": "Terminal Echo Demo",
+  "description": "在 Terminal 中输入文本并回车（演示完整 recipe 流程，含 token 确认机制）",
+  "version": "0.2.0",
+  "author": "msgcode",
+  "prerequisites": [
+    "Terminal.app 已启动并置为前台",
+    "Terminal 输入区已聚焦",
+    "已授予辅助功能和屏幕录制权限"
+  ],
+  "steps": [
+    {
+      "op": "desktop.find",
+      "params": {
+        "selector": {
+          "byRole": "AXTextArea"
+        },
+        "limit": 10
+      },
+      "description": "诊断步骤：查找当前可用的 AXTextArea 元素"
+    },
+    {
+      "op": "desktop.observe",
+      "params": {
+        "options": {
+          "includeScreenshot": true,
+          "includeAxTree": false
+        }
+      }
+    },
+    {
+      "op": "desktop.confirm.issue",
+      "params": {
+        "intent": {
+          "method": "desktop.typeText",
+          "params": {
+            "target": {
+              "selector": {
+                "byRole": "AXTextArea"
+              }
+            },
+            "text": "echo T11_OK"
+          }
+        },
+        "ttlMs": 60000
+      }
+    },
+    {
+      "op": "desktop.typeText",
+      "params": {
+        "target": {
+          "selector": {
+            "byRole": "AXTextArea"
+          }
+        },
+        "text": "echo T11_OK",
+        "confirm": {
+          "tokenRef": "$lastToken"
+        }
+      }
+    },
+    {
+      "op": "desktop.confirm.issue",
+      "params": {
+        "intent": {
+          "method": "desktop.hotkey",
+          "params": {
+            "keys": [
+              "enter"
+            ]
+          }
+        },
+        "ttlMs": 60000
+      }
+    },
+    {
+      "op": "desktop.hotkey",
+      "params": {
+        "keys": [
+          "enter"
+        ],
+        "confirm": {
+          "tokenRef": "$lastToken"
+        }
+      }
+    },
+    {
+      "op": "desktop.waitUntil",
+      "params": {
+        "condition": {
+          "selectorExists": {
+            "byRole": "AXTextArea",
+            "valueContains": "echo T11_OK"
+          }
+        },
+        "timeoutMs": 5000
+      }
+    }
+  ]
+}
