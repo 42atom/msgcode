@@ -8,11 +8,21 @@ import { TmuxSession, type RunnerType, type RunnerTypeOld } from "./session.js";
 import { SessionStatus } from "./session.js";
 import { CodexOutputReader } from "../output/codex-reader.js";
 import { CodexParser } from "../output/codex-parser.js";
+import { OutputReader } from "../output/reader.js";
+import { AssistantParser } from "../output/parser.js";
 import { logger } from "../logger/index.js";
 import { sendAttachmentsToSession } from "./sender.js";
 import { withRemoteHintIfNeeded } from "./remote_hint.js";
 import type { Attachment } from "../imsg/types.js";
 import { setTimeout as sleep } from "node:timers/promises";
+import { promises as fs } from "node:fs";
+
+// ============================================
+// 读取模式（三态）
+// ============================================
+
+// 读取模式：codex_jsonl | claude_jsonl | pane
+type ReadMode = "codex_jsonl" | "claude_jsonl" | "pane";
 
 /**
  * 轮询配置（参考 Matcode）
@@ -124,37 +134,85 @@ export async function handleTmuxSend(
     const fastInterval = options.fastInterval ?? FAST_INTERVAL;
     const slowInterval = options.slowInterval ?? SLOW_INTERVAL;
 
-    // T2/T3: 根据执行臂选择不同的读取器和解析器
-    // isCoderCLI: 仅 codex 使用 JSONL 输出（~/.codex/sessions/**/rollout-*.jsonl）
-    // claude-code 默认从 tmux pane 读取（避免把它误判为 codex JSONL，导致“永远无回复”）
-    const isCoderCLI = runnerOld === "codex";
+    // P0: 三态读取模式（codex_jsonl | claude_jsonl | pane）
+    // - codex: 使用 codex_jsonl（现有逻辑）
+    // - claude-code: 优先 claude_jsonl，fallback 到 pane
+    // - claude: 使用 pane（legacy）
     const signal = options.signal;
+    let readMode: ReadMode = "pane";
+    let coderReader: CodexOutputReader | null = null;
+    let claudeReader: OutputReader | null = null;
+    let coderJsonlPath: string | null = null;
+    let claudeJsonlPath: string | null = null;
+    // P0 Batch-1: 存储 JSONL 选路信息
+    let claudeJsonlSelectionInfo: import("../output/reader.js").ReadResult["selectionInfo"] | null = null;
+    // P0 Batch-3: 追踪 stop_hook_summary 状态（用于早退判断）
+    let seenStopHookSummary = false;
 
-    // 1. 创建独立 reader 实例（并发安全：每个请求有独立状态）
-    const coderReader = isCoderCLI ? new CodexOutputReader() : null;
+    if (runnerOld === "codex") {
+        // codex_jsonl: Codex CLI JSONL 读取
+        readMode = "codex_jsonl";
+        coderReader = new CodexOutputReader();
+        if (!options.projectDir) {
+            return { success: false, error: "缺少工作区路径（projectDir），无法定位 Coder CLI 会话日志。请先 /bind 绑定工作区。" };
+        }
+        coderJsonlPath = await coderReader.findLatestJsonlForWorkspace(options.projectDir);
+        if (!coderJsonlPath) {
+            return { success: false, error: "未找到 Coder CLI 会话日志（~/.codex/sessions/**/rollout-*.jsonl）。请先 /start 启动会话，日志生成后再试。" };
+        }
+    } else if (runnerOld === "claude-code") {
+        // claude-code: 优先 claude_jsonl，fallback 到 pane
+        claudeReader = new OutputReader();
+        if (options.projectDir) {
+            // P0 Batch-1: 使用 readProject 获取选路信息（包含 deliverable 评分）
+            const initResult = await claudeReader.readProject(options.projectDir);
+            if (initResult.selectionInfo) {
+                claudeJsonlPath = initResult.selectionInfo.path;
+                claudeJsonlSelectionInfo = initResult.selectionInfo;
+            }
+        }
+        if (claudeJsonlPath) {
+            readMode = "claude_jsonl";
+        } else {
+            readMode = "pane";
+            logger.warn(`[Responder ${groupName}] 未找到 Claude Code JSONL，fallback 到 pane 读屏`, {
+                module: "responder",
+                groupName,
+                runnerOld,
+                readMode,
+                projectDir: options.projectDir,
+            });
+        }
+    }
+    // runnerOld === "claude" 默认 readMode = "pane"
 
-    // T3/P0: Coder CLI 必须按 workspace 定位 JSONL 文件，避免跨项目串味/泄露
-    const coderJsonlPath = isCoderCLI
-        ? (options.projectDir ? await coderReader!.findLatestJsonlForWorkspace(options.projectDir) : null)
-        : null;
-    if (isCoderCLI && !options.projectDir) {
-        return { success: false, error: "缺少工作区路径（projectDir），无法定位 Coder CLI 会话日志。请先 /bind 绑定工作区。" };
-    }
-    if (isCoderCLI && !coderJsonlPath) {
-        return { success: false, error: "未找到 Coder CLI 会话日志（~/.codex/sessions/**/rollout-*.jsonl）。请先 /start 启动会话，日志生成后再试。" };
-    }
+    logger.info(`[Responder ${groupName}] 读取模式: ${readMode}`, {
+        module: "responder",
+        groupName,
+        runnerOld,
+        readMode,
+        codexJsonlPath: coderJsonlPath ?? "(none)",
+        claudeJsonlPath: claudeJsonlPath ?? "(none)",
+    });
 
     // 2. 发送前记录当前状态
-    // - Coder CLI: 记录 JSONL offset
-    // - Claude: 记录 tmux pane baseline tail（用于后续 diff）
+    // - codex_jsonl/claude_jsonl: 记录 JSONL offset
+    // - pane: 记录 tmux pane baseline tail（用于后续 diff）
     // P0 修复：使用末尾 8KB 作为锚点，而不是完整 pane，避免滚屏导致锚点丢失
     const BASELINE_TAIL_SIZE = 8192; // 8KB
     let startOffset = 0;
     let startPaneTail = "";
-    if (isCoderCLI) {
+
+    if (readMode === "codex_jsonl") {
+        // Codex CLI: 记录 JSONL offset
         startOffset = await coderReader!.seekToEnd(coderJsonlPath!);
+    } else if (readMode === "claude_jsonl") {
+        // Claude Code: 记录 JSONL offset（发送前 seek 到 EOF）
+        const stats = await fs.stat(claudeJsonlPath!);
+        startOffset = stats.size;
+        claudeReader!.setPosition(claudeJsonlPath!, startOffset);
     } else {
-        // Claude: 记录发送前的 pane 末尾作为 baseline tail
+        // pane: 记录发送前的 pane 末尾作为 baseline tail
         const fullPane = await TmuxSession.capturePane(sessionName, 1200);
         startPaneTail = fullPane.slice(-BASELINE_TAIL_SIZE);
     }
@@ -167,14 +225,17 @@ export async function handleTmuxSend(
         module: "responder",
         groupName,
         runnerOld,
-        coderJsonlPath,
+        readMode,
+        coderJsonlPath: coderJsonlPath ?? "(none)",
+        claudeJsonlPath: claudeJsonlPath ?? "(none)",
         startOffset,
         baselineTailLen: startPaneTail.length,
         baselineTailSha,
     });
 
-    // 3. 发送附件（Coder CLI 暂不支持附件）
-    if (!isCoderCLI) {
+    // 3. 发送附件（Codex CLI 暂不支持附件）
+    // P0: claude_jsonl 也需要发送附件（虽然读取走 JSONL，但附件仍需通过 tmux 发送）
+    if (readMode !== "codex_jsonl") {
         await sendAttachmentsToSession(sessionName, options.attachments);
     }
 
@@ -187,7 +248,7 @@ export async function handleTmuxSend(
 
         // P0: Coder CLI 输入清洗 - 把 \n 折叠成空格（避免多行输入模式）
         let preparedMessage = prepareMessageForTmux(promptForEchoRemoval);
-        if (isCoderCLI) {
+        if (readMode === "codex_jsonl") {
             // Coder CLI: 折叠换行符为空格，避免进入多行输入模式
             preparedMessage = preparedMessage.replace(/\n+/g, " ").trim();
         }
@@ -222,6 +283,10 @@ export async function handleTmuxSend(
     let stableCount = 0;  // 稳定计数：连续 N 次无新内容
     const startTime = Date.now();
     let promptButNoOutputSince: number | null = null; // 防卡死：看到 prompt 但抓不到输出
+    // P0 Batch-3: 重选路相关变量
+    let hasRepath = false;  // 是否已经重选路过
+    let lastTextChangeTime = startTime;  // 上次文本变化时间
+    let lastOffset = 0;  // 上次的 offset，用于检测增量
 
     logger.debug(`[Responder ${groupName}] 开始轮询`, { module: "responder", groupName, runnerOld, timeout, pollInterval });
     let iteration = 0;
@@ -246,12 +311,13 @@ export async function handleTmuxSend(
         }
 
         // 读取新增内容
-        // - Codex: 从 JSONL 读取
-        // - Claude: 从 tmux pane 读取
+        // - codex_jsonl: 从 Codex JSONL 读取
+        // - claude_jsonl: 从 Claude Code JSONL 读取
+        // - pane: 从 tmux pane 读取
         let newText = "";
         let isComplete = false;
 
-        if (isCoderCLI) {
+        if (readMode === "codex_jsonl") {
             const result = await coderReader!.read(coderJsonlPath!);
 
             // Coder CLI JSONL 有时会在输出完成后不再追加任何事件行
@@ -280,6 +346,126 @@ export async function handleTmuxSend(
             const codexParseResult = CodexParser.parse(codexEntries);
             newText = CodexParser.toPlainText(codexParseResult);
             isComplete = codexParseResult.isComplete;
+        } else if (readMode === "claude_jsonl") {
+            const result = await claudeReader!.read(claudeJsonlPath!);
+            const currentOffset = claudeReader!.getPosition(claudeJsonlPath!);
+
+            // P0 Batch-3: 检测是否有增量
+            const hasIncrement = result.newOffset > lastOffset;
+            if (hasIncrement) {
+                lastOffset = result.newOffset;
+                lastTextChangeTime = Date.now();
+            }
+
+            // P0 Batch-0: 每轮打印观测信息（不泄露正文）
+            logger.info(`[Responder ${groupName}] JSONL 轮询`, {
+                module: "responder",
+                groupName,
+                runnerOld,
+                jsonlPath: claudeJsonlPath,
+                startOffset: currentOffset,
+                newOffset: result.newOffset,
+                entriesCount: result.entries.length,
+                bytesRead: result.bytesRead,
+                // P0 Batch-1: 选路评分信息
+                ...(claudeJsonlSelectionInfo ? {
+                    selection: {
+                        isDeliverable: claudeJsonlSelectionInfo.isDeliverable,
+                        score: claudeJsonlSelectionInfo.score,
+                        candidatesCount: claudeJsonlSelectionInfo.candidatesCount,
+                    },
+                } : {}),
+            });
+
+            // P0 Batch-3: 检查是否需要重选路（连续 30 秒无增量且当前为空）
+            const elapsedSinceChange = Date.now() - lastTextChangeTime;
+            if (!hasRepath && elapsedSinceChange > 30000 && currentText === "" && result.entries.length === 0) {
+                logger.warn(`[Responder ${groupName}] 连续 30 秒无增量且当前为空，尝试重选路`, {
+                    module: "responder",
+                    groupName,
+                    runnerOld,
+                    elapsedSinceChange,
+                });
+                const newPath = await claudeReader!.findLatestJsonl(options.projectDir);
+                if (newPath && newPath !== claudeJsonlPath) {
+                    logger.info(`[Responder ${groupName}] 重选路成功`, {
+                        module: "responder",
+                        groupName,
+                        oldPath: claudeJsonlPath,
+                        newPath,
+                    });
+                    const stats = await fs.stat(newPath);
+                    claudeReader!.setPosition(newPath, stats.size);
+                    claudeJsonlPath = newPath;
+                    lastOffset = stats.size;
+                    lastTextChangeTime = Date.now();
+                    hasRepath = true;
+                    continue;  // 重新开始轮询
+                } else {
+                    logger.warn(`[Responder ${groupName}] 重选路失败，无新文件`, {
+                        module: "responder",
+                        groupName,
+                    });
+                    hasRepath = true;  // 标记已尝试，避免重复
+                }
+            }
+
+            // Claude Code JSONL 有时会在输出完成后不再追加任何事件行
+            if (result.entries.length === 0) {
+                // P0 Batch-3: 禁止空文本 success - 只有在有文本或明确完成信号时才返回
+                if (hasResponse && currentText.length > 0) {
+                    stableCount++;
+                    if (stableCount >= STABLE_COUNT) {
+                        logger.info(`[Responder ${groupName}] 无新日志行，稳定计数达标，返回`, {
+                            module: "responder",
+                            groupName,
+                            stableCount,
+                            runnerOld,
+                            currentTextLength: currentText.length,
+                        });
+                        const cleanedText = removeUserEcho(currentText, promptForEchoRemoval);
+                        return {
+                            success: true,
+                            response: formatResponse(cleanedText),
+                        };
+                    }
+                }
+                // P0 Batch-3: 即使 currentText 为空，如果已检测到 stop_hook_summary，也返回
+                if (seenStopHookSummary && stableCount >= STABLE_COUNT) {
+                    logger.info(`[Responder ${groupName}] 检测到 stop_hook_summary，返回`, {
+                        module: "responder",
+                        groupName,
+                        runnerOld,
+                    });
+                    const cleanedText = removeUserEcho(currentText, promptForEchoRemoval);
+                    return {
+                        success: true,
+                        response: formatResponse(cleanedText),
+                    };
+                }
+                continue;
+            }
+
+            // 解析 Claude Code 输出（使用 AssistantParser）
+            const parseResult = AssistantParser.parse(result.entries);
+            newText = AssistantParser.toPlainText(parseResult);
+            isComplete = parseResult.isComplete;
+
+            // P0 Batch-3: 更新 stop_hook_summary 状态
+            if (parseResult.seenStopHookSummary) {
+                seenStopHookSummary = true;
+            }
+
+            // P0 Batch-0: 打印解析结果（不泄露正文）
+            logger.info(`[Responder ${groupName}] JSONL 解析`, {
+                module: "responder",
+                groupName,
+                runnerOld,
+                textLen: newText.length,
+                isComplete: parseResult.isComplete,
+                finishReason: parseResult.finishReason,
+                seenStopHookSummary: parseResult.seenStopHookSummary,
+            });
         } else {
             // Claude: 从 tmux pane 读取输出
             //
@@ -424,7 +610,8 @@ export async function handleTmuxSend(
         }
 
         // P0 防卡死：如果连续看到 prompt 但始终抓不到任何输出，提前退出，避免 perChatQueue 被占满
-        if (!isCoderCLI && promptButNoOutputSince !== null) {
+        // 仅对 pane 模式生效（JSONL 模式不依赖 prompt 检测）
+        if (readMode === "pane" && promptButNoOutputSince !== null) {
             const elapsed = Date.now() - promptButNoOutputSince;
             if (elapsed > 2000) {
                 logger.warn(`[Responder ${groupName}] prompt 已出现但无输出，提前退出`, {

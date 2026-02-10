@@ -906,6 +906,9 @@ export async function handleRouteCommand(
       return handleToolAllowAddCommand(options);
     case "toolAllowRemove":
       return handleToolAllowRemoveCommand(options);
+    // v2.2: T6.2 Desktop commands
+    case "desktop":
+      return handleDesktopCommand(options);
     // Phase 4B: Steer/FollowUp commands
     case "steer":
       return handleSteerCommand(options);
@@ -960,6 +963,9 @@ export function isRouteCommand(text: string): boolean {
     // v2.2: Tool Bus commands
     trimmed === "/toolstats" ||
     trimmed.startsWith("/tool ") ||
+    // v2.2: T6.2 Desktop commands
+    trimmed === "/desktop" ||
+    trimmed.startsWith("/desktop ") ||
     // Phase 4B: Steer/FollowUp commands
     trimmed.startsWith("/steer ") ||
     trimmed === "/steer" ||
@@ -1136,6 +1142,53 @@ export function parseRouteCommand(text: string): { command: string; args: string
     }
     // Invalid subcommand, default to list
     return { command: "toolAllowList", args: [] };
+  }
+
+  // v2.2: T6.2 Desktop commands + T8.4 RPC passthrough
+  if (trimmed === "/desktop") {
+    return { command: "desktop", args: ["doctor"] }; // 默认 doctor
+  }
+
+  if (trimmed.startsWith("/desktop ")) {
+    const parts = trimmed.split(/\s+/);
+    const subcommand = parts[1];
+
+    // T8.6.3: confirm 子命令需要特殊解析（method + 可选 timeout-ms + paramsJson）
+    // 语法: /desktop confirm <method> [--timeout-ms <ms>] <paramsJson>
+    // 例: /desktop confirm desktop.typeText {"text":"hello"}
+    // 例: /desktop confirm desktop.typeText --timeout-ms 30000 {"text":"hello"}
+    if (subcommand === "confirm") {
+      const m = trimmed.match(/^\/desktop\s+confirm\s+(\S+)(?:\s+--timeout-ms\s+(\S+))?(?:\s+(.*))?$/);
+      if (!m) return { command: "desktop", args: ["confirm"] };
+      const method = m[1] ?? "";
+      const timeoutMs = m[2] ?? "";
+      const paramsJson = (m[3] ?? "").trim();
+      return { command: "desktop", args: ["confirm", method, timeoutMs, paramsJson] };
+    }
+
+    // T8.4: rpc 子命令需要特殊解析（method + paramsJson）
+    // T8.5: 支持 --timeout-ms <ms> 参数
+    // T8.6.3: 支持 --confirm-token <token> 参数
+    // 语法: /desktop rpc <method> [--timeout-ms <ms>] [--confirm-token <token>] <paramsJson>
+    // 例: /desktop rpc desktop.find {"selector":{"byRole":"AXWindow"}}
+    // 例: /desktop rpc desktop.waitUntil --timeout-ms 60000 {"condition":{...}}
+    // 例: /desktop rpc desktop.typeText --confirm-token abc123 {"text":"hello"}
+    if (subcommand === "rpc") {
+      // 用正则一次性解析，提取 method、可选的 timeout-ms、可选的 confirm-token、paramsJson
+      const m = trimmed.match(/^\/desktop\s+rpc\s+(\S+)(?:\s+--timeout-ms\s+(\S+))?(?:\s+--confirm-token\s+(\S+))?(?:\s+(.*))?$/);
+      if (!m) return { command: "desktop", args: ["rpc"] };
+      const method = m[1] ?? "";
+      const timeoutMs = m[2] ?? "";
+      const confirmToken = m[3] ?? "";
+      const paramsJson = (m[4] ?? "").trim();
+      return { command: "desktop", args: ["rpc", method, timeoutMs, confirmToken, paramsJson] };
+    }
+
+    if (["ping", "doctor", "observe"].includes(subcommand)) {
+      return { command: "desktop", args: [subcommand] };
+    }
+    // 非法子命令，默认 doctor
+    return { command: "desktop", args: ["doctor"] };
   }
 
   // Phase 4B: Steer command
@@ -1979,7 +2032,7 @@ export async function handleToolAllowListCommand(options: CommandHandlerOptions)
       `  /tool allow add <t>   添加工具（需要 /reload 生效）\n` +
       `  /tool allow remove <t> 移除工具（需要 /reload 生效）\n` +
       `\n` +
-      `可用工具: tts, asr, vision, mem, shell, browser`,
+      `可用工具: tts, asr, vision, mem, shell, browser, desktop`,
   };
 }
 
@@ -1995,11 +2048,11 @@ export async function handleToolAllowAddCommand(options: CommandHandlerOptions):
       success: false,
       message: `用法: /tool allow add <tool>\n` +
         `\n` +
-        `可用工具: tts, asr, vision, mem, shell, browser`,
+        `可用工具: tts, asr, vision, mem, shell, browser, desktop`,
     };
   }
 
-  const validTools = ["tts", "asr", "vision", "mem", "shell", "browser"];
+  const validTools = ["tts", "asr", "vision", "mem", "shell", "browser", "desktop"];
   if (!validTools.includes(toolName)) {
     return {
       success: false,
@@ -2087,6 +2140,325 @@ export async function handleToolAllowRemoveCommand(options: CommandHandlerOption
       `\n` +
       `执行 /reload 使配置生效`,
   };
+}
+
+// ============================================
+// v2.2: T6.2 Desktop Commands
+// ============================================
+
+/**
+ * 处理 /desktop 命令
+ *
+ * 用法：
+ * - /desktop                  : 默认 doctor
+ * - /desktop ping            : ping Desktop Bridge
+ * - /desktop doctor           : 诊断权限状态
+ * - /desktop observe          : 观察桌面并落盘证据
+ * - /desktop rpc <method> <paramsJson> [--confirm-token <token>] : T8.4 RPC 透传 + T8.6.3 token 注入
+ * - /desktop confirm <method> [--timeout-ms <ms>] <paramsJson> : T8.6.3 签发 token
+ *
+ * @param options 命令选项
+ * @returns 命令处理结果
+ */
+export async function handleDesktopCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  const { chatId, args } = options;
+
+  // 检查是否已绑定 workspace
+  const entry = getRouteByChatId(chatId);
+  if (!entry) {
+    return {
+      success: false,
+      message: `未绑定工作区\n` +
+        `\n` +
+        `请先使用 /bind <dir> 绑定工作空间`,
+    };
+  }
+
+  // T8.6.3: confirm 子命令（签发 token）
+  if (args[0] === "confirm") {
+    const method = args[1]; // desktop.typeText
+    const timeoutMsRaw = args[2]; // --timeout-ms 值或 undefined
+    const paramsJsonRaw = args.slice(3).join(" "); // 剩余所有参数拼接成 JSON
+
+    if (!method) {
+      return {
+        success: false,
+        message: `用法: /desktop confirm <method> [--timeout-ms <ms>] <paramsJson>\n` +
+          `\n` +
+          `例: /desktop confirm desktop.typeText {"text":"hello"}\n` +
+          `例: /desktop confirm desktop.typeText --timeout-ms 30000 {"text":"hello"}\n` +
+          `\n` +
+          `说明:\n` +
+          `  签发一次性确认 token，用于后续 desktop 操作确认\n` +
+          `  返回 token、expiresAt、以及可复制的下一步命令模板`,
+      };
+    }
+
+    // 解析 paramsJson
+    let intentParams: Record<string, unknown>;
+    try {
+      const paramsJson = paramsJsonRaw.trim();
+      intentParams = paramsJson ? JSON.parse(paramsJson) : {};
+    } catch {
+      return {
+        success: false,
+        message: `无效的 JSON 参数: ${paramsJsonRaw}`,
+      };
+    }
+
+    // 解析 timeoutMs
+    let ttlMs = 60000; // 默认 60s
+    if (timeoutMsRaw && timeoutMsRaw.startsWith("--timeout-ms")) {
+      const msValue = timeoutMsRaw.split(/\s+/)[1] ?? "";
+      if (!isNaN(Number(msValue))) {
+        ttlMs = Number(msValue);
+      }
+    }
+
+    // 调用 desktop.confirm.issue
+    const { executeTool } = await import("../tools/bus.js");
+    const { randomUUID } = await import("node:crypto");
+
+    const requestId = randomUUID();
+    const result = await executeTool("desktop", { method: "desktop.confirm.issue", params: {
+      meta: {
+        schemaVersion: 1,
+        requestId,
+        workspacePath: entry.workspacePath,
+        timeoutMs: ttlMs,
+      },
+      intent: {
+        method,
+        params: intentParams,
+      },
+      ttlMs,
+    } }, {
+      workspacePath: entry.workspacePath,
+      source: "slash-command",
+      requestId,
+      chatId: chatId,
+      timeoutMs: ttlMs + 5000, // 给 issue 操作多一点缓冲时间
+    });
+
+    // 处理结果
+    if (result.ok) {
+      const dataAny = result.data as unknown as { stdout?: string } | undefined;
+      let message = dataAny?.stdout || "";
+
+      // 尝试解析 JSON
+      try {
+        const jsonObj = JSON.parse(message);
+        if (jsonObj.result && jsonObj.result.token) {
+          const token = jsonObj.result.token as string;
+          const expiresAt = jsonObj.result.expiresAt as string;
+
+          // 生成下一步命令模板（使用 --confirm-token 语法糖）
+          const paramsJsonEscaped = JSON.stringify(intentParams);
+          const templateCommand = `/desktop rpc ${method} --confirm-token ${token} ${paramsJsonEscaped}`;
+
+          message = `Token 已签发\n` +
+            `\n` +
+            `token: ${token}\n` +
+            `expiresAt: ${expiresAt}\n` +
+            `\n` +
+            `下一步命令（可直接复制）:\n` +
+            `${templateCommand}\n` +
+            `\n` +
+            `说明:\n` +
+            `  • Token 为一次性，使用后即失效\n` +
+            `  • Token 绑定到当前 msgcode 进程的 XPC 连接\n` +
+            `  • 请在 ${expiresAt} 前使用`;
+        }
+      } catch {
+        // 不是 JSON，直接回显
+      }
+
+      return {
+        success: true,
+        message,
+      };
+    } else {
+      const error = result.error;
+      const dataAny = result.data as unknown as { stderr?: string } | undefined;
+      const stderr = dataAny?.stderr || "";
+
+      return {
+        success: false,
+        message: `Token 签发失败: ${error?.message || "未知错误"}\n\n${stderr}`,
+      };
+    }
+  }
+
+  // T8.4: rpc 子命令特殊处理
+  // T8.5: 支持 --timeout-ms 参数（优先级高于 params.meta.timeoutMs）
+  // T8.6.3: 支持 --confirm-token <token> 参数注入
+  if (args[0] === "rpc") {
+    const method = args[1]; // desktop.find
+    const timeoutMsRaw = args[2] ?? ""; // --timeout-ms 参数值或空
+    const confirmToken = args[3] ?? ""; // T8.6.3: --confirm-token 参数值或空
+    const paramsJsonRaw = args[4] ?? ""; // {"selector":...}
+
+    if (!method) {
+      return {
+        success: false,
+        message: `用法: /desktop rpc <method> [--timeout-ms <ms>] [--confirm-token <token>] <paramsJson>\n` +
+          `\n` +
+          `例: /desktop rpc desktop.find {"selector":{"byRole":"AXWindow"}}\n` +
+          `例: /desktop rpc desktop.waitUntil --timeout-ms 60000 {"condition":{"selectorExists":{"byRole":"AXButton"}}}\n` +
+          `例: /desktop rpc desktop.typeText --confirm-token abc123 {"text":"hello"}`,
+      };
+    }
+
+    // 解析 paramsJson
+    let params: Record<string, unknown>;
+    try {
+      const paramsJson = paramsJsonRaw.trim();
+      params = paramsJson ? JSON.parse(paramsJson) : {};
+    } catch {
+      return {
+        success: false,
+        message: `无效的 JSON 参数: ${paramsJsonRaw}`,
+      };
+    }
+
+    // T8.6.3: 如果有 --confirm-token，自动注入 confirm.token
+    if (confirmToken) {
+      params.confirm = { token: confirmToken };
+    }
+
+    // T8.5: 解析 timeoutMs（优先级：命令行 > params.meta.timeoutMs > 默认 30s）
+    let timeoutMs = 30000; // 默认 30s
+
+    // 优先使用命令行的 --timeout-ms
+    if (timeoutMsRaw && !isNaN(Number(timeoutMsRaw))) {
+      timeoutMs = Number(timeoutMsRaw);
+    }
+    // 其次使用 params.meta.timeoutMs
+    else if (params.meta && typeof params.meta === "object") {
+      const metaTimeout = (params.meta as any).timeoutMs;
+      if (typeof metaTimeout === "number") {
+        timeoutMs = metaTimeout;
+      }
+    }
+
+    // 调用 Tool Bus rpc 模式
+    const { executeTool } = await import("../tools/bus.js");
+    const { randomUUID } = await import("node:crypto");
+
+    const requestId = randomUUID();
+    const result = await executeTool("desktop", { method, params }, {
+      workspacePath: entry.workspacePath,
+      source: "slash-command",
+      requestId,
+      chatId: chatId,
+      timeoutMs,
+    });
+
+    // 处理结果
+    if (result.ok) {
+      // desktop rpc 模式下 data 可能不是 {stdout,stderr}；优先回显 stdout，否则回显 JSON stringify(data)
+      const dataAny = result.data as unknown as { stdout?: string } | undefined;
+      let message = dataAny?.stdout || "";
+      if (!message && result.data) {
+        try {
+          message = JSON.stringify(result.data, null, 2);
+        } catch {
+          message = String(result.data);
+        }
+      }
+      if (!message) message = "执行成功（无输出）";
+
+      // 尝试格式化 JSON
+      try {
+        const jsonObj = JSON.parse(message);
+        if (jsonObj.result) {
+          message = JSON.stringify(jsonObj, null, 2);
+        }
+      } catch {
+        // 不是 JSON，直接回显
+      }
+
+      return {
+        success: true,
+        message,
+      };
+    } else {
+      const error = result.error;
+      const dataAny = result.data as unknown as { stderr?: string } | undefined;
+      const stderr = dataAny?.stderr || "";
+      const extraInfo = stderr ? `\n\nstderr:\n${stderr}` : "";
+
+      return {
+        success: false,
+        message: `执行失败: ${error?.message || "未知错误"}${extraInfo}`,
+      };
+    }
+  }
+
+  // 原有子命令处理（ping/doctor/observe）
+  const subcommand = args[0] || "doctor";
+  const validSubcommands = ["ping", "doctor", "observe"];
+
+  if (!validSubcommands.includes(subcommand)) {
+    return {
+      success: false,
+      message: `无效的子命令: ${subcommand}\n` +
+        `\n` +
+        `用法:\n` +
+        `  /desktop ping       检查 Desktop Bridge 状态\n` +
+        `  /desktop doctor      诊断权限状态\n` +
+        `  /desktop observe     观察桌面并落盘证据\n` +
+        `  /desktop rpc <method> <paramsJson>  RPC 透传\n` +
+        `\n` +
+        `  /desktop             默认等价于 /desktop doctor`,
+    };
+  }
+
+  // T6.2.1: observe 需要 60 秒超时（首跑权限/系统忙），ping/doctor 保持 30 秒
+  const timeoutMs = subcommand === "observe" ? 60000 : 30000;
+
+  // 调用 Tool Bus
+  const { executeTool } = await import("../tools/bus.js");
+  const { randomUUID } = await import("node:crypto");
+
+  const result = await executeTool("desktop", { subcommand }, {
+    workspacePath: entry.workspacePath,
+    source: "slash-command",
+    requestId: randomUUID(),
+    chatId: chatId,
+    timeoutMs,
+  });
+
+  // 处理结果
+  if (result.ok) {
+    // 成功：回显 stdout
+    let message = result.data?.stdout || "执行成功（无输出）";
+
+    // 如果是 JSON，尝试解析并格式化（轻量 pretty）
+    try {
+      const jsonObj = JSON.parse(message);
+      if (jsonObj.result) {
+        message = JSON.stringify(jsonObj, null, 2);
+      }
+    } catch {
+      // 不是 JSON，直接回显
+    }
+
+    return {
+      success: true,
+      message,
+    };
+  } else {
+    // 失败：回显 error.message + stderr
+    const error = result.error;
+    const stderr = result.data?.stderr || "";
+    const extraInfo = stderr ? `\n\nstderr:\n${stderr}` : "";
+
+    return {
+      success: false,
+      message: `执行失败: ${error?.message || "未知错误"}${extraInfo}`,
+    };
+  }
 }
 
 // ============================================

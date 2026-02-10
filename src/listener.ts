@@ -467,6 +467,7 @@ export async function handleMessage(
   // E14: 尽量"看见即推进"，避免重启重复推送。
   // 但为了不丢消息：只有在本次消息完成处理/明确忽略后才推进（finally 执行）
   let shouldAdvanceCursor = false;
+  const startedAtMs = Date.now();
 
   try {
     // E17: 预处理文本（用于后续检查）
@@ -864,11 +865,33 @@ export async function handleMessage(
     }
 
     // 若 handler 需要发送附件，则优先发送附件（可附带文本）
+    let didSend = false;
     if (result.file?.path) {
       const text = result.response ? result.response : "";
       await ctx.imsgClient.send({ chat_guid: message.chatId, text, file: result.file.path });
+      didSend = true;
     } else if (result.response) {
       await sendText(ctx.imsgClient, message.chatId, result.response);
+      didSend = true;
+    }
+
+    // Info: 给运维一个“闭环完成”的稳定锚点（否则 info 日志会停在“附件检查”看起来像挂起）
+    // 注意：不输出原文，只输出长度/摘要 hash。
+    {
+      const elapsedMs = Date.now() - startedAtMs;
+      const responseLen = result.response?.length ?? 0;
+      const responseDigest = result.response
+        ? crypto.createHash("sha256").update(result.response).digest("hex").slice(0, 12)
+        : null;
+      logger.info("消息处理完成", {
+        module: "listener",
+        chatId: message.chatId,
+        botType: route.botType ?? "default",
+        didSend,
+        elapsedMs,
+        responseLength: responseLen,
+        responseDigest,
+      });
     }
 
     // 非阻塞的延迟任务（例如 TTS）

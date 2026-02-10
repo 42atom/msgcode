@@ -158,6 +158,16 @@ export class FileTransport implements Transport {
             if (meta.retry !== undefined) parts.push(`retry=${meta.retry}`);
             if (meta.status !== undefined) parts.push(`status=${meta.status}`);
 
+            // P0 Batch-1: JSONL 读取相关字段
+            if (meta.jsonlPath) parts.push(`jsonlPath=${meta.jsonlPath}`);
+            if (meta.startOffset !== undefined) parts.push(`startOffset=${meta.startOffset}`);
+            if (meta.newOffset !== undefined) parts.push(`newOffset=${meta.newOffset}`);
+            if (meta.entriesCount !== undefined) parts.push(`entriesCount=${meta.entriesCount}`);
+            if (meta.bytesRead !== undefined) parts.push(`bytesRead=${meta.bytesRead}`);
+            if (meta.isDeliverable !== undefined) parts.push(`isDeliverable=${meta.isDeliverable}`);
+            if (meta.score !== undefined) parts.push(`score=${meta.score}`);
+            if (meta.candidatesCount !== undefined) parts.push(`candidatesCount=${meta.candidatesCount}`);
+
             if (parts.length) metaStr = ` [${parts.join(" ")}]`;
         }
 

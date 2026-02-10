@@ -146,8 +146,29 @@ export class TmuxSession {
 
             const family = normalizeRunnerOldFamily(runnerOld);
             if (family === "claude") {
-                // Claude 就绪标志：出现 "How can I help?" 或 "╭"
-                if (paneOutput.includes("How can I help?") || paneOutput.includes("╭")) {
+                // P0: 检测选项列表（如 "1. xxx"、"2. xxx"），如果有则认为未就绪
+                // Claude Code 在等待用户选择时会显示编号选项
+                const lines = paneOutput.split("\n");
+                const tail = lines.slice(-20).map(l => l.trim()).filter(Boolean);
+
+                // 检测是否有连续的编号选项（至少 2 个）
+                let numberedOptionCount = 0;
+                for (const line of tail) {
+                    // 匹配 "1. xxx"、"2) xxx"、"1、xxx" 等格式
+                    if (/^[0-9]+[\.\)、]\s/.test(line)) {
+                        numberedOptionCount++;
+                    }
+                }
+
+                // 如果有 2 个或以上编号选项，认为正在等待选择
+                if (numberedOptionCount >= 2) {
+                    return SessionStatus.Starting;
+                }
+
+                // Claude 就绪标志：出现 "How can I help?" 或 "╭" 或提示符
+                // P0: 也检查是否有提示符（❯ 或 ›）且没有选项
+                const hasPrompt = tail.some(l => /^[›❯]\s*$/.test(l));
+                if (paneOutput.includes("How can I help?") || paneOutput.includes("╭") || hasPrompt) {
                     return SessionStatus.Ready;
                 }
             } else if (family === "codex") {
@@ -156,7 +177,6 @@ export class TmuxSession {
                 // 或者输出结束于新行后跟提示符
                 const lines = paneOutput.split("\n");
                 const tail = lines.slice(-20).map(l => l.trim()).filter(Boolean);
-                const lastLine = tail[tail.length - 1] || "";
 
                 // Codex inline mode 常见提示符：› / ❯ / > / $ / %
                 const hasPrompt = tail.some(l => /^[›❯>$/%]/.test(l));

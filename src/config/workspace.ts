@@ -110,7 +110,7 @@ export interface WorkspaceConfig {
  * 工具相关类型
  */
 export type ToolingMode = "explicit" | "autonomous" | "tool-calls";
-export type ToolName = "tts" | "asr" | "vision" | "mem" | "shell" | "browser";
+export type ToolName = "tts" | "asr" | "vision" | "mem" | "shell" | "browser" | "desktop";
 
 /**
  * Workspace 配置的默认值

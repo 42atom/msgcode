@@ -13,7 +13,9 @@
     "bdd": "NODE_ENV=test NODE_OPTIONS=\"--import tsx\" ./node_modules/.bin/cucumber-js --import 'features/**/*.ts' --format progress",
     "test:all": "npm test && npm run bdd && npm run docs:check",
     "docs:check": "NODE_OPTIONS=\"--import tsx\" node scripts/check-doc-sync.ts",
-    "mlx:smoke": "bash scripts/mlx-lab/smoke-all.sh"
+    "jsonl:check": "tsx scripts/test-jsonl-parser.ts",
+    "mlx:smoke": "bash scripts/mlx-lab/smoke-all.sh",
+    "desktop:smoke": "bash scripts/desktop/smoke-desktop-toolbus.sh \"$PWD\""
   },
   "keywords": [
     "imessage",
