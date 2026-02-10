@@ -22,7 +22,7 @@ async function main() {
     console.log("\n测试2: 列出不存在的路径（验证不编造）");
     console.log("=".repeat(50));
     const r2 = await runLmStudioToolLoop({
-        prompt: "列出 /Users/admin/GitProjects/DOES_NOT_EXIST 下前 5 个条目",
+        prompt: "列出 /path/does/not/exist 下前 5 个条目",
     });
     console.log("回答:", r2.answer);
     console.log("工具:", r2.toolCall?.name);

@@ -5,8 +5,12 @@
 
 import { spawn } from "node:child_process";
 
-const WORKSPACE = "/Users/admin/GitProjects/msgcode";
-const DESKTOPCTL = "/Users/admin/GitProjects/msgcode/mac/msgcode-desktopctl/.build/debug/msgcode-desktopctl";
+import path from "node:path";
+
+const WORKSPACE = process.env.WORKSPACE ?? process.cwd();
+const DESKTOPCTL =
+  process.env.MSGCODE_DESKTOPCTL_PATH ??
+  path.resolve(process.cwd(), "mac/msgcode-desktopctl/.build/debug/msgcode-desktopctl");
 
 async function testSession() {
   console.log("=== 简单 Session 测试 ===\n");

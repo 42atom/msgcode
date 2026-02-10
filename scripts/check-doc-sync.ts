@@ -2,14 +2,14 @@
 /**
  * msgcode: 文档同步检查脚本
  *
- * 用途：确保根 README.md 与 AIDOCS/msgcode-2.2/README.md 与运行时 /help 命令保持一致
+ * 用途：确保根 README.md 与运行时 /help 命令保持一致
  *
  * 检查逻辑：
  * 1. 读取 commands.ts 中 handleHelpCommand 的命令关键字集合
  * 2. 扫描 README.md：仅允许最小命令集出现
  * 3. 扫描 README.md：命令关键字需为 /help 子集
  * 4. 特判：禁止 README.md 出现幽灵命令
- * 5. 检查 AIDOCS README 必需章节和链接
+ * 5. （可选）若存在 AIDOCS README，则检查其必需章节和链接
  */
 
 import fs from "node:fs";
@@ -50,6 +50,7 @@ export interface DocSyncReport {
  * - /bind /where /help /start /stop（最小命令集）
  * - /status /loglevel /info /chatlist（常见排障/状态检查）
  * - /reload /toolstats /tool（观测与灰度命令）
+ * - /desktop（Desktop Bridge 快速入门）
  */
 const MINIMAL_COMMAND_ALLOWLIST = new Set([
   "/bind",
@@ -68,6 +69,8 @@ const MINIMAL_COMMAND_ALLOWLIST = new Set([
   "/reload",
   "/toolstats",
   "/tool",
+  // Desktop Bridge
+  "/desktop",
 ]);
 
 /**
@@ -171,6 +174,9 @@ function extractCommandsFromReadme(): string[] {
  */
 function checkAidosRequiredSections(): string[] {
   const aidosPath = path.join(process.cwd(), "AIDOCS", "msgcode-2.2", "README.md");
+  if (!fs.existsSync(aidosPath)) {
+    return [];
+  }
   const content = fs.readFileSync(aidosPath, "utf-8");
 
   const missing: string[] = [];
@@ -189,6 +195,9 @@ function checkAidosRequiredSections(): string[] {
  */
 function extractAidosImplementationLinks(): string[] {
   const aidosPath = path.join(process.cwd(), "AIDOCS", "msgcode-2.2", "README.md");
+  if (!fs.existsSync(aidosPath)) {
+    return [];
+  }
   const content = fs.readFileSync(aidosPath, "utf-8");
 
   const links: string[] = [];
@@ -242,6 +251,9 @@ function checkAidosLinksExist(): string[] {
  */
 function checkAidosVerbosePromises(): string[] {
   const aidosPath = path.join(process.cwd(), "AIDOCS", "msgcode-2.2", "README.md");
+  if (!fs.existsSync(aidosPath)) {
+    return [];
+  }
   const content = fs.readFileSync(aidosPath, "utf-8");
 
   const violations: string[] = [];
@@ -353,7 +365,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         console.error(`  - ${cmd}`);
       }
       console.error("");
-      console.error("提示：根 README 应只包含最小命令集，详细命令请参考 AIDOCS");
+      console.error("提示：根 README 应只包含最小命令集，行为真相源：运行时 /help");
       console.error("");
     }
 
@@ -371,7 +383,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
         console.error(`  - ${section}`);
       }
       console.error("");
-      console.error("提示：AIDOCS/msgcode-2.2/README.md 必须包含快速导航、边界声明、人工检查清单");
+      console.error("提示：若维护 AIDOCS，请确保包含快速导航、边界声明、人工检查清单");
       console.error("");
     }
 

@@ -868,7 +868,7 @@ function normalizeJsonishEnvelope(input: string): string {
 /**
  * 工具路径白名单根目录
  */
-const AIDOCS_ROOT = "/Users/admin/GitProjects/AIDOCS";
+const AIDOCS_ROOT = process.env.AIDOCS_ROOT || "AIDOCS";
 
 /**
  * P1: Tool 定义（OpenAI function calling schema）

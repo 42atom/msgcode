@@ -8,7 +8,7 @@
 
 set -e
 
-WORKSPACE="/Users/admin/GitProjects/msgcode"
+WORKSPACE="${WORKSPACE:-$(pwd)}"
 OUTPUT_FILE="/tmp/t8.6.4.1-acceptance.txt"
 SESSION_LOG="/tmp/t8.6.4.1-session-log.txt"
 

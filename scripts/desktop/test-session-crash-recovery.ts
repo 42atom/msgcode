@@ -9,7 +9,7 @@
 import { executeTool } from "../../src/tools/bus.js";
 import { spawn } from "node:child_process";
 
-const WORKSPACE = "/Users/admin/GitProjects/msgcode";
+const WORKSPACE = process.env.WORKSPACE ?? process.cwd();
 
 async function testSessionCrashRecovery() {
   console.log("=== Session 崩溃自愈测试 ===\n");

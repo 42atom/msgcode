@@ -1,7 +1,7 @@
 #!/bin/bash
 # 手动测试 session 进程
 
-WORKSPACE="/Users/admin/GitProjects/msgcode"
+WORKSPACE="${WORKSPACE:-$(pwd)}"
 DESKTOPCTL="$WORKSPACE/mac/msgcode-desktopctl/.build/debug/msgcode-desktopctl"
 FIFO_PATH="/tmp/session-test-fifo-$$"
 

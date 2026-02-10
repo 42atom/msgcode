@@ -12,8 +12,12 @@ import { executeTool } from "../../src/tools/bus.js";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 
-const WORKSPACE = "/Users/admin/GitProjects/msgcode";
-const DESKTOPCTL = "/Users/admin/GitProjects/msgcode/mac/msgcode-desktopctl/.build/debug/msgcode-desktopctl";
+import path from "node:path";
+
+const WORKSPACE = process.env.WORKSPACE ?? process.cwd();
+const DESKTOPCTL =
+  process.env.MSGCODE_DESKTOPCTL_PATH ??
+  path.resolve(process.cwd(), "mac/msgcode-desktopctl/.build/debug/msgcode-desktopctl");
 
 // ============================================
 // 验收 1: peer 稳定证据

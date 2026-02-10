@@ -4,7 +4,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-WORKSPACE="/Users/admin/GitProjects/msgcode"
+WORKSPACE="${WORKSPACE:-$(pwd)}"
 
 echo "=== Batch-T8.6.1 验收测试 ==="
 echo
@@ -14,7 +14,7 @@ echo "1. 检查 LaunchAgent 状态..."
 LAUNCH_AGENT_PID=$(launchctl list | grep com.msgcode.desktop.bridge | awk '{print $1}')
 if [ -z "$LAUNCH_AGENT_PID" ]; then
     echo "✗ LaunchAgent 未运行，请先启动："
-    echo "   cd /Users/admin/GitProjects/msgcode/mac/MsgcodeDesktopHost"
+    echo "   cd <msgcode-repo>/mac/MsgcodeDesktopHost"
     echo "   bash register_launchagent.sh install"
     exit 1
 fi

@@ -4,7 +4,7 @@
 
 set -e
 
-WORKSPACE="/Users/admin/GitProjects/msgcode"
+WORKSPACE="${WORKSPACE:-$(pwd)}"
 OUTPUT_FILE="/tmp/t8.6.4.1-acceptance.txt"
 
 echo "=== Batch-T8.6.4.1 验收测试（Tool Bus session 进程池）==="

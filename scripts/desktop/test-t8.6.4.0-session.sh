@@ -9,7 +9,7 @@
 
 set -e
 
-WORKSPACE="/Users/admin/GitProjects/msgcode"
+WORKSPACE="${WORKSPACE:-$(pwd)}"
 DESKTOPCTL="$WORKSPACE/mac/msgcode-desktopctl/.build/debug/msgcode-desktopctl"
 OUTPUT_FILE="/tmp/session-output-t8.6.4.0.txt"
 

@@ -7,7 +7,7 @@ import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 
-const WORKSPACE = "/Users/admin/GitProjects/msgcode";
+const WORKSPACE = process.env.WORKSPACE ?? process.cwd();
 
 // 查找 desktopctl
 let desktopctlPath = "";

@@ -697,7 +697,7 @@ const MLX_TOOLS = [
                 properties: {
                     path: {
                         type: "string",
-                        description: "File path to read (e.g., '/Users/admin/msgcode-workspaces/game01/src/main.ts')",
+                        description: "File path to read (e.g., '/Users/<you>/msgcode-workspaces/<workspace>/src/main.ts')",
                     },
                 },
                 required: ["path"],

@@ -10,7 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-const workspacePath = "/Users/admin/GitProjects/msgcode";
+const workspacePath = process.env.WORKSPACE ?? process.cwd();
 const desktopctlPath = path.join(workspacePath, "mac", "msgcode-desktopctl", ".build", "debug", "msgcode-desktopctl");
 
 async function runDesktopctl(args: string[]): Promise<{ stdout: string; stderr: string; exitCode: number | null }> {
@@ -48,7 +48,7 @@ async function runTest() {
 
   // 步骤 1: 签发 token
   console.log("步骤 1: 签发 token");
-  console.log("命令: desktopctl issue-confirm /Users/admin/GitProjects/msgcode --method desktop.typeText --params-json '{\"text\":\"T8_6_OK}'\n");
+  console.log("命令: desktopctl issue-confirm <workspace> --method desktop.typeText --params-json '{\"text\":\"T8_6_OK}'\n");
 
   const issueResult = await runDesktopctl([
     "issue-confirm",
@@ -79,7 +79,7 @@ async function runTest() {
   // 步骤 2: 使用 token 执行 typeText（第一次）
   console.log("\n" + "=".repeat(60));
   console.log("步骤 2: 使用 token 执行 typeText（第一次）");
-  console.log(`命令: desktopctl typeText /Users/admin/GitProjects/msgcode "T8_6_OK" --confirm-token ${token}\n`);
+  console.log(`命令: desktopctl typeText <workspace> "T8_6_OK" --confirm-token ${token}\n`);
 
   const typeTextResult1 = await runDesktopctl([
     "type-text",
@@ -95,7 +95,7 @@ async function runTest() {
   // 步骤 3: 使用 token 执行 typeText（第二次，应该失败）
   console.log("\n" + "=".repeat(60));
   console.log("步骤 3: 使用 token 执行 typeText（第二次，应该返回 DESKTOP_CONFIRM_REQUIRED）");
-  console.log(`命令: desktopctl typeText /Users/admin/GitProjects/msgcode "T8_6_OK" --confirm-token ${token}\n`);
+  console.log(`命令: desktopctl typeText <workspace> "T8_6_OK" --confirm-token ${token}\n`);
 
   const typeTextResult2 = await runDesktopctl([
     "type-text",

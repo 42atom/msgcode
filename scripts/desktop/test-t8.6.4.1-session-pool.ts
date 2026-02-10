@@ -11,7 +11,7 @@
 import { executeTool } from "../../src/tools/bus.js";
 import { randomUUID } from "node:crypto";
 
-const WORKSPACE = "/Users/admin/GitProjects/msgcode";
+const WORKSPACE = process.env.WORKSPACE ?? process.cwd();
 
 // ============================================
 // 测试 1: peer 稳定证据

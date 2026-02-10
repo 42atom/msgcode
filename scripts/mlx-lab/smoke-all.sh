@@ -5,7 +5,8 @@
 # Order: stop-server.sh → start-server.sh → check-health.sh → probe-basic.sh → probe-tool-role.sh → probe-tool-loop.sh
 #
 # Usage: ./scripts/mlx-lab/smoke-all.sh
-# Output: AIDOCS/msgcode-2.2/mlx-lab/results/smoke-run-YYYYMMDD-HHMM.md
+# Output (preferred): artifacts/mlx-lab/results/smoke-run-YYYYMMDD-HHMM.md
+# Output (legacy, if exists): AIDOCS/msgcode-2.2/mlx-lab/results/...
 
 set -e
 
@@ -14,7 +15,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 # Results directory
-RESULTS_DIR="$PROJECT_ROOT/AIDOCS/msgcode-2.2/mlx-lab/results"
+LEGACY_RESULTS_DIR="$PROJECT_ROOT/AIDOCS/msgcode-2.2/mlx-lab/results"
+RESULTS_DIR="$PROJECT_ROOT/artifacts/mlx-lab/results"
+
+if [ -d "$LEGACY_RESULTS_DIR" ]; then
+  RESULTS_DIR="$LEGACY_RESULTS_DIR"
+fi
 TIMESTAMP=$(date +"%Y%m%d-%H%M")
 RESULT_FILE="$RESULTS_DIR/smoke-run-$TIMESTAMP.md"
 

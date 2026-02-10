@@ -14,7 +14,7 @@ public protocol BridgeXPCProtocol: NSObjectProtocol {
 }
 
 // 配置
-let workspacePath = "/Users/admin/GitProjects/msgcode"
+let workspacePath = ProcessInfo.processInfo.environment["WORKSPACE"] ?? FileManager.default.currentDirectoryPath
 let serviceName = "com.msgcode.desktop.bridge"
 
 // XPC 连接

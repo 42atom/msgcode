@@ -71,7 +71,7 @@ async function main(): Promise<void> {
 
                 try {
                     const result = await MlxServer.start({
-                        modelPath: process.env.MLX_MODEL_PATH || "/Users/admin/Models/lmstudio/huihui-ai/Huihui-GLM-4.7-Flash-abliterated-mlx-4bit",
+                        modelPath: process.env.MLX_MODEL_PATH,
                         host: "127.0.0.1",
                         port: 18000,
                         maxTokens: 2048,
