@@ -964,8 +964,14 @@ export function isRouteCommand(text: string): boolean {
     trimmed === "/toolstats" ||
     trimmed.startsWith("/tool ") ||
     // v2.2: T6.2 Desktop commands
+    // v1.0.1: 10 行版快捷语法
     trimmed === "/desktop" ||
     trimmed.startsWith("/desktop ") ||
+    trimmed.startsWith("/desktop find ") ||
+    trimmed.startsWith("/desktop click ") ||
+    trimmed.startsWith("/desktop type ") ||
+    trimmed.startsWith("/desktop hotkey ") ||
+    trimmed.startsWith("/desktop wait ") ||
     // Phase 4B: Steer/FollowUp commands
     trimmed.startsWith("/steer ") ||
     trimmed === "/steer" ||
@@ -1145,6 +1151,7 @@ export function parseRouteCommand(text: string): { command: string; args: string
   }
 
   // v2.2: T6.2 Desktop commands + T8.4 RPC passthrough
+  // v1.0.1: 10 行版快捷语法支持
   if (trimmed === "/desktop") {
     return { command: "desktop", args: ["doctor"] }; // 默认 doctor
   }
@@ -1152,6 +1159,19 @@ export function parseRouteCommand(text: string): { command: string; args: string
   if (trimmed.startsWith("/desktop ")) {
     const parts = trimmed.split(/\s+/);
     const subcommand = parts[1];
+
+    // ===== v1.0.1: 10 行版快捷语法 =====
+    // /desktop observe
+    // /desktop find {"byRole":"AXButton","titleContains":"...","limit":5}
+    // /desktop click {"selector":{...},"confirm":{"token":"<token>"}}
+    // /desktop type {"selector":{...},"text":"...","confirm":{"token":"<token>"}}
+    // /desktop hotkey {"keys":["cmd","l"],"confirm":{"token":"<token>"}}
+    // /desktop wait {"condition":{"selectorExists":{"selector":{...}}},"timeoutMs":30000}
+    if (["observe", "find", "click", "type", "hotkey", "wait"].includes(subcommand)) {
+      // 提取 JSON 参数部分（剩余所有部分）
+      const jsonPart = trimmed.slice(trimmed.indexOf(subcommand) + subcommand.length).trim();
+      return { command: "desktop", args: ["shortcut", subcommand, jsonPart] };
+    }
 
     // T8.6.3: confirm 子命令需要特殊解析（method + 可选 timeout-ms + paramsJson）
     // 语法: /desktop confirm <method> [--timeout-ms <ms>] <paramsJson>
@@ -1184,7 +1204,7 @@ export function parseRouteCommand(text: string): { command: string; args: string
       return { command: "desktop", args: ["rpc", method, timeoutMs, confirmToken, paramsJson] };
     }
 
-    if (["ping", "doctor", "observe"].includes(subcommand)) {
+    if (["ping", "doctor"].includes(subcommand)) {
       return { command: "desktop", args: [subcommand] };
     }
     // 非法子命令，默认 doctor
@@ -2149,13 +2169,16 @@ export async function handleToolAllowRemoveCommand(options: CommandHandlerOption
 /**
  * 处理 /desktop 命令
  *
- * 用法：
- * - /desktop                  : 默认 doctor
- * - /desktop ping            : ping Desktop Bridge
- * - /desktop doctor           : 诊断权限状态
- * - /desktop observe          : 观察桌面并落盘证据
- * - /desktop rpc <method> <paramsJson> [--confirm-token <token>] : T8.4 RPC 透传 + T8.6.3 token 注入
- * - /desktop confirm <method> [--timeout-ms <ms>] <paramsJson> : T8.6.3 签发 token
+ * 用法（v1.0.1 10 行版）：
+ * - /desktop observe              : 观察桌面
+ * - /desktop find {...}            : 查找 UI 元素
+ * - /desktop click {...}           : 点击元素（需 token）
+ * - /desktop type {...}            : 输入文本（需 token）
+ * - /desktop hotkey {...}           : 发送快捷键（需 token）
+ * - /desktop wait {...}             : 等待条件
+ * - /desktop confirm <method> {...}: 签发 token
+ * - /desktop rpc <method> {...}     : RPC 透传
+ * - /desktop ping /doctor           : 诊断
  *
  * @param options 命令选项
  * @returns 命令处理结果
@@ -2172,6 +2195,116 @@ export async function handleDesktopCommand(options: CommandHandlerOptions): Prom
         `\n` +
         `请先使用 /bind <dir> 绑定工作空间`,
     };
+  }
+
+  // v1.0.1: 10 行版快捷语法处理
+  if (args[0] === "shortcut") {
+    const subcommand = args[1]; // find, click, type, hotkey, wait
+    const jsonPart = args[2] || ""; // JSON 参数字符串
+
+    // 解析 JSON 参数
+    let params: Record<string, unknown>;
+    try {
+      params = jsonPart.trim() ? JSON.parse(jsonPart.trim()) : {};
+    } catch {
+      return {
+        success: false,
+        message: `无效的 JSON 参数: ${jsonPart}`,
+      };
+    }
+
+    // 映射到 desktop tool subcommand
+    const toolArgs: Record<string, unknown> = { subcommand };
+
+    // 根据不同子命令映射参数
+    if (subcommand === "find") {
+      if (params.byRole) toolArgs.byRole = params.byRole;
+      if (params.titleContains) toolArgs.titleContains = params.titleContains;
+      if (params.valueContains) toolArgs.valueContains = params.valueContains;
+      if (params.limit) toolArgs.limit = params.limit;
+    } else if (subcommand === "click") {
+      if (params.selector) toolArgs.selector = params.selector;
+      if (params.byRole) toolArgs.byRole = params.byRole;
+      if (params.titleContains) toolArgs.titleContains = params.titleContains;
+      // v1.0.1: confirm token 支持
+      const confirmObj = params.confirm;
+      if (confirmObj && typeof confirmObj === "object" && "token" in confirmObj) {
+        toolArgs.confirm = (confirmObj as { token: string }).token;
+      } else {
+        toolArgs.confirm = "CONFIRM"; // 默认需要确认
+      }
+    } else if (subcommand === "type") {
+      if (params.text) toolArgs.text = params.text;
+      if (params.selector) toolArgs.selector = params.selector;
+      if (params.byRole) toolArgs.byRole = params.byRole;
+      if (params.titleContains) toolArgs.titleContains = params.titleContains;
+      // v1.0.1: confirm token 支持
+      const confirmObj = params.confirm;
+      if (confirmObj && typeof confirmObj === "object" && "token" in confirmObj) {
+        toolArgs.confirm = (confirmObj as { token: string }).token;
+      } else {
+        toolArgs.confirm = "CONFIRM";
+      }
+    } else if (subcommand === "hotkey") {
+      if (params.keys) {
+        // keys 是数组，转换为 "cmd+l" 格式
+        const keysArray = Array.isArray(params.keys) ? params.keys : [params.keys];
+        toolArgs.keys = keysArray.join("+");
+      }
+      // v1.0.1: confirm token 支持
+      const confirmObj = params.confirm;
+      if (confirmObj && typeof confirmObj === "object" && "token" in confirmObj) {
+        toolArgs.confirm = (confirmObj as { token: string }).token;
+      } else {
+        toolArgs.confirm = "CONFIRM";
+      }
+    } else if (subcommand === "wait") {
+      if (params.condition) toolArgs.condition = params.condition;
+      if (params.timeoutMs) toolArgs.timeoutMs = params.timeoutMs;
+    }
+
+    // 调用 desktop tool
+    const { executeTool } = await import("../tools/bus.js");
+    const { randomUUID } = await import("node:crypto");
+
+    const requestId = randomUUID();
+    const timeoutMs = subcommand === "wait" ? (params.timeoutMs ? Number(params.timeoutMs) : 30000) : 30000;
+
+    const result = await executeTool("desktop", toolArgs, {
+      workspacePath: entry.workspacePath,
+      source: "slash-command",
+      requestId,
+      chatId: chatId,
+      timeoutMs,
+    });
+
+    // 处理结果
+    if (result.ok) {
+      let message = result.data?.stdout || "执行成功（无输出）";
+      // 尝试格式化 JSON
+      try {
+        const jsonObj = JSON.parse(message);
+        if (jsonObj.result) {
+          message = JSON.stringify(jsonObj, null, 2);
+        }
+      } catch {
+        // 不是 JSON，直接回显
+      }
+
+      return {
+        success: true,
+        message,
+      };
+    } else {
+      const error = result.error;
+      const stderr = result.data?.stderr || "";
+      const extraInfo = stderr ? `\n\nstderr:\n${stderr}` : "";
+
+      return {
+        success: false,
+        message: `执行失败: ${error?.message || "未知错误"}${extraInfo}`,
+      };
+    }
   }
 
   // T8.6.3: confirm 子命令（签发 token）
