@@ -1,0 +1,58 @@
+name: Desktop Smoke Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  desktop-smoke:
+    name: Message -> Safari Smoke Test
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Swift
+        uses: swift-actions/setup-swift@v1
+        with:
+          swift-version: "6.0"
+
+      - name: Build Desktop Host
+        run: |
+          bash mac/MsgcodeDesktopHost/build.sh
+
+      - name: Build desktopctl
+        run: |
+          cd mac/msgcode-desktopctl
+          swift build
+
+      - name: Install LaunchAgent
+        run: |
+          bash mac/MsgcodeDesktopHost/register_launchagent.sh install
+
+      - name: Run Smoke Test
+        run: |
+          bash scripts/desktop/smoke-message-safari.sh
+
+      - name: Verify Evidence
+        run: |
+          # 检查最新的 evidence 目录
+          EVIDENCE_DIR=$(ls -td artifacts/desktop/*/* 2>/dev/null | head -1)
+          if [ -d "$EVIDENCE_DIR" ]; then
+            echo "Evidence directory exists: $EVIDENCE_DIR"
+            ls -la "$EVIDENCE_DIR"
+          else
+            echo "No evidence directory found"
+            exit 1
+          fi
+
+      - name: Upload Evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-evidence
+          path: artifacts/desktop/
+          retention-days: 7
