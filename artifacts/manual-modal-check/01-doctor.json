@@ -1,0 +1,26 @@
+{
+  "id" : "BCE1BD5A-7510-4082-9969-5640BDC2FD6A",
+  "jsonrpc" : "2.0",
+  "result" : {
+    "healthy" : true,
+    "permissions" : {
+      "screenRecording" : {
+        "granted" : true,
+        "required" : true,
+        "purpose" : "Screenshot capture"
+      },
+      "accessibility" : {
+        "granted" : true,
+        "required" : true,
+        "purpose" : "AX observe\/find\/action"
+      }
+    },
+    "issues" : [
+
+    ],
+    "peer" : {
+      "pid" : 53611,
+      "auditTokenDigest" : "6d7d73a5a898f2c5"
+    }
+  }
+}

@@ -32,6 +32,10 @@ public enum BridgeError: Int, Error {
     case invalidRequest = 9
     case hostStopped = 10
     case callerNotAllowed = 11  // T5: allowlist 验证失败
+    case pathNotFound = 12      // T16.0.4: byPath 路径未命中
+    case pathVerificationFailed = 13  // T16.0.4: byPath 验证失败
+    case anchorNotFound = 14    // T16.0.3: near 锚点未找到
+    case modalBlocking = 15      // T16.0.5: Modal 窗口阻塞操作
 
     public var code: String {
         switch self {
@@ -46,6 +50,10 @@ public enum BridgeError: Int, Error {
         case .invalidRequest: return "DESKTOP_INVALID_REQUEST"
         case .hostStopped: return "DESKTOP_HOST_STOPPED"
         case .callerNotAllowed: return "DESKTOP_CALLER_NOT_ALLOWED"
+        case .pathNotFound: return "DESKTOP_PATH_NOT_FOUND"
+        case .pathVerificationFailed: return "DESKTOP_PATH_VERIFICATION_FAILED"
+        case .anchorNotFound: return "DESKTOP_ANCHOR_NOT_FOUND"
+        case .modalBlocking: return "DESKTOP_MODAL_BLOCKING"
         }
     }
 }

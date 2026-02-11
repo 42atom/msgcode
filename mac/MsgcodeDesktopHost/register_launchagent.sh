@@ -35,13 +35,25 @@ fi
 echo -e "${GREEN}✓ MsgcodeDesktopHost.app 存在${NC}"
 echo ""
 
+# 解析 install 子命令的参数
+ENABLE_TEST_MODE=""
+if [ "${1:-}" == "install" ] && [ "${2:-}" == "--test" ]; then
+  ENABLE_TEST_MODE="yes"
+  shift  # 移除 --test 参数
+fi
+
 case "${1:-}" in
   install)
     echo "========================================"
     echo "安装 LaunchAgent"
     echo "========================================"
     echo ""
-    
+
+    if [ -n "$ENABLE_TEST_MODE" ]; then
+      echo -e "${YELLOW}⚠ 测试模式已启用：OPENCLAW_DESKTOP_TEST_HOOKS=1${NC}"
+      echo ""
+    fi
+
     # 生成 LaunchAgent plist 文件
     echo "生成 plist 文件: $LAUNCH_AGENT_PLIST"
     cat > "$LAUNCH_AGENT_PLIST" << EOF
@@ -68,6 +80,20 @@ case "${1:-}" in
     <true/>
     <key>RunAtLoad</key>
     <true/>
+EOF
+
+    # T16.0.6: 测试模式下注入环境变量
+    if [ -n "$ENABLE_TEST_MODE" ]; then
+      cat >> "$LAUNCH_AGENT_PLIST" << EOF
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>OPENCLAW_DESKTOP_TEST_HOOKS</key>
+        <string>1</string>
+    </dict>
+EOF
+    fi
+
+    cat >> "$LAUNCH_AGENT_PLIST" << EOF
 </dict>
 </plist>
 EOF
@@ -137,9 +163,14 @@ EOF
     
   *)
     echo "用法:"
-    echo "  $0 install   - 安装并启动 LaunchAgent"
-    echo "  $0 uninstall - 卸载 LaunchAgent"
-    echo "  $0 status    - 查看 LaunchAgent 状态"
+    echo "  $0 install [--test]  - 安装并启动 LaunchAgent"
+    echo "                          --test: 启用测试钩子 (OPENCLAW_DESKTOP_TEST_HOOKS=1)"
+    echo "  $0 uninstall         - 卸载 LaunchAgent"
+    echo "  $0 status            - 查看 LaunchAgent 状态"
+    echo ""
+    echo "示例:"
+    echo "  $0 install           # 生产模式安装"
+    echo "  $0 install --test    # 测试模式安装（启用测试钩子）"
     exit 1
     ;;
 esac

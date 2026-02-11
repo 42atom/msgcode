@@ -20,14 +20,14 @@ pushd "$SCRIPT_DIR" >/dev/null
 SDK_PATH="$(xcrun --sdk macosx --show-sdk-path)"
 ARCH="$(uname -m)"
 
-# 1. 构建 Host App（包含 BridgeServer.swift）
+# 1. 构建 Host App（包含 BridgeServer.swift + HighlightOverlay）
 echo "Build: swiftc"
 swiftc -o "$BUILD_DIR/$APP_NAME" \
     -target "${ARCH}-apple-macosx14.0" \
     -sdk "$SDK_PATH" \
     -F "$SDK_PATH/System/Library/Frameworks" \
     -I "$BUILD_DIR" \
-    BridgeXPC/BridgeXPCProtocol.swift BridgeServer.swift HostApp/main.swift
+    BridgeXPC/BridgeXPCProtocol.swift BridgeServer.swift HostApp/ConfigLoader.swift HostApp/HighlightOverlay.swift HostApp/main.swift
 
 # 2. 创建 app bundle 结构
 echo "Build: app bundle"

@@ -67,8 +67,11 @@ open MsgcodeDesktopHost.app
 
 ### LaunchAgent 模式
 ```bash
-# 注册 LaunchAgent
+# 注册 LaunchAgent（生产模式 - 测试钩子禁用）
 bash register_launchagent.sh install
+
+# 注册 LaunchAgent（测试模式 - 启用测试钩子）
+bash register_launchagent.sh install --test
 
 # 启动服务
 launchctl start com.msgcode.desktop.bridge
@@ -82,6 +85,56 @@ bash register_launchagent.sh uninstall
 # 查看状态
 bash register_launchagent.sh status
 ```
+
+**切换模式**：测试模式 → 生产模式
+```bash
+bash register_launchagent.sh uninstall
+bash register_launchagent.sh install
+```
+
+## 测试钩子（Test Hooks）
+
+### 概述
+
+部分测试专用的 RPC 方法（前缀为 `desktop._test.*`）仅在测试环境中开放，生产环境默认禁用。
+
+### 启用方式（T16.0.6 统一策略）
+
+测试钩子需要**同时满足**以下两个条件才能启用：
+
+1. **环境变量**：`OPENCLAW_DESKTOP_TEST_HOOKS=1`
+2. **请求参数**：`meta._testMode === true`
+
+### LaunchAgent 测试模式（推荐）
+
+由于 macOS GUI 应用通过 `open` 启动时**不继承 shell 环境变量**，使用 LaunchAgent 的 `--test` 选项可正确注入环境变量：
+
+```bash
+# 安装 LaunchAgent（测试模式）
+bash register_launchagent.sh install --test
+```
+
+这会在 LaunchAgent plist 中注入：
+```xml
+<key>EnvironmentVariables</key>
+<dict>
+    <key>OPENCLAW_DESKTOP_TEST_HOOKS</key>
+    <string>1</string>
+</dict>
+```
+
+### 为什么 `open` 不继承环境变量？
+
+macOS GUI 应用通过 `open` 启动时，由 launchd 管理，不继承当前 shell 的环境变量。解决方式：
+1. 使用 LaunchAgent 的 `EnvironmentVariables` 配置（推荐）
+2. 直接运行可执行文件（调试用）
+
+### 可用测试钩子
+
+| 方法 | 说明 |
+|------|------|
+| `desktop._test.injectModalDetector` | 注入模拟 modal 检测器 |
+| `desktop._test.clearModalDetector` | 清除模拟 modal 检测器 |
 
 ## 验收标准
 

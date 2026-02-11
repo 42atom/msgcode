@@ -51,6 +51,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusBarMenu: NSMenu?
     private var bridgeServer: BridgeServer?
 
+    // 配置
+    private var config: MenubarConfig = MenubarConfig.default
+    private var currentWorkspacePath: String?
+
     // Logger
     private let logger = Logger(subsystem: "com.msgcode.desktop.host", category: "main")
 
@@ -60,6 +64,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var bridgeStatus: BridgeStatus = .stopped
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 获取当前工作目录
+        currentWorkspacePath = FileManager.default.currentDirectoryPath
+
+        // 加载配置
+        loadConfig()
+
         setupMenubar()
         setupPermissionsMonitoring()
 
@@ -75,6 +85,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 正常 GUI 模式：自动启动 bridge
         startBridge()
+    }
+
+    // MARK: - 配置加载
+
+    private func loadConfig() {
+        config = ConfigLoader.shared.loadConfig(currentWorkspacePath: currentWorkspacePath)
+        logger.log("配置已加载: enabled=\(self.config.enabled), workspacePath=\(self.config.workspacePath ?? "default")")
+    }
+
+    private func reloadConfig() {
+        loadConfig()
+        updateMenuStates()
+        logger.log("配置已重新加载")
+        showAlert(title: "配置已重新加载", message: "enabled=\(self.config.enabled), workspacePath=\(self.config.workspacePath ?? "default")")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -102,13 +126,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusBarMenu = menu
 
         // T9-M0: 三键最小版（置顶）
-        let doctorItem = menu.addItem(withTitle: "Doctor", action: #selector(doctorAction), keyEquivalent: "d")
+        let doctorShortcut = config.shortcuts?.doctor ?? "cmd+d"
+        let doctorItem = menu.addItem(withTitle: "Doctor", action: #selector(doctorAction), keyEquivalent: shortcutEquivalent(from: doctorShortcut))
         doctorItem.tag = MenuItemTag.doctor.rawValue
 
-        let observeItem = menu.addItem(withTitle: "Observe", action: #selector(observeAction), keyEquivalent: "o")
+        let observeShortcut = config.shortcuts?.observe ?? "cmd+o"
+        let observeItem = menu.addItem(withTitle: "Observe", action: #selector(observeAction), keyEquivalent: shortcutEquivalent(from: observeShortcut))
         observeItem.tag = MenuItemTag.observe.rawValue
 
-        let evidenceItem = menu.addItem(withTitle: "Open Latest Evidence", action: #selector(openLatestEvidence), keyEquivalent: "e")
+        let evidenceShortcut = config.shortcuts?.openEvidence ?? "cmd+e"
+        let evidenceItem = menu.addItem(withTitle: "Open Latest Evidence", action: #selector(openLatestEvidence), keyEquivalent: shortcutEquivalent(from: evidenceShortcut))
         evidenceItem.tag = MenuItemTag.openLatestEvidence.rawValue
 
         menu.addItem(NSMenuItem.separator())
@@ -126,6 +153,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
+        // Config controls
+        menu.addItem(withTitle: "Reload Config", action: #selector(reloadConfigAction), keyEquivalent: "r")
+
+        menu.addItem(NSMenuItem.separator())
+
         // Panic Stop
         let panicItem = menu.addItem(withTitle: "Panic Stop", action: #selector(panicStop), keyEquivalent: "p")
         panicItem.tag = MenuItemTag.panicStop.rawValue
@@ -140,7 +172,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         updateMenuStates()
     }
 
+    // 辅助：将快捷键字符串转换为 NSMenuItem 格式
+    private func shortcutEquivalent(from string: String) -> String {
+        // 格式：'cmd+d' → 'd', 'cmd+shift+d' → 'D'
+        if string.hasPrefix("cmd+shift+") {
+            let key = string.dropFirst(10)  // 移除 'cmd+shift+'
+            return String(key).uppercased()
+        } else if string.hasPrefix("cmd+") {
+            let key = string.dropFirst(4)  // 移除 'cmd+'
+            return String(key)
+        }
+        return string
+    }
+
     // MARK: - Menu Actions
+
+    @objc private func reloadConfigAction() {
+        reloadConfig()
+    }
 
     // T9-M0: 三键最小版 - Doctor
     @objc private func doctorAction() {
@@ -152,7 +201,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // 调用 desktop.doctor 并显示结果
         logger.log("Calling desktop.doctor...")
 
-        let workspacePath = FileManager.default.homeDirectoryForCurrentUser.path
+        let workspacePath = config.workspacePath ?? FileManager.default.homeDirectoryForCurrentUser.path
 
         // 构造 JSON-RPC 请求
         let requestId = UUID().uuidString
@@ -191,7 +240,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         logger.log("Calling desktop.observe...")
 
-        let workspacePath = FileManager.default.homeDirectoryForCurrentUser.path
+        let workspacePath = config.workspacePath ?? FileManager.default.homeDirectoryForCurrentUser.path
 
         // 构造 JSON-RPC 请求
         let requestId = UUID().uuidString
@@ -225,9 +274,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    // T9-M0: 三键最小版 - Open Latest Evidence
+    // T9-M0: 三键最小版 - Open Evidence（支持 latest 和 choose 模式）
     @objc private func openLatestEvidence() {
-        let workspacePath = FileManager.default.homeDirectoryForCurrentUser.path
+        let workspacePath = config.workspacePath ?? FileManager.default.homeDirectoryForCurrentUser.path
         let desktopDir = "\(workspacePath)/artifacts/desktop"
 
         guard FileManager.default.fileExists(atPath: desktopDir) else {
@@ -235,7 +284,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
-        // 查找最新的日期目录
+        // 读取配置中的 openEvidence.mode
+        let mode = config.openEvidence?.mode ?? "latest"
+
+        if mode == "choose" {
+            // choose 模式：打开 Finder 让用户选择
+            NSWorkspace.shared.open(URL(fileURLWithPath: desktopDir))
+            logger.log("Opened evidence directory (choose mode): \(desktopDir)")
+            return
+        }
+
+        // latest 模式：查找并打开最新的证据目录
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd"
 
@@ -267,7 +326,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             for execDir in execDirs {
                 let execPath = "\(datePath)/\(execDir)"
                 if let attrs = try? FileManager.default.attributesOfItem(atPath: execPath),
-                   let modTime = attrs[.modificationDate] as? Date {
+                   let modTime = attrs[FileAttributeKey.modificationDate] as? Date {
                     if modTime.timeIntervalSince1970 > latestModTime {
                         latestModTime = modTime.timeIntervalSince1970
                         latestExecDir = execPath
@@ -283,7 +342,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // 打开 Finder 到证据目录
         NSWorkspace.shared.open(URL(fileURLWithPath: execDir))
-        logger.log("Opened evidence directory: \(execDir)")
+        logger.log("Opened evidence directory (latest mode): \(execDir)")
     }
 
     // 显示 Doctor 结果
@@ -331,6 +390,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         if let result = json["result"] as? [String: Any],
+           let executionId = result["executionId"] as? String,
            let evidence = result["evidence"] as? [String: Any],
            let evidenceDir = evidence["dir"] as? String {
             // 读取 events.ndjson 最后一条事件
@@ -351,10 +411,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 }
             }
 
-            var message = "证据目录: \(evidenceDir)\n\n\(eventSummary)"
+            var message = "Execution ID: \(executionId)\n证据目录: \(evidenceDir)\n\n\(eventSummary)"
 
             // 显示权限缺失
-            if let permsMissing = evidence["permissionsMissing"] as? [String] {
+            if let permsMissing = result["permissionsMissing"] as? [String] {
                 message += "\n\n缺失权限:\n" + permsMissing.joined(separator: ", ")
             }
 
@@ -364,7 +424,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let alert = NSAlert()
             alert.messageText = "打开证据目录?"
             alert.informativeText = evidenceDir
-            alert.alertStyle = .informational  // 修复：.question 不存在
+            alert.alertStyle = .informational
             alert.addButton(withTitle: "打开")
             alert.addButton(withTitle: "取消")
 
@@ -526,6 +586,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func updateMenuStates() {
         guard let menu = statusBarMenu else { return }
+
+        // 根据配置控制三键显示/隐藏
+        let menubarEnabled = config.enabled
+        if let doctorItem = menu.item(withTag: MenuItemTag.doctor.rawValue) {
+            doctorItem.isHidden = !menubarEnabled
+        }
+        if let observeItem = menu.item(withTag: MenuItemTag.observe.rawValue) {
+            observeItem.isHidden = !menubarEnabled
+        }
+        if let evidenceItem = menu.item(withTag: MenuItemTag.openLatestEvidence.rawValue) {
+            evidenceItem.isHidden = !menubarEnabled
+        }
 
         // Update bridge control items
         if let startItem = menu.item(withTag: MenuItemTag.startBridge.rawValue) {

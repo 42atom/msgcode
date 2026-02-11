@@ -42,6 +42,7 @@
 | **Schedules** | [编排层规划](./orchestration_plan_v2.2.md) | [src/config/](../../src/config/) |
 | **BDD** | [本节 → BDD](#bdd--发布门槛-v22) | [test/](../../test/) |
 | **Bridge** | [Desktop Bridge](./desktop_bridge_contract_v2.2.md) | - |
+| **Telegram 切换** | [Telegram 迁移计划](./telegram_migration_plan_v2.2.md) | [src/channels/](../../src/channels/) |
 | **Roadmap** | [2.2 路线图](./roadmap_v2.2.md) | - |
 | **Agent Core** | [Agent Core Plan](./agent_core_plan_v2.2.md) | [src/providers/](../../src/providers/) |
 
@@ -72,6 +73,7 @@ AIDOCS/msgcode-2.2/
 ├── indextts_optimization_memo.md       # IndexTTS 优化备忘（本机模型分支 + 调用侧策略）
 ├── osaurus_integration_plan_v2.2.md   # osaurus 参考笔记（对照用，不纳入交付）
 ├── desktop_bridge_contract_v2.2.md    # Desktop Host/Bridge 的 JSON-RPC 契约（P0）
+├── telegram_migration_plan_v2.2.md    # 从 iMessage 切换到 Telegram Bot 的迁移计划（P0/P1）
 ├── m5_codex_execution_plan_v2.2.md    # M5：Codex 兼容执行计划（P0）
 └── desktop_automation_plan_v2.2.md    # Desktop GUI Automation（Host + Bridge）规划 v2.2
 ```
