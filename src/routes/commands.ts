@@ -2223,41 +2223,56 @@ export async function handleDesktopCommand(options: CommandHandlerOptions): Prom
       if (params.valueContains) toolArgs.valueContains = params.valueContains;
       if (params.limit) toolArgs.limit = params.limit;
     } else if (subcommand === "click") {
+      // Batch-T2.1: 强制要求 confirm.token，禁止默认 "CONFIRM" 回退
+      if (!params.confirm || typeof params.confirm !== "object" || !("token" in params.confirm)) {
+        return {
+          success: false,
+          message: `DESKTOP_CONFIRM_REQUIRED: /desktop click 必须提供 confirm.token\n` +
+            `\n` +
+            `用法: /desktop click {"selector":{...},"confirm":{"token":"<token>"}}\n` +
+            `\n` +
+            `获取 token: /desktop confirm desktop.click {"selector":{...}}`,
+        };
+      }
       if (params.selector) toolArgs.selector = params.selector;
       if (params.byRole) toolArgs.byRole = params.byRole;
       if (params.titleContains) toolArgs.titleContains = params.titleContains;
-      // v1.0.1: confirm token 支持
-      const confirmObj = params.confirm;
-      if (confirmObj && typeof confirmObj === "object" && "token" in confirmObj) {
-        toolArgs.confirm = (confirmObj as { token: string }).token;
-      } else {
-        toolArgs.confirm = "CONFIRM"; // 默认需要确认
-      }
+      toolArgs.confirm = (params.confirm as { token: string }).token;
     } else if (subcommand === "type") {
+      // Batch-T2.1: 强制要求 confirm.token，禁止默认 "CONFIRM" 回退
+      if (!params.confirm || typeof params.confirm !== "object" || !("token" in params.confirm)) {
+        return {
+          success: false,
+          message: `DESKTOP_CONFIRM_REQUIRED: /desktop type 必须提供 confirm.token\n` +
+            `\n` +
+            `用法: /desktop type {"selector":{...},"text":"...","confirm":{"token":"<token>"}}\n` +
+            `\n` +
+            `获取 token: /desktop confirm desktop.typeText {"selector":{...},"text":"..."}`,
+        };
+      }
       if (params.text) toolArgs.text = params.text;
       if (params.selector) toolArgs.selector = params.selector;
       if (params.byRole) toolArgs.byRole = params.byRole;
       if (params.titleContains) toolArgs.titleContains = params.titleContains;
-      // v1.0.1: confirm token 支持
-      const confirmObj = params.confirm;
-      if (confirmObj && typeof confirmObj === "object" && "token" in confirmObj) {
-        toolArgs.confirm = (confirmObj as { token: string }).token;
-      } else {
-        toolArgs.confirm = "CONFIRM";
-      }
+      toolArgs.confirm = (params.confirm as { token: string }).token;
     } else if (subcommand === "hotkey") {
+      // Batch-T2.1: 强制要求 confirm.token，禁止默认 "CONFIRM" 回退
+      if (!params.confirm || typeof params.confirm !== "object" || !("token" in params.confirm)) {
+        return {
+          success: false,
+          message: `DESKTOP_CONFIRM_REQUIRED: /desktop hotkey 必须提供 confirm.token\n` +
+            `\n` +
+            `用法: /desktop hotkey {"keys":["cmd","l"],"confirm":{"token":"<token>"}}\n` +
+            `\n` +
+            `获取 token: /desktop confirm desktop.hotkey {"keys":["cmd","l"]}`,
+        };
+      }
       if (params.keys) {
         // keys 是数组，转换为 "cmd+l" 格式
         const keysArray = Array.isArray(params.keys) ? params.keys : [params.keys];
         toolArgs.keys = keysArray.join("+");
       }
-      // v1.0.1: confirm token 支持
-      const confirmObj = params.confirm;
-      if (confirmObj && typeof confirmObj === "object" && "token" in confirmObj) {
-        toolArgs.confirm = (confirmObj as { token: string }).token;
-      } else {
-        toolArgs.confirm = "CONFIRM";
-      }
+      toolArgs.confirm = (params.confirm as { token: string }).token;
     } else if (subcommand === "wait") {
       if (params.condition) toolArgs.condition = params.condition;
       if (params.timeoutMs) toolArgs.timeoutMs = params.timeoutMs;
@@ -2268,6 +2283,7 @@ export async function handleDesktopCommand(options: CommandHandlerOptions): Prom
     const { randomUUID } = await import("node:crypto");
 
     const requestId = randomUUID();
+    const messageRequestId = randomUUID(); // Batch-T3: Message 请求 ID
     const timeoutMs = subcommand === "wait" ? (params.timeoutMs ? Number(params.timeoutMs) : 30000) : 30000;
 
     const result = await executeTool("desktop", toolArgs, {
@@ -2277,6 +2293,27 @@ export async function handleDesktopCommand(options: CommandHandlerOptions): Prom
       chatId: chatId,
       timeoutMs,
     });
+
+    // Batch-T3: 记录会话证据映射
+    if (result.ok && result.artifacts && result.artifacts.length > 0) {
+      const { recordDesktopSession } = await import("../runtime/desktop-session.js");
+
+      // 从 artifacts 中提取 evidence 目录
+      const evidenceDir = result.artifacts[0]?.path || "";
+      if (evidenceDir) {
+        await recordDesktopSession({
+          messageRequestId,
+          method: subcommand,
+          executionId: requestId,
+          evidenceDir,
+          workspacePath: entry.workspacePath,
+          chatId: chatId,
+        }).catch(err => {
+          // 记录失败不影响主流程
+          console.error(`[DesktopSession] 记录失败: ${err}`);
+        });
+      }
+    }
 
     // 处理结果
     if (result.ok) {
