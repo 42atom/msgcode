@@ -1,0 +1,41 @@
+[gMASK]<sop>
+{# GLM-4.7（tool-capable）稳定 Prompt Template #}
+{# 目标：支持 tool 回灌（role=tool），避免 <think>/<tool_call> 元结构污染 #}
+
+{%- macro visible_text(content) -%}
+  {%- if content is string -%}
+    {{- content -}}
+  {%- elif content is iterable and content is not mapping -%}
+    {%- for item in content -%}
+      {%- if item is mapping and item.type == 'text' and item.text is defined -%}
+        {{- item.text -}}
+      {%- elif item is string -%}
+        {{- item -}}
+      {%- endif -%}
+    {%- endfor -%}
+  {%- else -%}
+    {{- content -}}
+  {%- endif -%}
+{%- endmacro -%}
+
+{%- for m in messages -%}
+{%- if m.role == 'system' -%}
+<|system|>
+{{ visible_text(m.content) }}
+
+{%- elif m.role == 'user' -%}
+<|user|>
+{{ visible_text(m.content) }}
+
+{%- elif m.role == 'assistant' -%}
+<|assistant|>
+{{ visible_text(m.content) }}
+
+{%- elif m.role == 'tool' -%}
+<|tool|>
+{{ visible_text(m.content) }}
+
+{%- endif -%}
+{%- endfor -%}
+
+<|assistant|>

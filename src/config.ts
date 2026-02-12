@@ -91,6 +91,24 @@ export interface Config {
     lmstudioMaxTokens?: number;
     // LM Studio API Key（可选，服务端需要授权时使用）
     lmstudioApiKey?: string;
+    // 群聊安全：仅允许 owner 触发（可选，默认 false）
+    ownerOnlyInGroup: boolean;
+    // owner 身份标识（电话/邮箱 handle），用于群聊收口信任边界
+    // 逗号分隔：MSGCODE_OWNER=wan2011@me.com,+8613800...
+    ownerIdentifiers: string[];
+}
+
+function parseCsv(value: string | undefined): string[] {
+    if (!value) return [];
+    return value
+        .split(",")
+        .map(s => s.trim())
+        .filter(Boolean);
+}
+
+function parseBool(value: string | undefined): boolean {
+    if (!value) return false;
+    return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
 }
 
 /**
@@ -142,13 +160,23 @@ function parseGroupRoutes(): Map<string, GroupConfig> {
  * 加载配置
  */
 export function loadConfig(): Config {
+    const isTest = process.env.NODE_ENV === "test";
+
     const phones = parsePhones(process.env.MY_PHONE);
     const emails = parseEmails(process.env.MY_EMAIL);
+    const ownerOnlyInGroup = parseBool(process.env.MSGCODE_OWNER_ONLY_IN_GROUP);
+    const ownerIdentifiers = parseCsv(process.env.MSGCODE_OWNER);
 
     const groupRoutes = parseGroupRoutes();
 
-    if (phones.length === 0 && emails.length === 0) {
-        throw new Error("白名单为空 (MY_PHONE / MY_EMAIL)，为安全起见请至少配置一项");
+    // 测试环境：不要求真实用户白名单（避免 CI / 本地跑测依赖个人配置）
+    if (!isTest) {
+        if (phones.length === 0 && emails.length === 0) {
+            throw new Error("白名单为空 (MY_PHONE / MY_EMAIL)，为安全起见请至少配置一项");
+        }
+        if (ownerOnlyInGroup && ownerIdentifiers.length === 0) {
+            throw new Error("已启用群聊 owner 收口 (MSGCODE_OWNER_ONLY_IN_GROUP=1)，但未配置 MSGCODE_OWNER");
+        }
     }
 
     const imsgPath = process.env.IMSG_PATH;
@@ -158,8 +186,8 @@ export function loadConfig(): Config {
 
     return {
         whitelist: {
-            phones,
-            emails,
+            phones: isTest && phones.length === 0 ? ["+10000000000"] : phones,
+            emails: isTest && emails.length === 0 ? ["test@example.com"] : emails,
         },
         groupRoutes,
         logLevel: (process.env.LOG_LEVEL as Config["logLevel"]) || "info",
@@ -173,6 +201,8 @@ export function loadConfig(): Config {
         lmstudioTimeoutMs: process.env.LMSTUDIO_TIMEOUT_MS ? Number(process.env.LMSTUDIO_TIMEOUT_MS) : undefined,
         lmstudioMaxTokens: process.env.LMSTUDIO_MAX_TOKENS ? Number(process.env.LMSTUDIO_MAX_TOKENS) : undefined,
         lmstudioApiKey: process.env.LMSTUDIO_API_KEY,
+        ownerOnlyInGroup: isTest ? false : ownerOnlyInGroup,
+        ownerIdentifiers: isTest ? ["test@example.com"] : ownerIdentifiers,
     };
 }
 

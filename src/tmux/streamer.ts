@@ -111,19 +111,6 @@ function extractTmuxDiff(oldOutput: string, newOutput: string, sentMessage: stri
 }
 
 /**
- * 转义消息中的特殊字符（从 responder.ts 复用）
- */
-function escapeMessage(message: string): string {
-    return message
-        .replace(/\\/g, '\\\\')   // 反斜杠
-        .replace(/"/g, '\\"')      // 双引号
-        .replace(/\$/g, '\\$')     // 美元符号
-        .replace(/;/g, '\\;')      // 分号
-        .replace(/\(/g, '\\(')     // 左括号
-        .replace(/\)/g, '\\)');    // 右括号
-}
-
-/**
  * 流式输出选项
  */
 export interface StreamOptions {
@@ -229,11 +216,11 @@ export async function handleTmuxStream(
         });
     }
 
-    // 发送消息
+    // 发送消息（P0: 使用 sendTextLiteral + sendEnter，直接发送原文）
     try {
-        const escapedMessage = escapeMessage(message);
-        await TmuxSession.sendCommand(sessionName, escapedMessage);
-        await TmuxSession.sendCommand(sessionName, ""); // 额外 Enter 确认
+        await TmuxSession.sendTextLiteral(sessionName, message);
+        await new Promise(resolve => setTimeout(resolve, 50)); // 延迟防止UI吞键
+        await TmuxSession.sendEnter(sessionName);
     } catch (error: any) {
         return { success: false, error: `发送失败: ${error.message}` };
     }

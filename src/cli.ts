@@ -14,18 +14,7 @@ import { fileURLToPath } from "node:url";
 import { mkdir, copyFile } from "node:fs/promises";
 import { existsSync, accessSync, constants } from "node:fs";
 import { exec, spawn } from "node:child_process";
-
-// 导入 memory 子命令（M2）
-import {
-  createMemoryRememberCommand,
-  createMemoryIndexCommand,
-  createMemorySearchCommand,
-  createMemoryGetCommand,
-  createMemoryStatusCommand,
-} from "./cli/memory.js";
-
-// 导入 job 子命令（M3）
-import { createJobCommand } from "./cli/jobs.js";
+import { getVersion, getVersionInfo, type VersionInfo } from "./version.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -36,7 +25,7 @@ const DAEMON_SCRIPT = path.join(__dirname, "daemon.ts");
 
 const program = new Command();
 
-program.name("msgcode").description("msgcode - iMessage-based bot (imsg RPC)").version("0.4.0");
+program.name("msgcode").description("msgcode - iMessage-based bot (imsg RPC)").version(getVersion());
 
 program
   .command("start [mode]")
@@ -161,6 +150,30 @@ program
     process.exit(exitCode);
   });
 
+program
+  .command("about")
+  .description("显示版本和配置信息")
+  .option("-j, --json", "JSON 格式输出（短选项）")
+  .action((options) => {
+    const versionInfo = getVersionInfo();
+
+    if (options.json) {
+      console.log(JSON.stringify(versionInfo, null, 2));
+    } else {
+      console.log(`msgcode v${versionInfo.appVersion}`);
+      console.log(`  Node: ${versionInfo.nodeVersion}`);
+      console.log(`  binPath: ${versionInfo.binPath}`);
+      console.log(`  cliEntry: ${versionInfo.cliEntry}`);
+      console.log(`  configPath: ${versionInfo.configPath}`);
+      if (versionInfo.imsgPath) {
+        console.log(`  imsgPath: ${versionInfo.imsgPath}`);
+      }
+      if (versionInfo.workspaceRoot) {
+        console.log(`  workspaceRoot: ${versionInfo.workspaceRoot}`);
+      }
+    }
+  });
+
 // Memory 命令组（M2）
 async function loadMemoryCommands() {
   const { createMemoryCommand } = await import("./cli/memory.js");
@@ -173,10 +186,45 @@ async function loadJobCommands() {
   program.addCommand(createJobCommand());
 }
 
+// Preflight 命令（M4-B）
+async function loadPreflightCommands() {
+  const { createPreflightCommand } = await import("./cli/preflight.js");
+  program.addCommand(createPreflightCommand());
+}
+
+// Run 命令组（M4-A1）
+async function loadRunCommands() {
+  const { createRunCommand } = await import("./cli/run.js");
+  program.addCommand(createRunCommand());
+}
+
 // 主入口（异步）
 async function main() {
-  await loadMemoryCommands();
-  await loadJobCommands();
+  // P0: 仅按需加载子命令，避免在“未初始化配置”时也强制 import 导致 CLI 直接崩溃。
+  // 例：用户首次使用时需要能运行 `msgcode init` 来生成 ~/.config/msgcode/.env。
+  const argv = process.argv.slice(2);
+  const top = (argv[0] ?? "").toLowerCase();
+
+  if (top === "memory") {
+    await loadMemoryCommands();
+  }
+  if (top === "job" || top === "jobs") {
+    await loadJobCommands();
+  }
+  if (top === "preflight") {
+    await loadPreflightCommands();
+  }
+  if (top === "run") {
+    await loadRunCommands();
+  }
+
+  // 对于 help（无参数或 --help），也加载一遍子命令，让帮助信息完整
+  if (!top || top === "-h" || top === "--help" || top === "help") {
+    await loadMemoryCommands();
+    await loadJobCommands();
+    await loadPreflightCommands();
+    await loadRunCommands();
+  }
   program.parse();
 }
 
@@ -188,6 +236,26 @@ main().catch((err) => {
 async function launchDaemon(): Promise<void> {
   await mkdir(CONFIG_DIR, { recursive: true });
   await mkdir(LOG_DIR, { recursive: true });
+
+  const versionInfo = getVersionInfo();
+  console.log(`msgcode v${versionInfo.appVersion}`);
+  console.log(`  binPath: ${versionInfo.binPath}`);
+  console.log(`  cliEntry: ${versionInfo.cliEntry}`);
+  console.log("");
+
+  // 单实例守护：若已有 daemon 在跑，则不重复启动
+  try {
+    const { acquireSingletonLock } = await import("./runtime/singleton.js");
+    const lock = await acquireSingletonLock("msgcode-daemon");
+    if (!lock.acquired) {
+      console.log(`msgcode 已在运行 (pid: ${lock.pid ?? "unknown"})`);
+      return;
+    }
+    // 这里不 release：真正的 daemon 进程会重新 acquire 并管理 pidfile
+    await lock.release();
+  } catch {
+    // best-effort：锁机制失败时继续启动（避免误伤）
+  }
 
   console.log("后台启动 msgcode...");
 

@@ -27,9 +27,9 @@ export async function runLmStudioChat(options: LmStudioChatOptions): Promise<str
 
     const model = await resolveLmStudioModelId({ baseUrl });
 
-    // 构建 system prompt：基础 + MCP 防循环规则
+    // 构建 system prompt：基础（用户配置）+ 快速回答规则 +（可选）MCP 防循环规则
+    // 注意：当 options.system 未提供时，必须回退到 LMSTUDIO_SYSTEM_PROMPT（用户配置）。
     const baseSystem = options.system ?? config.lmstudioSystemPrompt ?? "";
-    const system = buildSystemPrompt(baseSystem, options.workspace);
 
     const timeoutMs = typeof config.lmstudioTimeoutMs === "number" && !Number.isNaN(config.lmstudioTimeoutMs)
         ? config.lmstudioTimeoutMs
@@ -39,19 +39,23 @@ export async function runLmStudioChat(options: LmStudioChatOptions): Promise<str
         ? Math.floor(config.lmstudioMaxTokens)
         : 4000;
 
-    // 优先使用 /api/v1/chat with MCP integrations（当提供 workspace 时）
-    const useMcp = !!options.workspace;
+    // E17: 默认禁用 MCP（避免模型尝试读取文件，需要 LMSTUDIO_ENABLE_MCP=1 显式启用）
+    const useMcp = process.env.LMSTUDIO_ENABLE_MCP === "1" && !!options.workspace;
 
     // MCP 模式需要更大的 max_tokens，避免工具调用被截断
     // 工具调用块本身可能 100+ token，太小会导致缺少 [END_TOOL_REQUEST]
     const mcpMaxTokens = Math.max(maxTokens, 1024);
+
+    // 构造 system prompt（包含快速回答规则）
+    const systemPrompt = buildSystemPrompt(baseSystem, useMcp);
+    const compatSystemPrompt = buildSystemPrompt(baseSystem, false);
 
     async function runNativeMcpOnce(maxOutputTokens: number): Promise<string> {
         const native = await runLmStudioChatNativeMcp({
             baseUrl,
             model,
             prompt: options.prompt,
-            system: undefined,  // 不传递 system_prompt
+            system: systemPrompt,  // 传递 system_prompt
             maxOutputTokens: Math.max(maxOutputTokens, mcpMaxTokens),
             timeoutMs,
             useMcp,
@@ -64,7 +68,7 @@ export async function runLmStudioChat(options: LmStudioChatOptions): Promise<str
             baseUrl,
             model,
             prompt: options.prompt,
-            system: undefined,  // 不传递 system_prompt
+            system: systemPrompt,  // 传递 system_prompt
             maxOutputTokens,
             timeoutMs,
         });
@@ -76,7 +80,7 @@ export async function runLmStudioChat(options: LmStudioChatOptions): Promise<str
             baseUrl,
             model,
             prompt: options.prompt,
-            system: system && system.trim() ? system.trim() : undefined,
+            system: compatSystemPrompt && compatSystemPrompt.trim() ? compatSystemPrompt.trim() : undefined,
             maxTokens: maxOutputTokens,
             timeoutMs,
         });
@@ -129,15 +133,27 @@ export async function runLmStudioChat(options: LmStudioChatOptions): Promise<str
 /**
  * 构建完整的 system prompt
  * - 基础 prompt（用户配置）
+ * - E17: 快速回答规则（默认启用，避免模型思考太长时间）
  * - MCP 防循环规则（当启用 workspace 时）
  */
-function buildSystemPrompt(base: string, workspace?: string): string {
+function buildSystemPrompt(base: string, useMcp?: boolean): string {
     const parts: string[] = [];
     if (base.trim()) {
         parts.push(base.trim());
     }
 
-    if (workspace) {
+    // E17: 快速回答约束（保持极短，避免触发“复述说明书/元叙事”）
+    // 注意：这里不要写“规则/约束/分析/计划/两段式/第1段...”等说明书式语句，
+    // 否则部分模型会把它当作需要复述的内容。
+    const quickAnswerConstraint = `
+直接回答用户的问题，用中文纯文本输出。
+不要解释你在做什么，也不要复述用户消息或任何方括号块（如 [attachment]/[图片文字]/[语音转写]）。
+如需引用证据，只摘录最关键的1-3句。
+`.trim();
+    parts.push(quickAnswerConstraint);
+
+    // 只在 MCP 真正启用时才追加 MCP 规则（避免 4.7 误以为自己有工具）
+    if (useMcp) {
         parts.push(MCP_ANTI_LOOP_RULES);
     }
 
@@ -204,7 +220,7 @@ async function resolveLmStudioModelId(params: ResolveModelParams): Promise<strin
     );
 }
 
-async function fetchFirstModelId(params: { baseUrl: string }): Promise<string> {
+async function fetchFirstModelId(params: { baseUrl: string }): Promise<string | null> {
     // 优先：原生 REST
     try {
         const id = await fetchFirstLoadedModelKeyNative({ baseUrl: params.baseUrl });
@@ -296,6 +312,11 @@ async function runLmStudioChatNativeMcp(params: LmStudioNativeMcpParams): Promis
         temperature: 0,  // 降低随机性，减少循环
     };
 
+    // 添加 system_prompt（如果提供）
+    if (params.system && params.system.trim()) {
+        bodyBase.system_prompt = params.system.trim();
+    }
+
     // 不设置 system_prompt，保持空
 
     // 启用 MCP filesystem integrations
@@ -381,9 +402,13 @@ async function runLmStudioChatNative(params: LmStudioNativeChatParams): Promise<
         input: params.prompt,
         stream: false,
         max_output_tokens: params.maxOutputTokens,
+        temperature: 0, // 稳定优先：避免发散/乱码/循环
     };
 
-    // 不设置 system_prompt，保持空
+    // 添加 system_prompt（如果提供）
+    if (params.system && params.system.trim()) {
+        bodyBase.system_prompt = params.system.trim();
+    }
 
     // 重试逻辑：处理 "Model unloaded" 错误
     let lastError: Error | undefined;
@@ -582,11 +607,32 @@ async function fetchTextWithTimeout(params: {
 
 function extractLmStudioNativeMessage(value: unknown): string {
     const output = isNativeChatResponse(value) ? value.output : [];
+    let lastReasoning = "";
+
     for (const item of output) {
-        if (item.type !== "message") continue;
-        const extracted = extractTextFromUnknown(item.content);
-        if (extracted) return extracted;
+        // 优先返回 message（最终答案）
+        if (item.type === "message") {
+            const extracted = extractTextFromUnknown(item.content);
+            if (extracted) return extracted;
+        }
+        // 记录最后一次 reasoning（作为 fallback）
+        if (item.type === "reasoning") {
+            const extracted = extractTextFromUnknown(item.content);
+            if (extracted) lastReasoning = extracted;
+        }
     }
+
+    // 如果没有 message，说明模型只输出了 reasoning（被截断/未完成）
+    // 不应该把 reasoning 发给用户，返回空字符串或错误提示
+    if (lastReasoning) {
+        // 兜底：尝试从 reasoning 中提取最后一部分作为答案（可能是未完成的答案）
+        const lines = lastReasoning.split("\n");
+        const lastLines = lines.slice(-3).join("\n").trim();
+        if (lastLines && lastLines.length > 10) {
+            return lastLines;
+        }
+    }
+
     return "";
 }
 
@@ -648,15 +694,116 @@ export function sanitizeLmStudioOutput(text: string): string {
     out = stripAnsi(out);
     out = normalizeJsonishEnvelope(out);
     out = dropBeforeLastClosingTag(out, "think");
-    out = out.replace(/<think>[\s\S]*?<\/think>/gi, "");
+    out = out.replace(/<think[\s\S]*?<\/think>/gi, "");
+    // E17: 过滤 tool_calls 等内部信息
+    out = out.replace(/tool_calls[参数:\s\S]*?(?=\n\n|$)/gi, "");
+    // E17: 过滤 XML-ish 工具调用块（部分模型会把 tool call 直接输出到 content）
+    out = out.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "");
 
+    // E17: 防“说明书复述/元叙事”兜底清洗（仅当模型输出明显在讲过程时触发）
+    out = stripMetaNarrative(out);
 
-    return out
-        .split("\n")
-        .map(line => line.trimEnd())
+    const lines = dedupeNoisyLines(
+        out
+            .split("\n")
+            .map(line => line.trimEnd())
+    );
+
+    return lines
         .join("\n")
         .replace(/\n{3,}/g, "\n\n")
         .trim();
+}
+
+function dedupeNoisyLines(lines: string[]): string[] {
+    const out: string[] = [];
+    const seenCounts = new Map<string, number>();
+
+    let last = "";
+    for (const raw of lines) {
+        const line = raw.trimEnd();
+        if (!line) {
+            out.push(line);
+            last = line;
+            continue;
+        }
+
+        // 连续重复行直接去掉
+        if (line === last) {
+            continue;
+        }
+
+        // 高频重复行（例如 OCR 噪声/模型循环）最多保留 2 次
+        const key = line.length > 120 ? line.slice(0, 120) : line;
+        const n = (seenCounts.get(key) ?? 0) + 1;
+        seenCounts.set(key, n);
+        if (n > 2) {
+            continue;
+        }
+
+        out.push(line);
+        last = line;
+    }
+
+    // 收口：末尾空行过多会影响 iMessage 展示
+    while (out.length > 0 && out[out.length - 1] === "") {
+        out.pop();
+    }
+    return out;
+}
+
+function stripMetaNarrative(input: string): string {
+    const raw = input.trim();
+    if (!raw) return raw;
+
+    const metaKeywords = [
+        "用户上传",
+        "用户发",
+        "我需要",
+        "我必须",
+        "我的角色",
+        "系统指令",
+        "输入包含",
+        "根据输入",
+        "约束",
+        "分析",
+        "计划",
+        "两段式",
+        "第1段",
+        "第2段",
+        "[图片文字]",
+        "[图片错误]",
+        "[attachment]",
+        "[derived]",
+        "tool_calls",
+        "filesystem",
+        "mcp",
+    ];
+
+    const looksMeta = metaKeywords.some(k => raw.toLowerCase().includes(k.toLowerCase()));
+    if (!looksMeta) return raw;
+
+    // 句子级过滤：尽量保留“像答案”的句子
+    const sentences = raw
+        .split(/(?<=[。！？\n])/)
+        .map(s => s.trim())
+        .filter(Boolean);
+
+    const kept: string[] = [];
+    let total = 0;
+    for (const s of sentences) {
+        if (metaKeywords.some(k => s.toLowerCase().includes(k.toLowerCase()))) continue;
+        kept.push(s);
+        total += s.length;
+        if (total >= 360) break;
+    }
+
+    if (kept.length > 0) {
+        return kept.join("").trim();
+    }
+
+    // 兜底：若完全过滤空了，保留最前面的短片段，避免空回复
+    return raw.slice(0, 360).trim();
 }
 
 function stripAnsi(input: string): string {
@@ -721,12 +868,15 @@ function normalizeJsonishEnvelope(input: string): string {
 /**
  * 工具路径白名单根目录
  */
-const AIDOCS_ROOT = "/Users/admin/GitProjects/AIDOCS";
+const AIDOCS_ROOT = process.env.AIDOCS_ROOT || "AIDOCS";
 
 /**
- * Tool 定义（OpenAI function calling schema）
+ * P1: Tool 定义（OpenAI function calling schema）
+ *
+ * 注意：这些工具仅在 tool-calls 模式下可用（P1 预留）
+ * P0 模式下，请使用显式斜杠命令（如 /tts, /asr, /vision）
  */
-export const AIDOCS_TOOLS = [
+const AIDOCS_TOOLS = [
     {
         type: "function",
         function: {
@@ -776,6 +926,293 @@ export const AIDOCS_TOOLS = [
     }
 ] as const;
 
+export type AidocsToolDef = (typeof AIDOCS_TOOLS)[number];
+
+/**
+ * 获取 LLM 可用工具列表（基于 workspace 配置）
+ *
+ * Autonomous (autonomous 模式): 返回完整工具列表，模型可自主编排调用
+ * - 模型可通过 tool_calls 自动调用所有工具（含 shell/browser）
+ * - 默认全信任，不要求确认
+ *
+ * P0 (explicit 模式): 返回空数组，不向 LLM 提供任何工具定义
+ * - 用户通过显式斜杠命令触发工具（如 /tts, /asr, /vision）
+ * - 避免依赖 tool_calls 的"玄学"稳定性
+ *
+ * P1 (tool-calls 模式): 返回配置的工具列表（预留，暂未启用）
+ *
+ * @param workspacePath 工作区路径
+ * @returns 工具定义数组（autonomous 为完整工具，explicit 为空）
+ */
+export async function getToolsForLlm(workspacePath?: string): Promise<readonly AidocsToolDef[]> {
+    // 如果没有提供工作区路径，返回空数组（保守默认）
+    if (!workspacePath) {
+        return [];
+    }
+
+    try {
+        const { getToolPolicy } = await import("./config/workspace.js");
+        const policy = await getToolPolicy(workspacePath);
+
+        // Autonomous 模式：向 LLM 提供完整工具列表
+        if (policy.mode === "autonomous") {
+            return AIDOCS_TOOLS;
+        }
+
+        // P0: explicit 模式下，不向 LLM 提供任何工具定义
+        if (policy.mode === "explicit") {
+            return [];
+        }
+
+        // P1: tool-calls 模式下，返回配置的工具列表（预留）
+        return AIDOCS_TOOLS;
+    } catch {
+        // 读取配置失败时，保守返回空数组
+        return [];
+    }
+}
+
+const DEFAULT_ALLOWED_TOOL_NAMES = new Set(
+    AIDOCS_TOOLS.map(t => t.function.name)
+);
+
+export type ParsedToolCall = { name: string; args: Record<string, unknown> };
+
+/**
+ * Best-effort 工具调用解析（用于兼容部分模型的“非标准 tool call”输出）
+ *
+ * 目标：
+ * - 永不抛异常（解析失败返回 null）
+ * - 仅允许白名单工具名
+ * - 兼容多种常见格式（JSON / name {json} / name(key=value) / <tool_call> XML）
+ *
+ * 背景：部分 GLM 模型会以不稳定格式输出工具调用，不能依赖单一格式解析。
+ */
+export function parseToolCallBestEffortFromText(params: {
+    text: string;
+    allowedToolNames?: Iterable<string>;
+}): ParsedToolCall | null {
+    try {
+        const allowed = new Set(params.allowedToolNames ?? DEFAULT_ALLOWED_TOOL_NAMES);
+        const raw = (params.text ?? "").trim();
+        if (!raw) return null;
+
+        // 1) XML-ish: <tool_call>name <arg_key>k</arg_key><arg_value>v</arg_value>...</tool_call>
+        if (raw.includes("<tool_call>")) {
+            const parsed = parseXmlToolCall(raw, allowed);
+            if (parsed) return parsed;
+        }
+
+        // 2) JSON-ish: [{"name":"x","arguments":{...}}] 或 {"function":{...}}
+        {
+            const jsonSnippet = extractFirstBalancedJsonSnippet(raw);
+            if (jsonSnippet) {
+                const parsed = parseJsonToolCall(jsonSnippet, allowed);
+                if (parsed) return parsed;
+            }
+        }
+
+        // 3) Inline: name { ...json... } 或 name\n{...}
+        {
+            const parsed = parseInlineNameAndJson(raw, allowed);
+            if (parsed) return parsed;
+        }
+
+        // 4) Call-like: name(path="...", limit=5)
+        {
+            const parsed = parseParenStyleCall(raw, allowed);
+            if (parsed) return parsed;
+        }
+
+        return null;
+    } catch {
+        return null;
+    }
+}
+
+function parseXmlToolCall(text: string, allowed: Set<string>): ParsedToolCall | null {
+    const idx = text.indexOf("<tool_call>");
+    if (idx < 0) return null;
+    const after = text.slice(idx + "<tool_call>".length).trimStart();
+    const nameMatch = after.match(/^([a-zA-Z_][\w-]*)/);
+    const name = nameMatch?.[1];
+    if (!name || !allowed.has(name)) return null;
+
+    const args: Record<string, unknown> = {};
+    const re = /<arg_key>([\s\S]*?)<\/arg_key>\s*<arg_value>([\s\S]*?)<\/arg_value>/g;
+    for (const m of after.matchAll(re)) {
+        const key = (m[1] ?? "").trim();
+        const valueRaw = (m[2] ?? "").trim();
+        if (!key) continue;
+        args[key] = parseLooseValue(valueRaw);
+    }
+
+    return { name, args };
+}
+
+function parseJsonToolCall(jsonSnippet: string, allowed: Set<string>): ParsedToolCall | null {
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(jsonSnippet);
+    } catch {
+        return null;
+    }
+
+    const first = Array.isArray(parsed) ? parsed[0] : parsed;
+    if (!first || typeof first !== "object") return null;
+
+    const obj = first as any;
+
+    const name: string | undefined =
+        (typeof obj.name === "string" ? obj.name : undefined) ??
+        (typeof obj.tool === "string" ? obj.tool : undefined) ??
+        (typeof obj.function?.name === "string" ? obj.function.name : undefined);
+
+    if (!name || !allowed.has(name)) return null;
+
+    const argsUnknown =
+        obj.arguments ??
+        obj.args ??
+        obj.function?.arguments;
+
+    const args = coerceArgs(argsUnknown);
+    return { name, args };
+}
+
+function parseInlineNameAndJson(text: string, allowed: Set<string>): ParsedToolCall | null {
+    const names = [...allowed].sort((a, b) => b.length - a.length).map(escapeRegExp).join("|");
+    if (!names) return null;
+    const re = new RegExp(`\\b(${names})\\b[\\s\\r\\n]*([\\[{])`, "m");
+    const m = text.match(re);
+    const name = m?.[1];
+    if (!name || !allowed.has(name)) return null;
+
+    const start = m.index !== undefined ? m.index + m[0].lastIndexOf(m[2]!) : -1;
+    if (start < 0) return null;
+    const snippet = extractBalancedFromIndex(text, start);
+    if (!snippet) return null;
+
+    try {
+        const obj = JSON.parse(snippet);
+        const args = coerceArgs(obj);
+        return { name, args };
+    } catch {
+        return null;
+    }
+}
+
+function parseParenStyleCall(text: string, allowed: Set<string>): ParsedToolCall | null {
+    const names = [...allowed].sort((a, b) => b.length - a.length).map(escapeRegExp).join("|");
+    if (!names) return null;
+    const re = new RegExp(`\\b(${names})\\b\\s*\\(([^)]*)\\)`, "m");
+    const m = text.match(re);
+    const name = m?.[1];
+    if (!name || !allowed.has(name)) return null;
+    const inside = (m?.[2] ?? "").trim();
+    const args: Record<string, unknown> = {};
+    if (!inside) return { name, args };
+
+    for (const partRaw of inside.split(",")) {
+        const part = partRaw.trim();
+        if (!part) continue;
+        const kv = part.match(/^([a-zA-Z_][\w-]*)\s*=\s*(.+)$/);
+        if (!kv) continue;
+        const key = kv[1];
+        const valueRaw = kv[2].trim();
+        args[key] = parseLooseValue(valueRaw);
+    }
+    return { name, args };
+}
+
+function coerceArgs(value: unknown): Record<string, unknown> {
+    if (!value) return {};
+    if (typeof value === "string") {
+        try {
+            const parsed = JSON.parse(value);
+            return typeof parsed === "object" && parsed ? (parsed as Record<string, unknown>) : {};
+        } catch {
+            return {};
+        }
+    }
+    if (typeof value === "object") {
+        return value as Record<string, unknown>;
+    }
+    return {};
+}
+
+function parseLooseValue(raw: string): unknown {
+    const v = raw.trim();
+    if (!v) return "";
+    // JSON object/array
+    if ((v.startsWith("{") && v.endsWith("}")) || (v.startsWith("[") && v.endsWith("]"))) {
+        try { return JSON.parse(v); } catch { /* ignore */ }
+    }
+    // quoted
+    const dq = v.match(/^"([\s\S]*)"$/);
+    if (dq) return dq[1];
+    const sq = v.match(/^'([\s\S]*)'$/);
+    if (sq) return sq[1];
+    // number/bool/null
+    if (v === "true") return true;
+    if (v === "false") return false;
+    if (v === "null") return null;
+    const num = Number(v);
+    if (!Number.isNaN(num) && Number.isFinite(num)) return num;
+    return v;
+}
+
+function extractFirstBalancedJsonSnippet(text: string): string | null {
+    const idxArr = text.indexOf("[");
+    const idxObj = text.indexOf("{");
+    const idx = idxArr < 0 ? idxObj : (idxObj < 0 ? idxArr : Math.min(idxArr, idxObj));
+    if (idx < 0) return null;
+    return extractBalancedFromIndex(text, idx);
+}
+
+function extractBalancedFromIndex(text: string, start: number): string | null {
+    const open = text[start];
+    const close = open === "[" ? "]" : (open === "{" ? "}" : null);
+    if (!close) return null;
+
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+
+    for (let i = start; i < text.length; i++) {
+        const ch = text[i];
+        if (inString) {
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (ch === "\\") {
+                escaped = true;
+                continue;
+            }
+            if (ch === "\"") {
+                inString = false;
+                continue;
+            }
+            continue;
+        }
+
+        if (ch === "\"") {
+            inString = true;
+            continue;
+        }
+        if (ch === open) depth++;
+        if (ch === close) depth--;
+        if (depth === 0) {
+            return text.slice(start, i + 1);
+        }
+    }
+    return null;
+}
+
+function escapeRegExp(s: string): string {
+    return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 /**
  * Tool Loop 配置选项
  */
@@ -784,6 +1221,7 @@ export interface LmStudioToolLoopOptions {
     system?: string;
     tools?: readonly unknown[];
     allowRoot?: string;
+    workspacePath?: string; // P0: 用于读取 workspace 配置以确定工具策略
     baseUrl?: string;
     model?: string;
     timeoutMs?: number;
@@ -890,7 +1328,9 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
     }
     messages.push({ role: "user", content: options.prompt });
 
-    const tools = options.tools || AIDOCS_TOOLS;
+    // P0: 获取基于 workspace 配置的工具列表（explicit 模式下为空）
+    const workspaceRootForTools = options.workspacePath || root;
+    const tools = options.tools ?? await getToolsForLlm(workspaceRootForTools);
 
     // 1) 第一次：允许工具调用
     const r1 = await callChatCompletionsRaw({
@@ -904,21 +1344,39 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
         timeoutMs,
     });
 
-    const toolCalls = r1.choices[0]?.message?.tool_calls ?? [];
+    const msg1 = r1.choices[0]?.message;
+    const toolCalls = msg1?.tool_calls ?? [];
 
-    // 2) 无工具调用：直接清洗返回
-    if (toolCalls.length === 0) {
-        const content = r1.choices[0]?.message?.content ?? "";
-        return { answer: sanitizeLmStudioOutput(content) };
+    // 2) 选择第一个工具调用（标准 tool_calls 优先；否则 best-effort 从 content 里兜底解析）
+    let tc: ToolCall | null = toolCalls.length > 0 ? toolCalls[0] : null;
+    let args: Record<string, unknown> = {};
+    let assistantRole = msg1?.role || "assistant";
+    const assistantContent = msg1?.content;
+
+    if (!tc) {
+        const parsed = parseToolCallBestEffortFromText({
+            text: assistantContent ?? "",
+            allowedToolNames: DEFAULT_ALLOWED_TOOL_NAMES,
+        });
+        if (parsed) {
+            tc = {
+                id: `fallback-${Date.now()}`,
+                type: "function",
+                function: { name: parsed.name, arguments: JSON.stringify(parsed.args ?? {}) },
+            };
+            args = parsed.args ?? {};
+        }
+    } else {
+        try {
+            args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
+        } catch {
+            args = {};
+        }
     }
 
-    // 3) 只执行第一个工具调用（防循环）
-    const tc = toolCalls[0];
-    let args: Record<string, unknown> = {};
-    try {
-        args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
-    } catch {
-        args = {};
+    // 3) 无工具调用（含兜底解析失败）：直接清洗返回
+    if (!tc) {
+        return { answer: sanitizeLmStudioOutput(assistantContent ?? "") };
     }
 
     let toolResult: unknown;
@@ -928,20 +1386,13 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
         toolResult = { error: e instanceof Error ? e.message : String(e) };
     }
 
-    // 构造第二轮消息
-    const msg1 = r1.choices[0].message;
-    if (!msg1?.role || !msg1?.tool_calls) {
-        const content = msg1?.content ?? "";
-        return { answer: sanitizeLmStudioOutput(content) };
-    }
-
-    // 确保 role 存在（TypeScript 类型安全）
+    // 构造第二轮消息（将工具调用回灌给模型）
     const assistantMsg: { role: string; content?: string; tool_calls?: ToolCall[] } = {
-        role: msg1.role,
-        tool_calls: msg1.tool_calls,
+        role: assistantRole,
+        tool_calls: [tc],
     };
-    if (msg1.content !== undefined) {
-        assistantMsg.content = msg1.content;
+    if (assistantContent !== undefined) {
+        assistantMsg.content = assistantContent;
     }
 
     const messages2 = [

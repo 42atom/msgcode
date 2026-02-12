@@ -1,0 +1,10 @@
+{
+  "enabledMcpjsonServers": [
+    "chrome-devtools",
+    "shadcn",
+    "context7",
+    "memory",
+    "zai-mcp-server"
+  ],
+  "enableAllProjectMcpServers": true
+}

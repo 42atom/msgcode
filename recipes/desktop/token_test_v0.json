@@ -1,0 +1,52 @@
+{
+  "id": "token_test_v0",
+  "name": "Token Test (Session Mode)",
+  "description": "测试 token 签发、使用和 reuse 拒绝（使用 hotkey escape，不依赖特定 UI）",
+  "version": "0.2.0",
+  "author": "msgcode",
+  "steps": [
+    {
+      "op": "desktop.observe",
+      "params": {
+        "options": {
+          "includeScreenshot": false,
+          "includeAxTree": false
+        }
+      }
+    },
+    {
+      "op": "desktop.confirm.issue",
+      "params": {
+        "intent": {
+          "method": "desktop.hotkey",
+          "params": {
+            "keys": ["escape"]
+          }
+        },
+        "ttlMs": 60000
+      }
+    },
+    {
+      "op": "desktop.hotkey",
+      "params": {
+        "keys": ["escape"],
+        "confirm": {
+          "tokenRef": "$lastToken"
+        }
+      }
+    },
+    {
+      "op": "desktop.hotkey",
+      "params": {
+        "keys": ["escape"],
+        "confirm": {
+          "tokenRef": "$lastToken"
+        }
+      },
+      "expectError": {
+        "code": "DESKTOP_CONFIRM_REQUIRED",
+        "reason": "used"
+      }
+    }
+  ]
+}

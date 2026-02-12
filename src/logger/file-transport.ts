@@ -151,6 +151,23 @@ export class FileTransport implements Transport {
                 parts.push(`textPreview="${String(meta.textPreview).slice(0, 30)}"`);
             }
             if (meta.rowid !== undefined) parts.push(`rowid=${meta.rowid}`);
+
+            // Phase 6: 添加常用错误字段输出（P1 日志可观测性）
+            if (meta.error) parts.push(`error=${String(meta.error).slice(0, 200)}`);
+            if (meta.reason) parts.push(`reason=${String(meta.reason)}`);
+            if (meta.retry !== undefined) parts.push(`retry=${meta.retry}`);
+            if (meta.status !== undefined) parts.push(`status=${meta.status}`);
+
+            // P0 Batch-1: JSONL 读取相关字段
+            if (meta.jsonlPath) parts.push(`jsonlPath=${meta.jsonlPath}`);
+            if (meta.startOffset !== undefined) parts.push(`startOffset=${meta.startOffset}`);
+            if (meta.newOffset !== undefined) parts.push(`newOffset=${meta.newOffset}`);
+            if (meta.entriesCount !== undefined) parts.push(`entriesCount=${meta.entriesCount}`);
+            if (meta.bytesRead !== undefined) parts.push(`bytesRead=${meta.bytesRead}`);
+            if (meta.isDeliverable !== undefined) parts.push(`isDeliverable=${meta.isDeliverable}`);
+            if (meta.score !== undefined) parts.push(`score=${meta.score}`);
+            if (meta.candidatesCount !== undefined) parts.push(`candidatesCount=${meta.candidatesCount}`);
+
             if (parts.length) metaStr = ` [${parts.join(" ")}]`;
         }
 

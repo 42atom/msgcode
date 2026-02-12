@@ -36,9 +36,39 @@ vendor/imsg/
 *.tmp
 *.bak
 
+# Release / pack artifacts
+*.tgz
+
+# Local planning scratchpads
+task_plan.md
+
 # Reference materials (not tracked)
 refs/
 ref/
 
 # Built binaries (not tracked)
 vendor/imsg/
+.alma-snapshots
+
+# Desktop artifacts (runtime generated, not tracked)
+artifacts/desktop/
+*.desktop.artifacts/
+
+# Desktop build products
+mac/**/.build/
+mac/**/*.app/
+mac/**/Package.resolved
+
+# Desktop session temp files
+*.session.tmp/
+
+# Local runtime state (not tracked)
+.msgcode/
+.agent/
+
+# Desktopctl scratch files
+mac/msgcode-desktopctl/test*.swift
+
+# Desktop dev binaries (build from sources instead)
+scripts/desktop/test-t8.6-token
+scripts/desktop/test-t8.6.2-desktopctl

@@ -15,14 +15,13 @@
 | routeName | 语义 | 默认绑定（当前本机） |
 |---|---|---|
 | `chat-main` | 主对话（纯文本为主） | `huihui-glm-4.7-flash-abliterated-mlx` |
-| `vision` | 视觉理解（图文/截图） | `huihui-glm-4.6v-flash-abliterated-mlx` |
-| `ocr-vl` | OCR（票据/网页截图提字） | `paddleocr-vl-1.5` |
+| `vision` | 视觉理解（图文/截图）/OCR | `huihui-glm-4.6v-flash-abliterated-mlx` |
 | `mem-embed` | 记忆 embedding | `qwen3-embedding-8b-dwq` |
 | `mem-rerank` | 记忆 reranker | `jina-reranker-v3-mlx` |
 
 备注：
-- 这 5 个路由名应该被视为“接口”，未来升级不应改名（只换绑定）。
-- `ocr-vl` 与 `vision` 是两条不同链路：OCR 追求“字准”，vision 追求“理解+结构化”。
+- 这 4 个路由名应该被视为"接口"，未来升级不应改名（只换绑定）。
+- `vision` 路由统一处理视觉理解和OCR任务，通过提示词区分输出模式。
 
 ## 3) LM Studio 侧绑定方法（建议）
 
@@ -32,11 +31,8 @@
 # 主对话
 lms load huihui-glm-4.7-flash-abliterated-mlx --identifier chat-main --ttl 300 -y
 
-# 视觉理解
+# 视觉理解（包含 OCR 功能）
 lms load huihui-glm-4.6v-flash-abliterated-mlx --identifier vision --ttl 300 -y
-
-# OCR
-lms load "mlx-community/PaddleOCR-VL-1.5-bf16" --identifier ocr-vl --ttl 120 -y
 
 # 记忆 embedding / rerank（按需加载，TTL 短）
 lms load qwen3-embedding-8b-dwq --identifier mem-embed --ttl 120 -y
@@ -52,11 +48,11 @@ lms load jina-reranker-v3-mlx --identifier mem-rerank --ttl 120 -y
 ## 4) 运行策略（建议默认）
 
 - 常驻（TTL 长）：`chat-main`、`vision`（交互频率高）
-- 按需（TTL 短）：`ocr-vl`、`mem-embed`、`mem-rerank`（只在触发时需要）
+- 按需（TTL 短）：`mem-embed`、`mem-rerank`（只在触发时需要）
 
 原则：
 - 默认不让 embedding/rerank 常驻，避免挤压主对话模型的可用内存。
-- 让“能力调用”通过 TTL 自然回收，减少运维复杂度。
+- 让"能力调用"通过 TTL 自然回收，减少运维复杂度。
 
 ## 5) Prompt Template 资产化（强烈建议）
 
@@ -68,4 +64,3 @@ lms load jina-reranker-v3-mlx --identifier mem-rerank --ttl 120 -y
 - 把模型专用 Prompt Template 以文件形式放入：
   - `AIDOCS/msgcode-2.1/lmstudio_prompts/`
 - 每次改动先改文件，再复制粘贴到 LM Studio 的 Model Default Config。
-

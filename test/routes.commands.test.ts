@@ -87,6 +87,13 @@ describe("路由命令处理器", () => {
       expect(isRouteCommand("/reset-cursor")).toBe(true);
     });
 
+    it("识别 /owner 与 /owner-only 命令", () => {
+      expect(isRouteCommand("/owner")).toBe(true);
+      expect(isRouteCommand("/owner wan2011@me.com")).toBe(true);
+      expect(isRouteCommand("/owner-only")).toBe(true);
+      expect(isRouteCommand("/owner-only on")).toBe(true);
+    });
+
     it("拒绝非路由命令", () => {
       expect(isRouteCommand("/start")).toBe(false);
       expect(isRouteCommand("/stop")).toBe(false);
@@ -134,6 +141,19 @@ describe("路由命令处理器", () => {
     it("解析 /reset-cursor 命令", () => {
       const result = parseRouteCommand("/reset-cursor");
       expect(result).toEqual({ command: "resetCursor", args: [] });
+    });
+
+    it("解析 /owner 与 /owner-only 命令", () => {
+      expect(parseRouteCommand("/owner")).toEqual({ command: "owner", args: [] });
+      expect(parseRouteCommand("/owner wan2011@me.com")).toEqual({
+        command: "owner",
+        args: ["wan2011@me.com"],
+      });
+      expect(parseRouteCommand("/owner-only")).toEqual({ command: "ownerOnly", args: [] });
+      expect(parseRouteCommand("/owner-only on")).toEqual({
+        command: "ownerOnly",
+        args: ["on"],
+      });
     });
 
     it("拒绝非路由命令", () => {
@@ -273,7 +293,7 @@ describe("路由命令处理器", () => {
       const result = await handleHelpCommand(options);
 
       expect(result.success).toBe(true);
-      expect(result.message).toContain("msgcode 2.0 命令帮助");
+      expect(result.message).toContain("msgcode 2.2 命令帮助");
       expect(result.message).toContain("/bind");
       expect(result.message).toContain("/where");
       expect(result.message).toContain("/unbind");
@@ -371,7 +391,7 @@ describe("路由命令处理器", () => {
       const result = await handleRouteCommand("help", options);
 
       expect(result.success).toBe(true);
-      expect(result.message).toContain("msgcode 2.0 命令帮助");
+      expect(result.message).toContain("msgcode 2.2 命令帮助");
     });
 
     it("拒绝未知命令", async () => {

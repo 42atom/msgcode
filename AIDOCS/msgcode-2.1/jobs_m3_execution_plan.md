@@ -179,9 +179,9 @@ npm test
 
 - Runner registry 统一契约
 - mlx-whisper (ASR)
-- qwen3-tts (TTS)
+- IndexTTS2 (TTS)
 - z-image (生图)
-- PaddleOCR-VL (OCR)
+- GLM-4.6V (Vision/OCR 统一)
 - 本机模型目录 `~/Models`
 
 ### L2: 高敏浏览器
@@ -266,4 +266,3 @@ $ npx tsx src/cli.ts job run <id>
 **当前状态**：
 - ✅ 错误路径已验证（TMUX_SESSION_DEAD 正确返回 errorCode）
 - ⏳ 成功路径等待真实环境验证
-

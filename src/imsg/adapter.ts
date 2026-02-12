@@ -39,11 +39,15 @@ export function fromImsgRpcMessage(message: ImsgRpcMessage): InboundMessage {
       mime: att.mime_type,
       path: att.original_path,
       missing: att.missing,
+      uti: att.uti,
+      transfer_name: att.transfer_name,
+      total_bytes: att.total_bytes,
     })),
     sender: message.sender || undefined,
     senderName: undefined,
     handle: message.sender || undefined,
     rowid: message.id, // E14: 传递 rowid 用于游标管理
+    isGroup: typeof message.is_group === "boolean" ? message.is_group : undefined,
   };
 }
 

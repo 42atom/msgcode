@@ -1,0 +1,37 @@
+[gMASK]<sop>
+{# GLM-4.7（text-only）最小稳定 Prompt Template #}
+{# 目标：彻底禁止输出 <think>/<tool_call> 元结构，避免推理循环/崩溃 #}
+
+{%- macro visible_text(content) -%}
+  {%- if content is string -%}
+    {{- content -}}
+  {%- elif content is iterable and content is not mapping -%}
+    {%- for item in content -%}
+      {%- if item is mapping and item.type == 'text' and item.text is defined -%}
+        {{- item.text -}}
+      {%- elif item is string -%}
+        {{- item -}}
+      {%- endif -%}
+    {%- endfor -%}
+  {%- else -%}
+    {{- content -}}
+  {%- endif -%}
+{%- endmacro -%}
+
+{%- for m in messages -%}
+{%- if m.role == 'system' -%}
+<|system|>
+{{ visible_text(m.content) }}
+
+{%- elif m.role == 'user' -%}
+<|user|>
+{{ visible_text(m.content) }}
+
+{%- elif m.role == 'assistant' -%}
+<|assistant|>
+{{ visible_text(m.content) }}
+
+{%- endif -%}
+{%- endfor -%}
+
+<|assistant|>

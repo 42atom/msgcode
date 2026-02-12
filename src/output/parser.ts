@@ -15,6 +15,8 @@ export interface ParseResult {
     hasToolUse: boolean;
     isComplete: boolean;
     finishReason?: string;
+    /** P0 Batch-0: 是否检测到 stop_hook_summary */
+    seenStopHookSummary?: boolean;
 }
 
 /**
@@ -31,27 +33,50 @@ export interface ToolUseInfo {
 export class AssistantParser {
     /**
      * 从 JSONL 条目中提取 assistant 消息
+     *
+     * P0 Batch-2: 兼容 stop_hook_summary + sidechain + 多种内容字段
      */
     static parse(entries: JSONLEntry[]): ParseResult {
         let text = "";
         let hasToolUse = false;
         let isComplete = false;
         let finishReason: string | undefined;
+        // P0 Batch-0: 累积是否检测到 stop_hook_summary（任何条目有则标记）
+        let seenStopHookSummary = false;
 
         for (const entry of entries) {
-            // Claude Code JSONL 结构:
-            // - entry.type = "user" | "assistant" | "system" | ...
-            // - entry.message = { role: "...", content: "...", stop_reason: "..." }
             const entryType = entry.type;
+            const entrySubtype = entry.subtype;
             const message = entry.message as any;
+
+            // P0 Batch-2: 优先检测 stop_hook_summary（type="system" + subtype="stop_hook_summary"）
+            // 这必须在 assistant 类型检查之前，因为 system 类型会被下面跳过
+            if (entryType === "system" && entrySubtype === "stop_hook_summary") {
+                isComplete = true;
+                finishReason = finishReason || "stop_hook_summary";
+                seenStopHookSummary = true;
+                continue;  // stop_hook_summary 不包含文本内容，跳过
+            }
 
             // 只处理 assistant 类型的条目
             if (entryType !== "assistant") {
                 continue;
             }
 
-            // 提取文本内容 - content 可能在 message 里或直接在 entry 上
+            // P0 Batch-2: 兼容两条路径抽取文本
+            // 路径1: entry.type === "assistant" + entry.message.role === "assistant" + entry.message.content
+            // 路径2: entry.type === "assistant" + 直接在 entry 上有内容字段
             let content = message?.content || entry.content;
+
+            // P0 Batch-2: 支持多种内容字段（text / output_text / markdown）
+            if (!content && message) {
+                if (typeof message.text === "string") content = message.text;
+                else if (typeof message.output_text === "string") content = message.output_text;
+                else if (typeof message.markdown === "string") content = message.markdown;
+            }
+            if (!content && typeof entry.text === "string") content = entry.text;
+            if (!content && typeof entry.output_text === "string") content = entry.output_text;
+            if (!content && typeof entry.markdown === "string") content = entry.markdown;
 
             if (content) {
                 if (typeof content === "string") {
@@ -84,9 +109,9 @@ export class AssistantParser {
             }
 
             // 方式2: type === "summary"（某些情况下是完成标志）
-            if (entry.type === "summary" || entry.subtype === "summary" || entry.subtype === "stop_hook_summary") {
+            if (entry.type === "summary" || entrySubtype === "summary") {
                 isComplete = true;
-                finishReason = finishReason || entry.subtype || entry.type;
+                finishReason = finishReason || entrySubtype || entry.type;
             }
 
             // 方式3: status === "complete"
@@ -105,7 +130,7 @@ export class AssistantParser {
             }
         }
 
-        return { text, hasToolUse, isComplete, finishReason };
+        return { text, hasToolUse, isComplete, finishReason, seenStopHookSummary };
     }
 
     /**

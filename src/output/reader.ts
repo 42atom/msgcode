@@ -2,13 +2,31 @@
  * msgcode: JSONL 输出读取器
  *
  * 增量读取 Claude Code 的 JSONL 输出文件
+ *
+ * P0: offset 统一使用字节（byte），与 fs.stat().size 保持一致
+ * 使用 createReadStream({ start }) 从字节偏移开始读取，避免中文 UTF-8 编码问题
  */
 
-import { promises as fs } from "node:fs";
-import { exec } from "node:child_process";
-import { promisify } from "node:util";
+import { createReadStream, promises as fs } from "node:fs";
 
-const execAsync = promisify(exec);
+/**
+ * 从字节偏移读取 UTF-8 内容
+ *
+ * @param filePath 文件路径
+ * @param start 字节偏移（与 fs.stat().size 一致）
+ * @returns 从 start 开始的内容
+ */
+async function readUtf8FromOffset(filePath: string, start: number): Promise<string> {
+    const stream = createReadStream(filePath, { encoding: "utf8", start });
+    return await new Promise<string>((resolve, reject) => {
+        let data = "";
+        stream.on("data", (chunk: string | Buffer) => {
+            data += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+        });
+        stream.on("end", () => resolve(data));
+        stream.on("error", reject);
+    });
+}
 
 /**
  * JSONL 条目
@@ -28,6 +46,21 @@ export interface ReadResult {
     entries: JSONLEntry[];
     bytesRead: number;
     newOffset: number;
+    /** P0 Batch-1: 选路评分信息（用于日志） */
+    selectionInfo?: {
+        path: string;
+        isDeliverable: boolean;
+        score: number;
+        candidatesCount: number;
+    };
+}
+
+/**
+ * 候选文件
+ */
+interface CandidateFile {
+    path: string;
+    mtime: number;
 }
 
 /**
@@ -56,136 +89,235 @@ export class OutputReader {
 
     /**
      * 查找最新的 JSONL 文件
+     *
+     * P0 Batch-1: workspace 定位优先 + deliverable 打分
+     * - 只在 projectDir 归一化目录内查找（不全局 find）
+     * - 优先 deliverable 文件（前 30 行有 assistant 相关内容）
+     * - 兼容 agent-*.jsonl（关联 sessionId.jsonl）
      */
     async findLatestJsonl(projectDir?: string): Promise<string | null> {
+        const result = await this.findLatestJsonlWithInfo(projectDir);
+        return result?.path || null;
+    }
+
+    /**
+     * P0 Batch-1: 查找 JSONL 并返回完整选路信息
+     */
+    private async findLatestJsonlWithInfo(projectDir?: string): Promise<{ path: string; selectionInfo: ReadResult["selectionInfo"] } | null> {
+        if (!projectDir) {
+            return null;  // 必须有 projectDir 才能精确定位
+        }
+
         try {
             const homeDir = process.env.HOME || "~";
             const claudeProjectsBase = `${homeDir}/.claude/projects`;
+            const claudeDirName = this.projectDirToClaudeDir(projectDir);
+            const claudeDir = `${claudeProjectsBase}/${claudeDirName}`;
 
-            // 方法1: 如果有项目目录，查找对应的 Claude 项目目录
-            if (projectDir) {
-                const claudeDirName = this.projectDirToClaudeDir(projectDir);
-                const claudeDir = `${claudeProjectsBase}/${claudeDirName}`;
+            // 检查目录是否存在
+            await fs.access(claudeDir);
 
-                try {
-                    const files = await fs.readdir(claudeDir, { recursive: true });
-                    const jsonlFiles = (files as string[])
-                        .filter(f => f.endsWith(".jsonl") && !f.includes("subagents"))
-                        .map(f => `${claudeDir}/${f}`);
-
-                    if (jsonlFiles.length > 0) {
-                        // 按修改时间排序，取最新的
-                        const stats = await Promise.all(
-                            jsonlFiles.map(async f => ({
-                                path: f,
-                                mtime: (await fs.stat(f)).mtime.getTime(),
-                            }))
-                        );
-                        stats.sort((a, b) => b.mtime - a.mtime);
-                        return stats[0].path;
-                    }
-                } catch {
-                    // 目录可能不存在，尝试模糊匹配
-                }
-
-                // 方法1.5: 模糊匹配项目目录名（尝试多个路径段）
-                try {
-                    const dirs = await fs.readdir(claudeProjectsBase);
-                    const pathSegments = projectDir.split("/").filter(Boolean);
-
-                    // 尝试匹配最后几个路径段
-                    let matchingDir: string | undefined;
-                    for (let i = pathSegments.length - 1; i >= 0 && !matchingDir; i--) {
-                        const segment = pathSegments[i].replace(/[^a-zA-Z0-9]/g, "-");
-                        matchingDir = dirs.find(d => d.includes(segment));
-                    }
-
-
-                    if (matchingDir) {
-                        const matchedClaudeDir = `${claudeProjectsBase}/${matchingDir}`;
-                        const files = await fs.readdir(matchedClaudeDir, { recursive: true });
-                        const jsonlFiles = (files as string[])
-                            .filter(f => f.endsWith(".jsonl") && !f.includes("subagents"))
-                            .map(f => `${matchedClaudeDir}/${f}`);
-
-                        if (jsonlFiles.length > 0) {
-                            const stats = await Promise.all(
-                                jsonlFiles.map(async f => ({
-                                    path: f,
-                                    mtime: (await fs.stat(f)).mtime.getTime(),
-                                }))
-                            );
-                            stats.sort((a, b) => b.mtime - a.mtime);
-                            return stats[0].path;
-                        }
-                    }
-                } catch {
-                    // 继续使用 find 命令
-                }
+            // 收集候选文件（排除 subagents）
+            const candidates = await this.collectCandidates(claudeDir);
+            if (candidates.length === 0) {
+                return null;
             }
 
-            // 方法2: 使用 find + ls 查找最近修改的 JSONL（排除 subagents）
-            // find 找到文件后，通过 ls -lt 按修改时间排序，取最新的
-            const { stdout } = await execAsync(
-                `ls -lt $(find ~/.claude/projects -name "*.jsonl" -path "*${projectDir ? projectDir.split("/").pop() : ""}*" ! -path "*/subagents/*" -mmin -30 -type f) 2>/dev/null | head -1 | awk '{print $NF}'`,
-                { timeout: 10000 }  // 10秒超时，防止卡死
-            );
-            const path = stdout.trim();
-
-            // 方法3: 如果没找到，查找所有最近的 JSONL
-            if (!path) {
-                const { stdout: fallback } = await execAsync(
-                    `ls -lt $(find ~/.claude/projects -name "*.jsonl" ! -path "*/subagents/*" -mmin -30 -type f) 2>/dev/null | head -1 | awk '{print $NF}'`,
-                    { timeout: 10000 }  // 10秒超时，防止卡死
-                );
-                return fallback.trim() || null;
+            // 打分并排序（deliverable 优先，再按 mtime）
+            const scored = await this.scoreCandidates(candidates);
+            if (scored.length === 0) {
+                return null;
             }
 
-            return path || null;
+            const selected = scored[0];
+            return {
+                path: selected.path,
+                selectionInfo: {
+                    path: selected.path,
+                    isDeliverable: selected.isDeliverable,
+                    score: selected.score,
+                    candidatesCount: candidates.length,
+                },
+            };
         } catch {
             return null;
         }
     }
 
     /**
+     * P0 Batch-1: 收集候选 JSONL 文件
+     * - 排除 subagents/ 目录
+     * - 兼容 agent-*.jsonl（关联 sessionId.jsonl）
+     */
+    private async collectCandidates(claudeDir: string): Promise<CandidateFile[]> {
+        const candidates: CandidateFile[] = [];
+        const mainJsonlFiles = new Set<string>();
+
+        try {
+            const files = await fs.readdir(claudeDir, { recursive: true });
+            const jsonlFiles = (files as string[])
+                .filter(f => f.endsWith(".jsonl") && !f.includes("subagents"));
+
+            for (const relPath of jsonlFiles) {
+                const fullPath = `${claudeDir}/${relPath}`;
+
+                // 检测 agent-*.jsonl，关联对应的 sessionId.jsonl
+                if (relPath.match(/agent-[^/]+\.jsonl$/)) {
+                    const sessionId = await this.extractSessionId(fullPath);
+                    if (sessionId) {
+                        const sessionJsonlPath = `${claudeDir}/${sessionId}.jsonl`;
+                        mainJsonlFiles.add(sessionJsonlPath);
+                    }
+                }
+
+                mainJsonlFiles.add(fullPath);
+            }
+
+            // 收集 mtime
+            for (const path of mainJsonlFiles) {
+                try {
+                    const stat = await fs.stat(path);
+                    candidates.push({ path, mtime: stat.mtime.getTime() });
+                } catch {
+                    // 文件可能已删除，跳过
+                }
+            }
+        } catch {
+            // 目录不存在或读取失败
+        }
+
+        return candidates;
+    }
+
+    /**
+     * P0 Batch-1: 从 agent-*.jsonl 首行提取 sessionId
+     */
+    private async extractSessionId(agentJsonlPath: string): Promise<string | null> {
+        try {
+            const content = await readUtf8FromOffset(agentJsonlPath, 0);
+            const firstLine = content.split("\n")[0];
+            if (!firstLine) return null;
+
+            const entry = JSON.parse(firstLine) as any;
+            return entry.sessionId || null;
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * P0 Batch-1: 候选文件打分
+     * - deliverable 优先（前 30 行有 assistant 相关内容）
+     * - 同类按 mtime 降序
+     */
+    private async scoreCandidates(candidates: CandidateFile[]): Promise<Array<CandidateFile & { score: number; isDeliverable: boolean }>> {
+        const scored: Array<CandidateFile & { score: number; isDeliverable: boolean }> = [];
+
+        for (const cand of candidates) {
+            const isDeliverable = await this.checkDeliverable(cand.path);
+            // deliverable 优先（分数 1000 + mtime），非 deliverable（mtime）
+            const score = isDeliverable ? 1000000000000 + cand.mtime : cand.mtime;
+            scored.push({ ...cand, score, isDeliverable });
+        }
+
+        // 按分数降序
+        scored.sort((a, b) => b.score - a.score);
+        return scored;
+    }
+
+    /**
+     * P0 Batch-1: 检测文件是否 deliverable
+     * 前 30 行内出现：type:"assistant" | message.role:"assistant" | payload.type in {message,assistant_message} | subtype:"stop_hook_summary"
+     */
+    private async checkDeliverable(filePath: string): Promise<boolean> {
+        try {
+            const content = await readUtf8FromOffset(filePath, 0);
+            const lines = content.split("\n").slice(0, 30);
+
+            for (const line of lines) {
+                if (!line.trim()) continue;
+                try {
+                    const entry = JSON.parse(line) as any;
+
+                    // 检测 deliverable 标志
+                    if (entry.type === "assistant") return true;
+                    if (entry.message?.role === "assistant") return true;
+                    if (entry.payload?.type === "message" || entry.payload?.type === "assistant_message") return true;
+                    if (entry.subtype === "stop_hook_summary") return true;
+                } catch {
+                    // 跳过无效行
+                }
+            }
+
+            return false;
+        } catch {
+            return false;
+        }
+    }
+
+    /**
      * 增量读取 JSONL 文件
+     *
+     * P0: offset 使用字节（byte），与 fs.stat().size 一致
+     * 使用 createReadStream({ start }) 从字节偏移读取，避免中文 UTF-8 编码问题
      */
     async read(filePath: string): Promise<ReadResult> {
         const position = this.positions.get(filePath);
         const startOffset = position?.offset || 0;
 
         try {
-            // 读取文件
-            const content = await fs.readFile(filePath, "utf-8");
-            const bytes = content.length;
+            // 获取文件字节数（P0: 使用 fs.stat().size 而非 content.length）
+            const stat = await fs.stat(filePath);
+            const fileBytes = stat.size;
 
             // 如果文件变小了（被重写），从头开始读
-            const actualStart = bytes < startOffset ? 0 : startOffset;
+            const actualStart = fileBytes < startOffset ? 0 : startOffset;
+
+            // 从字节偏移读取内容（P0: 使用 readUtf8FromOffset）
+            const newContent = await readUtf8FromOffset(filePath, actualStart);
+
+            // P0 调试：记录读取信息
+            if (process.env.DEBUG_TRACE === "1") {
+                console.log(`[Reader] 读取 ${filePath}:`, {
+                    startOffset,
+                    actualStart,
+                    fileBytes,
+                    newContentLength: newContent.length,
+                    linesCount: newContent.split("\n").filter(Boolean).length,
+                });
+            }
 
             // 解析新增的行
             const entries: JSONLEntry[] = [];
-            const newContent = content.slice(actualStart);
             const lines = newContent.split("\n").filter(Boolean);
 
             for (const line of lines) {
                 try {
                     const entry = JSON.parse(line) as JSONLEntry;
                     entries.push(entry);
-                } catch {
+                } catch (parseError) {
+                    // P0 调试：记录解析失败的行
+                    if (process.env.DEBUG_TRACE === "1") {
+                        console.warn(`[Reader] JSON 解析失败，跳过该行:`, {
+                            module: "reader",
+                            linePreview: line.slice(0, 100),
+                            error: parseError instanceof Error ? parseError.message : String(parseError),
+                        });
+                    }
                     // 跳过无效行
                 }
             }
 
-            // 更新位置
+            // 更新位置（P0: 使用字节 offset）
             this.positions.set(filePath, {
                 filePath,
-                offset: bytes,
+                offset: fileBytes,
             });
 
             return {
                 entries,
-                bytesRead: bytes - actualStart,
-                newOffset: bytes,
+                bytesRead: fileBytes - actualStart,
+                newOffset: fileBytes,
             };
         } catch (error: any) {
             if (error.code === "ENOENT") {
@@ -201,10 +333,11 @@ export class OutputReader {
 
     /**
      * 读取指定项目的最新输出
+     * P0 Batch-1: 返回 selectionInfo 用于日志
      */
     async readProject(projectDir?: string): Promise<ReadResult> {
-        const filePath = await this.findLatestJsonl(projectDir);
-        if (!filePath) {
+        const findResult = await this.findLatestJsonlWithInfo(projectDir);
+        if (!findResult) {
             // E16: trace 未找到文件的情况
             if (process.env.DEBUG_TRACE === "1") {
                 console.log(`[Reader] 未找到 JSONL 文件，projectDir: ${projectDir}`);
@@ -212,12 +345,16 @@ export class OutputReader {
             return { entries: [], bytesRead: 0, newOffset: 0 };
         }
 
+        const { path: filePath, selectionInfo } = findResult;
+
         // E16: trace 找到的文件路径
         if (process.env.DEBUG_TRACE === "1") {
-            console.log(`[Reader] 找到 JSONL: ${filePath}`);
+            console.log(`[Reader] 找到 JSONL: ${filePath}`, selectionInfo);
         }
 
-        return this.read(filePath);
+        const result = await this.read(filePath);
+        result.selectionInfo = selectionInfo;
+        return result;
     }
 
     /**

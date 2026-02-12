@@ -43,6 +43,8 @@ export interface InboundMessage {
   handle?: string;
   /** E14: 消息 rowid（用于游标管理） */
   rowid?: number;
+  /** 是否群聊（用于安全策略/风控；来自 imsg RPC 的 is_group） */
+  isGroup?: boolean;
 }
 
 /**
@@ -57,6 +59,12 @@ export interface Attachment {
   path?: string;
   /** 文件是否缺失 */
   missing?: boolean;
+  /** E17: UTI（Apple Uniform Type Identifier）- 用于 .caf 等音频识别 */
+  uti?: string;
+  /** E17: 原始传输文件名（比 filename 更可靠） */
+  transfer_name?: string;
+  /** E17: 文件大小（字节） */
+  total_bytes?: number;
 }
 
 // ============================================

@@ -19,7 +19,15 @@ export type BotType = "code" | "image" | "file" | "lmstudio" | "default";
 /**
  * E13: 模型客户端类型（本机可执行）
  */
-export type ModelClient = "claude" | "codex" | "opencode";
+export type ModelClient =
+    | "mlx"
+    | "lmstudio"
+    | "llama"
+    | "claude"
+    | "openai"
+    | "codex"
+    | "claude-code"
+    | "opencode";
 
 /**
  * 路由结果

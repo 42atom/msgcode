@@ -1,0 +1,19 @@
+{
+  "jsonrpc" : "2.0",
+  "id" : "D77F4F01-866E-4F08-823D-675B15A2D946",
+  "result" : {
+    "hostVersion" : "0.1.0",
+    "permissions" : {
+      "accessibility" : "granted",
+      "screenRecording" : "granted"
+    },
+    "bridge" : {
+      "schemaVersion" : 1
+    },
+    "macos" : "Version 26.2 (Build 25C56)",
+    "peer" : {
+      "auditTokenDigest" : "eef09cf39e9c1e30",
+      "pid" : 53609
+    }
+  }
+}

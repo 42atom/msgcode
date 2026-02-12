@@ -2,7 +2,43 @@
 
 > 用 iMessage 替代 Matrix，实现 Mac 本地的 AI Bot 系统
 
-[![PRD](https://img.shields.io/badge/PRD-v0.1-blue)](./PRD.md)
+---
+
+## Desktop Quickstart（3 步）
+
+> msgcode v2.2 支持 Desktop Bridge，实现 Mac 本地 UI 自动化（截图/AX树/点击/输入/快捷键）。
+
+### 步骤 1: 启动 Desktop Host
+
+```bash
+# 打开 MsgcodeDesktopHost.app（首次需授予权限）
+open mac/MsgcodeDesktopHost/MsgcodeDesktopHost.app
+
+# 或通过 Menubar 验证：点击 "Doctor" 查看权限状态
+```
+
+### 步骤 2: 检查权限
+
+系统设置 → 隐私与安全性 → 辅助功能 ✓
+系统设置 → 隐私与安全性 → 屏幕录制 ✓
+
+### 步骤 3: 发起请求
+
+```bash
+# 健康检查
+npx tsx src/cli.ts /desktop health
+
+# 截图 + AX 树（落盘到 workspace/artifacts/desktop/）
+npx tsx src/cli.ts /desktop observe
+
+# 查找 UI 元素
+npx tsx src/cli.ts /desktop find --byRole AXButton --titleContains "Send"
+
+# 点击元素（需 confirm）
+npx tsx src/cli.ts /desktop click --selector '{"byRole": "AXButton"}' --phrase "CONFIRM"
+```
+
+**完整文档**: [docs/desktop/](./docs/desktop/)
 
 ---
 
@@ -13,95 +49,10 @@ msgcode 是一个基于 iMessage 的本地 AI Bot 系统，通过群组路由实
 ### 核心特性
 
 - **iMessage 集成**: 基于 `imsg rpc`（无 SDK / 无 AppleScript）
-- **群组路由**: 不同群组 → 对应 Claude Project / Bot
-- **双向通信**:
-  - 输入: iMessage → tmux send-keys
-  - 输出: Claude JSONL → iMessage 回复
-- **安全机制**: 白名单验证 (Email/Phone)
-
----
-
-## 配置文件
-
-msgcode 优先从 `~/.config/msgcode/.env` 读取配置，如果不存在则回退到项目根目录的 `.env` 文件。
-
-### 首次安装
-
-```bash
-# 创建配置目录
-mkdir -p ~/.config/msgcode/log
-
-# 复制示例配置
-cp .env.example ~/.config/msgcode/.env
-
-# 编辑配置
-vim ~/.config/msgcode/.env
-```
-
-### 配置迁移
-
-如果你已经在使用项目根目录的 `.env`，可以迁移到用户配置目录：
-
-```bash
-# 创建配置目录
-mkdir -p ~/.config/msgcode/log
-
-# 复制现有配置
-cp .env ~/.config/msgcode/.env
-
-# 验证
-ls -la ~/.config/msgcode/
-```
-
-## 日志
-
-msgcode 使用双写策略：同时输出到控制台和日志文件。
-
-### 日志位置
-
-日志文件位于 `~/.config/msgcode/log/msgcode.log`
-
-### 日志级别
-
-通过 `LOG_LEVEL` 环境变量控制：
-
-- `debug` - 调试信息（详细）
-- `info` - 常规信息（默认）
-- `warn` - 警告信息
-- `error` - 错误信息（最少）
-
-在 `.env` 中设置：
-
-```bash
-LOG_LEVEL=info
-```
-
-### 日志轮转
-
-- 单个日志文件最大 10MB
-- 自动轮转，保留最近 3 个日志文件
-- 轮转后的文件命名：`msgcode.log.1`, `msgcode.log.2`, `msgcode.log.3`
-
-### 查看日志
-
-```bash
-# 查看最新日志
-tail -f ~/.config/msgcode/log/msgcode.log
-
-# 查看最近 50 行
-tail -50 ~/.config/msgcode/log/msgcode.log
-
-# 搜索错误
-grep ERROR ~/.config/msgcode/log/msgcode.log
-```
-
----
-
-## 待办 / TODO
-
-- 日志与监控：增加崩溃重启通知的外部推送/关键指标输出（目前仅本地日志）。
-- 配置健壮性：支持配置热加载或提供重启提示机制。
-- 测试隔离：测试模式下 mock markAsRead，避免本地 chat.db 权限警告。
+- **群组路由**: 不同群组 → 对应工作区
+- **双向通信**: iMessage → tmux → Claude/LM Studio → iMessage
+- **JSONL 读取**: claude 和 claude-code 优先 JSONL 日志读取（pane 为 fallback），确保响应完整准确
+- **安全机制**: 白名单验证 + owner 收口
 
 ---
 
@@ -112,22 +63,7 @@ grep ERROR ~/.config/msgcode/log/msgcode.log
 - macOS (需授予 Terminal/IDE "完全磁盘访问权限")
 - Node.js >= 18.0.0
 - iMessage 已登录
-- Claude Code (`claude`) 已安装并登录
-
-> **提示：iCloud 消息同步**
->
-> msgcode 2.0 主链路不写 `chat.db`，一般不需要强制关闭 iCloud 消息同步。
-> 但如果出现“消息来源/状态不一致”等诡异问题，可以尝试关闭 macOS 的 iCloud 消息同步：
->
-> ```
-> 系统设置 → Apple ID → iCloud → 关闭"信息（Messages）"
-> ```
->
-> 可能影响：
-> - 消息检测表现不稳定（多设备/云端状态切换）
-> - 发送者身份显示混乱（多设备同步冲突）
->
-> **尤其注意**：当 macOS 登录账号与 Bot 身份不一致时，问题更严重。
+- Claude Code 或 LM Studio 已安装
 
 ### 2. 安装
 
@@ -165,7 +101,7 @@ msgcode start
 msgcode start debug
 ```
 
-### 5. 绑定群聊（2.0 推荐）
+### 5. 绑定群聊
 
 1. 在 iMessage 里手动建一个群聊，把 msgcode 的 iMessage 账号拉进群
 2. 在群里发送：
@@ -174,119 +110,149 @@ msgcode start debug
 
 ---
 
-## 目录结构
-
-```
-msgcode/
-├── PRD.md               # 产品需求文档
-├── README.md            # 项目文档
-├── package.json         # 依赖配置
-├── .env                 # 配置文件
-├── scripts/
-│   ├── build-imsg.sh    # 源码构建 imsg（供应链收口）
-│   └── verify-imsg.sh   # 校验 imsg（hash/权限/版本）
-└── src/
-    ├── index.ts         # 主入口
-    ├── config.ts        # 配置加载
-    ├── router.ts        # 群组路由
-    ├── security.ts      # 安全验证
-    ├── listener.ts      # 消息监听器
-    ├── handlers.ts      # 命令分发
-    ├── tmux/            # tmux 会话管理
-    │   ├── session.ts   # 会话控制
-    │   ├── sender.ts    # 发送器
-    │   └── responder.ts # 响应器 (核心逻辑)
-    └── output/          # Claude 输出处理
-        ├── reader.ts    # JSONL 增量读取
-        └── parser.ts    # 消息解析
-```
-
----
-
-**Tip:** `msgcode start` 在后台静默运行并把日志写入 `~/.config/msgcode/log/msgcode.log`，`msgcode start debug` 则把日志同步输出到当前终端；如果需要实时看到 Claude 的终端内容，可以用 `LOG_CONSOLE=true msgcode start debug`，让 tmux 内容同时写入控制台和日志，方便在 iMessage 里快速判断「Do you want to proceed?」等互动提示。
-
-`msgcode stop` 只停止 msgcode 进程，**不会**清理 `msgcode-` 前缀的 tmux 会话（用于重启后保留 Claude 上下文）；需要彻底清理时用 `msgcode allstop`。
-
-### 状态与快照命令详解
-
-- `/status` 会向 `tmux capture-pane -t msgcode-<group> -p -S -100` 请求当前状态，回显 Claude 是 ready、正在执行还是等待你的输入（适用于确认 1/2/3 交互）。
-- `/snapshot` 会跑 `tmux capture-pane -t msgcode-<group> -p -J`，把最近 200 行终端内容打包发回来，方便在手机上看到 prompt、授权提示或 CLI 的内部日志。
-- `/resume` 表示你已经在 tmux 中手动回了那条交互提示（比如 “Do you want to proceed?”、`1. Yes / 2. No`），接下来继续在群组里发消息即可恢复对话。你可以在本机终端执行 `tmux attach -t msgcode-<group>` 或 `tmux send-keys -t msgcode-<group> "1" Enter`，也可以在 `LOG_CONSOLE=true msgcode start debug` 下观察 prompt 再返回 tmux 操作。
-
-当 tmux 里出现 `Do you want to proceed?` 之类交互提示时，请先在 tmux 终端手动输入可选项，Claude 才会继续运行。
-
----
-
-## 常用命令
-
-在 iMessage 群组中发送：
+## 最小命令集
 
 | 命令 | 说明 |
 |------|------|
-| `/start` | 启动当前项目的 Claude 会话 |
+| `/bind <dir>` | 绑定群组到工作目录 |
+| `/where` | 查看当前群组绑定 |
+| `/help` | 显示完整命令帮助（**真相源**） |
+| `/start` | 启动会话 |
 | `/stop` | 停止会话 |
-| `/status` | 查看会话状态 |
-| `/snapshot` | 获取终端当前屏幕截图 (文本) |
-| `/clear` | 清空 Claude 上下文 |
-| `/resume` | 手动输入选项恢复交互（tmux attach 或 send-keys） |
-| `/esc` | 发送 ESC 中断操作 |
-| *(直接发消息)* | 发送给 Claude 并等待回复 |
 
-### msgcode 2.0（推荐）：群绑定模式（无需编辑 `.env`）
+**完整命令列表**：在 iMessage 群组中发送 `/help` 查看
 
-目标：让小白用户“建群就能用”，不再手动维护 `GROUP_*` 配置。
+---
 
-使用方式（两步）：
-1. 在 Messages 里**手动创建一个群聊**（用于一个项目/会话）。
-2. 在该群里发送 `/bind <dir>` 绑定工作目录。
+## 常见排障
 
-约定：
-- 先配置一个 **Agent Root**（所有项目都在它下面）：
-  - `WORKSPACE_ROOT=/Users/<you>/msgcode-workspaces`（可自行加一层 `<agent-name>` 做隔离）
-- `/bind` 只接受**相对路径**（统一纳入 root 管理）
-- 最终目录永远是：`$WORKSPACE_ROOT/<dir>`
-- 目录不存在会自动创建
+### Claude 不回复？
 
-| 命令 | 说明 |
+1. 确保已发送 `/bind <dir>` 绑定工作目录
+2. 确保已发送 `/start` 启动会话
+3. 发送 `/status` 查看会话状态
+4. 发送 `/where` 查看当前绑定
+5. 检查 Terminal/IDE 是否有 "完全磁盘访问权限"
+6. 检查 `IMSG_PATH` 是否正确
+
+**JSONL 读取规则**：claude 和 claude-code 优先从 JSONL 日志读取（`~/.claude/projects/**/*.jsonl`），确保响应完整准确。如果 JSONL 文件不存在或读取失败，自动 fallback 到 tmux pane 读屏。
+
+### 消息发送者身份不对？
+
+多设备 iCloud 同步可能导致身份冲突。建议：
+- msgcode 使用"专用 iMessage 账号"
+- 必要时关闭 macOS 的 iCloud 消息同步
+
+### 如何支持多个项目？
+
+每项目建一个群聊，在群里 `/bind <dir>`，无需修改 `.env`。
+发送 `/chatlist` 查看所有已绑定的群组。
+
+### 需要更多诊断？
+
+- `/info` 查看处理状态
+- `/model` 切换执行臂（支持 lmstudio、codex、claude-code）
+- `/policy` 切换策略模式（本地/外网）
+- `/loglevel <level>` 调整日志级别（如 debug/info/warn/error）
+
+---
+
+## Tool Bus 观测与灰度
+
+msgcode v2.2 引入了 Tool Bus 统一工具执行闸门，提供结构化日志和灰度控制能力。
+
+### 工具策略模式
+
+- **explicit（默认）**: 只允许显式命令触发工具（稳态）
+- **autonomous**: 模型可自主编排调用工具（含 shell/browser），全信任策略
+- **tool-calls（预留）**: 标准 tool_calls 自动工具调用
+
+### 观测命令
+
+- `/toolstats` - 查看工具执行统计（成功率/平均耗时/Top 错误码/各工具分布）
+- `/tool allow list` - 查看当前灰度配置
+- `/tool allow add <tool>` - 添加工具到允许列表（需要 `/reload` 生效）
+- `/tool allow remove <tool>` - 从允许列表移除工具（需要 `/reload` 生效）
+
+### 灰度流程
+
+1. 灰度前：查看工具执行统计
+2. 修改配置：添加工具到允许列表
+3. 生效配置：重新加载配置
+4. 灰度后：全量回归测试
+
+详细说明以仓库内文档为准（开源导出默认不包含 `AIDOCS/`）。
+
+---
+
+## MLX Provider（工具闭环推荐）
+
+msgcode v2.2+ 支持 MLX LM Server 作为独立的 provider，专门用于 GLM4.7 Flash 工具闭环场景。
+
+### 特性
+
+- **OpenAI 兼容 API**: 兼容 chat completions 和 models listing 端点
+- **工具闭环**: 支持 tools + tool_choice + role=tool 回灌
+- **配置灵活**: 通过 workspace config.json 配置 baseUrl/modelId/参数
+- **自动探测**: 模型 ID 可自动从 models listing 端点探测
+
+### 切换到 MLX
+
+```bash
+/model mlx
+```
+
+### MLX 配置
+
+在 `<WORKSPACE>/.msgcode/config.json` 中配置：
+
+```json
+{
+  "mlx.baseUrl": "http://127.0.0.1:18000",
+  "mlx.modelId": "",
+  "mlx.maxTokens": 512,
+  "mlx.temperature": 0.7,
+  "mlx.topP": 1
+}
+```
+
+### 工具闭环使用
+
+1. 启动 `mlx_lm.server`（GLM4.7 Flash MLX 模型）
+2. 切换到 autonomous 模式：修改 `tooling.mode` 为 `autonomous`
+3. 发送消息，模型可自主调用工具并回灌结果
+
+---
+
+## 文档索引
+
+### Desktop Bridge
+
+| 文档 | 说明 |
 |------|------|
-| `/bind <dir>` | 绑定当前群到工作目录（已绑定则更新为新目录） |
-| `/bind` | 返回建议目录并提示你复制确认（避免误绑） |
-| `/where` | 查看当前群绑定的工作目录 |
-| `/unbind` | 解除当前群绑定（停止路由到任何目录） |
-| `/chatlist` | 列出所有已绑定的群组 |
-| `/help` | 显示命令帮助 |
+| [完整文档](./docs/desktop/) | Desktop 能力总入口 |
+| [API 契约](./docs/desktop/contract.md) | JSON-RPC 2.0 契约（**API 真相源**） |
+| [Recipes](./recipes/desktop/) | 自动化流程示例 |
+| [Security](./SECURITY.md) | 安全模型与威胁假设 |
+| [Releasing](./RELEASING.md) | 开源发布与快速验收 |
 
-示例：
-- `/bind acme/ops` → `/Users/<you>/msgcode-workspaces/acme/ops`
-- `/bind clientA` → `/Users/<you>/msgcode-workspaces/clientA`
-- 修改目录：再次发送 `/bind <newDir>`（只改绑定指针；不自动搬迁文件）
-- 不支持：`/bind /abs/path`（必须在 Agent Root 下）
+### 内部规划（不随开源导出）
 
----
+仓库内存在 `AIDOCS/`（内部规划、验收记录、过程资产），默认不随开源导出/打包。
 
-## 常见问题
-
-### Q: 为什么 Claude 不回复？
-A:
-1. 确保已发送 `/bind <dir>` 绑定工作目录。
-2. 确保已发送 `/start` 启动会话。
-3. 确保运行 msgcode 的终端 + imsg 有读取 `~/Library/Messages` 的权限 (Full Disk Access)。
-4. 检查 `IMSG_PATH` 是否正确。
-
-### Q: 消息显示的发送者身份不对？
-A: 多设备 iCloud 同步可能导致身份/状态冲突。优先确认 msgcode 使用的是“专用 iMessage 账号”；必要时再尝试关闭 macOS 的 iCloud 消息同步。
-
-### Q: 如何支持多个项目？
-A:
-- 每个项目/会话建一个群聊，在群里 `/bind <dir>`，之后无需再改 `.env`。
-
----
-
-## 依赖
+### 依赖
 
 - `imsg`: iMessage RPC（建议源码构建并固定版本）
-- `tmux`: 终端多路复用器 (系统自带或 brew 安装)
+- `tmux`: 终端多路复用器
 - `claude`: Claude Code CLI 工具
+
+## 维护声明
+
+**命令真相源：运行时 `/help`**
+
+本文档仅做架构导读和快速上手参考。所有命令的权威行为以 iMessage 群组中发送 `/help` 的输出为准。
+
+如发现文档与 `/help` 不一致，请以 `/help` 为准并提交 Issue。
 
 ---
 
@@ -296,4 +262,4 @@ MIT
 
 ---
 
-*更新: 2026-01-28*
+*更新: 2026-02-10*

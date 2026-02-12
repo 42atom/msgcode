@@ -13,6 +13,10 @@ import {
     probeResources,
 } from "./probes/index.js";
 import { probeJobs } from "./probes/jobs.js";
+import { probeDeps } from "./probes/deps.js";
+import { probeCodex } from "./probes/runner.js";
+import { probeTts } from "./probes/tts.js";
+import { probeInbound } from "./probes/inbound.js";
 import { formatJson } from "./formatters/json.js";
 import { formatText } from "./formatters/text.js";
 import { safeProbe, aggregateStatus } from "./types.js";
@@ -29,6 +33,10 @@ const PROBE_CATEGORIES = [
     { name: "连接", key: "connections", probe: probeConnections },
     { name: "资源", key: "resources", probe: probeResources },
     { name: "任务", key: "jobs", probe: probeJobs },
+    { name: "依赖", key: "deps", probe: probeDeps },
+    { name: "语音", key: "tts", probe: probeTts },
+    { name: "执行臂", key: "runner", probe: probeCodex },
+    { name: "入站", key: "inbound", probe: probeInbound },
 ] as const;
 
 /**
