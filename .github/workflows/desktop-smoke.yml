@@ -8,7 +8,7 @@ on:
 
 jobs:
   desktop-smoke:
-    name: Message -> Safari Smoke Test
+    name: Desktop Smoke Test
     runs-on: macos-latest
 
     steps:
