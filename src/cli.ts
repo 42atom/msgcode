@@ -198,6 +198,12 @@ async function loadRunCommands() {
   program.addCommand(createRunCommand());
 }
 
+// Skill 命令组（M6）
+async function loadSkillCommands() {
+  const { createSkillCommand } = await import("./cli/skills.js");
+  program.addCommand(createSkillCommand());
+}
+
 // 主入口（异步）
 async function main() {
   // P0: 仅按需加载子命令，避免在“未初始化配置”时也强制 import 导致 CLI 直接崩溃。
@@ -216,6 +222,9 @@ async function main() {
   }
   if (top === "run") {
     await loadRunCommands();
+  }
+  if (top === "skill" || top === "skills") {
+    await loadSkillCommands();
   }
 
   // 对于 help（无参数或 --help），也加载一遍子命令，让帮助信息完整
