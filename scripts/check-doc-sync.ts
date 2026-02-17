@@ -46,31 +46,27 @@ export interface DocSyncReport {
 /**
  * 最小命令集白名单（根 README 允许出现的命令）
  *
- * 根据 README 收口方案，根 README 只应该包含：
- * - /bind /where /help /start /stop（最小命令集）
- * - /status /loglevel /info /chatlist（常见排障/状态检查）
- * - /reload /toolstats /tool（观测与灰度命令）
- * - /desktop（Desktop Bridge 快速入门）
+ * P4.3: 根据命令收敛方案，根 README 只应该包含用户可见命令（12 条主命令）
+ * 注：别名不在此列表中，README 只列主命令
  */
 const MINIMAL_COMMAND_ALLOWLIST = new Set([
+  // 进程控制（2 条）
+  "/start",  // 包含 /stop 别名
+  "/status",
+  // 工作区（4 条）
   "/bind",
   "/where",
-  "/help",
-  "/start",
-  "/stop",
-  // 以下命令仅在文档索引或排障中出现，允许出现
-  "/status",
-  "/loglevel",
-  "/info",
-  "/chatlist",
+  "/unbind",
   "/model",
-  "/policy",
-  // Tool Bus 观测与灰度
-  "/reload",
-  "/toolstats",
-  "/tool",
-  // Desktop Bridge
-  "/desktop",
+  // 媒体（3 条）
+  "/mode",
+  "/tts",
+  "/voice",
+  // 人格与定时任务（1 条）
+  "/soul",
+  // 信息（2 条）
+  "/help",
+  "/info",
 ]);
 
 /**
@@ -95,26 +91,32 @@ const AIDOS_REQUIRED_SECTIONS = [
 // ============================================
 
 /**
- * 从 handleHelpCommand 提取命令关键字集合
+ * 从注册表提取命令关键字集合
  *
- * 通过解析 src/routes/commands.ts 中 handleHelpCommand 返回的 message，
- * 提取所有 `/xxx` 格式的命令关键字
+ * P4.3: 现在帮助信息从注册表渲染，直接从注册表获取可见命令
  */
-function extractCommandsFromHelp(): string[] {
-  const commandsPath = path.join(process.cwd(), "src", "routes", "commands.ts");
-  const content = fs.readFileSync(commandsPath, "utf-8");
+async function extractCommandsFromHelp(): Promise<string[]> {
+  // 动态导入注册表并初始化
+  const { initDefaultCommands, listVisibleCommands } = await import("../src/commands/registry.js");
 
-  // 提取 handleHelpCommand 函数中的 message 字符串
-  // 简化处理：查找所有 `/xxx ` 或 `/xxx\n` 或 `/xxx|` 模式
-  const commandPattern = /\/([a-z][a-z0-9-]*)/gi;
-  const matches = content.matchAll(commandPattern);
-  const commands = new Set<string>();
+  // 初始化默认命令
+  initDefaultCommands();
 
-  for (const match of matches) {
-    commands.add(`/${match[1]}`);
+  // 获取所有可见命令
+  const commands = listVisibleCommands();
+  const result: string[] = [];
+
+  for (const cmd of commands) {
+    result.push(`/${cmd.name}`);
+    // 也添加别名（作为独立命令）
+    if (cmd.aliases) {
+      for (const alias of cmd.aliases) {
+        result.push(`/${alias}`);
+      }
+    }
   }
 
-  return Array.from(commands).sort();
+  return Array.from(new Set(result)).sort();
 }
 
 /**
@@ -147,7 +149,10 @@ function extractCommandsFromReadme(): string[] {
     // 跳过代码块中的路径行
     if (line.trim().startsWith("IMSG_PATH=") ||
         line.trim().startsWith("WORKSPACE_ROOT=") ||
-        line.includes("/Users/<")) {
+        line.includes("/Users/<") ||
+        // 跳过 Shell 命令示例（如 npx tsx src/cli.ts /desktop）
+        line.trim().startsWith("#") && line.includes("npx") ||
+        line.includes("npx tsx src/cli.ts")) {
       continue;
     }
 
@@ -297,13 +302,15 @@ function checkAidosVerbosePromises(): string[] {
 /**
  * 检查文档同步状态
  */
-export function checkDocSync(): DocSyncReport {
+export async function checkDocSync(): Promise<DocSyncReport> {
   // === 根 README 检查 ===
-  const helpCommands = extractCommandsFromHelp();
+  const helpCommands = await extractCommandsFromHelp();
   const readmeCommands = extractCommandsFromReadme();
 
   // 1. 检查幽灵命令（README 提到的命令在 /help 中不存在）
-  const violations = readmeCommands.filter(cmd => !helpCommands.includes(cmd));
+  // 先过滤掉忽略列表中的假阳性（如示例路径 /bind acme/ops）
+  const filteredForViolations = readmeCommands.filter(cmd => !IGNORE_LIST.has(cmd));
+  const violations = filteredForViolations.filter(cmd => !helpCommands.includes(cmd));
 
   // 2. 检查额外命令（在 README 中存在但不在最小命令集中）
   // 先过滤掉忽略列表中的假阳性
@@ -343,7 +350,7 @@ export function checkDocSync(): DocSyncReport {
 // ============================================
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const report = checkDocSync();
+  const report = await checkDocSync();
 
   if (report.passed) {
     console.log("✓ 文档同步检查通过");

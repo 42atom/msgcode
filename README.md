@@ -1,12 +1,12 @@
 # msgcode
 
-> 用 iMessage 替代 Matrix，实现 Mac 本地的 AI Bot 系统
+> Mac 上的 AI 智能体，iMessage 通道优先
 
 ---
 
 ## Desktop Quickstart（3 步）
 
-> msgcode v2.2 支持 Desktop Bridge，实现 Mac 本地 UI 自动化（截图/AX树/点击/输入/快捷键）。
+> msgcode v2.3 支持 Desktop Bridge，实现 Mac 本地 UI 自动化（截图/AX树/点击/输入/快捷键）。
 
 ### 步骤 1: 启动 Desktop Host
 
@@ -44,7 +44,7 @@ npx tsx src/cli.ts /desktop click --selector '{"byRole": "AXButton"}' --phrase "
 
 ## 简介
 
-msgcode 是一个基于 iMessage 的本地 AI Bot 系统，通过群组路由实现多个 Bot/Agent 会话。无需云服务器，简化运维。
+msgcode 是一个运行在 Mac 上的 AI 智能体系统，默认以 iMessage 作为优先通道，通过群组路由实现多 Agent 会话。无需云服务器，简化运维。
 
 ### 核心特性
 
@@ -78,6 +78,11 @@ npm install
 msgcode init
 ```
 
+`msgcode init` 现在会自动补齐：
+- `~/.config/msgcode/souls/default/SOUL.md`（全局 SOUL 默认模板）
+- `~/.config/msgcode/souls/active.json`（全局 SOUL 激活映射）
+- `~/.config/msgcode/skills/`（全局 Skills 根目录）
+
 ### 3. 配置 ~/.config/msgcode/.env
 
 ```bash
@@ -89,6 +94,12 @@ IMSG_PATH=/Users/<you>/msgcode/vendor/imsg/v0.4.0/imsg
 
 # 工作空间根目录（可选；默认 ~/msgcode-workspaces）
 WORKSPACE_ROOT=/Users/<you>/msgcode-workspaces
+
+# （可选）OpenViking 记忆增强
+OPENVIKING_ENABLED=1
+OPENVIKING_BASE_URL=http://localhost:8080
+OPENVIKING_TIMEOUT_MS=5000
+OPENVIKING_FALLBACK=1
 ```
 
 ### 4. 启动 Bot
@@ -108,17 +119,29 @@ msgcode start debug
    - `/bind acme/ops`
    - `/start`
 
+`/bind` 后会自动补齐工作区基础文件：
+- `<WORKSPACE>/.msgcode/config.json`
+- `<WORKSPACE>/.msgcode/providers.json`
+- `<WORKSPACE>/.msgcode/SOUL.md`
+
 ---
 
 ## 最小命令集
 
 | 命令 | 说明 |
 |------|------|
+| `/start` | 启动/停止会话 |
+| `/status` | 查看当前状态 |
 | `/bind <dir>` | 绑定群组到工作目录 |
-| `/where` | 查看当前群组绑定 |
-| `/help` | 显示完整命令帮助（**真相源**） |
-| `/start` | 启动会话 |
-| `/stop` | 停止会话 |
+| `/where` | 查看当前工作区 |
+| `/unbind` | 解除工作区绑定 |
+| `/model` | 查看或切换模型 |
+| `/mode` | 切换响应模式 |
+| `/tts` | 文字转语音 |
+| `/voice` | 语音交互 |
+| `/soul` | 人格与定时任务 |
+| `/help` | 显示帮助（**真相源**） |
+| `/info` | 查看处理状态 |
 
 **完整命令列表**：在 iMessage 群组中发送 `/help` 查看
 
@@ -146,14 +169,12 @@ msgcode start debug
 ### 如何支持多个项目？
 
 每项目建一个群聊，在群里 `/bind <dir>`，无需修改 `.env`。
-发送 `/chatlist` 查看所有已绑定的群组。
+发送 `/info` 查看所有已绑定的群组。
 
 ### 需要更多诊断？
 
 - `/info` 查看处理状态
 - `/model` 切换执行臂（支持 lmstudio、codex、claude-code）
-- `/policy` 切换策略模式（本地/外网）
-- `/loglevel <level>` 调整日志级别（如 debug/info/warn/error）
 
 ---
 
@@ -169,10 +190,7 @@ msgcode v2.2 引入了 Tool Bus 统一工具执行闸门，提供结构化日志
 
 ### 观测命令
 
-- `/toolstats` - 查看工具执行统计（成功率/平均耗时/Top 错误码/各工具分布）
-- `/tool allow list` - 查看当前灰度配置
-- `/tool allow add <tool>` - 添加工具到允许列表（需要 `/reload` 生效）
-- `/tool allow remove <tool>` - 从允许列表移除工具（需要 `/reload` 生效）
+Tool Bus 详细命令请参考 `/help` 或文档 [docs/toolbus](./docs/toolbus/)。
 
 ### 灰度流程
 
@@ -185,42 +203,76 @@ msgcode v2.2 引入了 Tool Bus 统一工具执行闸门，提供结构化日志
 
 ---
 
-## MLX Provider（工具闭环推荐）
+## LM Studio（默认执行臂）
 
-msgcode v2.2+ 支持 MLX LM Server 作为独立的 provider，专门用于 GLM4.7 Flash 工具闭环场景。
+当前默认执行臂固定为 LM Studio。`mlx` 仅保留兼容别名，会归一化到 `lmstudio`。
 
 ### 特性
 
 - **OpenAI 兼容 API**: 兼容 chat completions 和 models listing 端点
 - **工具闭环**: 支持 tools + tool_choice + role=tool 回灌
-- **配置灵活**: 通过 workspace config.json 配置 baseUrl/modelId/参数
-- **自动探测**: 模型 ID 可自动从 models listing 端点探测
+- **配置灵活**: 通过 workspace `providers.json` 配置 baseUrl/model/参数
+- **稳定优先**: 生产默认以 LM Studio 为主
 
-### 切换到 MLX
+### 切换到 LM Studio
 
 ```bash
-/model mlx
+/model lmstudio
 ```
 
-### MLX 配置
+### 默认 Provider 配置
 
-在 `<WORKSPACE>/.msgcode/config.json` 中配置：
+在 `<WORKSPACE>/.msgcode/providers.json` 中配置：
 
 ```json
 {
-  "mlx.baseUrl": "http://127.0.0.1:18000",
-  "mlx.modelId": "",
-  "mlx.maxTokens": 512,
-  "mlx.temperature": 0.7,
-  "mlx.topP": 1
+  "active": "lmstudio-local",
+  "providers": {
+    "lmstudio-local": {
+      "type": "openai-compat",
+      "baseUrl": "http://127.0.0.1:1234/v1",
+      "model": ""
+    }
+  }
 }
 ```
 
 ### 工具闭环使用
 
-1. 启动 `mlx_lm.server`（GLM4.7 Flash MLX 模型）
+1. 启动 LM Studio 本地服务（OpenAI Compatible）
 2. 切换到 autonomous 模式：修改 `tooling.mode` 为 `autonomous`
 3. 发送消息，模型可自主调用工具并回灌结果
+
+---
+
+## PI / SOUL / 记忆（Filesystem-First）
+
+### PI 打开后得到什么
+
+- **结构化注入**：System Base → SOUL → SKILL → Memory → User → Runtime Guards
+- **分层记忆**：L0/L1/L2 检索注入（即时/短期/长期）
+- **可观测性**：debug 中可看到 `memoryTrace`、`activeSoulId`、`activeSoulVersion`
+- **不阻断**：检索失败时自动降级，不影响主链路回复
+
+### SOUL 文件位置
+
+- 全局 SOUL：`~/.config/msgcode/souls/default/SOUL.md`
+- 全局激活映射：`~/.config/msgcode/souls/active.json`
+- 工作区 SOUL：`<WORKSPACE>/.msgcode/SOUL.md`
+- 市场安装 SOUL：`~/.config/msgcode/souls/<id>/<version>/SOUL.md`
+
+### 记忆真相源
+
+- 工作区目录：`<WORKSPACE>/.msgcode/memory/`
+- `entries/`：记忆条目
+- `index.json`：轻量索引
+- `deposition.jsonl`：沉淀事件流
+
+### OpenViking 说明
+
+- 默认本地 memory 可用（离线、稳定）
+- 开启 OV 后增强语义召回能力（适合更长历史）
+- OV 不可用时自动 fallback 到本地 memory（不影响对话）
 
 ---
 

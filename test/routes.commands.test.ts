@@ -22,6 +22,7 @@ import {
   handleCursorCommand,
   handleResetCursorCommand,
   handleRouteCommand,
+  handlePiCommand,
   isRouteCommand,
   parseRouteCommand,
   type CommandHandlerOptions,
@@ -293,13 +294,19 @@ describe("路由命令处理器", () => {
       const result = await handleHelpCommand(options);
 
       expect(result.success).toBe(true);
-      expect(result.message).toContain("msgcode 2.2 命令帮助");
+      expect(result.message).toContain("msgcode 2.3 命令帮助");
       expect(result.message).toContain("/bind");
       expect(result.message).toContain("/where");
       expect(result.message).toContain("/unbind");
-      expect(result.message).toContain("/chatlist");
       expect(result.message).toContain("/start");
-      expect(result.message).toContain("/stop");
+      expect(result.message).toContain("/status");
+      expect(result.message).toContain("/model");
+      expect(result.message).toContain("/mode");
+      expect(result.message).toContain("/tts");
+      expect(result.message).toContain("/voice");
+      expect(result.message).toContain("/soul");
+      expect(result.message).toContain("/help");
+      expect(result.message).toContain("/info");
     });
   });
 
@@ -391,7 +398,7 @@ describe("路由命令处理器", () => {
       const result = await handleRouteCommand("help", options);
 
       expect(result.success).toBe(true);
-      expect(result.message).toContain("msgcode 2.2 命令帮助");
+      expect(result.message).toContain("msgcode 2.3 命令帮助");
     });
 
     it("拒绝未知命令", async () => {
@@ -400,6 +407,82 @@ describe("路由命令处理器", () => {
 
       expect(result.success).toBe(false);
       expect(result.message).toContain("未知命令");
+    });
+  });
+
+  // P3.2: PI 命令测试
+  describe("handlePiCommand", () => {
+    const testChatId = "any;+;pi-test";
+
+    beforeEach(async () => {
+      // 先绑定工作区
+      await handleBindCommand({ chatId: testChatId, args: ["pi-test-workspace"] });
+    });
+
+    it("未绑定工作区时返回错误", async () => {
+      const options: CommandHandlerOptions = { chatId: "any;+;no-workspace", args: [] };
+      const result = await handlePiCommand(options);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("未绑定工作目录");
+    });
+
+    it("/pi status 查看状态（默认应禁用）", async () => {
+      const options: CommandHandlerOptions = { chatId: testChatId, args: [] };
+      const result = await handlePiCommand(options);
+
+      expect(result.success).toBe(true);
+      expect(result.message).toContain("PI: 已禁用");
+      expect(result.message).toContain("执行臂:");
+    });
+
+    it("/pi on 启用 PI（仅限本地执行臂）", async () => {
+      const options: CommandHandlerOptions = { chatId: testChatId, args: ["on"] };
+      const result = await handlePiCommand(options);
+
+      // 注意：默认 runner 是 lmstudio（本地执行臂），应该成功
+      expect(result.success).toBe(true);
+      expect(result.message).toContain("PI 已启用");
+    });
+
+    it("/pi off 禁用 PI", async () => {
+      // 先启用
+      await handlePiCommand({ chatId: testChatId, args: ["on"] });
+
+      // 再禁用
+      const options: CommandHandlerOptions = { chatId: testChatId, args: ["off"] };
+      const result = await handlePiCommand(options);
+
+      expect(result.success).toBe(true);
+      expect(result.message).toContain("PI 已禁用");
+    });
+
+    it("/pi <invalid> 返回错误", async () => {
+      const options: CommandHandlerOptions = { chatId: testChatId, args: ["invalid"] };
+      const result = await handlePiCommand(options);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("未知操作");
+    });
+  });
+
+  // P3.2: isRouteCommand 识别 /pi 命令
+  describe("isRouteCommand - PI 命令", () => {
+    it("识别 /pi 命令", () => {
+      expect(isRouteCommand("/pi")).toBe(true);
+      expect(isRouteCommand("/pi on")).toBe(true);
+      expect(isRouteCommand("/pi off")).toBe(true);
+      expect(isRouteCommand("/pi status")).toBe(true);
+    });
+  });
+
+  // P3.2: parseRouteCommand 解析 /pi 命令
+  describe("parseRouteCommand - PI 命令", () => {
+    it("解析 /pi 命令", () => {
+      expect(parseRouteCommand("/pi")).toEqual({ command: "pi", args: [] });
+      expect(parseRouteCommand("/pi on")).toEqual({ command: "pi", args: ["on"] });
+      expect(parseRouteCommand("/pi off")).toEqual({ command: "pi", args: ["off"] });
+      expect(parseRouteCommand("/pi status")).toEqual({ command: "pi", args: ["status"] });
     });
   });
 });

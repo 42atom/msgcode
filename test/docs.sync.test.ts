@@ -15,13 +15,13 @@ import { describe, test, expect } from "bun:test";
 import { checkDocSync } from "../scripts/check-doc-sync";
 
 describe("文档同步检查", () => {
-  test("Scenario A: /help 中存在的命令应在 README 最小命令集中", () => {
+  test("Scenario A: /help 中存在的命令应在 README 最小命令集中", async () => {
     // 这个测试主要检查 README 不要遗漏核心命令
-    const report = checkDocSync();
+    const report = await checkDocSync();
 
     // 允许 README 不包含所有 /help 命令（因为详细命令在 AIDOCS）
     // 但核心命令必须存在
-    const coreCommands = ["/bind", "/where", "/help", "/start", "/stop"];
+    const coreCommands = ["/bind", "/where", "/help", "/start"];
     const readmeCommands = extractCommandsFromReadme();
 
     for (const cmd of coreCommands) {
@@ -29,8 +29,8 @@ describe("文档同步检查", () => {
     }
   });
 
-  test("Scenario B: README 不应包含幽灵命令（/help 中不存在）", () => {
-    const report = checkDocSync();
+  test("Scenario B: README 不应包含幽灵命令（/help 中不存在）", async () => {
+    const report = await checkDocSync();
 
     // 幽灵命令应该为空
     expect(report.violations).toHaveLength(0);
@@ -45,12 +45,12 @@ describe("文档同步检查", () => {
     }
   });
 
-  test("Scenario C: README 只应包含最小命令集", () => {
-    const report = checkDocSync();
+  test("Scenario C: README 只应包含最小命令集", async () => {
+    const report = await checkDocSync();
 
     // 额外命令应该为空（或在允许范围内）
-    // README 可以包含：核心命令 + 常见排障命令
-    const allowedExtras = ["/status", "/loglevel", "/info", "/chatlist", "/reload", "/toolstats", "/tool"];
+    // README 只应包含12条主命令
+    const allowedExtras: string[] = [];
     const unexpectedExtras = report.extra.filter(cmd => !allowedExtras.includes(cmd));
 
     expect(unexpectedExtras).toHaveLength(0);
@@ -64,8 +64,8 @@ describe("文档同步检查", () => {
     }
   });
 
-  test("Scenario D: 正常场景（README 与 /help 一致）", () => {
-    const report = checkDocSync();
+  test("Scenario D: 正常场景（README 与 /help 一致）", async () => {
+    const report = await checkDocSync();
 
     // 整体检查应该通过
     expect(report.passed).toBe(true);
@@ -100,8 +100,8 @@ describe("文档同步检查", () => {
 
   // === M3.5: AIDOCS 检查 ===
 
-  test("Scenario E: AIDOCS 必须包含快速导航层", () => {
-    const report = checkDocSync();
+  test("Scenario E: AIDOCS 必须包含快速导航层", async () => {
+    const report = await checkDocSync();
 
     // 检查是否包含"快速导航"
     expect(report.aidosMissingSections).not.toContain("快速导航");
@@ -114,8 +114,8 @@ describe("文档同步检查", () => {
     }
   });
 
-  test("Scenario F: AIDOCS 实现入口链接必须存在", () => {
-    const report = checkDocSync();
+  test("Scenario F: AIDOCS 实现入口链接必须存在", async () => {
+    const report = await checkDocSync();
 
     // 检查是否有断裂的链接
     expect(report.aidosBrokenLinks).toHaveLength(0);
@@ -129,8 +129,8 @@ describe("文档同步检查", () => {
     }
   });
 
-  test("Scenario G: AIDOCS 必须包含人工检查清单", () => {
-    const report = checkDocSync();
+  test("Scenario G: AIDOCS 必须包含人工检查清单", async () => {
+    const report = await checkDocSync();
 
     // 检查是否包含"人工检查清单"
     expect(report.aidosMissingSections).not.toContain("人工检查清单");

@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-02-17
+
+### Added
+- SOUL Mod Market（安装/切换/回滚）：
+  - `msgcode soul market list`
+  - `msgcode soul market install <source>`
+  - `msgcode soul use <id>[@version]`
+  - `msgcode soul rollback`
+- PI Debug 字段：`activeSoulId`、`activeSoulVersion`
+- 发布文档：`docs/release/v2.3.0.md`
+
+### Changed
+- Slash 命令收敛到注册表渲染（`/help` 与注册表一致）
+- `/soul` 进入主命令路径，修复“识别但不处理”的黑洞问题
+- 未知命令提示改为从注册表动态生成
+- README 首屏定位更新为“Mac 上的 AI 智能体，iMessage 通道优先”
+
+### Deprecated
+- `/persona` 命令族退役（保留兼容提示壳）
+
+### Migration
+- 请将 `/persona` 操作迁移到 `/soul`
+- `schedule` 作为独立命令保留，不再作为 `soul` 别名
+
+### Verification
+- `npx tsc --noEmit`
+- `npm test`（530 pass / 0 fail）
+- `npm run docs:check`
+
 ## [1.0.0] - 2025-02-11
 
 ### Added
@@ -59,4 +88,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `mac/MsgcodeDesktopHost/README.md` - HostApp 架构与使用
 - `mac/MsgcodeDesktopHost/docs/desktop/README.md` - LaunchAgent 与测试钩子
 
+[2.3.0]: https://github.com/yourorg/msgcode/releases/tag/v2.3.0
 [1.0.0]: https://github.com/yourorg/msgcode/releases/tag/v1.0.0
