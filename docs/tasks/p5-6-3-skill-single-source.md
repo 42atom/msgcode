@@ -41,11 +41,12 @@
 - 测试锁 2：自然语言 `run_skill` tool_call 路径调用 `runSkill()`。
 - 测试锁 3：静态扫描禁止新增第二条 skill 执行链（白名单明确）。
 
-### R3 观测对齐（P1）
+### R3 观测对齐（P1）✅
 
 - 对齐日志字段：`autoSkill`、`autoSkillResult`。
 - 自然语言路径额外保留 `toolCallCount`，但字段名与语义一致。
 - 明确日志来源模块，用于定位（`lmstudio`/`skill-orchestrator`/`tools-bus`）。
+- 状态：已完成，日志字段已统一。
 
 ## 硬验收
 
