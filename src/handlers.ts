@@ -15,8 +15,6 @@ import type { InboundMessage } from "./imsg/types.js";
 import { clearTtsPrefs, getTtsPrefs, getVoiceReplyMode, setTtsPrefs, setVoiceReplyMode } from "./state/store.js";
 import { logger } from "./logger/index.js";
 import { loadWorkspaceConfig } from "./config/workspace.js";
-// P5.6.1-R2: Persona 全量退役，对齐 SOUL 单一真相源
-// import { getActivePersona } from "./config/personas.js";
 // P5.5: 关键词主触发已禁用，不再 import detectAutoSkill/runAutoSkill
 // import { detectAutoSkill, normalizeSkillId, runAutoSkill, runSkill } from "./skills/auto.js";
 

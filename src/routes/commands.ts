@@ -1885,8 +1885,6 @@ export async function handleReloadCommand(options: CommandHandlerOptions): Promi
   }
 
   const results: string[] = [];
-  // P5.6.1-R2: Persona 全量退役，不再扫描
-  // const { listPersonas } = await import("../config/personas.js");
   const { listSchedules, validateAllSchedules, mapSchedulesToJobs } = await import("../config/schedules.js");
   const { createJobStore } = await import("../jobs/store.js");
 
