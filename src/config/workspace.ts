@@ -129,7 +129,7 @@ const DEFAULT_WORKSPACE_CONFIG: Required<WorkspaceConfig> = {
   "runner.default": "lmstudio", // 默认使用本地模型
   "persona.active": "", // 默认不使用自定义 persona
   "pi.enabled": false, // 默认关闭 PI
-  "tooling.mode": "explicit", // Explicit 模式：只允许显式命令触发工具（稳态）
+  "tooling.mode": "autonomous", // P5.5: 测试期统一 autonomous（LLM 自主决策 tool_calls）
   "tooling.allow": ["tts", "asr", "vision"], // 默认允许基础工具
   "tooling.require_confirm": [], // 默认不要求确认
   // MLX Provider 默认值（Unsloth 稳态参数）
