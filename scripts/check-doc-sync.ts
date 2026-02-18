@@ -75,6 +75,9 @@ const MINIMAL_COMMAND_ALLOWLIST = new Set([
 const IGNORE_LIST = new Set([
   "/ops",      // /bind acme/ops 示例
   "/acme",     // /bind acme/ops 示例
+  "/reload",   // 文档描述中的命令提及
+  "/clear",    // 文档描述中的命令提及
+  "/memory",   // 文档描述中的命令提及
 ]);
 
 /**
