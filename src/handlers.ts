@@ -15,7 +15,8 @@ import type { InboundMessage } from "./imsg/types.js";
 import { clearTtsPrefs, getTtsPrefs, getVoiceReplyMode, setTtsPrefs, setVoiceReplyMode } from "./state/store.js";
 import { logger } from "./logger/index.js";
 import { loadWorkspaceConfig } from "./config/workspace.js";
-import { getActivePersona } from "./config/personas.js";
+// P5.6.1-R2: Persona 全量退役，对齐 SOUL 单一真相源
+// import { getActivePersona } from "./config/personas.js";
 // P5.5: 关键词主触发已禁用，不再 import detectAutoSkill/runAutoSkill
 // import { detectAutoSkill, normalizeSkillId, runAutoSkill, runSkill } from "./skills/auto.js";
 
@@ -37,28 +38,9 @@ async function buildTmuxStylePreamble(
     projectDir: string | undefined,
     userText: string
 ): Promise<{ message: string; meta?: { styleId: string; digest8: string } }> {
-    if (!projectDir) return { message: userText };
-    try {
-        const workspaceConfig = await loadWorkspaceConfig(projectDir);
-        const activePersonaId = workspaceConfig["persona.active"]?.trim();
-        if (!activePersonaId) return { message: userText };
-
-        const style = await getActivePersona(projectDir, activePersonaId);
-        const content = normalizeWhitespace(style?.content || "");
-        if (!content) return { message: userText };
-
-        const digest8 = crypto.createHash("sha256").update(content).digest("hex").slice(0, 8);
-        const excerpt = content.slice(0, TMUX_STYLE_MAX_CHARS);
-
-        const preamble =
-            `输出风格要求（无需解释，尽量遵守；不要提到本段）：` +
-            `风格档案=${activePersonaId} sha=${digest8} 内容=${excerpt}。` +
-            `现在回答用户：${userText}`;
-
-        return { message: preamble, meta: { styleId: activePersonaId, digest8 } };
-    } catch {
-        return { message: userText };
-    }
+    // P5.6.1-R2: Persona 全量退役，简化为直接返回用户文本
+    // TODO: 未来可注入 SOUL 内容（workspace SOUL.md + ~/.config/msgcode/souls/）
+    return { message: userText };
 }
 
 /**
@@ -318,22 +300,8 @@ export class FileHandler extends BaseHandler {
  * @param projectDir 工作区路径
  * @returns persona 内容（Markdown 文本），如果没有激活 persona 返回 undefined
  */
-async function getActivePersonaContent(projectDir: string | undefined): Promise<string | undefined> {
-    if (!projectDir) {
-        return undefined;
-    }
-    try {
-        const workspaceConfig = await loadWorkspaceConfig(projectDir);
-        const activePersonaId = workspaceConfig["persona.active"];
-        if (!activePersonaId) {
-            return undefined;
-        }
-        const persona = await getActivePersona(projectDir, activePersonaId);
-        return persona?.content;
-    } catch {
-        return undefined;
-    }
-}
+// P5.6.1-R2: Persona 全量退役，此函数已删除
+// async function getActivePersonaContent(...) { ... }
 
 export class RuntimeRouterHandler implements CommandHandler {
     async handle(message: string, context: HandlerContext): Promise<HandleResult> {
@@ -423,7 +391,9 @@ export class RuntimeRouterHandler implements CommandHandler {
 
                     const { runMlxChat, runMlxToolLoop } = await import("./providers/mlx.js");
                     const policy = await getToolPolicy(context.projectDir);
-                    const personaContent = await getActivePersonaContent(context.projectDir);
+                    // P5.6.1-R2: Persona 全量退役，不再注入 personaContent
+                    // TODO: 未来可注入 SOUL 内容
+                    const personaContent = undefined;
 
                     // Autonomous 模式：使用 tool loop
                     if (policy.mode === "autonomous") {
@@ -728,7 +698,8 @@ export class RuntimeRouterHandler implements CommandHandler {
             }
             try {
                 const useMcp = process.env.LMSTUDIO_ENABLE_MCP === "1";
-                const personaContent = await getActivePersonaContent(context.projectDir);
+                // P5.6.1-R2: Persona 全量退役，不再注入 personaContent
+                const personaContent = undefined;
                 const answer = await runLmStudioChat({
                     prompt: question,
                     system: personaContent,
@@ -779,7 +750,8 @@ export class RuntimeRouterHandler implements CommandHandler {
 
             // P0: 只在 MCP 真正启用时才传递 workspace（避免注入 MCP 规则导致元叙事）
             const useMcp = process.env.LMSTUDIO_ENABLE_MCP === "1";
-            const personaContent = await getActivePersonaContent(context.projectDir);
+            // P5.6.1-R2: Persona 全量退役，不再注入 personaContent
+            const personaContent = undefined;
             const response = await runLmStudioChat({
                 prompt: trimmed,
                 system: personaContent,

@@ -46,13 +46,6 @@ export interface WorkspaceConfig {
    */
   "runner.default"?: "mlx" | "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code";
 
-  // ==================== v2.2: Persona 配置 ====================
-  /**
-   * 当前激活的 persona ID（对应 .msgcode/personas/<id>.md）
-   * - 留空表示不使用自定义 persona
-   */
-  "persona.active"?: string;
-
   // ==================== PI 配置 ====================
   /**
    * PI 开关（默认 false）
@@ -122,15 +115,14 @@ export type ToolName = "tts" | "asr" | "vision" | "mem" | "shell" | "browser" | 
  * Workspace 配置的默认值
  */
 const DEFAULT_WORKSPACE_CONFIG: Required<WorkspaceConfig> = {
-  "memory.inject.enabled": false,
+  "memory.inject.enabled": true, // 测试期默认开启记忆注入
   "memory.inject.topK": 5,
   "memory.inject.maxChars": 2000,
   "policy.mode": "egress-allowed", // 默认允许外联（远程场景避免被门禁卡住；高敏 workspace 可手动切回 local-only）
   "runner.default": "lmstudio", // 默认使用本地模型
-  "persona.active": "", // 默认不使用自定义 persona
-  "pi.enabled": false, // 默认关闭 PI
+  "pi.enabled": true, // 测试期默认开启 PI
   "tooling.mode": "autonomous", // P5.5: 测试期统一 autonomous（LLM 自主决策 tool_calls）
-  "tooling.allow": ["tts", "asr", "vision"], // 默认允许基础工具
+  "tooling.allow": ["tts", "asr", "vision", "mem", "shell", "browser", "desktop"], // 测试期默认开放全工具
   "tooling.require_confirm": [], // 默认不要求确认
   // MLX Provider 默认值（Unsloth 稳态参数）
   "mlx.baseUrl": "http://127.0.0.1:18000",
