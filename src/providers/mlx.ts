@@ -272,11 +272,11 @@ async function applyBudgetTrimWithSummary(
     chatId: string
 ): Promise<WindowMessage[]> {
     try {
-        // Get MLX capabilities
-        const caps = getCapabilities("mlx");
+        // Get LM Studio capabilities (mlx uses same config)
+        const caps = getCapabilities("lmstudio");
 
         // Compute input budget
-        const inputBudget = getInputBudget("mlx");
+        const inputBudget = getInputBudget("lmstudio");
 
         // Allocate sections: system 10%, summary 20%, recent 50%, current 20%
         // Note: System and summary sizes are not actively enforced (assumed to fit)
@@ -378,11 +378,11 @@ function applyBudgetTrim(
     summary?: ChatSummary
 ): WindowMessage[] {
     try {
-        // Get MLX capabilities
-        const caps = getCapabilities("mlx");
+        // Get LM Studio capabilities (mlx uses same config)
+        const caps = getCapabilities("lmstudio");
 
         // Compute input budget
-        const inputBudget = getInputBudget("mlx");
+        const inputBudget = getInputBudget("lmstudio");
 
         // Allocate sections: system 10%, summary 20%, recent 50%, current 20%
         // Note: Only the recent section is actively trimmed to fit its budget
