@@ -16,6 +16,7 @@ import { clearTtsPrefs, getTtsPrefs, getVoiceReplyMode, setTtsPrefs, setVoiceRep
 import { logger } from "./logger/index.js";
 import { loadWorkspaceConfig } from "./config/workspace.js";
 import { getActivePersona } from "./config/personas.js";
+import { detectAutoSkill, normalizeSkillId, runAutoSkill, runSkill } from "./skills/auto.js";
 
 // 导入 tmux 模块
 import { TmuxSession, type RunnerType } from "./tmux/session.js";
@@ -90,6 +91,64 @@ export interface HandlerContext {
     projectDir?: string;
     originalMessage: InboundMessage;
     signal?: AbortSignal;
+}
+
+async function handleSkillRunCommand(
+    trimmed: string,
+    context: HandlerContext
+): Promise<HandleResult | null> {
+    if (!trimmed.startsWith("/skill")) return null;
+
+    const parts = trimmed.split(/\s+/);
+    if (parts[0] !== "/skill") return null;
+
+    if (parts[1] !== "run") {
+        return { success: true, response: "用法: /skill run <skillId>" };
+    }
+
+    const rawId = parts[2] ?? "";
+    const skillId = normalizeSkillId(rawId);
+    if (!skillId) {
+        return { success: false, error: `未知 skill: ${rawId || "<empty>"}` };
+    }
+
+    const input = parts.slice(3).join(" ").trim();
+    const result = await runSkill(skillId, input, {
+        workspacePath: context.projectDir,
+        chatId: context.chatId,
+    });
+
+    logger.info("Skill run (debug)", {
+        module: "skills",
+        chatId: context.chatId,
+        skillId,
+        skillResult: result.ok ? "ok" : "error",
+    });
+
+    if (!result.ok) {
+        return { success: false, error: result.error || "skill failed" };
+    }
+
+    return { success: true, response: result.output || "（无输出）" };
+}
+
+async function tryHandleAutoSkill(
+    message: string,
+    context: HandlerContext
+): Promise<HandleResult | null> {
+    const match = detectAutoSkill(message);
+    if (!match) return null;
+
+    const result = await runAutoSkill(match, {
+        workspacePath: context.projectDir,
+        chatId: context.chatId,
+    });
+
+    if (!result.ok) {
+        return { success: false, error: result.error || "skill failed" };
+    }
+
+    return { success: true, response: result.output || "（无输出）" };
 }
 
 /**
@@ -240,8 +299,18 @@ export abstract class BaseHandler implements CommandHandler {
             };
         }
 
+        const skillCommand = await handleSkillRunCommand(trimmed, context);
+        if (skillCommand) {
+            return skillCommand;
+        }
+
         // === 非命令消息：转发给 Claude（请求-响应模式）===
         if (!trimmed.startsWith("/")) {
+            const autoSkill = await tryHandleAutoSkill(trimmed, context);
+            if (autoSkill) {
+                return autoSkill;
+            }
+
             const r = await resolveRunner();
             if (r.blockedReason) return { success: false, error: r.blockedReason };
             const styled = await buildTmuxStylePreamble(context.projectDir, trimmed);
@@ -397,6 +466,18 @@ async function getActivePersonaContent(projectDir: string | undefined): Promise<
 export class RuntimeRouterHandler implements CommandHandler {
     async handle(message: string, context: HandlerContext): Promise<HandleResult> {
         const trimmed = message.trim();
+
+        const skillCommand = await handleSkillRunCommand(trimmed, context);
+        if (skillCommand) {
+            return skillCommand;
+        }
+
+        if (!trimmed.startsWith("/")) {
+            const autoSkill = await tryHandleAutoSkill(trimmed, context);
+            if (autoSkill) {
+                return autoSkill;
+            }
+        }
 
         // === slash 命令：委托给 DefaultHandler（使用 BaseHandler 的统一逻辑）===
         if (trimmed.startsWith("/")) {
