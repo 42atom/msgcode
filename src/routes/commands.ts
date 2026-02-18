@@ -958,6 +958,13 @@ export async function handleRouteCommand(
       return handlePersonaUseCommand(options);
     case "personaCurrent":
       return handlePersonaCurrentCommand(options);
+    // v2.3: Soul commands
+    case "soulList":
+      return handleSoulListCommand(options);
+    case "soulUse":
+      return handleSoulUseCommand(options);
+    case "soulCurrent":
+      return handleSoulCurrentCommand(options);
     // v2.2: Schedule commands
     case "scheduleList":
       return handleScheduleListCommand(options);
@@ -1031,6 +1038,9 @@ export function isRouteCommand(text: string): boolean {
     // v2.2: Persona commands
     trimmed === "/persona" ||
     trimmed.startsWith("/persona ") ||
+    // v2.3: Soul commands
+    trimmed === "/soul" ||
+    trimmed.startsWith("/soul ") ||
     trimmed === "/schedule" ||
     trimmed.startsWith("/schedule ") ||
     // v2.2: Reload command
@@ -1187,6 +1197,25 @@ export function parseRouteCommand(text: string): { command: string; args: string
     }
     // Invalid subcommand, return null to trigger error
     return { command: "personaList", args: [] };
+  }
+
+  // v2.3: Soul commands
+  if (trimmed === "/soul") {
+    return { command: "soulList", args: [] };
+  }
+
+  if (trimmed.startsWith("/soul ")) {
+    const parts = trimmed.split(/\s+/);
+    const subCommand = parts[1]; // list, use, current
+    if (subCommand === "list") {
+      return { command: "soulList", args: [] };
+    } else if (subCommand === "use") {
+      return { command: "soulUse", args: parts.slice(2) };
+    } else if (subCommand === "current") {
+      return { command: "soulCurrent", args: [] };
+    }
+    // Invalid subcommand, fallback to list
+    return { command: "soulList", args: [] };
   }
 
   // v2.2: Schedule commands
@@ -1384,11 +1413,13 @@ export async function handleHelpCommand(options: CommandHandlerOptions): Promise
       `  /chatlist            列出所有已绑定的群组\n` +
       `\n` +
       `编排层（v2.2）:\n` +
-      `  /soul                人格与定时任务入口\n` +
-      `  /persona list        列出所有 personas\n` +
-      `  /persona use <id>    切换到指定 persona\n` +
-      `  /persona current     查看当前激活的 persona\n` +
-      `  /schedule list       列出所有 schedules\n` +
+      `  /soul list          列出所有 souls\n` +
+      `  /soul use <id>      切换到指定 soul\n` +
+      `  /soul current       查看当前激活的 soul\n` +
+      `  /persona list       列出所有 personas\n` +
+      `  /persona use <id>   切换到指定 persona\n` +
+      `  /persona current    查看当前激活的 persona\n` +
+      `  /schedule list      列出所有 schedules\n` +
       `  /schedule validate   验证所有 schedules\n` +
       `  /schedule enable <id>    启用指定 schedule\n` +
       `  /schedule disable <id>   禁用指定 schedule\n` +
@@ -1766,6 +1797,78 @@ export async function handlePersonaCurrentCommand(options: CommandHandlerOptions
       `\n` +
       `使用 /persona list 查看所有可用的 personas\n` +
       `使用 /persona use <id> 切换 persona`,
+  };
+}
+
+// ============================================
+// v2.3: Soul 命令
+// ============================================
+
+/**
+ * 处理 /soul list 命令
+ *
+ * 列出所有可用的 souls
+ * 当前实现：最小收口，返回固定文案
+ */
+export async function handleSoulListCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  return {
+    success: true,
+    message: `Soul 命令已启用\n` +
+      `\n` +
+      `当前实现：最小收口（P5.4-R2-SOUL-Lock）\n` +
+      `配置路径：~/.config/msgcode/souls/\n` +
+      `\n` +
+      `使用 /soul use <id> 切换 soul\n` +
+      `使用 /soul current 查看当前 soul`,
+  };
+}
+
+/**
+ * 处理 /soul use <id> 命令
+ *
+ * 设置当前激活的 soul
+ * 当前实现：最小收口，返回固定文案
+ */
+export async function handleSoulUseCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  const soulId = options.args[0];
+
+  if (!soulId) {
+    return {
+      success: false,
+      message: `用法: /soul use <soulId>\n` +
+        `\n` +
+        `使用 /soul list 查看可用的 souls`,
+    };
+  }
+
+  return {
+    success: true,
+    message: `Soul 切换功能开发中\n` +
+      `\n` +
+      `当前实现：最小收口（P5.4-R2-SOUL-Lock）\n` +
+      `请求的 soul: ${soulId}\n` +
+      `\n` +
+      `配置路径：~/.config/msgcode/souls/`,
+  };
+}
+
+/**
+ * 处理 /soul current 命令
+ *
+ * 显示当前激活的 soul
+ * 当前实现：最小收口，返回固定文案
+ */
+export async function handleSoulCurrentCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  return {
+    success: true,
+    message: `当前 soul: default\n` +
+      `\n` +
+      `默认 Soul\n` +
+      `\n` +
+      `当前实现：最小收口（P5.4-R2-SOUL-Lock）\n` +
+      `\n` +
+      `使用 /soul list 查看所有可用的 souls\n` +
+      `使用 /soul use <id> 切换 soul`,
   };
 }
 
