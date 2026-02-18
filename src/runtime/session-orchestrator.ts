@@ -20,7 +20,7 @@ import { logger } from "../logger/index.js";
 
 export interface RunnerInfo {
   runner: RunnerType;
-  runnerConfig?: "mlx" | "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code";
+  runnerConfig?: "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code";
   blockedReason?: string;
 }
 
@@ -198,23 +198,6 @@ export async function clearSession(ctx: SessionContext): Promise<SessionResult> 
     return { success: false, error: r.blockedReason };
   }
 
-  // MLX runner: clear session window and summary
-  if (r.runnerConfig === "mlx") {
-    const result = await clearSessionArtifacts(ctx.projectDir, ctx.chatId);
-
-    if (!result.ok) {
-      return { success: false, error: result.error };
-    }
-
-    logger.info("MLX session and summary cleared", {
-      module: "session-orchestrator",
-      chatId: ctx.chatId,
-      runner: r.runner,
-    });
-
-    return { success: true, response: "已清理 session + summary" };
-  }
-
   // Tmux runners (codex/claude-code): kill+start tmux session
   if (r.runner === "tmux") {
     const runnerOld = r.runnerConfig === "codex" || r.runnerConfig === "claude-code"
@@ -227,7 +210,6 @@ export async function clearSession(ctx: SessionContext): Promise<SessionResult> 
   // Direct runners (lmstudio/llama/claude/openai): 不支持 /clear
   return {
     success: false,
-    error: `当前 direct 执行臂 (${r.runnerConfig}) 不支持 /clear 命令。\n\n` +
-      `提示：MLX 执行臂会自动清理会话窗口。`
+    error: `当前 direct 执行臂 (${r.runnerConfig}) 不支持 /clear 命令。`
   };
 }
