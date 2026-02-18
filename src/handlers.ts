@@ -10,7 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { BotType } from "./router.js";
-import { runLmStudioChat } from "./lmstudio.js";
+import { runLmStudioChat, runLmStudioToolLoop } from "./lmstudio.js";
 import type { InboundMessage } from "./imsg/types.js";
 import { clearTtsPrefs, getTtsPrefs, getVoiceReplyMode, setTtsPrefs, setVoiceReplyMode } from "./state/store.js";
 import { logger } from "./logger/index.js";
@@ -25,6 +25,9 @@ import { handleTmuxSend } from "./tmux/responder.js";
 // 导入 runtime 编排器
 import * as session from "./runtime/session-orchestrator.js";
 import * as skill from "./runtime/skill-orchestrator.js";
+
+// P5.6.2-R1: 导入会话窗口
+import { loadWindow, appendWindow, type WindowMessage } from "./session-window.js";
 
 const TMUX_STYLE_MAX_CHARS = 800;
 
@@ -287,7 +290,7 @@ export class FileHandler extends BaseHandler {
  * 运行时路由处理器
  *
  * 根据 runner 配置动态路由消息：
- * - mlx/lmstudio/llama/claude/openai → 直接调用 provider
+ * - lmstudio/llama/claude/openai → 直接调用 provider
  * - codex/claude-code → 通过 tmux session 调用
  * 仍可走 LM Studio（兼容原有行为）
  */
@@ -326,9 +329,9 @@ export class RuntimeRouterHandler implements CommandHandler {
             return new DefaultHandler().handle(message, context);
         }
 
-        // === 非 slash 命令：消息路由（mlx/lmstudio/codex/claude-code）===
+        // === 非 slash 命令：消息路由（lmstudio/codex/claude-code）===
         if (context.projectDir) {
-            let currentRunner: "mlx" | "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code" | "unknown" = "unknown";
+            let currentRunner: "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code" | "unknown" = "unknown";
             try {
                 const { getPolicyMode, getDefaultRunner, getToolPolicy } = await import("./config/workspace.js");
                 const currentMode = await getPolicyMode(context.projectDir);
@@ -374,138 +377,8 @@ export class RuntimeRouterHandler implements CommandHandler {
 
                     return { success: true, response: result.response || "（无回复）" };
                 }
-
-                // 如果 runner.default=mlx，使用 MLX provider
-                if (currentRunner === "mlx") {
-                    const { randomUUID } = await import("node:crypto");
-                    const traceId = randomUUID();  // 生成链路追踪 ID
-
-                    logger.info("MLX 请求开始", {
-                        module: "handlers",
-                        chatId: context.chatId,
-                        runner: currentRunner,
-                        traceId,
-                    });
-
-                    const { runMlxChat, runMlxToolLoop } = await import("./providers/mlx.js");
-                    const policy = await getToolPolicy(context.projectDir);
-                    // P5.6.1-R2: Persona 全量退役，不再注入 personaContent
-                    // TODO: 未来可注入 SOUL 内容
-                    const personaContent = undefined;
-
-                    // Autonomous 模式：使用 tool loop
-                    if (policy.mode === "autonomous") {
-                        const result = await runMlxToolLoop({
-                            prompt: trimmed,
-                            system: personaContent,
-                            workspacePath: context.projectDir,
-                            chatId: context.chatId,
-                        });
-
-                        logger.info("MLX tool loop 完成", {
-                            module: "handlers",
-                            chatId: context.chatId,
-                            traceId,
-                            answerLength: result.answer?.length || 0,
-                        });
-
-                        // P0: MLX 也要返回 defer 触发 TTS
-                        const voiceMode = getVoiceReplyMode(context.chatId);
-                        const ttsPrefs = getTtsPrefs(context.chatId);
-
-                        if (voiceMode !== "text" && result.answer) {
-                            const maxChars = 500;
-                            const speakText = result.answer.length > maxChars
-                                ? result.answer.slice(0, maxChars)
-                                : result.answer;
-
-                            logger.info("MLX 返回 TTS defer", {
-                                module: "handlers",
-                                chatId: context.chatId,
-                                traceId,
-                                voiceMode,
-                                textLength: speakText.length,
-                            });
-
-                            return {
-                                success: true,
-                                response: voiceMode === "audio" ? "正在生成语音..." : result.answer,
-                                defer: {
-                                    kind: "tts",
-                                    text: speakText,
-                                    options: {
-                                        instruct: ttsPrefs.instruct,
-                                        speed: ttsPrefs.speed,
-                                        temperature: ttsPrefs.temperature,
-                                    },
-                                },
-                            };
-                        }
-
-                        return { success: true, response: result.answer || "（无回复）" };
-                    }
-
-                    // Explicit 模式：使用普通 chat
-                    const answer = await runMlxChat({
-                        prompt: trimmed,
-                        system: personaContent,
-                        workspacePath: context.projectDir,
-                        chatId: context.chatId,
-                    });
-
-                    logger.info("MLX chat 完成", {
-                        module: "handlers",
-                        chatId: context.chatId,
-                        traceId,
-                        answerLength: answer?.length || 0,
-                    });
-
-                    // P0: MLX 也要返回 defer 触发 TTS
-                    const voiceMode = getVoiceReplyMode(context.chatId);
-                    const ttsPrefs = getTtsPrefs(context.chatId);
-
-                    if (voiceMode !== "text" && answer) {
-                        const maxChars = 500;
-                        const speakText = answer.length > maxChars ? answer.slice(0, maxChars) : answer;
-
-                        logger.info("MLX 返回 TTS defer", {
-                            module: "handlers",
-                            chatId: context.chatId,
-                            traceId,
-                            voiceMode,
-                            textLength: speakText.length,
-                        });
-
-                        return {
-                            success: true,
-                            response: voiceMode === "audio" ? "正在生成语音..." : answer,
-                            defer: {
-                                kind: "tts",
-                                text: speakText,
-                                options: {
-                                    instruct: ttsPrefs.instruct,
-                                    speed: ttsPrefs.speed,
-                                    temperature: ttsPrefs.temperature,
-                                },
-                            },
-                        };
-                    }
-
-                    return { success: true, response: answer };
-                }
-            } catch (e) {
-                // MLX provider 失败 - 返回真实错误，不回退到 LM Studio
-                const errorMsg = e instanceof Error ? e.message : String(e);
-                logger.error(`MLX provider failed`, {
-                    module: "handlers",
-                    chatId: context.chatId,
-                    runner: currentRunner,
-                    error: errorMsg,
-                });
-                return {
-                    success: false,
-                    error: `MLX provider failed: ${errorMsg}`,
-                };
+            } catch {
+                // ignore
             }
         }
 
@@ -518,7 +391,7 @@ export class RuntimeRouterHandler implements CommandHandler {
             const model = process.env.LMSTUDIO_MODEL || "(auto)";
             // /help 里也显示当前 workspace 的策略与执行臂，避免"到底要不要 /start？"的误解
             let mode: "local-only" | "egress-allowed" | "unknown" = "unknown";
-            let runner: "mlx" | "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code" | "unknown" = "unknown";
+            let runner: "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code" | "unknown" = "unknown";
             if (context.projectDir) {
                 try {
                     const { getPolicyMode, getDefaultRunner } = await import("./config/workspace.js");
@@ -530,22 +403,16 @@ export class RuntimeRouterHandler implements CommandHandler {
             }
             const startLine = runner === "codex" || runner === "claude-code"
                 ? "/start  启动/恢复 tmux 会话"
-                : runner === "mlx"
-                ? "/start  启动 MLX LM Server"
                 : runner === "lmstudio"
                 ? "/start  启动 LM Studio"
                 : "/start  已就绪（本地模型）";
             const stopLine = runner === "codex" || runner === "claude-code"
                 ? "/stop   关闭 tmux 会话"
-                : runner === "mlx"
-                ? "/stop   停止 MLX LM Server"
                 : runner === "lmstudio"
                 ? "/stop   停止 LM Studio"
                 : "/stop   无需停止（本地模型）";
             const clearLine = runner === "codex" || runner === "claude-code"
                 ? "/clear  清空 tmux 会话（等价 kill+start）"
-                : runner === "mlx"
-                ? "/clear  清空 session + summary"
                 : runner === "lmstudio"
                 ? "/clear  清空 session + summary"
                 : "/clear  清空本地会话（本地模型无持久上下文）";
@@ -746,16 +613,23 @@ export class RuntimeRouterHandler implements CommandHandler {
                 traceId,
             });
 
+            // P5.6.2-R2: 读取短期会话窗口
+            let windowMessages: WindowMessage[] = [];
+            if (context.projectDir) {
+                windowMessages = await loadWindow(context.projectDir, context.chatId);
+            }
+
             // P0: 只在 MCP 真正启用时才传递 workspace（避免注入 MCP 规则导致元叙事）
             const useMcp = process.env.LMSTUDIO_ENABLE_MCP === "1";
             // P5.6.1-R2: Persona 全量退役，不再注入 personaContent
             const personaContent = undefined;
-            const response = await runLmStudioChat({
+            // P5.6.2-R1: 主链统一走 ToolLoop
+            const toolLoopResult = await runLmStudioToolLoop({
                 prompt: trimmed,
                 system: personaContent,
-                ...(useMcp && context.projectDir ? { workspace: context.projectDir } : {}),
+                ...(useMcp && context.projectDir ? { workspacePath: context.projectDir } : {}),
             });
-            const clean = (response || "").trim();
+            const clean = (toolLoopResult.answer || "").trim();
             if (!clean) {
                 return {
                     success: false,
@@ -769,6 +643,9 @@ export class RuntimeRouterHandler implements CommandHandler {
                 traceId,
                 responseLength: clean.length,
                 voiceMode,
+                // P5.6.2-R1: ToolLoop 观测字段
+                toolCallCount: toolLoopResult.toolCall ? 1 : 0,
+                toolName: toolLoopResult.toolCall?.name,
             });
 
             // 自动语音回复：不在 handler 内阻塞生成（避免"很久不回复"）
@@ -796,6 +673,16 @@ export class RuntimeRouterHandler implements CommandHandler {
                         },
                     },
                 };
+            }
+
+            // P5.6.2-R2: 写回短期会话窗口（user + assistant 双向写回）
+            if (context.projectDir && clean) {
+                try {
+                    await appendWindow(context.projectDir, context.chatId, { role: "user", content: trimmed });
+                    await appendWindow(context.projectDir, context.chatId, { role: "assistant", content: clean });
+                } catch {
+                    // 窗口写回失败不影响主流程
+                }
             }
 
             return { success: true, response: clean, defer: null };

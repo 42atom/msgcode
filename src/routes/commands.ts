@@ -633,7 +633,6 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
         `\n` +
         `可用执行臂:\n` +
         `  lmstudio    本地模型（默认）\n` +
-        `  mlx         MLX LM Server（工具闭环推荐）\n` +
         `  codex       Codex CLI（需要 egress-allowed）\n` +
         `  claude-code Claude Code CLI（需要 egress-allowed）\n` +
         `\n` +
@@ -652,7 +651,7 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
 
   // 校验：拒绝 planned 执行臂
   const plannedRunners = ["llama", "claude", "openai"];
-  const validRunners = ["lmstudio", "mlx", "codex", "claude-code"];
+  const validRunners = ["lmstudio", "codex", "claude-code"];
 
   if (plannedRunners.includes(requestedRunner)) {
     return {
@@ -666,7 +665,6 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
         `\n` +
         `目前可用的执行臂:\n` +
         `  lmstudio    本地模型\n` +
-        `  mlx         MLX LM Server（工具闭环推荐）\n` +
         `  codex       Codex CLI\n` +
         `  claude-code Claude Code CLI`,
     };
@@ -679,7 +677,6 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
         `\n` +
         `可用的执行臂:\n` +
         `  lmstudio    本地模型\n` +
-        `  mlx         MLX LM Server（工具闭环推荐）\n` +
         `  codex       Codex CLI\n` +
         `  claude-code Claude Code CLI`,
     };
@@ -692,7 +689,7 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
     // 类型收窄：requestedRunner 已经过上面的校验，确保是有效值
     const result = await setDefaultRunner(
       projectDir,
-      requestedRunner as "lmstudio" | "mlx" | "codex" | "claude-code",
+      requestedRunner as "lmstudio" | "codex" | "claude-code",
       currentMode
     );
 
@@ -882,7 +879,7 @@ export async function handlePiCommand(options: CommandHandlerOptions): Promise<C
     if (runner === "codex" || runner === "claude-code") {
       return {
         success: false,
-        message: "PI 仅支持本地执行臂（lmstudio/mlx）",
+        message: "PI 仅支持本地执行臂（lmstudio）",
       };
     }
 
@@ -1924,6 +1921,16 @@ export async function handleReloadCommand(options: CommandHandlerOptions): Promi
   const skillsDir = join(process.env.HOME || "", ".config", "msgcode", "skills");
   const skillsExist = existsSync(skillsDir);
   results.push(`Skills: ${skillsExist ? "已配置" : "未配置"} (~/.config/msgcode/skills/)`);
+
+  // P5.6.2-R3: SOUL 可观测
+  const { getActiveSoul, listSouls } = await import("../config/souls.js");
+  const workspaceSoulPath = join(entry.workspacePath, "SOUL.md");
+  const workspaceSoulExists = existsSync(workspaceSoulPath);
+  const activeSoul = await getActiveSoul();
+  const souls = await listSouls();
+
+  results.push(`SOUL: workspace=${workspaceSoulExists ? "已发现" : "未发现"} (${workspaceSoulPath})`);
+  results.push(`SOUL Entries: ${souls.length} (active=${activeSoul?.id || "none"})`);
 
   results.push(`\n✓ 重新加载完成`);
 
