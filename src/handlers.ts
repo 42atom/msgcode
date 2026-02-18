@@ -16,7 +16,8 @@ import { clearTtsPrefs, getTtsPrefs, getVoiceReplyMode, setTtsPrefs, setVoiceRep
 import { logger } from "./logger/index.js";
 import { loadWorkspaceConfig } from "./config/workspace.js";
 import { getActivePersona } from "./config/personas.js";
-import { detectAutoSkill, normalizeSkillId, runAutoSkill, runSkill } from "./skills/auto.js";
+// P5.5: 关键词主触发已禁用，不再 import detectAutoSkill/runAutoSkill
+// import { detectAutoSkill, normalizeSkillId, runAutoSkill, runSkill } from "./skills/auto.js";
 
 // 导入 tmux 模块
 import { type RunnerType } from "./tmux/session.js";
@@ -24,6 +25,7 @@ import { handleTmuxSend } from "./tmux/responder.js";
 
 // 导入 runtime 编排器
 import * as session from "./runtime/session-orchestrator.js";
+import * as skill from "./runtime/skill-orchestrator.js";
 
 const TMUX_STYLE_MAX_CHARS = 800;
 
@@ -90,64 +92,6 @@ export interface HandlerContext {
     projectDir?: string;
     originalMessage: InboundMessage;
     signal?: AbortSignal;
-}
-
-async function handleSkillRunCommand(
-    trimmed: string,
-    context: HandlerContext
-): Promise<HandleResult | null> {
-    if (!trimmed.startsWith("/skill")) return null;
-
-    const parts = trimmed.split(/\s+/);
-    if (parts[0] !== "/skill") return null;
-
-    if (parts[1] !== "run") {
-        return { success: true, response: "用法: /skill run <skillId>" };
-    }
-
-    const rawId = parts[2] ?? "";
-    const skillId = normalizeSkillId(rawId);
-    if (!skillId) {
-        return { success: false, error: `未知 skill: ${rawId || "<empty>"}` };
-    }
-
-    const input = parts.slice(3).join(" ").trim();
-    const result = await runSkill(skillId, input, {
-        workspacePath: context.projectDir,
-        chatId: context.chatId,
-    });
-
-    logger.info("Skill run (debug)", {
-        module: "skills",
-        chatId: context.chatId,
-        skillId,
-        skillResult: result.ok ? "ok" : "error",
-    });
-
-    if (!result.ok) {
-        return { success: false, error: result.error || "skill failed" };
-    }
-
-    return { success: true, response: result.output || "（无输出）" };
-}
-
-async function tryHandleAutoSkill(
-    message: string,
-    context: HandlerContext
-): Promise<HandleResult | null> {
-    const match = detectAutoSkill(message);
-    if (!match) return null;
-
-    const result = await runAutoSkill(match, {
-        workspacePath: context.projectDir,
-        chatId: context.chatId,
-    });
-
-    if (!result.ok) {
-        return { success: false, error: result.error || "skill failed" };
-    }
-
-    return { success: true, response: result.output || "（无输出）" };
 }
 
 /**
@@ -223,7 +167,10 @@ export abstract class BaseHandler implements CommandHandler {
             return result;
         }
 
-        const skillCommand = await handleSkillRunCommand(trimmed, context);
+        const skillCommand = await skill.handleSkillRunCommand(trimmed, {
+            workspacePath: context.projectDir,
+            chatId: context.chatId,
+        });
         if (skillCommand) {
             return skillCommand;
         }
@@ -392,7 +339,10 @@ export class RuntimeRouterHandler implements CommandHandler {
     async handle(message: string, context: HandlerContext): Promise<HandleResult> {
         const trimmed = message.trim();
 
-        const skillCommand = await handleSkillRunCommand(trimmed, context);
+        const skillCommand = await skill.handleSkillRunCommand(trimmed, {
+            workspacePath: context.projectDir,
+            chatId: context.chatId,
+        });
         if (skillCommand) {
             return skillCommand;
         }
