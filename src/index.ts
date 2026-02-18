@@ -70,13 +70,20 @@ async function main(): Promise<void> {
                 logger.info("MLX server 未运行，自动启动中...", { module: "main" });
 
                 try {
-                    const result = await MlxServer.start({
-                        modelPath: process.env.MLX_MODEL_PATH,
-                        host: "127.0.0.1",
-                        port: 18000,
-                        maxTokens: 2048,
-                    });
-                    logger.info(`MLX server 已自动启动: ${result}`, { module: "main" });
+                    const modelPath = process.env.MLX_MODEL_PATH;
+                    if (!modelPath) {
+                        logger.warn("MLX server 自动启动失败：缺少 MLX_MODEL_PATH", {
+                            module: "main",
+                        });
+                    } else {
+                        const result = await MlxServer.start({
+                            modelPath,
+                            host: "127.0.0.1",
+                            port: 18000,
+                            maxTokens: 2048,
+                        });
+                        logger.info(`MLX server 已自动启动: ${result}`, { module: "main" });
+                    }
                 } catch (err) {
                     logger.warn("MLX server 自动启动失败", {
                         module: "main",
