@@ -23,6 +23,9 @@ import {
   handleResetCursorCommand,
   handleRouteCommand,
   handlePiCommand,
+  handleSoulListCommand,
+  handleSoulUseCommand,
+  handleSoulCurrentCommand,
   isRouteCommand,
   parseRouteCommand,
   type CommandHandlerOptions,
@@ -483,6 +486,100 @@ describe("路由命令处理器", () => {
       expect(parseRouteCommand("/pi on")).toEqual({ command: "pi", args: ["on"] });
       expect(parseRouteCommand("/pi off")).toEqual({ command: "pi", args: ["off"] });
       expect(parseRouteCommand("/pi status")).toEqual({ command: "pi", args: ["status"] });
+    });
+  });
+
+  // P5.4: /soul 命令三段可达性测试
+  describe("isRouteCommand - Soul 命令", () => {
+    it("识别 /soul 命令", () => {
+      expect(isRouteCommand("/soul")).toBe(true);
+      expect(isRouteCommand("/soul list")).toBe(true);
+      expect(isRouteCommand("/soul use")).toBe(true);
+      expect(isRouteCommand("/soul use default")).toBe(true);
+      expect(isRouteCommand("/soul current")).toBe(true);
+    });
+  });
+
+  describe("parseRouteCommand - Soul 命令", () => {
+    it("解析 /soul 命令", () => {
+      expect(parseRouteCommand("/soul")).toEqual({ command: "soulList", args: [] });
+      expect(parseRouteCommand("/soul list")).toEqual({ command: "soulList", args: [] });
+      expect(parseRouteCommand("/soul use")).toEqual({ command: "soulUse", args: [] });
+      expect(parseRouteCommand("/soul use default")).toEqual({ command: "soulUse", args: ["default"] });
+      expect(parseRouteCommand("/soul current")).toEqual({ command: "soulCurrent", args: [] });
+    });
+
+    it("解析 /soul 无效子命令时 fallback 到 list", () => {
+      expect(parseRouteCommand("/soul invalid")).toEqual({ command: "soulList", args: [] });
+    });
+  });
+
+  describe("handleRouteCommand - Soul 命令分发", () => {
+    it("正确分发 soulList 命令", async () => {
+      const options: CommandHandlerOptions = { chatId: "any;+;soul-test", args: [] };
+      const result = await handleRouteCommand("soulList", options);
+
+      expect(result.success).toBe(true);
+      expect(result.message).toContain("Soul 命令已启用");
+    });
+
+    it("正确分发 soulUse 命令", async () => {
+      const options: CommandHandlerOptions = { chatId: "any;+;soul-test", args: ["default"] };
+      const result = await handleRouteCommand("soulUse", options);
+
+      expect(result.success).toBe(true);
+      expect(result.message).toContain("Soul 切换功能开发中");
+    });
+
+    it("正确分发 soulCurrent 命令", async () => {
+      const options: CommandHandlerOptions = { chatId: "any;+;soul-test", args: [] };
+      const result = await handleRouteCommand("soulCurrent", options);
+
+      expect(result.success).toBe(true);
+      expect(result.message).toContain("当前 soul: default");
+    });
+  });
+
+  describe("handleSoulListCommand", () => {
+    it("返回固定文案", async () => {
+      const options: CommandHandlerOptions = { chatId: "any;+;soul-list", args: [] };
+      const result = await handleSoulListCommand(options);
+
+      expect(result.success).toBe(true);
+      expect(result.message).toContain("Soul 命令已启用");
+      expect(result.message).toContain("最小收口（P5.4-R2-SOUL-Lock）");
+      expect(result.message).toContain("~/.config/msgcode/souls/");
+    });
+  });
+
+  describe("handleSoulUseCommand", () => {
+    it("无参数时返回错误", async () => {
+      const options: CommandHandlerOptions = { chatId: "any;+;soul-use", args: [] };
+      const result = await handleSoulUseCommand(options);
+
+      expect(result.success).toBe(false);
+      expect(result.message).toContain("用法: /soul use <soulId>");
+    });
+
+    it("有参数时返回固定文案", async () => {
+      const options: CommandHandlerOptions = { chatId: "any;+;soul-use", args: ["default"] };
+      const result = await handleSoulUseCommand(options);
+
+      expect(result.success).toBe(true);
+      expect(result.message).toContain("Soul 切换功能开发中");
+      expect(result.message).toContain("请求的 soul: default");
+    });
+  });
+
+  describe("handleSoulCurrentCommand", () => {
+    it("返回固定文案", async () => {
+      const options: CommandHandlerOptions = { chatId: "any;+;soul-current", args: [] };
+      const result = await handleSoulCurrentCommand(options);
+
+      expect(result.success).toBe(true);
+      expect(result.message).toContain("当前 soul: default");
+      expect(result.message).toContain("默认 Soul");
+      expect(result.message).toContain("最小收口（P5.4-R2-SOUL-Lock）");
     });
   });
 });
