@@ -19,12 +19,11 @@ import { getActivePersona } from "./config/personas.js";
 import { detectAutoSkill, normalizeSkillId, runAutoSkill, runSkill } from "./skills/auto.js";
 
 // 导入 tmux 模块
-import { TmuxSession, type RunnerType } from "./tmux/session.js";
-import { sendSnapshot, sendEscape, sendClear } from "./tmux/sender.js";
+import { type RunnerType } from "./tmux/session.js";
 import { handleTmuxSend } from "./tmux/responder.js";
 
-// 导入 session artifacts 管理
-import { clearSessionArtifacts } from "./session-artifacts.js";
+// 导入 runtime 编排器
+import * as session from "./runtime/session-orchestrator.js";
 
 const TMUX_STYLE_MAX_CHARS = 800;
 
@@ -161,142 +160,67 @@ export abstract class BaseHandler implements CommandHandler {
     async handle(message: string, context: HandlerContext): Promise<HandleResult> {
         const trimmed = message.trim();
 
-        // === 执行臂解析（workspace config → runtime runner）===
-        // BaseHandler 负责 tmux 交互：tmux runners 需要会话管理，direct runners 直连调用
-        // 注意：mlx/lmstudio/llama/claude/openai 是 direct providers，不是 tmux runners
-        const resolveRunner = async (): Promise<{ runner: RunnerType; runnerConfig?: "mlx" | "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code"; blockedReason?: string }> => {
-            if (!context.projectDir) return { runner: "direct" };
-            try {
-                const { getPolicyMode, getDefaultRunner } = await import("./config/workspace.js");
-                const mode = await getPolicyMode(context.projectDir);
-                const r = await getDefaultRunner(context.projectDir);
+        // === 公共命令（会话管理）===
+        // P5.6.1: 会话编排抽离到 session-orchestrator
 
-                // 判断是否为 tmux runner (归一化为 "tmux" | "direct")
-                const isTmuxRunner = r === "codex" || r === "claude-code";
-                const runner: RunnerType = isTmuxRunner ? "tmux" : "direct";
-
-                // Note: codex and claude-code are tmux runners (need egress)
-                if (runner === "tmux" && mode === "local-only") {
-                    return {
-                        runner,
-                        runnerConfig: r,
-                        blockedReason:
-                            "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行: /policy on （或 /policy egress-allowed）",
-                    };
-                }
-                return { runner, runnerConfig: r };
-            } catch {
-                return { runner: "direct" };
-            }
-        };
-
-        // === 公共命令 ===
-
-        // /start - 启动 tmux 会话（仅限 tmux 执行臂）
+        // /start - 启动 tmux 会话
         if (trimmed === "/start") {
-            const r = await resolveRunner();
-            if (r.blockedReason) return { success: false, error: r.blockedReason };
-
-            // P0: direct 执行臂无需 tmux 会话（返回 success:true 改善体验）
-            if (r.runner !== "tmux") {
-                return {
-                    success: true,
-                    response: `当前为 direct 执行臂 (${r.runnerConfig})，无需 /start。\n\n直接发送消息即可开始对话。\n\n` +
-                        `提示：如需切换到 tmux 执行臂，请使用 /model codex 或 /model claude-code`
-                };
-            }
-
-            // 传递具体执行臂（codex/claude-code）作为 runnerOld 参数
-            const runnerOld = r.runnerConfig === "codex" || r.runnerConfig === "claude-code"
-                ? r.runnerConfig
-                : undefined;
-
-            const response = await TmuxSession.start(
-                context.groupName,
-                context.projectDir,
-                r.runner,     // "tmux"
-                runnerOld     // "codex" | "claude-code" | undefined
-            );
-            return { success: true, response };
+            const result = await session.startSession({
+                projectDir: context.projectDir,
+                chatId: context.chatId,
+                groupName: context.groupName,
+            });
+            return result;
         }
 
-        // /stop - 关闭 tmux 会话（仅限 tmux 执行臂）
+        // /stop - 关闭 tmux 会话
         if (trimmed === "/stop") {
-            const r = await resolveRunner();
-            if (r.runner !== "tmux") {
-                return { success: true, response: `当前为 direct 执行臂 (${r.runnerConfig})，无需 /stop。` };
-            }
-            const response = await TmuxSession.stop(context.groupName);
-            return { success: true, response };
+            const result = await session.stopSession({
+                projectDir: context.projectDir,
+                chatId: context.chatId,
+                groupName: context.groupName,
+            });
+            return result;
         }
 
-        // /status - 查看会话状态（仅限 tmux 执行臂）
+        // /status - 查看会话状态
         if (trimmed === "/status") {
-            const r = await resolveRunner();
-            if (r.runner !== "tmux") {
-                return { success: true, response: `当前执行臂: ${r.runnerConfig}\n状态: direct（无 tmux 会话）` };
-            }
-            const response = await TmuxSession.status(context.groupName);
-            return { success: true, response };
+            const result = await session.getSessionStatus({
+                projectDir: context.projectDir,
+                chatId: context.chatId,
+                groupName: context.groupName,
+            });
+            return result;
         }
 
-        // /snapshot - 获取终端输出快照（仅限 tmux 执行臂）
+        // /snapshot - 获取终端输出快照
         if (trimmed === "/snapshot") {
-            const r = await resolveRunner();
-            if (r.runner !== "tmux") {
-                return { success: false, error: `当前为 direct 执行臂 (${r.runnerConfig})，不支持 /snapshot。\n\ndirect 执行臂无 tmux 会话，无快照可查看。` };
-            }
-            const response = await sendSnapshot(context.groupName);
-            return { success: true, response };
+            const result = await session.getSnapshot({
+                projectDir: context.projectDir,
+                chatId: context.chatId,
+                groupName: context.groupName,
+            });
+            return result;
         }
 
-        // /esc - 发送 ESC 中断（仅限 tmux 执行臂）
+        // /esc - 发送 ESC 中断
         if (trimmed === "/esc") {
-            const r = await resolveRunner();
-            if (r.runner !== "tmux") {
-                return { success: false, error: `当前为 direct 执行臂 (${r.runnerConfig})，不支持 /esc。\n\ndirect 执行臂无 tmux 会话，无法中断。` };
-            }
-            const response = await sendEscape(context.groupName);
-            return { success: true, response };
+            const result = await session.sendEscapeInterrupt({
+                projectDir: context.projectDir,
+                chatId: context.chatId,
+                groupName: context.groupName,
+            });
+            return result;
         }
 
-        // /clear - 清空上下文（支持 tmux + MLX）
+        // /clear - 清空上下文
         if (trimmed === "/clear") {
-            const r = await resolveRunner();
-            if (r.blockedReason) return { success: false, error: r.blockedReason };
-
-            // MLX runner: clear session window and summary
-            if (r.runnerConfig === "mlx") {
-                const result = await clearSessionArtifacts(context.projectDir, context.chatId);
-
-                if (!result.ok) {
-                    return { success: false, error: result.error };
-                }
-
-                logger.info("MLX session and summary cleared", {
-                    module: "handlers",
-                    chatId: context.chatId,
-                    runner: r.runner,
-                });
-
-                return { success: true, response: "已清理 session + summary" };
-            }
-
-            // Tmux runners (codex/claude-code): kill+start tmux session
-            if (r.runner === "tmux") {
-                const runnerOld = r.runnerConfig === "codex" || r.runnerConfig === "claude-code"
-                    ? r.runnerConfig
-                    : undefined;
-                const response = await sendClear(context.groupName, context.projectDir, r.runner, runnerOld);
-                return { success: true, response };
-            }
-
-            // Direct runners (lmstudio/llama/claude/openai): 不支持 /clear
-            return {
-                success: false,
-                error: `当前 direct 执行臂 (${r.runnerConfig}) 不支持 /clear 命令。\n\n` +
-                    `提示：MLX 执行臂会自动清理会话窗口。`
-            };
+            const result = await session.clearSession({
+                projectDir: context.projectDir,
+                chatId: context.chatId,
+                groupName: context.groupName,
+            });
+            return result;
         }
 
         const skillCommand = await handleSkillRunCommand(trimmed, context);
@@ -312,7 +236,7 @@ export abstract class BaseHandler implements CommandHandler {
             //     return autoSkill;
             // }
 
-            const r = await resolveRunner();
+            const r = await session.resolveRunner(context.projectDir);
             if (r.blockedReason) return { success: false, error: r.blockedReason };
             const styled = await buildTmuxStylePreamble(context.projectDir, trimmed);
             if (styled.meta) {
