@@ -45,6 +45,7 @@ task_plan.md
 # Reference materials (not tracked)
 refs/
 ref/
+CLAUDE.md
 
 # Built binaries (not tracked)
 vendor/imsg/

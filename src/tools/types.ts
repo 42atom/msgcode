@@ -14,7 +14,8 @@ export type ToolName =
   | "mem"
   | "shell"
   | "browser"
-  | "desktop";  // T6.1: Desktop Bridge (msgcode-desktopctl)
+  | "desktop"  // T6.1: Desktop Bridge (msgcode-desktopctl)
+  | "run_skill";  // P5.5: Skill execution tool
 
 export type ToolDataMap = {
   tts: { audioPath: string };
@@ -25,6 +26,8 @@ export type ToolDataMap = {
   browser: Record<string, unknown>;
   // T6.1: Desktop tool data (exitCode + stdout + stderr from desktopctl)
   desktop: { exitCode: number | null; stdout: string; stderr: string };
+  // P5.5: Skill execution result
+  run_skill: { output: string };
 };
 
 export type ToolSource =

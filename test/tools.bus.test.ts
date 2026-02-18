@@ -145,11 +145,11 @@ describe("Tool Bus", () => {
       expect(gate.ok).toBe(true);
     });
 
-    test("应该读取默认配置为 explicit", async () => {
+    test("应该读取默认配置为 autonomous（P5.5 测试期）", async () => {
       const policy = await getToolPolicy(tempWorkspace);
 
-      // 默认配置：explicit 模式（稳态），只允许基础工具
-      expect(policy.mode).toBe("explicit");
+      // P5.5: 测试期默认 autonomous（LLM 自主决策 tool_calls）
+      expect(policy.mode).toBe("autonomous");
       expect(policy.allow).toContain("tts");
       expect(policy.allow).toContain("asr");
       expect(policy.allow).toContain("vision");
@@ -515,13 +515,13 @@ describe("Tool Bus", () => {
     });
   });
 
-  describe("Scenario G: 默认模式守卫（确保默认为 explicit）", () => {
-    test("默认配置应该是 explicit 模式", async () => {
+  describe("Scenario G: 默认模式守卫（P5.5 测试期：默认为 autonomous）", () => {
+    test("默认配置应该是 autonomous 模式", async () => {
       // 不设置任何配置文件，测试默认值
       const policy = await getToolPolicy(tempWorkspace);
 
-      // 默认必须是 explicit（稳态）
-      expect(policy.mode).toBe("explicit");
+      // P5.5: 测试期默认 autonomous（LLM 自主决策 tool_calls）
+      expect(policy.mode).toBe("autonomous");
 
       // 默认 allowlist 应该只包含基础工具
       expect(policy.allow).toContain("tts");
@@ -532,21 +532,13 @@ describe("Tool Bus", () => {
       expect(policy.allow).not.toContain("browser");
     });
 
-    test("explicit 模式下应该拒绝 llm-tool-call 来源", async () => {
-      // 使用默认配置（explicit）
-      const result = await executeTool(
-        "tts",
-        { text: "测试" },
-        {
-          workspacePath: tempWorkspace,
-          source: "llm-tool-call",
-          requestId: randomUUID(),
-        }
-      );
+    test("autonomous 模式下应该允许 llm-tool-call 来源", async () => {
+      // P5.5: 使用默认配置（autonomous）
+      const policy = await getToolPolicy(tempWorkspace);
+      const gate = canExecuteTool(policy, "tts", "llm-tool-call");
 
-      expect(result.ok).toBe(false);
-      expect(result.error?.code).toBe("TOOL_NOT_ALLOWED");
-      expect(result.error?.message).toContain("llm tool-call disabled in explicit mode");
+      // autonomous 模式允许 llm-tool-call
+      expect(gate.ok).toBe(true);
     });
 
     test("explicit 模式下应该允许 slash-command 来源", async () => {

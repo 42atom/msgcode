@@ -18,11 +18,11 @@ describe("Budget Layer", () => {
     test("应该正确计算输入预算（contextWindow - reservedOutput）", async () => {
       const { getCapabilities, getInputBudget } = await import("../src/capabilities");
 
-      const caps = getCapabilities("mlx");
-      expect(caps.contextWindowTokens).toBe(16384);  // MLX 实用上限 16k
+      const caps = getCapabilities("lmstudio");
+      expect(caps.contextWindowTokens).toBe(16384);  // 本地模型实用上限 16k
       expect(caps.reservedOutputTokens).toBe(2048);  // 预留更多输出空间
 
-      const inputBudget = getInputBudget("mlx");
+      const inputBudget = getInputBudget("lmstudio");
       expect(inputBudget).toBe(14336); // 16384 - 2048
     });
 
@@ -41,7 +41,7 @@ describe("Budget Layer", () => {
       const { computeInputBudget, allocateSections } = await import("../src/budget");
       const { getCapabilities } = await import("../src/capabilities");
 
-      const caps = getCapabilities("mlx");
+      const caps = getCapabilities("lmstudio");
       const inputBudget = computeInputBudget(caps);
       const allocation = allocateSections(inputBudget);
 
@@ -242,7 +242,7 @@ describe("Budget Layer", () => {
       ];
 
       const { getCapabilities } = await import("../src/capabilities");
-      const caps = getCapabilities("mlx");
+      const caps = getCapabilities("lmstudio");
       const inputBudget = caps.contextWindowTokens - caps.reservedOutputTokens;
       const allocation = allocateSections(inputBudget);
 
@@ -264,7 +264,7 @@ describe("Budget Layer", () => {
       ];
 
       const { getCapabilities } = await import("../src/capabilities");
-      const caps = getCapabilities("mlx");
+      const caps = getCapabilities("lmstudio");
       const inputBudget = caps.contextWindowTokens - caps.reservedOutputTokens;
       const allocation = allocateSections(inputBudget);
 

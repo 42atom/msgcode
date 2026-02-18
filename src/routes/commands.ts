@@ -633,7 +633,6 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
         `\n` +
         `可用执行臂:\n` +
         `  lmstudio    本地模型（默认）\n` +
-        `  mlx         MLX LM Server（工具闭环推荐）\n` +
         `  codex       Codex CLI（需要 egress-allowed）\n` +
         `  claude-code Claude Code CLI（需要 egress-allowed）\n` +
         `\n` +
@@ -652,7 +651,7 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
 
   // 校验：拒绝 planned 执行臂
   const plannedRunners = ["llama", "claude", "openai"];
-  const validRunners = ["lmstudio", "mlx", "codex", "claude-code"];
+  const validRunners = ["lmstudio", "codex", "claude-code"];
 
   if (plannedRunners.includes(requestedRunner)) {
     return {
@@ -666,7 +665,6 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
         `\n` +
         `目前可用的执行臂:\n` +
         `  lmstudio    本地模型\n` +
-        `  mlx         MLX LM Server（工具闭环推荐）\n` +
         `  codex       Codex CLI\n` +
         `  claude-code Claude Code CLI`,
     };
@@ -679,7 +677,6 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
         `\n` +
         `可用的执行臂:\n` +
         `  lmstudio    本地模型\n` +
-        `  mlx         MLX LM Server（工具闭环推荐）\n` +
         `  codex       Codex CLI\n` +
         `  claude-code Claude Code CLI`,
     };
@@ -692,7 +689,7 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
     // 类型收窄：requestedRunner 已经过上面的校验，确保是有效值
     const result = await setDefaultRunner(
       projectDir,
-      requestedRunner as "lmstudio" | "mlx" | "codex" | "claude-code",
+      requestedRunner as "lmstudio" | "codex" | "claude-code",
       currentMode
     );
 
@@ -838,6 +835,77 @@ export async function handlePolicyCommand(options: CommandHandlerOptions): Promi
 }
 
 /**
+ * P3.2: 处理 /pi 命令
+ *
+ * 用法：
+ * - /pi            : 查看 PI 状态
+ * - /pi on         : 启用 PI（仅限本地执行臂）
+ * - /pi off        : 禁用 PI
+ *
+ * @param options 命令选项
+ * @returns 命令处理结果
+ */
+export async function handlePiCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  const { chatId, args } = options;
+  const { loadWorkspaceConfig, saveWorkspaceConfig, getDefaultRunner } = await import("../config/workspace.js");
+
+  // 优先使用 RouteStore（动态绑定）；fallback 到 GROUP_* 静态配置（不破现网）
+  const entry = getRouteByChatId(chatId);
+  const fallback = !entry ? routeByChatId(chatId) : null;
+  const projectDir = entry?.workspacePath || fallback?.projectDir;
+
+  if (!projectDir) {
+    return {
+      success: false,
+      message: `未绑定工作目录，请先使用 /bind <dir> 绑定工作空间`,
+    };
+  }
+
+  const runner = await getDefaultRunner(projectDir);
+  const config = await loadWorkspaceConfig(projectDir);
+  const enabled = config["pi.enabled"] ?? false;
+
+  const action = (args[0] ?? "status").trim().toLowerCase();
+
+  if (action === "status") {
+    return {
+      success: true,
+      message: `PI: ${enabled ? "已启用" : "已禁用"}\n` +
+        `执行臂: ${runner}`,
+    };
+  }
+
+  if (action === "on") {
+    if (runner === "codex" || runner === "claude-code") {
+      return {
+        success: false,
+        message: "PI 仅支持本地执行臂（lmstudio）",
+      };
+    }
+
+    await saveWorkspaceConfig(projectDir, { "pi.enabled": true });
+    return {
+      success: true,
+      message: "PI 已启用",
+    };
+  }
+
+  if (action === "off") {
+    await saveWorkspaceConfig(projectDir, { "pi.enabled": false });
+    return {
+      success: true,
+      message: "PI 已禁用",
+    };
+  }
+
+  return {
+    success: false,
+    message: `未知操作: ${action}\n` +
+      `用法: /pi | /pi on | /pi off`,
+  };
+}
+
+/**
  * 路由命令分发器
  *
  * 根据命令名分发到对应的处理器
@@ -873,18 +941,20 @@ export async function handleRouteCommand(
       return handleMemCommand(options);
     case "policy":
       return handlePolicyCommand(options);
+    case "pi":
+      return handlePiCommand(options);
     // 群聊 owner 收口
     case "owner":
       return handleOwnerCommand(options);
     case "ownerOnly":
       return handleOwnerOnlyCommand(options);
-    // v2.2: Persona commands
-    case "personaList":
-      return handlePersonaListCommand(options);
-    case "personaUse":
-      return handlePersonaUseCommand(options);
-    case "personaCurrent":
-      return handlePersonaCurrentCommand(options);
+    // v2.3: Soul commands
+    case "soulList":
+      return handleSoulListCommand(options);
+    case "soulUse":
+      return handleSoulUseCommand(options);
+    case "soulCurrent":
+      return handleSoulCurrentCommand(options);
     // v2.2: Schedule commands
     case "scheduleList":
       return handleScheduleListCommand(options);
@@ -919,7 +989,7 @@ export async function handleRouteCommand(
         success: false,
         message: `未知命令: /${command}\n` +
           `\n` +
-          `可用命令: /bind, /where, /unbind, /info, /model, /policy, /owner, /owner-only, /chatlist, /mem, /cursor, /reset-cursor, /help, /persona, /schedule, /reload, /steer, /next`,
+          `可用命令: /bind, /where, /unbind, /info, /model, /policy, /owner, /owner-only, /chatlist, /mem, /cursor, /reset-cursor, /help, /soul, /schedule, /reload, /steer, /next`,
       };
   }
 }
@@ -948,14 +1018,16 @@ export function isRouteCommand(text: string): boolean {
     trimmed === "/mem" ||
     trimmed.startsWith("/policy ") ||
     trimmed === "/policy" ||
+    trimmed.startsWith("/pi ") ||
+    trimmed === "/pi" ||
     trimmed.startsWith("/owner ") ||
     trimmed === "/owner" ||
     trimmed.startsWith("/owner-only ") ||
     trimmed === "/owner-only" ||
     trimmed === "/help" ||
-    // v2.2: Persona commands
-    trimmed === "/persona" ||
-    trimmed.startsWith("/persona ") ||
+    // v2.3: Soul commands
+    trimmed === "/soul" ||
+    trimmed.startsWith("/soul ") ||
     trimmed === "/schedule" ||
     trimmed.startsWith("/schedule ") ||
     // v2.2: Reload command
@@ -1065,6 +1137,18 @@ export function parseRouteCommand(text: string): { command: string; args: string
     return { command: "policy", args: [] };
   }
 
+  if (trimmed.startsWith("/pi ")) {
+    const parts = trimmed.split(/\s+/);
+    return {
+      command: "pi",
+      args: parts.slice(1),
+    };
+  }
+
+  if (trimmed === "/pi") {
+    return { command: "pi", args: [] };
+  }
+
   if (trimmed === "/owner") {
     return { command: "owner", args: [] };
   }
@@ -1083,23 +1167,23 @@ export function parseRouteCommand(text: string): { command: string; args: string
     return { command: "ownerOnly", args: parts.slice(1) };
   }
 
-  // v2.2: Persona commands
-  if (trimmed === "/persona") {
-    return { command: "personaList", args: [] };
+  // v2.3: Soul commands
+  if (trimmed === "/soul") {
+    return { command: "soulList", args: [] };
   }
 
-  if (trimmed.startsWith("/persona ")) {
+  if (trimmed.startsWith("/soul ")) {
     const parts = trimmed.split(/\s+/);
     const subCommand = parts[1]; // list, use, current
     if (subCommand === "list") {
-      return { command: "personaList", args: [] };
+      return { command: "soulList", args: [] };
     } else if (subCommand === "use") {
-      return { command: "personaUse", args: parts.slice(2) };
+      return { command: "soulUse", args: parts.slice(2) };
     } else if (subCommand === "current") {
-      return { command: "personaCurrent", args: [] };
+      return { command: "soulCurrent", args: [] };
     }
-    // Invalid subcommand, return null to trigger error
-    return { command: "personaList", args: [] };
+    // Invalid subcommand, fallback to list
+    return { command: "soulList", args: [] };
   }
 
   // v2.2: Schedule commands
@@ -1281,12 +1365,9 @@ export async function handleChatlistCommand(options: CommandHandlerOptions): Pro
  * @returns 命令处理结果
  */
 export async function handleHelpCommand(options: CommandHandlerOptions): Promise<CommandResult> {
-  const entry = getRouteByChatId(options.chatId);
-  const isLmStudioBot = entry?.botType === "lmstudio";
-
   return {
     success: true,
-    message: `msgcode 2.2 命令帮助\n` +
+    message: `msgcode 2.3 命令帮助\n` +
       `\n` +
       `群组管理:\n` +
       `  /bind <dir> [client]  绑定群组到工作目录（相对路径）\n` +
@@ -1300,10 +1381,10 @@ export async function handleHelpCommand(options: CommandHandlerOptions): Promise
       `  /chatlist            列出所有已绑定的群组\n` +
       `\n` +
       `编排层（v2.2）:\n` +
-      `  /persona list        列出所有 personas\n` +
-      `  /persona use <id>    切换到指定 persona\n` +
-      `  /persona current     查看当前激活的 persona\n` +
-      `  /schedule list       列出所有 schedules\n` +
+      `  /soul list          列出所有 souls\n` +
+      `  /soul use <id>      切换到指定 soul\n` +
+      `  /soul current       查看当前激活的 soul\n` +
+      `  /schedule list      列出所有 schedules\n` +
       `  /schedule validate   验证所有 schedules\n` +
       `  /schedule enable <id>    启用指定 schedule\n` +
       `  /schedule disable <id>   禁用指定 schedule\n` +
@@ -1328,22 +1409,20 @@ export async function handleHelpCommand(options: CommandHandlerOptions): Promise
       `干预机制（Phase 4B）:\n` +
       `  /steer <msg>         紧急转向：当前工具执行后立即注入\n` +
       `  /next <msg>          轮后消息：当前轮完成后作为下一轮用户消息\n` +
-      (isLmStudioBot
-        ? `\n` +
-          `语音（LM Studio Bot 专用）:\n` +
-          `  /tts <text>          把文本生成语音附件并回发\n` +
-          `  /voice <question>    先回答，再把回答转成语音附件回发\n` +
-          `  /mode                查看语音回复模式\n` +
-          `  /mode voice on|off|both|audio  设置语音模式\n` +
-          `  /mode style <desc>   设置语气/情绪提示（用于 emoAuto；不走 IndexTTS emo_text）\n` +
-          `  /mode style-reset    清空语气/情绪描述（恢复默认）\n` +
-          `\n` +
-          `示例:\n` +
-          `  /tts 那真是太好了！保持这种好心情。\n` +
-          `  /voice 南京是哪里的城市？\n` +
-          `  /mode voice on\n` +
-          `  /mode style 温柔女声，语速稍慢\n`
-        : ``) +
+      `\n` +
+      `语音（LM Studio Bot 专用）:\n` +
+      `  /tts <text>          把文本生成语音附件并回发\n` +
+      `  /voice <question>    先回答，再把回答转成语音附件回发\n` +
+      `  /mode                查看语音回复模式\n` +
+      `  /mode voice on|off|both|audio  设置语音模式\n` +
+      `  /mode style <desc>   设置语气/情绪提示（用于 emoAuto；不走 IndexTTS emo_text）\n` +
+      `  /mode style-reset    清空语气/情绪描述（恢复默认）\n` +
+      `\n` +
+      `示例:\n` +
+      `  /tts 那真是太好了！保持这种好心情。\n` +
+      `  /voice 南京是哪里的城市？\n` +
+      `  /mode voice on\n` +
+      `  /mode style 温柔女声，语速稍慢\n` +
       `\n` +
       `示例:\n` +
       `  /bind acme/ops claude   绑定到 $WORKSPACE_ROOT/acme/ops\n` +
@@ -1523,166 +1602,74 @@ export async function handleMemCommand(options: CommandHandlerOptions): Promise<
 }
 
 // ============================================
-// v2.2: Persona 命令
+// v2.3: Soul 命令
 // ============================================
 
 /**
- * 处理 /persona list 命令
+ * 处理 /soul list 命令
  *
- * 列出所有可用的 personas
+ * 列出所有可用的 souls
+ * 当前实现：最小收口，返回固定文案
  */
-export async function handlePersonaListCommand(options: CommandHandlerOptions): Promise<CommandResult> {
-  const entry = getRouteByChatId(options.chatId);
-  if (!entry) {
-    return {
-      success: false,
-      message: `未绑定工作区，请先使用 /bind <dir> 绑定工作区`,
-    };
-  }
-
-  const { listPersonas } = await import("../config/personas.js");
-  const { loadWorkspaceConfig } = await import("../config/workspace.js");
-  const personas = await listPersonas(entry.workspacePath);
-
-  if (personas.length === 0) {
-    return {
-      success: true,
-      message: `当前工作区暂无 personas\n` +
-        `\n` +
-        `创建方法：在 ${entry.workspacePath}/.msgcode/personas/ 目录下创建 .md 文件\n` +
-        `例如: echo "# Expert Coder\\n\\nYou are an expert..." > personas/coder.md`,
-    };
-  }
-
-  // 读取当前激活的 persona
-  const workspaceConfig = await loadWorkspaceConfig(entry.workspacePath);
-  const activePersonaId = workspaceConfig["persona.active"];
-
-  const lines: string[] = [`Personas (${personas.length})`];
-
-  for (const persona of personas) {
-    const isActive = persona.id === activePersonaId ? " [当前]" : "";
-    lines.push(`${isActive ? "→ " : "  "}${persona.id}${isActive} - ${persona.name}`);
-  }
-
-  lines.push(`\n使用 /persona use <id> 切换 persona`);
-
+export async function handleSoulListCommand(options: CommandHandlerOptions): Promise<CommandResult> {
   return {
     success: true,
-    message: lines.join("\n"),
+    message: `Soul 命令已启用\n` +
+      `\n` +
+      `当前实现：最小收口（P5.4-R2-SOUL-Lock）\n` +
+      `配置路径：~/.config/msgcode/souls/\n` +
+      `\n` +
+      `使用 /soul use <id> 切换 soul\n` +
+      `使用 /soul current 查看当前 soul`,
   };
 }
 
 /**
- * 处理 /persona use <id> 命令
+ * 处理 /soul use <id> 命令
  *
- * 设置当前激活的 persona
+ * 设置当前激活的 soul
+ * 当前实现：最小收口，返回固定文案
  */
-export async function handlePersonaUseCommand(options: CommandHandlerOptions): Promise<CommandResult> {
-  const personaId = options.args[0];
+export async function handleSoulUseCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  const soulId = options.args[0];
 
-  if (!personaId) {
+  if (!soulId) {
     return {
       success: false,
-      message: `用法: /persona use <personaId>\n` +
+      message: `用法: /soul use <soulId>\n` +
         `\n` +
-        `使用 /persona list 查看可用的 personas`,
+        `使用 /soul list 查看可用的 souls`,
     };
-  }
-
-  const entry = getRouteByChatId(options.chatId);
-  if (!entry) {
-    return {
-      success: false,
-      message: `未绑定工作区，请先使用 /bind <dir> 绑定工作区`,
-    };
-  }
-
-  const { getPersona, setActivePersona } = await import("../config/personas.js");
-  const persona = await getPersona(entry.workspacePath, personaId);
-
-  if (!persona) {
-    return {
-      success: false,
-      message: `Persona "${personaId}" 不存在\n` +
-        `\n` +
-        `使用 /persona list 查看可用的 personas`,
-    };
-  }
-
-  // 保存到 workspace config
-  await setActivePersona(entry.workspacePath, personaId);
-
-  // 检查当前 runner，如果是 tmux runner (codex/claude) 需要提示 /clear
-  let boundaryHint = "";
-  try {
-    const { getDefaultRunner } = await import("../config/workspace.js");
-    const runner = await getDefaultRunner(entry.workspacePath);
-    if (runner === "codex" || runner === "claude-code") {
-      boundaryHint = `\n\n注意：Tmux runner 需要 /clear 后 persona 才能完全生效`;
-    }
-  } catch {
-    // 忽略错误，使用默认提示
   }
 
   return {
     success: true,
-    message: `已切换到 persona: ${personaId}\n` +
+    message: `Soul 切换功能开发中\n` +
       `\n` +
-      `${persona.name}\n` +
-      boundaryHint,
+      `当前实现：最小收口（P5.4-R2-SOUL-Lock）\n` +
+      `请求的 soul: ${soulId}\n` +
+      `\n` +
+      `配置路径：~/.config/msgcode/souls/`,
   };
 }
 
 /**
- * 处理 /persona current 命令
+ * 处理 /soul current 命令
  *
- * 显示当前激活的 persona
+ * 显示当前激活的 soul
+ * 当前实现：最小收口，返回固定文案
  */
-export async function handlePersonaCurrentCommand(options: CommandHandlerOptions): Promise<CommandResult> {
-  const entry = getRouteByChatId(options.chatId);
-  if (!entry) {
-    return {
-      success: false,
-      message: `未绑定工作区，请先使用 /bind <dir> 绑定工作区`,
-    };
-  }
-
-  const { getActivePersona } = await import("../config/personas.js");
-  const { loadWorkspaceConfig } = await import("../config/workspace.js");
-  const workspaceConfig = await loadWorkspaceConfig(entry.workspacePath);
-  const activePersonaId = workspaceConfig["persona.active"];
-
-  if (!activePersonaId) {
-    return {
-      success: true,
-      message: `当前未使用自定义 persona\n` +
-        `\n` +
-        `使用 /persona list 查看可用的 personas\n` +
-        `使用 /persona use <id> 切换 persona`,
-    };
-  }
-
-  const persona = await getActivePersona(entry.workspacePath, activePersonaId);
-
-  if (!persona) {
-    return {
-      success: false,
-      message: `当前激活的 persona "${activePersonaId}" 不存在\n` +
-        `\n` +
-        `可能已被删除或移动\n` +
-        `使用 /persona use 重新设置`,
-    };
-  }
-
+export async function handleSoulCurrentCommand(options: CommandHandlerOptions): Promise<CommandResult> {
   return {
     success: true,
-    message: `当前 persona: ${persona.id}\n` +
+    message: `当前 soul: default\n` +
       `\n` +
-      `${persona.name}\n` +
+      `默认 Soul\n` +
       `\n` +
-      `使用 /persona list 查看所有可用的 personas\n` +
-      `使用 /persona use <id> 切换 persona`,
+      `当前实现：最小收口（P5.4-R2-SOUL-Lock）\n` +
+      `\n` +
+      `使用 /soul list 查看所有可用的 souls\n` +
+      `使用 /soul use <id> 切换 soul`,
   };
 }
 
@@ -1895,20 +1882,10 @@ export async function handleReloadCommand(options: CommandHandlerOptions): Promi
   }
 
   const results: string[] = [];
-  const { listPersonas } = await import("../config/personas.js");
-  const { loadWorkspaceConfig } = await import("../config/workspace.js");
   const { listSchedules, validateAllSchedules, mapSchedulesToJobs } = await import("../config/schedules.js");
   const { createJobStore } = await import("../jobs/store.js");
 
-  // 1. 扫描 personas
-  const personas = await listPersonas(entry.workspacePath);
-  const workspaceConfig = await loadWorkspaceConfig(entry.workspacePath);
-  const activePersonaId = workspaceConfig["persona.active"];
-  const activePersona = personas.find(p => p.id === activePersonaId);
-
-  results.push(`Personas: ${personas.length} 个${activePersona ? ` (当前: ${activePersonaId})` : ""}`);
-
-  // 2. 扫描并验证 schedules
+  // 1. 扫描并验证 schedules
   const schedules = await listSchedules(entry.workspacePath);
   const scheduleValidation = await validateAllSchedules(entry.workspacePath);
   const validSchedules = scheduleValidation.filter(r => r.valid).length;
@@ -1921,7 +1898,7 @@ export async function handleReloadCommand(options: CommandHandlerOptions): Promi
     results.push(`  使用 /schedule validate 查看详情`);
   }
 
-  // 3. 映射 schedules 到 jobs 并保存
+  // 2. 映射 schedules 到 jobs 并保存
   const scheduleJobs = await mapSchedulesToJobs(entry.workspacePath, options.chatId);
   const store = createJobStore();
   const existingStore = store.loadJobs();
@@ -1944,6 +1921,16 @@ export async function handleReloadCommand(options: CommandHandlerOptions): Promi
   const skillsDir = join(process.env.HOME || "", ".config", "msgcode", "skills");
   const skillsExist = existsSync(skillsDir);
   results.push(`Skills: ${skillsExist ? "已配置" : "未配置"} (~/.config/msgcode/skills/)`);
+
+  // P5.6.2-R3: SOUL 可观测
+  const { getActiveSoul, listSouls } = await import("../config/souls.js");
+  const workspaceSoulPath = join(entry.workspacePath, "SOUL.md");
+  const workspaceSoulExists = existsSync(workspaceSoulPath);
+  const activeSoul = await getActiveSoul();
+  const souls = await listSouls();
+
+  results.push(`SOUL: workspace=${workspaceSoulExists ? "已发现" : "未发现"} (${workspaceSoulPath})`);
+  results.push(`SOUL Entries: ${souls.length} (active=${activeSoul?.id || "none"})`);
 
   results.push(`\n✓ 重新加载完成`);
 

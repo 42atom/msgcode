@@ -4,7 +4,7 @@
  * Purpose:
  * - Provide sliding window memory for chat sessions
  * - Store recent messages per chatId in workspace
- * - Support MLX provider multi-turn conversations
+ * - Support multi-turn conversations
  *
  * Storage:
  * - <workspace>/.msgcode/sessions/<chatId>.jsonl
