@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 const execAsync = promisify(exec);
 
 /**
- * MLX Whisper 检测结果
+ * mlx-whisper 检测结果
  */
 export interface MlxWhisperResolveResult {
   /** 是否找到可执行命令 */
@@ -20,7 +20,7 @@ export interface MlxWhisperResolveResult {
 }
 
 /**
- * 检测 MLX Whisper 可执行命令
+ * 检测 mlx-whisper 可执行命令
  *
  * 优先级：
  * 1. 环境变量 MLX_WHISPER_CMD

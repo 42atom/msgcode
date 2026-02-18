@@ -178,7 +178,7 @@ export function hasFollowUp(chatId: string): boolean {
  * Removes only the first message from the queue, keeping remaining messages.
  * Returns undefined if queue is empty.
  *
- * This is the correct function for MLX provider's "one at a time" consumption strategy.
+ * This is the correct function for local provider's "one at a time" consumption strategy.
  *
  * @param chatId - Chat identifier
  * @returns First follow-up message, or undefined if queue is empty

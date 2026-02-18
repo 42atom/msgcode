@@ -1,7 +1,7 @@
 /**
  * msgcode: Emotion Recognition Engine for TTS
  *
- * Analyzes text and generates emotion vectors using MLX LM Server or LM Studio
+ * Analyzes text and generates emotion vectors using LM Studio
  * Implements text segmentation, emotion scoring, and safety thresholds
  */
 
@@ -444,75 +444,6 @@ ${JSON.stringify(usedSegments, null, 0)}
   }
 }
 
-/**
- * Try MLX LM Server for emotion analysis (fallback when LM Studio unavailable)
- */
-async function tryCallMLXForEmotionBatch(segments: string[], styleHint?: string): Promise<EmotionVector[] | null> {
-  // Get MLX config from workspace
-  const workspacePath = process.env.WORKSPACE_ROOT || "";
-  if (!workspacePath) {
-    console.warn("[emotion] No workspace path, skipping MLX emotion analysis");
-    return null;
-  }
-
-  try {
-    const { getMlxConfig } = await import("../../config/workspace.js");
-    const config = await getMlxConfig(workspacePath);
-    const baseUrl = config.baseUrl.replace(/\/+$/, "");
-
-    const styleBlock = styleHint ? `\n风格提示（可选）：${styleHint}\n` : "";
-    const maxSegments = getMaxEmotionSegments();
-    const usedSegments = capSegments(segments, maxSegments);
-
-    const prompt = `请为每个"片段"输出一个8维情感向量（共${usedSegments.length}个）。${styleBlock}
-
-情感维度顺序：[happy, angry, sad, afraid, disgusted, melancholic, surprised, calm]
-取值范围0.0-1.0；每个向量总和不超过0.8。
-
-片段（JSON数组）：
-${JSON.stringify(usedSegments, null, 0)}
-
-只返回JSON，不要其他内容。格式：
-{"vectors":[[...8 floats...],[...],...]}（长度必须等于片段数量）`;
-
-    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: config.modelId || "",
-        messages: [
-          {
-            role: "system",
-            content: "你是文本情感分类助手。对每个片段返回对应的8维情感向量JSON。",
-          },
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-        temperature: 0.3,
-        max_tokens: 512,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`MLX API error: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json() as LMStudioResponse;
-    const content = data.choices[0]?.message?.content || "";
-
-    const vectors = await tryParseVectorsFromContent(content, usedSegments.length);
-    if (!vectors) return null;
-    return vectors;
-  } catch (err) {
-    if (err instanceof Error) {
-      console.error(`[emotion] MLX batch call failed: ${err.message}`);
-    }
-    return null;
-  }
-}
-
 // ============================================
 // Main Analysis Function
 // ============================================
@@ -565,8 +496,8 @@ export async function analyzeEmotionVector(
       });
     }
   } else {
-    // P0: Use MLX directly for emotion analysis
-    const batchVectors = await tryCallMLXForEmotionBatch(rawSegments, options.styleHint);
+    // P0: Use LM Studio directly for emotion analysis
+    const batchVectors = await tryCallLMStudioForEmotionBatch(rawSegments, options.styleHint);
 
     if (batchVectors && batchVectors.length === rawSegments.length) {
       for (let i = 0; i < rawSegments.length; i++) {
