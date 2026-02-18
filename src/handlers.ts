@@ -306,10 +306,11 @@ export abstract class BaseHandler implements CommandHandler {
 
         // === 非命令消息：转发给 Claude（请求-响应模式）===
         if (!trimmed.startsWith("/")) {
-            const autoSkill = await tryHandleAutoSkill(trimmed, context);
-            if (autoSkill) {
-                return autoSkill;
-            }
+            // P5.5: 关键词主触发已禁用，自然语言由 LLM tool_calls 自主决策
+            // const autoSkill = await tryHandleAutoSkill(trimmed, context);
+            // if (autoSkill) {
+            //     return autoSkill;
+            // }
 
             const r = await resolveRunner();
             if (r.blockedReason) return { success: false, error: r.blockedReason };
@@ -472,12 +473,13 @@ export class RuntimeRouterHandler implements CommandHandler {
             return skillCommand;
         }
 
-        if (!trimmed.startsWith("/")) {
-            const autoSkill = await tryHandleAutoSkill(trimmed, context);
-            if (autoSkill) {
-                return autoSkill;
-            }
-        }
+        // P5.5: 关键词主触发已禁用，自然语言由 LLM tool_calls 自主决策
+        // if (!trimmed.startsWith("/")) {
+        //     const autoSkill = await tryHandleAutoSkill(trimmed, context);
+        //     if (autoSkill) {
+        //         return autoSkill;
+        //     }
+        // }
 
         // === slash 命令：委托给 DefaultHandler（使用 BaseHandler 的统一逻辑）===
         if (trimmed.startsWith("/")) {
