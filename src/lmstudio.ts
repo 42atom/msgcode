@@ -1387,26 +1387,13 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
     const msg1 = r1.choices[0]?.message;
     const toolCalls = msg1?.tool_calls ?? [];
 
-    // 2) 选择第一个工具调用（标准 tool_calls 优先；否则 best-effort 从 content 里兜底解析）
+    // 2) P5.5-R1: 只认标准 tool_calls，移除文本兜底解析
     let tc: ToolCall | null = toolCalls.length > 0 ? toolCalls[0] : null;
     let args: Record<string, unknown> = {};
     let assistantRole = msg1?.role || "assistant";
     const assistantContent = msg1?.content;
 
-    if (!tc) {
-        const parsed = parseToolCallBestEffortFromText({
-            text: assistantContent ?? "",
-            allowedToolNames: DEFAULT_ALLOWED_TOOL_NAMES,
-        });
-        if (parsed) {
-            tc = {
-                id: `fallback-${Date.now()}`,
-                type: "function",
-                function: { name: parsed.name, arguments: JSON.stringify(parsed.args ?? {}) },
-            };
-            args = parsed.args ?? {};
-        }
-    } else {
+    if (tc) {
         try {
             args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
         } catch {
