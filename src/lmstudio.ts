@@ -17,6 +17,11 @@ import * as path from "node:path";
 import * as fsPromises from "node:fs/promises";
 import { logger } from "./logger/index.js";
 
+// P5.6.2: 导入提取的 provider 层
+import { normalizeBaseUrl as normalizeBaseUrlAdapter, fetchWithTimeout } from "./providers/openai-compat-adapter.js";
+import { sanitizeLmStudioOutput as sanitizeCore, dropBeforeLastClosingTag } from "./providers/output-normalizer.js";
+import { runToolLoop } from "./providers/tool-loop.js";
+
 export interface LmStudioChatOptions {
     prompt: string;
     system?: string;
@@ -188,8 +193,12 @@ type ResolveModelParams = {
 
 let cachedModel: { baseUrl: string; id: string } | undefined;
 
+/**
+ * LM Studio 专用 URL 标准化
+ * 在 adapter 基础上额外移除 /v1 后缀
+ */
 function normalizeBaseUrl(raw: string): string {
-    let base = raw.replace(/\/+$/, "");
+    let base = normalizeBaseUrlAdapter(raw);
     if (base.endsWith("/v1")) {
         base = base.slice(0, -3);
     }
@@ -689,178 +698,32 @@ function isChatCompletion(value: unknown): value is { choices: Array<{ message?:
  * - 去除 JSON 包裹（reasoning_content/content/role）
  * - 去除 </think>...<think>...</think>
  */
+/**
+ * 清洗 LM Studio 输出
+ *
+ * 额外逻辑（不走 provider）：
+ * - think 标签过滤
+ * - tool_calls/tool_call XML 块过滤
+ * - 末尾多余空行压缩
+ */
 export function sanitizeLmStudioOutput(text: string): string {
     let out = text ?? "";
 
-    out = stripAnsi(out);
-    out = normalizeJsonishEnvelope(out);
+    // P5.6.2: 调用 provider 层
+    out = sanitizeCore(out);
+
+    // 额外逻辑：think 标签过滤
     out = dropBeforeLastClosingTag(out, "think");
     out = out.replace(/<think[\s\S]*?<\/think>/gi, "");
     // E17: 过滤 tool_calls 等内部信息
     out = out.replace(/tool_calls[参数:\s\S]*?(?=\n\n|$)/gi, "");
-    // E17: 过滤 XML-ish 工具调用块（部分模型会把 tool call 直接输出到 content）
+    // E17: 过滤 XML-ish 工具调用块
     out = out.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "");
 
-    // E17: 防“说明书复述/元叙事”兜底清洗（仅当模型输出明显在讲过程时触发）
-    out = stripMetaNarrative(out);
-
-    const lines = dedupeNoisyLines(
-        out
-            .split("\n")
-            .map(line => line.trimEnd())
-    );
-
-    return lines
-        .join("\n")
-        .replace(/\n{3,}/g, "\n\n")
-        .trim();
+    // 末尾多余空行压缩
+    return out.replace(/\n{3,}/g, "\n\n").trim();
 }
 
-function dedupeNoisyLines(lines: string[]): string[] {
-    const out: string[] = [];
-    const seenCounts = new Map<string, number>();
-
-    let last = "";
-    for (const raw of lines) {
-        const line = raw.trimEnd();
-        if (!line) {
-            out.push(line);
-            last = line;
-            continue;
-        }
-
-        // 连续重复行直接去掉
-        if (line === last) {
-            continue;
-        }
-
-        // 高频重复行（例如 OCR 噪声/模型循环）最多保留 2 次
-        const key = line.length > 120 ? line.slice(0, 120) : line;
-        const n = (seenCounts.get(key) ?? 0) + 1;
-        seenCounts.set(key, n);
-        if (n > 2) {
-            continue;
-        }
-
-        out.push(line);
-        last = line;
-    }
-
-    // 收口：末尾空行过多会影响 iMessage 展示
-    while (out.length > 0 && out[out.length - 1] === "") {
-        out.pop();
-    }
-    return out;
-}
-
-function stripMetaNarrative(input: string): string {
-    const raw = input.trim();
-    if (!raw) return raw;
-
-    const metaKeywords = [
-        "用户上传",
-        "用户发",
-        "我需要",
-        "我必须",
-        "我的角色",
-        "系统指令",
-        "输入包含",
-        "根据输入",
-        "约束",
-        "分析",
-        "计划",
-        "两段式",
-        "第1段",
-        "第2段",
-        "[图片文字]",
-        "[图片错误]",
-        "[attachment]",
-        "[derived]",
-        "tool_calls",
-        "filesystem",
-        "mcp",
-    ];
-
-    const looksMeta = metaKeywords.some(k => raw.toLowerCase().includes(k.toLowerCase()));
-    if (!looksMeta) return raw;
-
-    // 句子级过滤：尽量保留“像答案”的句子
-    const sentences = raw
-        .split(/(?<=[。！？\n])/)
-        .map(s => s.trim())
-        .filter(Boolean);
-
-    const kept: string[] = [];
-    let total = 0;
-    for (const s of sentences) {
-        if (metaKeywords.some(k => s.toLowerCase().includes(k.toLowerCase()))) continue;
-        kept.push(s);
-        total += s.length;
-        if (total >= 360) break;
-    }
-
-    if (kept.length > 0) {
-        return kept.join("").trim();
-    }
-
-    // 兜底：若完全过滤空了，保留最前面的短片段，避免空回复
-    return raw.slice(0, 360).trim();
-}
-
-function stripAnsi(input: string): string {
-    return input
-        .replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "")
-        .replace(/\u001b\][^\u0007]*\u0007/g, "")
-        .replace(/\u001b[\(\)][0-9A-Za-z]/g, "");
-}
-
-function dropBeforeLastClosingTag(input: string, tagName: string): string {
-    const lower = input.toLowerCase();
-    const needle = `</${tagName.toLowerCase()}>`;
-    const idx = lower.lastIndexOf(needle);
-    if (idx < 0) return input;
-    return input.slice(idx + needle.length);
-}
-
-function normalizeJsonishEnvelope(input: string): string {
-    let out = input;
-
-    // 有些模型会把换行以 "\\n" 的形式塞进字符串里（尤其是输出 JSON 片段时）
-    if (out.includes("\\n")) {
-        // 兼容双重转义（"\\\\n" -> 实际内容里的 "\\n"）
-        out = out.replace(/\\\\n/g, "\n");
-        out = out.replace(/\\n/g, "\n");
-    }
-
-    const lines = out.split("\n");
-    const normalized: string[] = [];
-
-    for (let rawLine of lines) {
-        const trimmed = rawLine.trim();
-
-        // 直接丢弃 reasoning_content 行（无论是 JSON key 还是类 key:value）
-        if (/^"?reasoning_content"?\s*:/.test(trimmed)) {
-            continue;
-        }
-        if (/^reasoning_content\s*=/i.test(trimmed)) {
-            continue;
-        }
-
-        // 丢弃 role 行（有些模型会输出 role/content/reasoning_content 的 JSON 片段）
-        if (/^"?role"?\s*:/.test(trimmed)) {
-            continue;
-        }
-
-        // 若是 "content": "..." 这种包裹，把前缀剥掉，让后续规则能识别 Action/Expression/Dialogue
-        rawLine = rawLine.replace(/^\s*"?content"?\s*:\s*"/, "");
-        // 去掉行尾可能出现的引号/逗号
-        rawLine = rawLine.replace(/"\s*,?\s*$/, "");
-
-        normalized.push(rawLine);
-    }
-
-    return normalized.join("\n");
-}
 
 // ============================================
 // Tool Calling 支持
