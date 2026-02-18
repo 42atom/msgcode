@@ -53,6 +53,12 @@ export interface WorkspaceConfig {
    */
   "persona.active"?: string;
 
+  // ==================== PI 配置 ====================
+  /**
+   * PI 开关（默认 false）
+   */
+  "pi.enabled"?: boolean;
+
   // ==================== Tool Bus 配置 ====================
   /**
    * 工具执行模式：explicit（默认稳态）、autonomous（可选）、tool-calls（预留）
@@ -122,6 +128,7 @@ const DEFAULT_WORKSPACE_CONFIG: Required<WorkspaceConfig> = {
   "policy.mode": "egress-allowed", // 默认允许外联（远程场景避免被门禁卡住；高敏 workspace 可手动切回 local-only）
   "runner.default": "lmstudio", // 默认使用本地模型
   "persona.active": "", // 默认不使用自定义 persona
+  "pi.enabled": false, // 默认关闭 PI
   "tooling.mode": "explicit", // Explicit 模式：只允许显式命令触发工具（稳态）
   "tooling.allow": ["tts", "asr", "vision"], // 默认允许基础工具
   "tooling.require_confirm": [], // 默认不要求确认
@@ -417,4 +424,3 @@ export async function setMlxConfig(
 
   await saveWorkspaceConfig(projectDir, partial);
 }
-

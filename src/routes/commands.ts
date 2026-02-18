@@ -838,6 +838,77 @@ export async function handlePolicyCommand(options: CommandHandlerOptions): Promi
 }
 
 /**
+ * P3.2: 处理 /pi 命令
+ *
+ * 用法：
+ * - /pi            : 查看 PI 状态
+ * - /pi on         : 启用 PI（仅限本地执行臂）
+ * - /pi off        : 禁用 PI
+ *
+ * @param options 命令选项
+ * @returns 命令处理结果
+ */
+export async function handlePiCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  const { chatId, args } = options;
+  const { loadWorkspaceConfig, saveWorkspaceConfig, getDefaultRunner } = await import("../config/workspace.js");
+
+  // 优先使用 RouteStore（动态绑定）；fallback 到 GROUP_* 静态配置（不破现网）
+  const entry = getRouteByChatId(chatId);
+  const fallback = !entry ? routeByChatId(chatId) : null;
+  const projectDir = entry?.workspacePath || fallback?.projectDir;
+
+  if (!projectDir) {
+    return {
+      success: false,
+      message: `未绑定工作目录，请先使用 /bind <dir> 绑定工作空间`,
+    };
+  }
+
+  const runner = await getDefaultRunner(projectDir);
+  const config = await loadWorkspaceConfig(projectDir);
+  const enabled = config["pi.enabled"] ?? false;
+
+  const action = (args[0] ?? "status").trim().toLowerCase();
+
+  if (action === "status") {
+    return {
+      success: true,
+      message: `PI: ${enabled ? "已启用" : "已禁用"}\n` +
+        `执行臂: ${runner}`,
+    };
+  }
+
+  if (action === "on") {
+    if (runner === "codex" || runner === "claude-code") {
+      return {
+        success: false,
+        message: "PI 仅支持本地执行臂（lmstudio/mlx）",
+      };
+    }
+
+    await saveWorkspaceConfig(projectDir, { "pi.enabled": true });
+    return {
+      success: true,
+      message: "PI 已启用",
+    };
+  }
+
+  if (action === "off") {
+    await saveWorkspaceConfig(projectDir, { "pi.enabled": false });
+    return {
+      success: true,
+      message: "PI 已禁用",
+    };
+  }
+
+  return {
+    success: false,
+    message: `未知操作: ${action}\n` +
+      `用法: /pi | /pi on | /pi off`,
+  };
+}
+
+/**
  * 路由命令分发器
  *
  * 根据命令名分发到对应的处理器
@@ -873,6 +944,8 @@ export async function handleRouteCommand(
       return handleMemCommand(options);
     case "policy":
       return handlePolicyCommand(options);
+    case "pi":
+      return handlePiCommand(options);
     // 群聊 owner 收口
     case "owner":
       return handleOwnerCommand(options);
@@ -948,6 +1021,8 @@ export function isRouteCommand(text: string): boolean {
     trimmed === "/mem" ||
     trimmed.startsWith("/policy ") ||
     trimmed === "/policy" ||
+    trimmed.startsWith("/pi ") ||
+    trimmed === "/pi" ||
     trimmed.startsWith("/owner ") ||
     trimmed === "/owner" ||
     trimmed.startsWith("/owner-only ") ||
@@ -1063,6 +1138,18 @@ export function parseRouteCommand(text: string): { command: string; args: string
 
   if (trimmed === "/policy") {
     return { command: "policy", args: [] };
+  }
+
+  if (trimmed.startsWith("/pi ")) {
+    const parts = trimmed.split(/\s+/);
+    return {
+      command: "pi",
+      args: parts.slice(1),
+    };
+  }
+
+  if (trimmed === "/pi") {
+    return { command: "pi", args: [] };
   }
 
   if (trimmed === "/owner") {
@@ -1281,12 +1368,9 @@ export async function handleChatlistCommand(options: CommandHandlerOptions): Pro
  * @returns 命令处理结果
  */
 export async function handleHelpCommand(options: CommandHandlerOptions): Promise<CommandResult> {
-  const entry = getRouteByChatId(options.chatId);
-  const isLmStudioBot = entry?.botType === "lmstudio";
-
   return {
     success: true,
-    message: `msgcode 2.2 命令帮助\n` +
+    message: `msgcode 2.3 命令帮助\n` +
       `\n` +
       `群组管理:\n` +
       `  /bind <dir> [client]  绑定群组到工作目录（相对路径）\n` +
@@ -1300,6 +1384,7 @@ export async function handleHelpCommand(options: CommandHandlerOptions): Promise
       `  /chatlist            列出所有已绑定的群组\n` +
       `\n` +
       `编排层（v2.2）:\n` +
+      `  /soul                人格与定时任务入口\n` +
       `  /persona list        列出所有 personas\n` +
       `  /persona use <id>    切换到指定 persona\n` +
       `  /persona current     查看当前激活的 persona\n` +
@@ -1328,22 +1413,20 @@ export async function handleHelpCommand(options: CommandHandlerOptions): Promise
       `干预机制（Phase 4B）:\n` +
       `  /steer <msg>         紧急转向：当前工具执行后立即注入\n` +
       `  /next <msg>          轮后消息：当前轮完成后作为下一轮用户消息\n` +
-      (isLmStudioBot
-        ? `\n` +
-          `语音（LM Studio Bot 专用）:\n` +
-          `  /tts <text>          把文本生成语音附件并回发\n` +
-          `  /voice <question>    先回答，再把回答转成语音附件回发\n` +
-          `  /mode                查看语音回复模式\n` +
-          `  /mode voice on|off|both|audio  设置语音模式\n` +
-          `  /mode style <desc>   设置语气/情绪提示（用于 emoAuto；不走 IndexTTS emo_text）\n` +
-          `  /mode style-reset    清空语气/情绪描述（恢复默认）\n` +
-          `\n` +
-          `示例:\n` +
-          `  /tts 那真是太好了！保持这种好心情。\n` +
-          `  /voice 南京是哪里的城市？\n` +
-          `  /mode voice on\n` +
-          `  /mode style 温柔女声，语速稍慢\n`
-        : ``) +
+      `\n` +
+      `语音（LM Studio Bot 专用）:\n` +
+      `  /tts <text>          把文本生成语音附件并回发\n` +
+      `  /voice <question>    先回答，再把回答转成语音附件回发\n` +
+      `  /mode                查看语音回复模式\n` +
+      `  /mode voice on|off|both|audio  设置语音模式\n` +
+      `  /mode style <desc>   设置语气/情绪提示（用于 emoAuto；不走 IndexTTS emo_text）\n` +
+      `  /mode style-reset    清空语气/情绪描述（恢复默认）\n` +
+      `\n` +
+      `示例:\n` +
+      `  /tts 那真是太好了！保持这种好心情。\n` +
+      `  /voice 南京是哪里的城市？\n` +
+      `  /mode voice on\n` +
+      `  /mode style 温柔女声，语速稍慢\n` +
       `\n` +
       `示例:\n` +
       `  /bind acme/ops claude   绑定到 $WORKSPACE_ROOT/acme/ops\n` +

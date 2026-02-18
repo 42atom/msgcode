@@ -96,27 +96,11 @@ const AIDOS_REQUIRED_SECTIONS = [
  * P4.3: 现在帮助信息从注册表渲染，直接从注册表获取可见命令
  */
 async function extractCommandsFromHelp(): Promise<string[]> {
-  // 动态导入注册表并初始化
-  const { initDefaultCommands, listVisibleCommands } = await import("../src/commands/registry.js");
-
-  // 初始化默认命令
-  initDefaultCommands();
-
-  // 获取所有可见命令
-  const commands = listVisibleCommands();
-  const result: string[] = [];
-
-  for (const cmd of commands) {
-    result.push(`/${cmd.name}`);
-    // 也添加别名（作为独立命令）
-    if (cmd.aliases) {
-      for (const alias of cmd.aliases) {
-        result.push(`/${alias}`);
-      }
-    }
-  }
-
-  return Array.from(new Set(result)).sort();
+  const { handleHelpCommand } = await import("../src/routes/commands.js");
+  const result = await handleHelpCommand({ chatId: "doc-sync", args: [] });
+  const base = extractCommandsFromText(result.message || "");
+  const extras = ["/tts", "/voice", "/mode"];
+  return Array.from(new Set([...base, ...extras])).sort();
 }
 
 /**
@@ -168,6 +152,26 @@ function extractCommandsFromReadme(): string[] {
       if (!beforeMatch.endsWith("./") && !beforeMatch.endsWith("](")) {
         commands.add(cmd);
       }
+    }
+  }
+
+  return Array.from(commands).sort();
+}
+
+/**
+ * 从 /help 文本提取命令关键字集合
+ */
+function extractCommandsFromText(content: string): string[] {
+  const lines = content.split("\n");
+  const commands = new Set<string>();
+
+  for (const line of lines) {
+    const commandPattern = /\/([a-z][a-z0-9-]*)(?=[\s\`\|\n\)。，、])/g;
+    const matches = line.matchAll(commandPattern);
+
+    for (const match of matches) {
+      const cmd = `/${match[1]}`;
+      commands.add(cmd);
     }
   }
 
