@@ -15,6 +15,7 @@
 import { config } from "./config.js";
 import * as path from "node:path";
 import * as fsPromises from "node:fs/promises";
+import { logger } from "./logger/index.js";
 
 export interface LmStudioChatOptions {
     prompt: string;
@@ -923,6 +924,29 @@ const AIDOCS_TOOLS = [
                 additionalProperties: false
             }
         }
+    },
+    {
+        type: "function",
+        function: {
+            name: "run_skill",
+            description: "执行技能任务（当前可用：system-info - 汇报系统配置和环境信息）",
+            parameters: {
+                type: "object",
+                properties: {
+                    skill_id: {
+                        type: "string",
+                        enum: ["system-info"],
+                        description: "技能ID（system-info: 汇报系统配置）"
+                    },
+                    input: {
+                        type: "string",
+                        description: "技能输入参数（可选）"
+                    }
+                },
+                required: ["skill_id"],
+                additionalProperties: false
+            }
+        }
     }
 ] as const;
 
@@ -1298,6 +1322,22 @@ async function runTool(name: string, args: Record<string, unknown>, root: string
             await fsPromises.appendFile(filePath, String(args.content ?? ""), "utf-8");
             return { success: true, path: args.path };
         }
+        case "run_skill": {
+            // P5.5: Skill 执行工具（调用单一执行器）
+            const skillId = String(args.skill_id || "");
+            const input = typeof args.input === "string" ? args.input : "";
+
+            const { runSkill } = await import("./skills/auto.js");
+            const result = await runSkill(skillId as any, input, {
+                workspacePath: root,
+            });
+
+            if (!result.ok) {
+                return { error: result.error || "skill execution failed" };
+            }
+
+            return { output: result.output };
+        }
         default:
             return { error: `未知工具: ${name}` };
     }
@@ -1418,6 +1458,26 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
     });
 
     const answer = r2.choices[0]?.message?.content ?? "";
+
+    // P5.5: 观测字段记录
+    const toolCallCount = tc ? 1 : 0;
+    const isSkillCall = tc?.function.name === "run_skill";
+    if (isSkillCall) {
+        const skillId = String(args.skill_id || "");
+        const skillResult = (toolResult as any)?.output ? "ok" : "error";
+        logger.info("Skill executed via LLM tool_calls", {
+            module: "lmstudio",
+            toolCallCount,
+            autoSkill: skillId,
+            autoSkillResult: skillResult,
+        });
+    } else {
+        logger.info("Tool loop completed", {
+            module: "lmstudio",
+            toolCallCount,
+            toolName: tc?.function.name || null,
+        });
+    }
 
     return {
         answer: sanitizeLmStudioOutput(answer),
