@@ -102,6 +102,7 @@ export interface WorkspaceConfig {
 
 /**
  * 工具相关类型
+ * P5.6.14-R1b: 新增 AgentProvider/TmuxClient 类型别名
  */
 export type ToolingMode = "explicit" | "autonomous" | "tool-calls";
 export type ToolName =
@@ -109,9 +110,20 @@ export type ToolName =
   | "read_file" | "write_file" | "edit_file";
 
 /**
+ * P5.6.14-R1b: Agent Provider 类型（agent 模式下有效）
+ */
+export type AgentProvider = "lmstudio" | "minimax" | "openai" | "llama" | "claude";
+
+/**
+ * P5.6.14-R1b: Tmux Client 类型（tmux 模式下有效）
+ */
+export type TmuxClient = "codex" | "claude-code";
+
+/**
  * Workspace 配置的默认值
  * P5.6.8-R4g: 导出供测试使用
  * P5.6.14-R1: 新增 runtime.kind 默认值为 agent
+ * P5.6.14-R1b: 使用 AgentProvider/TmuxClient 类型
  */
 export const DEFAULT_WORKSPACE_CONFIG: Required<WorkspaceConfig> = {
   "memory.inject.enabled": true, // 测试期默认开启记忆注入
@@ -225,12 +237,100 @@ export async function getMemoryInjectConfig(
 // ============================================
 
 /**
+ * Workspace 配置（存储在 .msgcode/config.json）
+ * P5.6.14-R1: 配置域拆分 - 新增 runtime.kind/agent.provider/tmux.client
+ * P5.6.14-R1b: 使用 AgentProvider/TmuxClient 类型
+ */
+export interface WorkspaceConfig {
+  // ==================== 记忆注入配置 ====================
+  /** 记忆注入开关（默认 false） */
+  "memory.inject.enabled"?: boolean;
+  /** 记忆注入返回条数（默认 5） */
+  "memory.inject.topK"?: number;
+  /** 记忆注入最大字符数（默认 2000） */
+  "memory.inject.maxChars"?: number;
+
+  // ==================== P5.6.14-R1: 运行形态配置 ====================
+  /**
+   * 运行形态：agent（默认）| tmux
+   * - agent: 智能体执行形态（有上下文编排：SOUL/记忆/工具注入）
+   * - tmux: 透传执行形态（无上下文编排，忠实转发）
+   */
+  "runtime.kind"?: "agent" | "tmux";
+
+  /**
+   * Agent Provider（仅 runtime.kind=agent 时有效）
+   * - lmstudio: 本地 LM Studio 模型（默认）
+   * - minimax: MiniMax 模型
+   * - openai: OpenAI API
+   * - ...
+   */
+  "agent.provider"?: AgentProvider;
+
+  /**
+   * Tmux Client（仅 runtime.kind=tmux 时有效）
+   * - codex: Codex CLI
+   * - claude-code: Claude Code CLI
+   */
+  "tmux.client"?: TmuxClient;
+
+  // ==================== M5: 兼容配置（只读映射） ====================
+  /**
+   * 策略模式：local-only（仅本地）或 egress-allowed（允许外联）
+   * - local-only: 禁止使用需要外网的 runner（如 codex）
+   * - egress-allowed: 允许使用所有 runner
+   */
+  "policy.mode"?: "local-only" | "egress-allowed";
+
+  /**
+   * 默认执行臂（只读兼容，v2.3.x 保留映射，v2.4.0 移除）
+   * 映射规则：
+   * - codex|claude-code -> runtime.kind=tmux + tmux.client=<runner>
+   * - lmstudio|openai|minimax -> runtime.kind=agent + agent.provider=<runner>
+   * - llama|claude -> runtime.kind=agent + agent.provider=lmstudio（兼容降级）
+   */
+  "runner.default"?: "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code";
+
+  // ==================== PI 配置 ====================
+  /**
+   * PI 开关（默认 false）
+   */
+  "pi.enabled"?: boolean;
+
+  // ==================== Tool Bus 配置 ====================
+  /**
+   * 工具执行模式：explicit（默认稳态）、autonomous（可选）、tool-calls（预留）
+   * - explicit: 只允许显式命令触发工具（/tts、/asr 等）
+   * - autonomous: 模型可自主编排调用工具（含 bash/browser）
+   * - tool-calls: 预留，标准 tool_calls 自动工具调用
+   */
+  "tooling.mode"?: ToolingMode;
+
+  /**
+   * 允许的工具列表
+   * - 默认：["tts", "asr", "vision"]
+   */
+  "tooling.allow"?: ToolName[];
+
+  /**
+   * 需要确认的工具列表
+   * - 默认：[]
+   */
+  "tooling.require_confirm"?: ToolName[];
+}
+
+// ============================================
+// P5.6.14-R1: 运行形态配置（Kind/Provider/Client）
+// ============================================
+
+/**
  * 从 runner.default 映射到 runtime.kind/provider/client
  * P5.6.14-R1: 兼容映射层（只读）
+ * P5.6.14-R1b: 使用 AgentProvider/TmuxClient 类型
  */
 function mapRunnerToKindProviderClient(
   runner: "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code" | undefined
-): { kind: "agent" | "tmux"; provider?: string; client?: string } {
+): { kind: "agent" | "tmux"; provider?: AgentProvider; client?: TmuxClient } {
   if (!runner) {
     return { kind: "agent", provider: "lmstudio" };
   }
@@ -274,13 +374,14 @@ export async function getRuntimeKind(
 /**
  * 获取 Agent Provider
  * P5.6.14-R1: 优先读新字段，无新字段时从 runner.default 映射
+ * P5.6.14-R1b: 使用 AgentProvider 类型
  *
  * @param projectDir 工作区路径
- * @returns Agent Provider（lmstudio | minimax | openai | ...）
+ * @returns Agent Provider（lmstudio | minimax | openai | none）
  */
 export async function getAgentProvider(
   projectDir: string
-): Promise<"lmstudio" | "minimax" | "openai" | "llama" | "claude" | "none"> {
+): Promise<AgentProvider | "none"> {
   const workspaceConfig = await loadWorkspaceConfig(projectDir);
 
   // 优先读新字段
@@ -291,19 +392,20 @@ export async function getAgentProvider(
   // Fallback: 从 runner.default 映射
   const runner = workspaceConfig["runner.default"];
   const mapped = mapRunnerToKindProviderClient(runner);
-  return (mapped.provider as any) || "none";
+  return (mapped.provider as AgentProvider) || "none";
 }
 
 /**
  * 获取 Tmux Client
  * P5.6.14-R1: 优先读新字段，无新字段时从 runner.default 映射
+ * P5.6.14-R1b: 使用 TmuxClient 类型
  *
  * @param projectDir 工作区路径
  * @returns Tmux Client（codex | claude-code | none）
  */
 export async function getTmuxClient(
   projectDir: string
-): Promise<"codex" | "claude-code" | "none"> {
+): Promise<TmuxClient | "none"> {
   const workspaceConfig = await loadWorkspaceConfig(projectDir);
 
   // 优先读新字段
@@ -314,7 +416,7 @@ export async function getTmuxClient(
   // Fallback: 从 runner.default 映射
   const runner = workspaceConfig["runner.default"];
   const mapped = mapRunnerToKindProviderClient(runner);
-  return (mapped.client as any) || "none";
+  return (mapped.client as TmuxClient) || "none";
 }
 
 /**
@@ -332,26 +434,28 @@ export async function setRuntimeKind(
 
 /**
  * 设置 Agent Provider（写配置只写新字段）
+ * P5.6.14-R1b: 使用 AgentProvider 类型
  *
  * @param projectDir 工作区路径
  * @param provider Agent Provider
  */
 export async function setAgentProvider(
   projectDir: string,
-  provider: "lmstudio" | "minimax" | "openai"
+  provider: AgentProvider
 ): Promise<void> {
   await saveWorkspaceConfig(projectDir, { "agent.provider": provider });
 }
 
 /**
  * 设置 Tmux Client（写配置只写新字段）
+ * P5.6.14-R1b: 使用 TmuxClient 类型
  *
  * @param projectDir 工作区路径
  * @param client Tmux Client
  */
 export async function setTmuxClient(
   projectDir: string,
-  client: "codex" | "claude-code"
+  client: TmuxClient
 ): Promise<void> {
   await saveWorkspaceConfig(projectDir, { "tmux.client": client });
 }
@@ -455,10 +559,10 @@ export async function setDefaultRunner(
   };
 
   if (provider) {
-    configToSave["agent.provider"] = provider as any;
+    configToSave["agent.provider"] = provider;
   }
   if (client) {
-    configToSave["tmux.client"] = client as any;
+    configToSave["tmux.client"] = client;
   }
 
   await saveWorkspaceConfig(projectDir, configToSave);
