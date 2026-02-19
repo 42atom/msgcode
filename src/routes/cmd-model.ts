@@ -111,7 +111,8 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
       };
     }
 
-    // P5.6.14-R4: 映射到 tmux + client
+    // P5.6.14-R4: 映射到 runtime.kind=tmux + tmux.client
+    await setRuntimeKind(projectDir, "tmux");
     await setTmuxClient(projectDir, requestedRunner);
 
     const oldClient = await getTmuxClient(projectDir);
