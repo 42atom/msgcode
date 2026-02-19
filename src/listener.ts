@@ -246,12 +246,8 @@ export const __test = process.env.NODE_ENV === "test"
 
 // ============================================
 // M5-3: 记忆注入闸门与检索注入闭环
+// P5.6.13-R4: 删除关键词闸门，enabled=true 时每轮检索
 // ============================================
-
-/**
- * 记忆注入触发关键词（默认关闭，只在匹配关键词时触发）
- */
-const MEMORY_TRIGGER_KEYWORDS = ["上次", "记得", "复盘", "错误码", "命令", "之前", "历史"];
 
 /**
  * 记忆注入结果
@@ -263,8 +259,10 @@ interface MemoryInjectResult {
   content: string;
   /** 调试信息 */
   debug?: {
-    /** 命中关键词 */
-    hitKeyword?: string;
+    /** 检索模式 */
+    mode?: "hybrid" | "fts-only";
+    /** 向量是否可用 */
+    vectorAvailable?: boolean;
     /** 检索结果数 */
     hitCount: number;
     /** 注入字符数 */
@@ -313,23 +311,8 @@ async function injectMemory(
     return { injected: false, content };
   }
 
-  // 3. 检查触发关键词（强制注入时跳过关键词检查）
-  const hitKeyword = MEMORY_TRIGGER_KEYWORDS.find(kw => content.includes(kw));
-  if (!hitKeyword && !force) {
-    if (debug) {
-      return {
-        injected: false,
-        content,
-        debug: {
-          hitCount: 0,
-          injectedChars: 0,
-          usedPaths: [],
-          skippedReason: "未命中触发关键词",
-        },
-      };
-    }
-    return { injected: false, content };
-  }
+  // 3. P5.6.13-R4: 删除关键词闸门，enabled=true 时直接检索
+  // --force-mem 仅做"放宽阈值强制注入"（未来可实现相关度阈值覆盖）
 
   // 4. 提取搜索查询（使用原始内容，避免噪声）
   const query = content.trim().slice(0, 200); // 限制查询长度
@@ -339,6 +322,9 @@ async function injectMemory(
     const { createMemoryStore } = await import("./memory/store.js");
     const path = await import("node:path");
     const store = createMemoryStore();
+
+    // P5.6.13-R4: 获取向量可用状态
+    const vectorAvailable = store.isVectorAvailable();
 
     // 使用 workspace basename 作为 workspaceId（与 memory index 一致，避免跨 workspace 泄露）
     const workspaceId = path.basename(projectDir);
@@ -351,7 +337,8 @@ async function injectMemory(
           injected: false,
           content,
           debug: {
-            hitKeyword,
+            mode: vectorAvailable ? "fts-only" : "fts-only",
+            vectorAvailable,
             hitCount: 0,
             injectedChars: 0,
             usedPaths: [],
@@ -388,7 +375,8 @@ async function injectMemory(
           injected: false,
           content,
           debug: {
-            hitKeyword,
+            mode: vectorAvailable ? "fts-only" : "fts-only",
+            vectorAvailable,
             hitCount: results.length,
             injectedChars: 0,
             usedPaths: [],
@@ -412,7 +400,8 @@ async function injectMemory(
     if (debug) {
       logger.debug("记忆注入已触发", {
         module: "listener",
-        hitKeyword,
+        mode: vectorAvailable ? "fts-only" : "fts-only",
+        vectorAvailable,
         hitCount: results.length,
         injectedChars,
         usedPaths,
@@ -424,7 +413,8 @@ async function injectMemory(
       injected: true,
       content: injectedContent,
       debug: {
-        hitKeyword,
+        mode: vectorAvailable ? "fts-only" : "fts-only",
+        vectorAvailable,
         hitCount: results.length,
         injectedChars,
         usedPaths,
@@ -443,7 +433,8 @@ async function injectMemory(
         injected: false,
         content,
         debug: {
-          hitKeyword,
+          mode: undefined,
+          vectorAvailable: false,
           hitCount: 0,
           injectedChars: 0,
           usedPaths: [],
