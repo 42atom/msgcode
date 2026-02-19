@@ -478,6 +478,7 @@ export class RuntimeRouterHandler implements CommandHandler {
                 const mode = await getPolicyMode(context.projectDir);
 
                 // tmux 透传链路
+                // P5.6.14-R3: tmux 永远不做注入
                 if (kind === "tmux") {
                     // local-only 时拒绝 tmux（需要外网访问）
                     if (mode === "local-only") {
@@ -496,6 +497,8 @@ export class RuntimeRouterHandler implements CommandHandler {
                             tmuxClient: client,
                             styleId: styled.meta.styleId,
                             digest8: styled.meta.digest8,
+                            // P5.6.14-R3: 注入职责硬边界
+                            injectionEnabled: false, // tmux 永远不注入
                         });
                     }
 
@@ -516,6 +519,14 @@ export class RuntimeRouterHandler implements CommandHandler {
                         return { success: false, error: result.error };
                     }
 
+                    logger.info("tmux request completed", {
+                        module: "handlers",
+                        chatId: context.chatId,
+                        runtimeKind: kind,
+                        tmuxClient: client,
+                        injectionEnabled: false, // P5.6.14-R3: tmux 永远不注入
+                    });
+
                     return { success: true, response: result.response || "（无回复）" };
                 }
             } catch {
@@ -524,8 +535,12 @@ export class RuntimeRouterHandler implements CommandHandler {
         }
 
         // agent 编排链路（默认）
+        // P5.6.14-R3: agent 链路注入 SOUL/记忆/工具
         const voiceMode = getVoiceReplyMode(context.chatId);
         const ttsPrefs = getTtsPrefs(context.chatId);
+
+        // 获取 provider 信息（用于日志）
+        const provider = context.projectDir ? await getAgentProvider(context.projectDir) : "none";
 
         try {
             const { randomUUID } = await import("node:crypto");
@@ -549,13 +564,21 @@ export class RuntimeRouterHandler implements CommandHandler {
                 soulContext = await resolveSoulContext(context.projectDir);
             }
 
-            logger.info("LM Studio 请求开始", {
+            // P5.6.14-R3: 注入观测字段
+            const injectionEnabled = !!(windowMessages.length > 0 || summaryContext || soulContext?.content);
+
+            logger.info("agent request started", {
                 module: "handlers",
                 chatId: context.chatId,
                 traceId,
-                runner: "direct",
-                // P5.6.8-R4e: SOUL 注入观测字段
-                soulInjected: soulContext?.source !== "none",
+                // P5.6.14-R3: 日志字段锁
+                runtimeKind: "agent",
+                agentProvider: provider,
+                injectionEnabled,
+                // 注入详情
+                memoryInjected: windowMessages.length > 0 || !!summaryContext,
+                memoryTurns: windowMessages.length,
+                soulInjected: !!soulContext?.content,
                 soulSource: soulContext?.source || "none",
                 soulPath: soulContext?.path || "",
                 soulChars: soulContext?.chars || 0,
@@ -582,18 +605,21 @@ export class RuntimeRouterHandler implements CommandHandler {
                 };
             }
 
-            logger.info("LM Studio 请求完成", {
+            logger.info("agent request completed", {
                 module: "handlers",
                 chatId: context.chatId,
                 traceId,
                 responseLength: clean.length,
                 voiceMode,
-                runner: "direct",
+                // P5.6.14-R3: 日志字段锁
+                runtimeKind: "agent",
+                agentProvider: provider,
+                injectionEnabled,
                 // P5.6.2-R1: ToolLoop 观测字段
                 toolCallCount: toolLoopResult.toolCall ? 1 : 0,
                 toolName: toolLoopResult.toolCall?.name,
                 // P5.6.8-R4e: SOUL 注入观测字段
-                soulInjected: soulContext?.source !== "none",
+                soulInjected: !!soulContext?.content,
                 soulSource: soulContext?.source || "none",
                 soulPath: soulContext?.path || "",
                 soulChars: soulContext?.chars || 0,
