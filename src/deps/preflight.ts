@@ -33,6 +33,14 @@ function expandPath(path: string): string {
       path = path.replaceAll("$INDEX_TTS_ROOT", root);
     }
   }
+  if (path.includes("$QWEN_TTS_ROOT")) {
+    const root = process.env.QWEN_TTS_ROOT
+      ? expandPath(process.env.QWEN_TTS_ROOT)
+      : "/Users/admin/GitProjects/GithubDown/qwen3-tts-apple-silicon";
+    if (root) {
+      path = path.replaceAll("$QWEN_TTS_ROOT", root);
+    }
+  }
   if (path.startsWith("~/")) {
     return process.env.HOME + path.slice(1);
   }
@@ -59,8 +67,15 @@ async function checkBinDependency(dep: Dependency): Promise<DependencyCheckResul
     if (dep.pathEnv) {
       binPath = process.env[dep.pathEnv];
       if (!binPath) {
-        result.error = `环境变量 ${dep.pathEnv} 未设置`;
-        return result;
+        if (dep.id === "qwen_tts_python") {
+          const root = process.env.QWEN_TTS_ROOT
+            ? expandPath(process.env.QWEN_TTS_ROOT)
+            : "/Users/admin/GitProjects/GithubDown/qwen3-tts-apple-silicon";
+          binPath = join(root, ".venv", "bin", "python");
+        } else {
+          result.error = `环境变量 ${dep.pathEnv} 未设置`;
+          return result;
+        }
       }
     }
 
@@ -79,6 +94,26 @@ async function checkBinDependency(dep: Dependency): Promise<DependencyCheckResul
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         result.error = `IndexTTS Python 不可用（import indextts 失败）: ${message}`;
+        result.details = { path: expandedPath };
+        return result;
+      }
+    }
+
+    // 特殊处理：Qwen TTS Python（验证 mlx_audio 是否可导入）
+    if (dep.id === "qwen_tts_python" && binPath) {
+      const expandedPath = expandPath(binPath);
+      if (!existsSync(expandedPath)) {
+        result.error = `文件不存在: ${expandedPath}`;
+        return result;
+      }
+      try {
+        await execAsync(`${expandedPath} -c "import mlx_audio"`, { timeout: 8000 });
+        result.available = true;
+        result.details = { path: expandedPath };
+        return result;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        result.error = `Qwen TTS Python 不可用（import mlx_audio 失败）: ${message}`;
         result.details = { path: expandedPath };
         return result;
       }

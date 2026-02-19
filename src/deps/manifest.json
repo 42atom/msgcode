@@ -53,6 +53,24 @@
       "description": "Codex CLI（执行臂，需要 egress-allowed）"
     },
     {
+      "id": "qwen_tts_python",
+      "kind": "bin",
+      "pathEnv": "QWEN_TTS_PYTHON",
+      "description": "Qwen TTS Python（建议: $QWEN_TTS_ROOT/.venv/bin/python）"
+    },
+    {
+      "id": "qwen_tts_custom_model",
+      "kind": "fs_exists",
+      "path": "$QWEN_TTS_ROOT/models/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit",
+      "description": "Qwen TTS CustomVoice 模型目录（默认: $QWEN_TTS_ROOT/models/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit）"
+    },
+    {
+      "id": "qwen_tts_clone_model",
+      "kind": "fs_exists",
+      "path": "$QWEN_TTS_ROOT/models/Qwen3-TTS-12Hz-0.6B-Base-8bit",
+      "description": "Qwen TTS Clone 模型目录（默认: $QWEN_TTS_ROOT/models/Qwen3-TTS-12Hz-0.6B-Base-8bit）"
+    },
+    {
       "id": "indexts_python",
       "kind": "bin",
       "pathEnv": "INDEX_TTS_PYTHON",
