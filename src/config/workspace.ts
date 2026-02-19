@@ -46,14 +46,14 @@ export interface WorkspaceConfig {
    * - openai: OpenAI API
    * - ...
    */
-  "agent.provider"?: "lmstudio" | "minimax" | "openai" | "llama" | "claude";
+  "agent.provider"?: AgentProvider;
 
   /**
    * Tmux Client（仅 runtime.kind=tmux 时有效）
    * - codex: Codex CLI
    * - claude-code: Claude Code CLI
    */
-  "tmux.client"?: "codex" | "claude-code";
+  "tmux.client"?: TmuxClient;
 
   // ==================== M5: 兼容配置（只读映射） ====================
   /**
@@ -230,93 +230,6 @@ export async function getMemoryInjectConfig(
     topK: workspaceConfig["memory.inject.topK"] ?? DEFAULT_WORKSPACE_CONFIG["memory.inject.topK"],
     maxChars: workspaceConfig["memory.inject.maxChars"] ?? DEFAULT_WORKSPACE_CONFIG["memory.inject.maxChars"],
   };
-}
-
-// ============================================
-// P5.6.14-R1: 运行形态配置（Kind/Provider/Client）
-// ============================================
-
-/**
- * Workspace 配置（存储在 .msgcode/config.json）
- * P5.6.14-R1: 配置域拆分 - 新增 runtime.kind/agent.provider/tmux.client
- * P5.6.14-R1b: 使用 AgentProvider/TmuxClient 类型
- */
-export interface WorkspaceConfig {
-  // ==================== 记忆注入配置 ====================
-  /** 记忆注入开关（默认 false） */
-  "memory.inject.enabled"?: boolean;
-  /** 记忆注入返回条数（默认 5） */
-  "memory.inject.topK"?: number;
-  /** 记忆注入最大字符数（默认 2000） */
-  "memory.inject.maxChars"?: number;
-
-  // ==================== P5.6.14-R1: 运行形态配置 ====================
-  /**
-   * 运行形态：agent（默认）| tmux
-   * - agent: 智能体执行形态（有上下文编排：SOUL/记忆/工具注入）
-   * - tmux: 透传执行形态（无上下文编排，忠实转发）
-   */
-  "runtime.kind"?: "agent" | "tmux";
-
-  /**
-   * Agent Provider（仅 runtime.kind=agent 时有效）
-   * - lmstudio: 本地 LM Studio 模型（默认）
-   * - minimax: MiniMax 模型
-   * - openai: OpenAI API
-   * - ...
-   */
-  "agent.provider"?: AgentProvider;
-
-  /**
-   * Tmux Client（仅 runtime.kind=tmux 时有效）
-   * - codex: Codex CLI
-   * - claude-code: Claude Code CLI
-   */
-  "tmux.client"?: TmuxClient;
-
-  // ==================== M5: 兼容配置（只读映射） ====================
-  /**
-   * 策略模式：local-only（仅本地）或 egress-allowed（允许外联）
-   * - local-only: 禁止使用需要外网的 runner（如 codex）
-   * - egress-allowed: 允许使用所有 runner
-   */
-  "policy.mode"?: "local-only" | "egress-allowed";
-
-  /**
-   * 默认执行臂（只读兼容，v2.3.x 保留映射，v2.4.0 移除）
-   * 映射规则：
-   * - codex|claude-code -> runtime.kind=tmux + tmux.client=<runner>
-   * - lmstudio|openai|minimax -> runtime.kind=agent + agent.provider=<runner>
-   * - llama|claude -> runtime.kind=agent + agent.provider=lmstudio（兼容降级）
-   */
-  "runner.default"?: "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code";
-
-  // ==================== PI 配置 ====================
-  /**
-   * PI 开关（默认 false）
-   */
-  "pi.enabled"?: boolean;
-
-  // ==================== Tool Bus 配置 ====================
-  /**
-   * 工具执行模式：explicit（默认稳态）、autonomous（可选）、tool-calls（预留）
-   * - explicit: 只允许显式命令触发工具（/tts、/asr 等）
-   * - autonomous: 模型可自主编排调用工具（含 bash/browser）
-   * - tool-calls: 预留，标准 tool_calls 自动工具调用
-   */
-  "tooling.mode"?: ToolingMode;
-
-  /**
-   * 允许的工具列表
-   * - 默认：["tts", "asr", "vision"]
-   */
-  "tooling.allow"?: ToolName[];
-
-  /**
-   * 需要确认的工具列表
-   * - 默认：[]
-   */
-  "tooling.require_confirm"?: ToolName[];
 }
 
 // ============================================
