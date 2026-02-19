@@ -290,11 +290,83 @@ export class MemoryStore {
   }
 
   /**
+   * 添加 chunk embedding（P5.6.13-R2）
+   * 将 embedding 向量存储到 chunks_vec 表
+   */
+  addChunkEmbedding(chunkId: string, embedding: number[]): boolean {
+    if (!this.vectorAvailable) {
+      return false;
+    }
+
+    try {
+      // 将数组转换为 Float32Array 的 buffer
+      const embeddingBuffer = new Float32Array(embedding).buffer;
+
+      const stmt = this.db.prepare(`
+        INSERT INTO ${VEC_TABLE_NAME} (rowid, embedding)
+        VALUES (?, ?)
+      `);
+
+      // 使用 chunk_id 的哈希作为 rowid（简单方案）
+      const rowid = this.chunkIdToRowid(chunkId);
+      stmt.run(rowid, embeddingBuffer);
+
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`添加 chunk embedding 失败: ${message}`);
+      return false;
+    }
+  }
+
+  /**
+   * 删除 chunk embedding（P5.6.13-R2）
+   */
+  deleteChunkEmbedding(chunkId: string): void {
+    if (!this.vectorAvailable) {
+      return;
+    }
+
+    try {
+      const rowid = this.chunkIdToRowid(chunkId);
+      this.db.prepare(`DELETE FROM ${VEC_TABLE_NAME} WHERE rowid = ?`).run(rowid);
+    } catch {
+      // 忽略删除失败
+    }
+  }
+
+  /**
+   * 将 chunk_id 转换为 rowid
+   * 简单方案：使用字符串哈希
+   */
+  private chunkIdToRowid(chunkId: string): number {
+    let hash = 0;
+    for (let i = 0; i < chunkId.length; i++) {
+      const char = chunkId.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // 转换为 32 位整数
+    }
+    return Math.abs(hash);
+  }
+
+  /**
    * 删除文档的所有 chunks
    */
   deleteChunksByDocId(docId: number): void {
+    // 获取要删除的 chunk_id 列表（用于删除向量）
+    const chunks = this.db.prepare(`
+      SELECT chunk_id FROM chunks WHERE doc_id = ?
+    `).all(docId) as { chunk_id: string }[];
+
     // 从 FTS5 删除
     this.db.prepare(`DELETE FROM ${FTS_TABLE_NAME} WHERE doc_id = ?`).run(docId);
+
+    // 从向量表删除（P5.6.13-R2）
+    if (this.vectorAvailable) {
+      for (const { chunk_id } of chunks) {
+        this.deleteChunkEmbedding(chunk_id);
+      }
+    }
 
     // 从 chunks 删除
     this.db.prepare(`DELETE FROM chunks WHERE doc_id = ?`).run(docId);
