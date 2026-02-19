@@ -40,7 +40,6 @@ async function buildTmuxStylePreamble(
     userText: string
 ): Promise<{ message: string; meta?: { styleId: string; digest8: string } }> {
     // P5.6.1-R2: Persona 全量退役，简化为直接返回用户文本
-    // TODO: 未来可注入 SOUL 内容（workspace SOUL.md + ~/.config/msgcode/souls/）
     return { message: userText };
 }
 
@@ -611,6 +610,7 @@ export class RuntimeRouterHandler implements CommandHandler {
                 module: "handlers",
                 chatId: context.chatId,
                 traceId,
+                runner: "direct",
             });
 
             // P5.6.2-R2: 读取短期会话窗口
@@ -643,6 +643,7 @@ export class RuntimeRouterHandler implements CommandHandler {
                 traceId,
                 responseLength: clean.length,
                 voiceMode,
+                runner: "direct",
                 // P5.6.2-R1: ToolLoop 观测字段
                 toolCallCount: toolLoopResult.toolCall ? 1 : 0,
                 toolName: toolLoopResult.toolCall?.name,
