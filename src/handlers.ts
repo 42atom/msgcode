@@ -40,7 +40,6 @@ async function buildTmuxStylePreamble(
     userText: string
 ): Promise<{ message: string; meta?: { styleId: string; digest8: string } }> {
     // P5.6.1-R2: Persona 全量退役，简化为直接返回用户文本
-    // TODO: 未来可注入 SOUL 内容（workspace SOUL.md + ~/.config/msgcode/souls/）
     return { message: userText };
 }
 
