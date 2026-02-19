@@ -449,6 +449,130 @@ export class MemoryStore {
     }
   }
 
+  /**
+   * 向量搜索（P5.6.13-R3）
+   * 使用 sqlite-vec 进行 KNN 搜索
+   */
+  searchVector(workspaceId: string | null, queryEmbedding: number[], limit: number = 8): SearchResult[] {
+    if (!this.vectorAvailable) {
+      return [];
+    }
+
+    try {
+      // 将查询向量转换为 Float32Array
+      const queryBuffer = new Float32Array(queryEmbedding).buffer;
+
+      // 使用 sqlite-vec 的 match 操作符进行 KNN 搜索
+      // 注意：sqlite-vec 的 distance 是 L2 距离，需要转换为相似度
+      const sql = workspaceId
+        ? `
+          SELECT
+            fts.workspace_id as workspaceId, fts.path, fts.start_line as startLine,
+            fts.end_line - fts.start_line + 1 as lines,
+            fts.heading, snippet(${FTS_TABLE_NAME}, -1, '...', '...', '', 40) as snippet,
+            vec.distance as distance
+          FROM ${VEC_TABLE_NAME} vec
+          JOIN ${FTS_TABLE_NAME} fts ON vec.rowid = fts.chunk_id_hash
+          WHERE vec.embedding MATCH ? AND fts.workspace_id = ?
+          ORDER BY distance
+          LIMIT ?
+        `
+        : `
+          SELECT
+            fts.workspace_id as workspaceId, fts.path, fts.start_line as startLine,
+            fts.end_line - fts.start_line + 1 as lines,
+            fts.heading, snippet(${FTS_TABLE_NAME}, -1, '...', '...', '', 40) as snippet,
+            vec.distance as distance
+          FROM ${VEC_TABLE_NAME} vec
+          JOIN ${FTS_TABLE_NAME} fts ON vec.rowid = fts.chunk_id_hash
+          WHERE vec.embedding MATCH ?
+          ORDER BY distance
+          LIMIT ?
+        `;
+
+      const stmt = this.db.prepare(sql);
+      const results = workspaceId
+        ? stmt.all(queryBuffer, workspaceId, limit)
+        : stmt.all(queryBuffer, limit);
+
+      // 转换距离为分数（距离越小分数越高）
+      return (results as Array<SearchResult & { distance: number }>).map(r => ({
+        ...r,
+        score: 1 / (1 + r.distance), // 简单转换
+      }));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`向量搜索失败: ${message}`);
+      return [];
+    }
+  }
+
+  /**
+   * 混合检索（P5.6.13-R3）
+   * 融合向量搜索和关键词搜索
+   */
+  searchHybrid(
+    workspaceId: string | null,
+    query: string,
+    queryEmbedding: number[],
+    options?: {
+      limit?: number;
+      vectorWeight?: number;
+      textWeight?: number;
+    }
+  ): SearchResult[] {
+    const limit = options?.limit ?? 8;
+    const vectorWeight = options?.vectorWeight ?? 0.7;
+    const textWeight = options?.textWeight ?? 0.3;
+
+    // 如果向量不可用，回退到 FTS-only
+    if (!this.vectorAvailable) {
+      return this.search(workspaceId, query, limit);
+    }
+
+    // 获取两路召回结果
+    const vectorResults = this.searchVector(workspaceId, queryEmbedding, limit * 2);
+    const ftsResults = this.search(workspaceId, query, limit * 2);
+
+    // 融合排序（简化版 RRF）
+    const scoreMap = new Map<string, { result: SearchResult; score: number }>();
+
+    // 处理向量结果
+    vectorResults.forEach((r, idx) => {
+      const key = `${r.workspaceId}:${r.path}:${r.startLine}`;
+      const rankScore = 1 / (idx + 60); // RRF 公式
+      const existing = scoreMap.get(key);
+      if (existing) {
+        existing.score += vectorWeight * rankScore;
+      } else {
+        scoreMap.set(key, { result: r, score: vectorWeight * rankScore });
+      }
+    });
+
+    // 处理 FTS 结果
+    ftsResults.forEach((r, idx) => {
+      const key = `${r.workspaceId}:${r.path}:${r.startLine}`;
+      const rankScore = 1 / (idx + 60); // RRF 公式
+      const existing = scoreMap.get(key);
+      if (existing) {
+        existing.score += textWeight * rankScore;
+      } else {
+        scoreMap.set(key, { result: r, score: textWeight * rankScore });
+      }
+    });
+
+    // 按融合分数排序
+    const merged = Array.from(scoreMap.values())
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit)
+      .map(item => ({
+        ...item.result,
+        score: item.score,
+      }));
+
+    return merged;
+  }
+
   // ============================================
   // 状态查询
   // ============================================
