@@ -3,7 +3,7 @@
  *
  * 目标：
  * - 输入文本 → 生成音频文件 → 返回路径（供 iMessage 发送附件）
- * - 后端：IndexTTS（默认）
+ * - 后端：Qwen3-TTS（默认）+ IndexTTS（回退）
  */
 
 import { randomUUID } from "node:crypto";
@@ -23,7 +23,63 @@ interface BackendRunner {
   run: (options: TtsOptions & TtsBackendContext) => Promise<TtsResult>;
 }
 
+type BackendExecutionInput = {
+  options: TtsOptions & TtsBackendContext;
+  priorityBackends: readonly TtsBackend[];
+  backends: readonly BackendRunner[];
+};
+
+type BackendExecutionResult = {
+  result?: TtsResult;
+  backend?: TtsBackend;
+  lastError?: string;
+};
+
+function shouldAbortFallback(backendName: TtsBackend, error?: string): boolean {
+  if (backendName !== "qwen") return false;
+  const msg = (error || "").trim();
+  if (!msg) return false;
+
+  // Qwen ref-audio path is explicitly configured but invalid.
+  // Do not hide this misconfiguration behind fallback backends.
+  return msg.includes("QWEN_TTS_REF_AUDIO 不存在");
+}
+
+function resolvePriorityBackends(rawBackendMode: string): TtsBackend[] {
+  const backendMode = rawBackendMode.trim().toLowerCase();
+  if (backendMode === "qwen") return ["qwen"];
+  if (backendMode === "indextts") return ["indextts"];
+  return ["qwen", "indextts"];
+}
+
+async function executeWithBackends(input: BackendExecutionInput): Promise<BackendExecutionResult> {
+  let lastError: string | undefined;
+
+  for (const backendName of input.priorityBackends) {
+    const backend = input.backends.find((b) => b.name === backendName);
+    if (!backend) continue;
+
+    try {
+      const result = await backend.run(input.options);
+      if (result.success) {
+        return { result, backend: backend.name };
+      }
+      lastError = result.error;
+      if (shouldAbortFallback(backendName, result.error)) break;
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+      if (shouldAbortFallback(backendName, lastError)) break;
+    }
+  }
+
+  return { lastError };
+}
+
 const BACKENDS: BackendRunner[] = [
+  {
+    name: "qwen",
+    run: async (opts) => (await import("./tts/backends/qwen.js")).runQwenTts(opts),
+  },
   {
     name: "indextts",
     run: async (opts) => (await import("./tts/backends/indexts.js")).runIndexTts(opts),
@@ -131,49 +187,42 @@ async function runTtsInternal(options: TtsOptions): Promise<TtsResult> {
     timeoutMs,
   };
 
-  // Only backend: indextts
-  const priorityBackends: TtsBackend[] = ["indextts"];
+  // Backend priority:
+  // - TTS_BACKEND=qwen      -> strict qwen only
+  // - TTS_BACKEND=indextts  -> strict indextts only
+  // - unset/other           -> qwen -> indextts fallback
+  const priorityBackends = resolvePriorityBackends(process.env.TTS_BACKEND || "");
 
-  // Try backends in priority order
-  let lastError: string | undefined;
-  for (const backendName of priorityBackends) {
-    const backend = BACKENDS.find(b => b.name === backendName);
-    if (!backend) continue;
+  const execResult = await executeWithBackends({
+    options: {
+      ...options,
+      ...backendContext,
+    },
+    priorityBackends,
+    backends: BACKENDS,
+  });
 
+  if (execResult.result && execResult.backend) {
+    // best-effort: file size
+    let audioSizeBytes: number | undefined;
     try {
-      const result = await backend.run({
-        ...options,
-        ...backendContext,
-      });
-
-      if (result.success) {
-        // best-effort: file size
-        let audioSizeBytes: number | undefined;
-        try {
-          if (result.audioPath) {
-            const { stat } = await import("node:fs/promises");
-            audioSizeBytes = (await stat(result.audioPath)).size;
-          }
-        } catch {
-          // ignore
-        }
-
-        logger.info("TTS 完成", {
-          module: "tts",
-          artifactId,
-          backend: backend.name,
-          durationMs: Date.now() - t0,
-          audioPath: result.audioPath,
-          audioSizeBytes,
-        });
-        return { ...result, backend: backend.name };
+      if (execResult.result.audioPath) {
+        const { stat } = await import("node:fs/promises");
+        audioSizeBytes = (await stat(execResult.result.audioPath)).size;
       }
-
-      // Store error for next fallback attempt
-      lastError = result.error;
-    } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err);
+    } catch {
+      // ignore
     }
+
+    logger.info("TTS 完成", {
+      module: "tts",
+      artifactId,
+      backend: execResult.backend,
+      durationMs: Date.now() - t0,
+      audioPath: execResult.result.audioPath,
+      audioSizeBytes,
+    });
+    return { ...execResult.result, backend: execResult.backend };
   }
 
   // All backends failed
@@ -181,12 +230,12 @@ async function runTtsInternal(options: TtsOptions): Promise<TtsResult> {
     module: "tts",
     artifactId,
     durationMs: Date.now() - t0,
-    error: lastError || "unknown",
+    error: execResult.lastError || "unknown",
   });
   return {
     success: false,
     artifactId,
-    error: lastError || "所有 TTS 后端均失败",
+    error: execResult.lastError || "所有 TTS 后端均失败",
   };
 }
 
@@ -195,3 +244,10 @@ async function runTtsInternal(options: TtsOptions): Promise<TtsResult> {
 // ============================================
 
 export type { TtsBackend, TtsOptions, TtsResult };
+
+// Test hooks: keep pure and side-effect free.
+export const __test = {
+  shouldAbortFallback,
+  resolvePriorityBackends,
+  executeWithBackends,
+};
