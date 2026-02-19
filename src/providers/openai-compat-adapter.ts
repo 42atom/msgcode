@@ -187,3 +187,112 @@ export function isChatCompletionResponse(value: unknown): value is ChatCompletio
         Array.isArray((value as ChatCompletionResponse).choices)
     );
 }
+
+// ============================================
+// P5.6.13-R1A-EXEC R3: 响应解析与工具调用归一
+// ============================================
+
+/**
+ * 归一化的工具调用
+ */
+export interface NormalizedToolCall {
+    id: string;
+    name: string;
+    arguments: string;
+}
+
+/**
+ * 解析后的 Chat Completion 结果
+ */
+export interface ParsedChatCompletion {
+    content: string | null;
+    toolCalls: NormalizedToolCall[];
+    finishReason: string | null;
+    error?: string;
+}
+
+/**
+ * 解析 Chat Completions 响应
+ * P5.6.13-R1A-EXEC R3: 统一响应解析入口
+ */
+export function parseChatCompletionResponse(raw: string): ParsedChatCompletion {
+    let data: unknown;
+    try {
+        data = JSON.parse(raw);
+    } catch {
+        return {
+            content: null,
+            toolCalls: [],
+            finishReason: null,
+            error: "Invalid JSON response",
+        };
+    }
+
+    // 检查错误响应
+    if (typeof data === "object" && data !== null && "error" in data) {
+        const errorObj = data as { error?: { message?: string } };
+        return {
+            content: null,
+            toolCalls: [],
+            finishReason: null,
+            error: errorObj.error?.message || "Unknown error",
+        };
+    }
+
+    // 验证响应格式
+    if (!isChatCompletionResponse(data)) {
+        return {
+            content: null,
+            toolCalls: [],
+            finishReason: null,
+            error: "Invalid response format",
+        };
+    }
+
+    const choice = data.choices[0];
+    const message = choice?.message;
+
+    return {
+        content: message?.content ?? null,
+        toolCalls: normalizeToolCalls(message?.tool_calls),
+        finishReason: choice?.finish_reason ?? null,
+    };
+}
+
+/**
+ * 归一化工具调用
+ * P5.6.13-R1A-EXEC R3: 统一工具调用格式
+ *
+ * 处理三种情况：
+ * 1. 空 tool_calls -> 返回空数组
+ * 2. 非法 tool_calls -> 返回空数组（不抛错）
+ * 3. 有效 tool_calls -> 返回归一化数组
+ */
+export function normalizeToolCalls(
+    toolCalls: Array<{
+        id: string;
+        type: string;
+        function: { name: string; arguments: string };
+    }> | undefined
+): NormalizedToolCall[] {
+    if (!toolCalls || !Array.isArray(toolCalls)) {
+        return [];
+    }
+
+    const normalized: NormalizedToolCall[] = [];
+    for (const tc of toolCalls) {
+        // 跳过无效条目
+        if (!tc || typeof tc !== "object") continue;
+        if (!tc.id || !tc.function) continue;
+        if (typeof tc.function.name !== "string") continue;
+        if (typeof tc.function.arguments !== "string") continue;
+
+        normalized.push({
+            id: tc.id,
+            name: tc.function.name,
+            arguments: tc.function.arguments,
+        });
+    }
+
+    return normalized;
+}
