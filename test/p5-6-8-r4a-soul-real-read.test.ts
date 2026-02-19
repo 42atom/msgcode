@@ -134,14 +134,16 @@ describe("P5.6.8-R4a: SOUL 真实读取回归锁", () => {
             expect(code).not.toContain('join(entry.workspacePath, "SOUL.md")');
         });
 
-        it("/reload 输出包含 SOUL workspace 和 entries 关键字", () => {
+        it("/reload 输出包含 SOUL source/path 和 entries 关键字", () => {
             const code = fs.readFileSync(
                 path.join(process.cwd(), "src/routes/cmd-schedule.ts"),
                 "utf-8"
             );
 
+            // P5.6.13-R1a: 更新断言与当前实现一致
             // 验证 /reload 输出包含 SOUL 相关字段
-            expect(code).toContain("SOUL: workspace=");
+            expect(code).toContain("SOUL: source=");
+            expect(code).toContain("path=");
             expect(code).toContain("SOUL Entries:");
         });
     });

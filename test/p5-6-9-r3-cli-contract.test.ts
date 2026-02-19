@@ -4,7 +4,7 @@
  * 验证 Envelope 结构、错误码、JSON+Text 输出一致性
  */
 
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { createEnvelope, getWorkspacePath } from "../src/cli/command-runner.js";
 import type { Diagnostic } from "../src/memory/types.js";
 
@@ -115,6 +115,22 @@ describe("P5.6.9-R3: CLI 契约 - Envelope 结构", () => {
 // ============================================
 
 describe("P5.6.9-R3: CLI 契约 - 工作区路径", () => {
+  // P5.6.13-R1a: 环境隔离 - 保存/恢复 WORKSPACE_ROOT
+  let originalWorkspaceRoot: string | undefined;
+
+  beforeEach(() => {
+    originalWorkspaceRoot = process.env.WORKSPACE_ROOT;
+    delete process.env.WORKSPACE_ROOT;
+  });
+
+  afterEach(() => {
+    if (originalWorkspaceRoot !== undefined) {
+      process.env.WORKSPACE_ROOT = originalWorkspaceRoot;
+    } else {
+      delete process.env.WORKSPACE_ROOT;
+    }
+  });
+
   it("R3-9: 空标签返回默认工作区根目录", () => {
     const path = getWorkspacePath("");
     expect(path).toContain("msgcode-workspaces");
