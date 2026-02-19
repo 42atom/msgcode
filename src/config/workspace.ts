@@ -77,7 +77,9 @@ export interface WorkspaceConfig {
  * 工具相关类型
  */
 export type ToolingMode = "explicit" | "autonomous" | "tool-calls";
-export type ToolName = "tts" | "asr" | "vision" | "mem" | "shell" | "browser" | "desktop";
+export type ToolName =
+  | "tts" | "asr" | "vision" | "mem" | "shell" | "browser" | "desktop"
+  | "read_file" | "write_file" | "edit_file" | "bash";
 
 /**
  * Workspace 配置的默认值

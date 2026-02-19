@@ -1160,50 +1160,24 @@ function resolveUnderRoot(inputPath: string, root: string): string {
 }
 
 /**
- * 执行工具
+ * 执行工具（P5.6.8-R3a: 统一走 Tool Bus）
  */
 async function runTool(name: string, args: Record<string, unknown>, root: string): Promise<unknown> {
-    switch (name) {
-        case "list_directory": {
-            const dir = resolveUnderRoot(String(args.path || ""), root);
-            const limitRaw = args.limit;
-            const limit = typeof limitRaw === "number" && Number.isFinite(limitRaw)
-                ? Math.max(1, Math.floor(limitRaw))
-                : 20;
-            const entries = await fsPromises.readdir(dir, { withFileTypes: true });
-            return entries.slice(0, limit).map(e => ({
-                name: e.name,
-                type: e.isDirectory() ? "directory" : "file"
-            }));
-        }
-        case "read_text_file": {
-            const filePath = resolveUnderRoot(String(args.path || ""), root);
-            return await fsPromises.readFile(filePath, "utf-8");
-        }
-        case "append_text_file": {
-            const filePath = resolveUnderRoot(String(args.path || ""), root);
-            await fsPromises.appendFile(filePath, String(args.content ?? ""), "utf-8");
-            return { success: true, path: args.path };
-        }
-        case "run_skill": {
-            // P5.5: Skill 执行工具（调用单一执行器）
-            const skillId = String(args.skill_id || "");
-            const input = typeof args.input === "string" ? args.input : "";
+    const { executeTool } = await import("./tools/bus.js");
+    const { randomUUID } = await import("node:crypto");
 
-            const { runSkill } = await import("./skills/auto.js");
-            const result = await runSkill(skillId as any, input, {
-                workspacePath: root,
-            });
+    const result = await executeTool(name as any, args, {
+        workspacePath: root,
+        source: "llm-tool-call",
+        requestId: `lmstudio-${randomUUID()}`,
+    });
 
-            if (!result.ok) {
-                return { error: result.error || "skill execution failed" };
-            }
-
-            return { output: result.output };
-        }
-        default:
-            return { error: `未知工具: ${name}` };
+    if (!result.ok) {
+        return { error: result.error?.message || "tool execution failed" };
     }
+
+    // 返回 data 字段（兼容旧格式）
+    return result.data || { success: true };
 }
 
 /**

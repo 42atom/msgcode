@@ -24,17 +24,18 @@ describe("P5.6.3-R2: Skill 执行单一真相源回归锁", () => {
     });
 
     describe("测试锁 2：自然语言 tool_calls 路径必须调用 runSkill()", () => {
-        it("src/lmstudio.ts runTool 必须处理 run_skill case", () => {
+        it("src/lmstudio.ts 必须通过 Tool Bus 调用（单一执行入口）", () => {
             const code = fs.readFileSync(
                 path.join(process.cwd(), "src/lmstudio.ts"),
                 "utf-8"
             );
-            expect(code).toContain('case "run_skill"');
+            // P5.6.8-R3a: lmstudio 统一走 Tool Bus
+            expect(code).toContain("executeTool");
         });
 
-        it("src/lmstudio.ts run_skill case 必须导入 runSkill", () => {
+        it("src/tools/bus.ts run_skill case 必须导入 runSkill", () => {
             const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
+                path.join(process.cwd(), "src/tools/bus.ts"),
                 "utf-8"
             );
             // 检查 run_skill case 内部是否 import runSkill
@@ -125,9 +126,9 @@ describe("P5.6.3-R2: Skill 执行单一真相源回归锁", () => {
             expect(code).toContain("autoSkillResult");
         });
 
-        it("lmstudio.ts run_skill case 必须包含 autoSkill 日志字段", () => {
+        it("tools/bus.ts run_skill case 必须包含 autoSkill 日志字段", () => {
             const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
+                path.join(process.cwd(), "src/tools/bus.ts"),
                 "utf-8"
             );
             // 检查 run_skill case 区域内是否有 autoSkill 字段

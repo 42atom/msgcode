@@ -77,14 +77,24 @@ describe("P5.6.7-R6: 集成冒烟静态验证", () => {
             expect(code).not.toContain("clearMemory");
         });
 
-        it("lmstudio.ts: runLmStudioToolLoop 调用 runSkill（自然语言与 /skill run 同执行器）", () => {
+        it("lmstudio.ts: runLmStudioToolLoop 通过 Tool Bus 调用（统一执行入口）", () => {
             const code = fs.readFileSync(
                 path.join(process.cwd(), "src/lmstudio.ts"),
                 "utf-8"
             );
-            // 验证 tool loop 中调用 runSkill
+            // P5.6.8-R3a: 验证 lmstudio 统一走 Tool Bus
+            expect(code).toContain("const { executeTool } = await import");
+            expect(code).toContain("await executeTool(name as any, args");
+        });
+
+        it("tools/bus.ts: run_skill 在 Tool Bus 中实现（单一执行入口）", () => {
+            const code = fs.readFileSync(
+                path.join(process.cwd(), "src/tools/bus.ts"),
+                "utf-8"
+            );
+            // 验证 Tool Bus 中有 run_skill 实现
+            expect(code).toContain("case \"run_skill\"");
             expect(code).toContain("const { runSkill } = await import");
-            expect(code).toContain("await runSkill(skillId");
         });
     });
 
