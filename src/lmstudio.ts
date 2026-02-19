@@ -20,7 +20,6 @@ import { logger } from "./logger/index.js";
 // P5.6.2: 导入提取的 provider 层
 import { normalizeBaseUrl as normalizeBaseUrlAdapter, fetchWithTimeout } from "./providers/openai-compat-adapter.js";
 import { sanitizeLmStudioOutput as sanitizeCore, dropBeforeLastClosingTag } from "./providers/output-normalizer.js";
-import { runToolLoop } from "./providers/tool-loop.js";
 
 export interface LmStudioChatOptions {
     prompt: string;
