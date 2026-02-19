@@ -86,12 +86,14 @@ describe("P5.6.8-R4a: SOUL 真实读取回归锁", () => {
     });
 
     describe("Workspace SOUL 读取验证", () => {
-        it("getWorkspaceSoul() 读取 workspace/SOUL.md", async () => {
+        it("getWorkspaceSoul() 读取 workspace/.msgcode/SOUL.md", async () => {
             const { getWorkspaceSoul } = await import("../src/config/souls.js");
 
             // 创建临时工作区
             const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "msgcode-ws-"));
-            const soulPath = path.join(tmpDir, "SOUL.md");
+            const msgcodeDir = path.join(tmpDir, ".msgcode");
+            fs.mkdirSync(msgcodeDir, { recursive: true });
+            const soulPath = path.join(msgcodeDir, "SOUL.md");
             fs.writeFileSync(soulPath, "# Workspace SOUL\n\nThis is workspace soul content.", "utf-8");
 
             try {
@@ -121,15 +123,15 @@ describe("P5.6.8-R4a: SOUL 真实读取回归锁", () => {
     });
 
     describe("/reload SOUL 路径验证", () => {
-        it("src/routes/cmd-schedule.ts 使用 workspace/SOUL.md 路径", () => {
+        it("src/routes/cmd-schedule.ts 使用 workspace/.msgcode/SOUL.md 路径", () => {
             const code = fs.readFileSync(
                 path.join(process.cwd(), "src/routes/cmd-schedule.ts"),
                 "utf-8"
             );
 
-            // 验证使用根目录路径（不是 .msgcode/SOUL.md）
-            expect(code).toContain('join(entry.workspacePath, "SOUL.md")');
-            expect(code).not.toContain('join(entry.workspacePath, ".msgcode", "SOUL.md")');
+            // 验证使用 .msgcode 目录路径（不是根目录）
+            expect(code).toContain('join(entry.workspacePath, ".msgcode", "SOUL.md")');
+            expect(code).not.toContain('join(entry.workspacePath, "SOUL.md")');
         });
 
         it("/reload 输出包含 SOUL workspace 和 entries 关键字", () => {

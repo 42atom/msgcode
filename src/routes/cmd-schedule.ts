@@ -210,8 +210,8 @@ export async function handleReloadCommand(options: CommandHandlerOptions): Promi
   results.push(`Skills: ${skillsExist ? "已配置" : "未配置"} (~/.config/msgcode/skills/)`);
 
   const { getActiveSoul, listSouls } = await import("../config/souls.js");
-  // SOUL.md 位于工作区根目录
-  const workspaceSoulPath = join(entry.workspacePath, "SOUL.md");
+  // SOUL.md 位于工作区 .msgcode 目录
+  const workspaceSoulPath = join(entry.workspacePath, ".msgcode", "SOUL.md");
   const workspaceSoulExists = existsSync(workspaceSoulPath);
   const activeSoul = await getActiveSoul();
   const souls = await listSouls();

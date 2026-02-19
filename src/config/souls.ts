@@ -70,7 +70,7 @@ export function getActiveSoulPath(): string {
  * 获取 workspace SOUL 文件路径
  */
 export function getWorkspaceSoulPath(workspacePath: string): string {
-  return join(workspacePath, "SOUL.md");
+  return join(workspacePath, ".msgcode", "SOUL.md");
 }
 
 // ============================================
