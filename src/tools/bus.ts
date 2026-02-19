@@ -244,8 +244,21 @@ export async function executeTool(
       case "tts": {
         const text = String(args.text ?? "").trim();
         if (!text) throw new Error("empty text");
+        const instruct = typeof args.instruct === "string" ? args.instruct.trim() : undefined;
+        const speedNum = typeof args.speed === "number"
+          ? args.speed
+          : (typeof args.speed === "string" ? Number(args.speed) : Number.NaN);
+        const temperatureNum = typeof args.temperature === "number"
+          ? args.temperature
+          : (typeof args.temperature === "string" ? Number(args.temperature) : Number.NaN);
         const out = await withTimeout(
-          runTts({ workspacePath: ctx.workspacePath, text }),
+          runTts({
+            workspacePath: ctx.workspacePath,
+            text,
+            ...(instruct ? { instruct } : {}),
+            ...(Number.isFinite(speedNum) && speedNum > 0 ? { speed: speedNum } : {}),
+            ...(Number.isFinite(temperatureNum) && temperatureNum > 0 ? { temperature: temperatureNum } : {}),
+          }),
           ctx.timeoutMs ?? 120000
         );
         if (!out.success || !out.audioPath) throw new Error(out.error || "tts failed");

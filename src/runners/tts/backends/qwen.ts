@@ -100,6 +100,17 @@ function sanitizeError(stderr: string, fallback: string): string {
   return msg.slice(0, 800);
 }
 
+function resolveQwenSpeed(options: TtsOptions): number | null {
+  if (typeof options.speed === "number" && Number.isFinite(options.speed) && options.speed > 0) {
+    return options.speed;
+  }
+  const raw = (process.env.QWEN_TTS_SPEED || "").trim();
+  if (!raw) return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
+
 export async function runQwenTts(options: TtsOptions & TtsBackendContext): Promise<TtsResult> {
   const text = normalizeTtsText(options.text || "");
   if (!text) return { success: false, artifactId: options.artifactId, backend: "qwen", error: "缺少 text" };
@@ -149,9 +160,8 @@ export async function runQwenTts(options: TtsOptions & TtsBackendContext): Promi
     "--audio_format", "wav",
   ];
 
-  if (typeof options.speed === "number" && Number.isFinite(options.speed) && options.speed > 0) {
-    args.push("--speed", String(options.speed));
-  }
+  const speed = resolveQwenSpeed(options);
+  if (speed !== null) args.push("--speed", String(speed));
 
   if (typeof options.temperature === "number" && Number.isFinite(options.temperature) && options.temperature > 0) {
     args.push("--temperature", String(options.temperature));
