@@ -5,6 +5,15 @@
  * 验证测试结果符合预期：
  * - msgcode 测试：必须全部通过
  * - imessage-kit 测试：4 个预期失败（白名单）
+ *
+ * 白名单策略说明（P5.6.8-R4c）：
+ * - imessage-kit 是 iMessage 协议层的参考实现
+ * - 其测试失败不影响 msgcode 核心功能
+ * - 失败原因：测试用例设计不符合 msgcode 运行时环境
+ * - 固定预期：4 个失败（白名单固定）
+ * - 团队口径：所有 msgcode 核心测试必须通过，imessage-kit 失败是预期行为
+ *
+ * Usage: node scripts/test-gate.js
  */
 
 import { execSync } from 'child_process';

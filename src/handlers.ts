@@ -27,6 +27,7 @@ import * as session from "./runtime/session-orchestrator.js";
 
 // P5.6.2-R1: 导入会话窗口
 import { loadWindow, appendWindow, type WindowMessage } from "./session-window.js";
+import { loadSummary, formatSummaryAsContext } from "./summary.js";
 
 const TMUX_STYLE_MAX_CHARS = 800;
 
@@ -598,8 +599,16 @@ export class RuntimeRouterHandler implements CommandHandler {
 
             // P5.6.2-R2: 读取短期会话窗口
             let windowMessages: WindowMessage[] = [];
+            let summaryContext: string | undefined;
+
             if (context.projectDir) {
                 windowMessages = await loadWindow(context.projectDir, context.chatId);
+
+                // P5.6.8-R4b: 读取 summary 并格式化为上下文
+                const summary = await loadSummary(context.projectDir, context.chatId);
+                if (summary) {
+                    summaryContext = formatSummaryAsContext(summary);
+                }
             }
 
             // P0: 只在 MCP 真正启用时才传递 workspace（避免注入 MCP 规则导致元叙事）
@@ -611,6 +620,9 @@ export class RuntimeRouterHandler implements CommandHandler {
                 prompt: trimmed,
                 system: personaContent,
                 ...(useMcp && context.projectDir ? { workspacePath: context.projectDir } : {}),
+                // P5.6.8-R4b: 注入短期记忆上下文
+                windowMessages,
+                summaryContext,
             });
             const clean = (toolLoopResult.answer || "").trim();
             if (!clean) {

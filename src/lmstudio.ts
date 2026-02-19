@@ -1107,6 +1107,9 @@ export interface LmStudioToolLoopOptions {
     baseUrl?: string;
     model?: string;
     timeoutMs?: number;
+    // P5.6.8-R4b: 短期记忆上下文
+    windowMessages?: Array<{ role: string; content?: string }>; // 历史窗口消息
+    summaryContext?: string; // summary 格式化后的上下文
 }
 
 /**
@@ -1242,6 +1245,40 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
     if (system && system.trim()) {
         messages.push({ role: "system", content: system.trim() });
     }
+
+    // P5.6.8-R4b: 注入短期记忆上下文
+    // 1. 如果有 summary，作为历史上下文注入
+    if (options.summaryContext && options.summaryContext.trim()) {
+        // 将 summary 作为 assistant 的历史总结注入
+        messages.push({
+            role: "assistant",
+            content: `[历史对话摘要]\n${options.summaryContext}`
+        });
+    }
+
+    // 2. 注入最近的窗口消息（有预算限制）
+    const MAX_WINDOW_MESSAGES = 20; // 最多保留 20 条历史消息
+    const MAX_CONTEXT_CHARS = 8000; // 历史上下文最大字符数
+
+    if (options.windowMessages && options.windowMessages.length > 0) {
+        let totalChars = 0;
+        const recentMessages = options.windowMessages.slice(-MAX_WINDOW_MESSAGES);
+
+        for (const msg of recentMessages) {
+            const msgChars = msg.content?.length || 0;
+            if (totalChars + msgChars > MAX_CONTEXT_CHARS) {
+                // 超预算，停止注入
+                break;
+            }
+            messages.push({
+                role: msg.role,
+                content: msg.content
+            });
+            totalChars += msgChars;
+        }
+    }
+
+    // 3. 注入当前用户输入
     messages.push({ role: "user", content: options.prompt });
 
     // P0: 获取基于 workspace 配置的工具列表（explicit 模式下为空）
