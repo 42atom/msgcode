@@ -735,33 +735,17 @@ export function sanitizeLmStudioOutput(text: string): string {
 const AIDOCS_ROOT = process.env.AIDOCS_ROOT || "AIDOCS";
 
 /**
- * P1: Tool 定义（OpenAI function calling schema）
+ * P5.6.8-R3: PI 四基础工具定义（OpenAI function calling schema）
  *
- * 注意：这些工具仅在 tool-calls 模式下可用（P1 预留）
- * P0 模式下，请使用显式斜杠命令（如 /tts, /asr, /vision）
+ * pi.on 模式：向 LLM 暴露四基础工具
+ * pi.off 模式：不暴露任何工具（普通 direct 聊天 + 记忆注入）
  */
-const AIDOCS_TOOLS = [
+const PI_ON_TOOLS = [
     {
         type: "function",
         function: {
-            name: "list_directory",
-            description: "列出目录下的文件和子目录",
-            parameters: {
-                type: "object",
-                properties: {
-                    path: { type: "string", description: "目录路径（相对或绝对）" },
-                    limit: { type: "integer", default: 20 }
-                },
-                required: ["path"],
-                additionalProperties: false
-            }
-        }
-    },
-    {
-        type: "function",
-        function: {
-            name: "read_text_file",
-            description: "读取 UTF-8 文本文件内容",
+            name: "read_file",
+            description: "读取文件内容",
             parameters: {
                 type: "object",
                 properties: {
@@ -775,13 +759,13 @@ const AIDOCS_TOOLS = [
     {
         type: "function",
         function: {
-            name: "append_text_file",
-            description: "向文本文件追加内容（文件不存在则创建）",
+            name: "write_file",
+            description: "写入文件（整文件覆盖）",
             parameters: {
                 type: "object",
                 properties: {
                     path: { type: "string", description: "文件路径（相对或绝对）" },
-                    content: { type: "string", description: "要追加的内容" }
+                    content: { type: "string", description: "要写入的内容" }
                 },
                 required: ["path", "content"],
                 additionalProperties: false
@@ -791,45 +775,58 @@ const AIDOCS_TOOLS = [
     {
         type: "function",
         function: {
-            name: "run_skill",
-            description: "执行技能任务（当前可用：system-info - 汇报系统配置和环境信息）",
+            name: "edit_file",
+            description: "补丁式编辑文件（禁止整文件覆盖）",
             parameters: {
                 type: "object",
                 properties: {
-                    skill_id: {
-                        type: "string",
-                        enum: ["system-info"],
-                        description: "技能ID（system-info: 汇报系统配置）"
-                    },
-                    input: {
-                        type: "string",
-                        description: "技能输入参数（可选）"
+                    path: { type: "string", description: "文件路径（相对或绝对）" },
+                    edits: {
+                        type: "array",
+                        items: {
+                            type: "object",
+                            properties: {
+                                oldText: { type: "string", description: "要替换的旧文本" },
+                                newText: { type: "string", description: "替换后的新文本" }
+                            },
+                            required: ["oldText", "newText"]
+                        },
+                        description: "补丁数组（每个补丁包含 oldText 和 newText）"
                     }
                 },
-                required: ["skill_id"],
+                required: ["path", "edits"],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "bash",
+            description: "执行 shell 命令",
+            parameters: {
+                type: "object",
+                properties: {
+                    command: { type: "string", description: "要执行的 shell 命令" }
+                },
+                required: ["command"],
                 additionalProperties: false
             }
         }
     }
 ] as const;
 
-export type AidocsToolDef = (typeof AIDOCS_TOOLS)[number];
+export type AidocsToolDef = (typeof PI_ON_TOOLS)[number];
 
 /**
  * 获取 LLM 可用工具列表（基于 workspace 配置）
  *
- * Autonomous (autonomous 模式): 返回完整工具列表，模型可自主编排调用
- * - 模型可通过 tool_calls 自动调用所有工具（含 shell/browser）
- * - 默认全信任，不要求确认
- *
- * P0 (explicit 模式): 返回空数组，不向 LLM 提供任何工具定义
- * - 用户通过显式斜杠命令触发工具（如 /tts, /asr, /vision）
- * - 避免依赖 tool_calls 的"玄学"稳定性
- *
- * P1 (tool-calls 模式): 返回配置的工具列表（预留，暂未启用）
+ * P5.6.8-R3b: PI 模式分叉
+ * - pi.on: 返回四基础工具（read_file/write_file/edit_file/bash）
+ * - pi.off: 返回空数组（普通 direct 聊天 + 记忆注入）
  *
  * @param workspacePath 工作区路径
- * @returns 工具定义数组（autonomous 为完整工具，explicit 为空）
+ * @returns 工具定义数组（pi.on 为四工具，pi.off 为空）
  */
 export async function getToolsForLlm(workspacePath?: string): Promise<readonly AidocsToolDef[]> {
     // 如果没有提供工作区路径，返回空数组（保守默认）
@@ -838,21 +835,19 @@ export async function getToolsForLlm(workspacePath?: string): Promise<readonly A
     }
 
     try {
-        const { getToolPolicy } = await import("./config/workspace.js");
-        const policy = await getToolPolicy(workspacePath);
+        const { loadWorkspaceConfig } = await import("./config/workspace.js");
+        const cfg = await loadWorkspaceConfig(workspacePath);
 
-        // Autonomous 模式：向 LLM 提供完整工具列表
-        if (policy.mode === "autonomous") {
-            return AIDOCS_TOOLS;
-        }
+        // P5.6.8-R3b: PI 模式分叉
+        const piEnabled = cfg["pi.enabled"] ?? false;
 
-        // P0: explicit 模式下，不向 LLM 提供任何工具定义
-        if (policy.mode === "explicit") {
+        if (piEnabled) {
+            // pi.on: 四基础工具
+            return PI_ON_TOOLS;
+        } else {
+            // pi.off: 空数组（普通 direct 聊天 + 记忆注入）
             return [];
         }
-
-        // P1: tool-calls 模式下，返回配置的工具列表（预留）
-        return AIDOCS_TOOLS;
     } catch {
         // 读取配置失败时，保守返回空数组
         return [];
@@ -860,7 +855,7 @@ export async function getToolsForLlm(workspacePath?: string): Promise<readonly A
 }
 
 const DEFAULT_ALLOWED_TOOL_NAMES = new Set(
-    AIDOCS_TOOLS.map(t => t.function.name)
+    PI_ON_TOOLS.map(t => t.function.name)
 );
 
 export type ParsedToolCall = { name: string; args: Record<string, unknown> };
