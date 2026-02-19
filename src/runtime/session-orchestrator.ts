@@ -189,6 +189,12 @@ export async function sendEscapeInterrupt(ctx: SessionContext): Promise<SessionR
 /**
  * 清空会话
  *
+ * R2: /clear 边界化
+ * - 清理 window（短期会话窗口）
+ * - 清理 summary（会话摘要）
+ * - 不清理 memory（长期记忆）
+ * - tmux 执行臂额外重启进程
+ *
  * @param ctx 会话上下文
  * @returns 会话操作结果
  */
@@ -198,18 +204,27 @@ export async function clearSession(ctx: SessionContext): Promise<SessionResult> 
     return { success: false, error: r.blockedReason };
   }
 
-  // Tmux runners (codex/claude-code): kill+start tmux session
+  // R2: 统一清理 session artifacts（window + summary）
+  const artifactsResult = await clearSessionArtifacts(ctx.projectDir, ctx.chatId);
+  if (!artifactsResult.ok) {
+    return { success: false, error: artifactsResult.error };
+  }
+
+  logger.info("Session artifacts cleared", {
+    module: "session-orchestrator",
+    chatId: ctx.chatId,
+    runner: r.runner,
+  });
+
+  // Tmux runners: 额外重启进程
   if (r.runner === "tmux") {
     const runnerOld = r.runnerConfig === "codex" || r.runnerConfig === "claude-code"
       ? r.runnerConfig
       : undefined;
     const response = await sendClear(ctx.groupName, ctx.projectDir, r.runner, runnerOld);
-    return { success: true, response };
+    return { success: true, response: `已清理会话文件 + ${response}` };
   }
 
-  // Direct runners (lmstudio/llama/claude/openai): 不支持 /clear
-  return {
-    success: false,
-    error: `当前 direct 执行臂 (${r.runnerConfig}) 不支持 /clear 命令。`
-  };
+  // Direct runners: 只清理文件
+  return { success: true, response: "已清理会话文件（window + summary）" };
 }
