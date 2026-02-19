@@ -83,8 +83,9 @@ export type ToolName =
 
 /**
  * Workspace 配置的默认值
+ * P5.6.8-R4g: 导出供测试使用
  */
-const DEFAULT_WORKSPACE_CONFIG: Required<WorkspaceConfig> = {
+export const DEFAULT_WORKSPACE_CONFIG: Required<WorkspaceConfig> = {
   "memory.inject.enabled": true, // 测试期默认开启记忆注入
   "memory.inject.topK": 5,
   "memory.inject.maxChars": 2000,
@@ -92,7 +93,7 @@ const DEFAULT_WORKSPACE_CONFIG: Required<WorkspaceConfig> = {
   "runner.default": "lmstudio", // 默认使用本地模型
   "pi.enabled": true, // 测试期默认开启 PI
   "tooling.mode": "autonomous", // P5.5: 测试期统一 autonomous（LLM 自主决策 tool_calls）
-  "tooling.allow": ["tts", "asr", "vision", "mem", "shell", "browser", "desktop"], // 测试期默认开放全工具
+  "tooling.allow": ["tts", "asr", "vision", "mem", "bash", "browser", "desktop", "read_file", "write_file", "edit_file"], // P5.6.8-R4g: PI 四工具直达
   "tooling.require_confirm": [], // 默认不要求确认
 };
 

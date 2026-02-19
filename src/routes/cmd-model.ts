@@ -266,10 +266,22 @@ export async function handlePiCommand(options: CommandHandlerOptions): Promise<C
       };
     }
 
+    // P5.6.8-R4g: 自动添加 PI 四工具到 allow 列表
+    const { getToolPolicy, setToolingAllow } = await import("../config/workspace.js");
+    const policy = await getToolPolicy(projectDir);
+    const piTools = ["read_file", "write_file", "edit_file", "bash"] as const;
+
+    // 确保 PI 四工具在 allow 列表中
+    const missingTools = piTools.filter(t => !policy.allow.includes(t as any));
+    if (missingTools.length > 0) {
+      const newAllow = [...new Set([...policy.allow, ...piTools])] as any[];
+      await setToolingAllow(projectDir, newAllow);
+    }
+
     await saveWorkspaceConfig(projectDir, { "pi.enabled": true });
     return {
       success: true,
-      message: "PI 已启用",
+      message: "PI 已启用" + (missingTools.length > 0 ? `\n\n已自动添加工具: ${missingTools.join(", ")}` : ""),
     };
   }
 

@@ -26,14 +26,13 @@ const TOOL_META: Record<ToolName, { sideEffect: SideEffectLevel }> = {
   asr: { sideEffect: "local-write" },
   vision: { sideEffect: "local-write" },
   mem: { sideEffect: "local-write" },
-  shell: { sideEffect: "process-control" },
+  bash: { sideEffect: "process-control" },
   browser: { sideEffect: "process-control" },
   desktop: { sideEffect: "local-write" },  // T6.1: observe 会落盘 evidence
   run_skill: { sideEffect: "read-only" },  // P5.5: Skill execution (read-only)
   read_file: { sideEffect: "read-only" },  // P5.6.8-R3: PI 四基础工具
   write_file: { sideEffect: "local-write" },
   edit_file: { sideEffect: "local-write" },
-  bash: { sideEffect: "process-control" },
 };
 
 const MEDIA_PIPELINE_ALLOWED: ToolName[] = ["asr", "vision"];
@@ -204,7 +203,7 @@ export async function executeTool(
         };
         break;
       }
-      case "shell": {
+      case "bash": {  // P5.6.8-R4g: 统一使用 bash 命名
         const command = String(args.command ?? "").trim();
         if (!command) throw new Error("empty command");
 
@@ -603,44 +602,6 @@ export async function executeTool(
           ok: true,
           tool,
           data: { path: args.path as string, editsApplied },
-          durationMs: Date.now() - started,
-        };
-        break;
-      }
-      case "bash": {
-        // P5.6.8-R3: 执行 shell 命令（复用 shell 实现）
-        const command = String(args.command ?? "").trim();
-        if (!command) throw new Error("empty command");
-
-        const { spawn } = await import("node:child_process");
-        const out = await withTimeout(
-          new Promise<{ exitCode: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-            const proc = spawn(command, {
-              cwd: ctx.workspacePath,
-              shell: true,
-              env: { ...process.env, PWD: ctx.workspacePath },
-            });
-            let stdout = "";
-            let stderr = "";
-
-            proc.stdout?.on("data", (data) => { stdout += data; });
-            proc.stderr?.on("data", (data) => { stderr += data; });
-
-            proc.on("close", (code) => {
-              resolve({ exitCode: code, stdout, stderr });
-            });
-
-            proc.on("error", (err) => {
-              reject(err);
-            });
-          }),
-          ctx.timeoutMs ?? 120000
-        );
-
-        result = {
-          ok: out.exitCode === 0,
-          tool,
-          data: { exitCode: out.exitCode ?? -1, stdout: out.stdout, stderr: out.stderr },
           durationMs: Date.now() - started,
         };
         break;

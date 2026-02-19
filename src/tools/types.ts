@@ -12,21 +12,20 @@ export type ToolName =
   | "asr"
   | "vision"
   | "mem"
-  | "shell"
+  | "bash"
   | "browser"
   | "desktop"  // T6.1: Desktop Bridge (msgcode-desktopctl)
   | "run_skill"  // P5.5: Skill execution tool
   | "read_file"  // P5.6.8-R3: PI 四基础工具
   | "write_file"
-  | "edit_file"
-  | "bash";
+  | "edit_file";
 
 export type ToolDataMap = {
   tts: { audioPath: string };
   asr: { txtPath: string };
   vision: { textPath: string };
   mem: Record<string, unknown>;
-  shell: { exitCode: number | null; stdout: string; stderr: string };
+  bash: { exitCode: number; stdout: string; stderr: string };
   browser: Record<string, unknown>;
   // T6.1: Desktop tool data (exitCode + stdout + stderr from desktopctl)
   desktop: { exitCode: number | null; stdout: string; stderr: string };
@@ -36,7 +35,6 @@ export type ToolDataMap = {
   read_file: { content: string };
   write_file: { path: string };
   edit_file: { path: string; editsApplied: number };
-  bash: { exitCode: number; stdout: string; stderr: string };
 };
 
 export type ToolSource =

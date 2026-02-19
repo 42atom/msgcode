@@ -1,5 +1,11 @@
 # 任务单索引（唯一时间线）
 
+## 当前执行窗口（只看这一段）
+
+1. `P5.6.8-R4g-R1`：`bash/shell` 类型与门禁硬收口（先修阻塞）
+2. `P5.6.9-R4`：清退过期回归锁（恢复全量 Gate 可信）
+3. `P5.6.10`：Runtime 硬化收口（Tool Bus 解耦 + 冷启动遥测 + 崩溃兜底）
+
 ## P5 当前唯一执行主线（冻结）
 
 1. `P5.4-R2`：Autonomous Skill 默认主路径收敛（自然语言触发优先）
@@ -30,6 +36,9 @@
 23. `P5.6.8-R4f`：日志文本格式化去重（`inboundText/responseText` 单一 helper）
 24. `P5.6.9`：CLI 执行层收口（Command Runner + Validator + 契约锁）
 25. `P5.6.10`：Runtime 硬化收口（Tool Bus 解耦 + 冷启动遥测 + 崩溃兜底）
+26. `P5.6.8-R4g`：PI 核心四工具可用性收口（`bash/shell` 门禁漂移修复）
+27. `P5.6.9-R4`：CLI 回归锁口径收敛（清退过期锁 + Gate 复绿）
+28. `P5.6.8-R4g-R1`：`bash/shell` 类型与门禁硬收口（类型错误与运行时漂移止血）
 
 ## 当前任务单
 
@@ -58,8 +67,11 @@
 - `p5-6-8-r4d-three-workspace-runtime-smoke.md`：P5.6.8-R4d（三工作区运行时冒烟）
 - `p5-6-8-r4e-pi-on-off-prompt-tooling-alignment.md`：P5.6.8-R4e（PI on/off 提示词与工具双保险收口）
 - `p5-6-8-r4f-log-text-format-helper.md`：P5.6.8-R4f（日志文本转义与截断逻辑去重）
+- `p5-6-8-r4g-pi-core-tools-gate-alignment.md`：P5.6.8-R4g（PI 四工具门禁与命名收口，确保 `bash pwd` 真实执行）
+- `p5-6-8-r4g-r1-bash-shell-hard-closure.md`：P5.6.8-R4g-R1（`bash/shell` 类型与配置口径一次性收口）
 - `p5-6-8-r5a-artifact-send-bridge.md`：P5.6.8-R5a（artifact 到发送通道桥接）
 - `p5-6-9-cli-command-runner-convergence.md`：P5.6.9（CLI 命令执行层收口）
+- `p5-6-9-r4-regression-lock-alignment.md`：P5.6.9-R4（清退过期回归锁，恢复全量 Gate 可信）
 - `p5-6-10-runtime-hardening-from-review-v2.md`：P5.6.10（审查 v2 的 Runtime 硬化响应单）
 
 ## 规则

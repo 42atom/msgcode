@@ -85,7 +85,7 @@ export async function handleToolAllowListCommand(options: CommandHandlerOptions)
       `  /tool allow add <t>   添加工具（需要 /reload 生效）\n` +
       `  /tool allow remove <t> 移除工具（需要 /reload 生效）\n` +
       `\n` +
-      `可用工具: tts, asr, vision, mem, shell, browser, desktop`,
+      `可用工具: tts, asr, vision, mem, bash, browser, desktop, read_file, write_file, edit_file`,
   };
 }
 
@@ -96,11 +96,11 @@ export async function handleToolAllowAddCommand(options: CommandHandlerOptions):
       success: false,
       message: `用法: /tool allow add <tool>\n` +
         `\n` +
-        `可用工具: tts, asr, vision, mem, shell, browser, desktop`,
+        `可用工具: tts, asr, vision, mem, bash, browser, desktop, read_file, write_file, edit_file`,
     };
   }
 
-  const validTools = ["tts", "asr", "vision", "mem", "shell", "browser", "desktop"];
+  const validTools = ["tts", "asr", "vision", "mem", "bash", "browser", "desktop", "read_file", "write_file", "edit_file"];
   if (!validTools.includes(toolName)) {
     return {
       success: false,
