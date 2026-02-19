@@ -13,6 +13,8 @@ import { TmuxSession } from "../tmux/session.js";
 import { sendSnapshot, sendEscape, sendClear } from "../tmux/sender.js";
 import { clearSessionArtifacts } from "../session-artifacts.js";
 import { logger } from "../logger/index.js";
+// P5.6.13-R2: 导入线程存储
+import { resetThread } from "./thread-store.js";
 
 // ============================================
 // 类型定义
@@ -214,6 +216,15 @@ export async function clearSession(ctx: SessionContext): Promise<SessionResult> 
     module: "session-orchestrator",
     chatId: ctx.chatId,
     runner: r.runner,
+  });
+
+  // P5.6.13-R2: 重置线程（/clear 后创建新线程）
+  resetThread(ctx.chatId).catch((err) => {
+    logger.warn("resetThread failed (non-blocking)", {
+      module: "session-orchestrator",
+      chatId: ctx.chatId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   });
 
   // Tmux runners: 额外重启进程
