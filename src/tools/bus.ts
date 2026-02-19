@@ -100,6 +100,67 @@ export function canExecuteTool(
   return { ok: true };
 }
 
+// ============================================
+// P5.6.13-R1A-EXEC R2: 四核心工具参数校验
+// ============================================
+
+interface ValidationError {
+  code: "TOOL_BAD_ARGS";
+  message: string;
+}
+
+/**
+ * 校验四核心工具参数
+ * 校验失败返回结构化错误，不进入工具执行体
+ */
+function validateToolArgs(
+  tool: ToolName,
+  args: Record<string, unknown>
+): ValidationError | null {
+  switch (tool) {
+    case "read_file": {
+      if (!args.path || typeof args.path !== "string" || !args.path.trim()) {
+        return { code: "TOOL_BAD_ARGS", message: "read_file: 'path' must be a non-empty string" };
+      }
+      break;
+    }
+    case "write_file": {
+      if (!args.path || typeof args.path !== "string" || !args.path.trim()) {
+        return { code: "TOOL_BAD_ARGS", message: "write_file: 'path' must be a non-empty string" };
+      }
+      if (args.content === undefined || args.content === null) {
+        return { code: "TOOL_BAD_ARGS", message: "write_file: 'content' is required" };
+      }
+      break;
+    }
+    case "edit_file": {
+      if (!args.path || typeof args.path !== "string" || !args.path.trim()) {
+        return { code: "TOOL_BAD_ARGS", message: "edit_file: 'path' must be a non-empty string" };
+      }
+      if (!Array.isArray(args.edits) || args.edits.length === 0) {
+        return { code: "TOOL_BAD_ARGS", message: "edit_file: 'edits' must be a non-empty array" };
+      }
+      for (let i = 0; i < args.edits.length; i++) {
+        const edit = args.edits[i] as Record<string, unknown>;
+        if (typeof edit.oldText !== "string") {
+          return { code: "TOOL_BAD_ARGS", message: `edit_file: edits[${i}].oldText must be a string` };
+        }
+        if (typeof edit.newText !== "string") {
+          return { code: "TOOL_BAD_ARGS", message: `edit_file: edits[${i}].newText must be a string` };
+        }
+      }
+      break;
+    }
+    case "bash": {
+      if (!args.command || typeof args.command !== "string" || !args.command.trim()) {
+        return { code: "TOOL_BAD_ARGS", message: "bash: 'command' must be a non-empty string" };
+      }
+      break;
+    }
+  }
+  return null;
+}
+
 async function withTimeout<T>(p: Promise<T>, ms = 120000): Promise<T> {
   return await Promise.race([
     p,
@@ -142,6 +203,33 @@ export async function executeTool(
       durationMs: result.durationMs,
       ok: false,
       errorCode: gate.code!,
+      artifactPaths: [],
+      timestamp: Date.now(),
+    });
+
+    return result;
+  }
+
+  // P5.6.13-R1A-EXEC R2: 参数校验（四核心工具）
+  const validationError = validateToolArgs(tool, args);
+  if (validationError) {
+    const result: ToolResult = {
+      ok: false,
+      tool,
+      error: { code: validationError.code, message: validationError.message },
+      durationMs: Date.now() - started,
+    };
+
+    // 记录参数校验失败事件
+    recordToolEvent({
+      requestId,
+      workspacePath: ctx.workspacePath,
+      chatId: ctx.chatId,
+      tool,
+      source: ctx.source,
+      durationMs: result.durationMs,
+      ok: false,
+      errorCode: validationError.code,
       artifactPaths: [],
       timestamp: Date.now(),
     });
