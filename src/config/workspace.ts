@@ -55,7 +55,7 @@ export interface WorkspaceConfig {
   /**
    * 工具执行模式：explicit（默认稳态）、autonomous（可选）、tool-calls（预留）
    * - explicit: 只允许显式命令触发工具（/tts、/asr 等）
-   * - autonomous: 模型可自主编排调用工具（含 shell/browser）
+   * - autonomous: 模型可自主编排调用工具（含 bash/browser）
    * - tool-calls: 预留，标准 tool_calls 自动工具调用
    */
   "tooling.mode"?: ToolingMode;
@@ -68,7 +68,7 @@ export interface WorkspaceConfig {
 
   /**
    * 需要确认的工具列表
-   * - 默认: ["shell", "browser"]
+   * - 默认: []
    */
   "tooling.require_confirm"?: ToolName[];
 }
@@ -78,8 +78,8 @@ export interface WorkspaceConfig {
  */
 export type ToolingMode = "explicit" | "autonomous" | "tool-calls";
 export type ToolName =
-  | "tts" | "asr" | "vision" | "mem" | "shell" | "browser" | "desktop"
-  | "read_file" | "write_file" | "edit_file" | "bash";
+  | "tts" | "asr" | "vision" | "mem" | "bash" | "browser" | "desktop"
+  | "read_file" | "write_file" | "edit_file";
 
 /**
  * Workspace 配置的默认值

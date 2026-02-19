@@ -1195,6 +1195,8 @@ function resolveUnderRoot(inputPath: string, root: string): string {
 
 /**
  * 执行工具（P5.6.8-R3a: 统一走 Tool Bus）
+ *
+ * P5.6.8-R4h: 返回完整错误信息（包含 errorCode）
  */
 async function runTool(name: string, args: Record<string, unknown>, root: string): Promise<unknown> {
     const { executeTool } = await import("./tools/bus.js");
@@ -1207,7 +1209,11 @@ async function runTool(name: string, args: Record<string, unknown>, root: string
     });
 
     if (!result.ok) {
-        return { error: result.error?.message || "tool execution failed" };
+        // P5.6.8-R4h: 返回完整错误信息
+        return {
+            error: result.error?.message || "tool execution failed",
+            errorCode: result.error?.code || "TOOL_EXEC_FAILED",
+        };
     }
 
     // 返回 data 字段（兼容旧格式）
@@ -1373,9 +1379,30 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
 
     let toolResult: unknown;
     try {
-        toolResult = await runTool(tc.function.name, args, root);
+        // P5.6.8-R4h: 使用 workspacePath 而非 root（确保工具在正确目录执行）
+        toolResult = await runTool(tc.function.name, args, workspacePath);
     } catch (e) {
         toolResult = { error: e instanceof Error ? e.message : String(e) };
+    }
+
+    // P5.6.8-R4h: 失败短路（工具失败时直接返回结构化错误，不再走第二轮）
+    if (toolResult && typeof toolResult === "object" && "error" in toolResult) {
+        const err = toolResult as { error: string; errorCode?: string };
+        const toolErrorCode = err.errorCode || "TOOL_EXEC_FAILED";
+        const toolErrorMessage = err.error || "工具执行失败";
+
+        logger.info("Tool loop failed (short-circuit)", {
+            module: "lmstudio",
+            toolCallCount: 1,
+            toolName: tc.function.name,
+            toolErrorCode,
+            toolErrorMessage,
+        });
+
+        return {
+            answer: `工具执行失败\n- 工具: ${tc.function.name}\n- 错误码: ${toolErrorCode}\n- 错误: ${toolErrorMessage}`,
+            toolCall: { name: tc.function.name, args, result: toolResult }
+        };
     }
 
     // 构造第二轮消息（将工具调用回灌给模型）
@@ -1411,12 +1438,35 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
 
     const answer = r2.choices[0]?.message?.content ?? "";
 
-    // P5.6.8-R3c: 统一日志（不再特殊处理 run_skill）
+    // P5.6.8-R4h: 补全观测字段（toolErrorCode/toolErrorMessage/exitCode）
     const toolCallCount = tc ? 1 : 0;
+    const toolName = tc?.function.name || null;
+
+    // 提取错误码和错误消息
+    let toolErrorCode: string | null = null;
+    let toolErrorMessage: string | null = null;
+    let exitCode: number | null = null;
+
+    if (toolResult && typeof toolResult === "object") {
+        const result = toolResult as Record<string, unknown>;
+        if ("errorCode" in result) {
+            toolErrorCode = String(result.errorCode);
+        }
+        if ("error" in result) {
+            toolErrorMessage = String(result.error);
+        }
+        if ("exitCode" in result) {
+            exitCode = typeof result.exitCode === "number" ? result.exitCode : null;
+        }
+    }
+
     logger.info("Tool loop completed", {
         module: "lmstudio",
         toolCallCount,
-        toolName: tc?.function.name || null,
+        toolName,
+        toolErrorCode,
+        toolErrorMessage,
+        exitCode,
     });
 
     return {

@@ -2,9 +2,9 @@
 
 ## 当前执行窗口（只看这一段）
 
-1. `P5.6.8-R4g-R1`：`bash/shell` 类型与门禁硬收口（先修阻塞）
-2. `P5.6.9-R4`：清退过期回归锁（恢复全量 Gate 可信）
-3. `P5.6.10`：Runtime 硬化收口（Tool Bus 解耦 + 冷启动遥测 + 崩溃兜底）
+1. `P5.6.8-R4h`：Tool Root 收口 + 失败防幻想（direct 主链止血）
+2. `P5.6.10`：Runtime 硬化收口（Tool Bus 解耦 + 冷启动遥测 + 崩溃兜底）
+3. `P5.6.10-R5`：终态运行时检验（三工作区 + 双管道）
 
 ## P5 当前唯一执行主线（冻结）
 
@@ -69,10 +69,13 @@
 - `p5-6-8-r4f-log-text-format-helper.md`：P5.6.8-R4f（日志文本转义与截断逻辑去重）
 - `p5-6-8-r4g-pi-core-tools-gate-alignment.md`：P5.6.8-R4g（PI 四工具门禁与命名收口，确保 `bash pwd` 真实执行）
 - `p5-6-8-r4g-r1-bash-shell-hard-closure.md`：P5.6.8-R4g-R1（`bash/shell` 类型与配置口径一次性收口）
+- `p5-6-8-r4h-tool-root-fail-fantasy-fix.md`：P5.6.8-R4h（ToolLoop 根路径单一真相 + 工具失败防幻想）
 - `p5-6-8-r5a-artifact-send-bridge.md`：P5.6.8-R5a（artifact 到发送通道桥接）
 - `p5-6-9-cli-command-runner-convergence.md`：P5.6.9（CLI 命令执行层收口）
 - `p5-6-9-r4-regression-lock-alignment.md`：P5.6.9-R4（清退过期回归锁，恢复全量 Gate 可信）
 - `p5-6-10-runtime-hardening-from-review-v2.md`：P5.6.10（审查 v2 的 Runtime 硬化响应单）
+- `p5-6-10-r5-runtime-final-validation.md`：P5.6.10-R5（终态运行时检验与签收）
+- `p5-6-10-r6-pi-mono-benchmark-and-adoption.md`：P5.6.10-R6（pi-mono 三包对照评审与落地参考）
 
 ## 规则
 
