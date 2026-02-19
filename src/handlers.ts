@@ -14,7 +14,7 @@ import { runLmStudioChat, runLmStudioToolLoop } from "./lmstudio.js";
 import type { InboundMessage } from "./imsg/types.js";
 import { clearTtsPrefs, getTtsPrefs, getVoiceReplyMode, setTtsPrefs, setVoiceReplyMode } from "./state/store.js";
 import { logger } from "./logger/index.js";
-import { loadWorkspaceConfig } from "./config/workspace.js";
+import { loadWorkspaceConfig, getRuntimeKind, getAgentProvider, getTmuxClient, getPolicyMode } from "./config/workspace.js";
 // P5.5: 关键词主触发已禁用，不再 import detectAutoSkill/runAutoSkill
 // import { detectAutoSkill, normalizeSkillId, runAutoSkill, runSkill } from "./skills/auto.js";
 
@@ -469,21 +469,21 @@ export class RuntimeRouterHandler implements CommandHandler {
             return new DefaultHandler().handle(message, context);
         }
 
-        // === 非 slash 命令：消息路由（lmstudio/codex/claude-code）===
+        // === 非 slash 命令：消息路由（先 kind 再 provider/client）===
+        // P5.6.14-R2: 顶层只按 runtime.kind 分流
         if (context.projectDir) {
-            let currentRunner: "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code" | "unknown" = "unknown";
             try {
-                const { getPolicyMode, getDefaultRunner, getToolPolicy } = await import("./config/workspace.js");
-                const currentMode = await getPolicyMode(context.projectDir);
-                currentRunner = await getDefaultRunner(context.projectDir);
+                const kind = await getRuntimeKind(context.projectDir);
+                const client = await getTmuxClient(context.projectDir);
+                const mode = await getPolicyMode(context.projectDir);
 
-                // 如果 runner.default=codex/claude-code，使用 handleTmuxSend（T2/T3）
-                if (currentRunner === "codex" || currentRunner === "claude-code") {
-                    // local-only 时拒绝 codex 执行
-                    if (currentMode === "local-only") {
+                // tmux 透传链路
+                if (kind === "tmux") {
+                    // local-only 时拒绝 tmux（需要外网访问）
+                    if (mode === "local-only") {
                         return {
                             success: false,
-                            error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex 执行臂。\n\n请执行: /policy on （或 /policy egress-allowed）",
+                            error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
                         };
                     }
 
@@ -492,13 +492,14 @@ export class RuntimeRouterHandler implements CommandHandler {
                         logger.debug("tmux style preamble applied", {
                             module: "handlers",
                             chatId: context.chatId,
-                            runner: currentRunner,
+                            runtimeKind: kind,
+                            tmuxClient: client,
                             styleId: styled.meta.styleId,
                             digest8: styled.meta.digest8,
                         });
                     }
 
-                    // T2: 使用 tmux send-keys 发送消息到 Codex 会话
+                    // T2: 使用 tmux send-keys 发送消息到 tmux 会话
                     const { handleTmuxSend } = await import("./tmux/responder.js");
                     const result = await handleTmuxSend(
                         context.groupName,
@@ -506,7 +507,7 @@ export class RuntimeRouterHandler implements CommandHandler {
                         {
                             projectDir: context.projectDir,
                             runnerType: "tmux",
-                            runnerOld: currentRunner,
+                            runnerOld: client === "none" ? "codex" : client,
                             attachments: context.originalMessage.attachments,
                         }
                     );
@@ -522,10 +523,7 @@ export class RuntimeRouterHandler implements CommandHandler {
             }
         }
 
-        // P5.6.12: /help 统一走路由系统，不再在此处内联处理
-        // 语音命令已在上面短路处理，此处直接进入消息处理流程
-
-        // 获取语音模式状态（用于消息处理流程中的自动语音回复）
+        // agent 编排链路（默认）
         const voiceMode = getVoiceReplyMode(context.chatId);
         const ttsPrefs = getTtsPrefs(context.chatId);
 
@@ -680,16 +678,226 @@ export class CodexHandler implements CommandHandler {
         const trimmed = message.trim();
 
         // M5-4: 检查策略模式
+        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
         if (context.projectDir) {
-            const { getPolicyMode, getDefaultRunner } = await import("./config/workspace.js");
+            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
             const currentMode = await getPolicyMode(context.projectDir);
-            const currentRunner = await getDefaultRunner(context.projectDir);
+            const kind = await getRuntimeKind(context.projectDir);
+            const client = await getTmuxClient(context.projectDir);
 
-            // local-only 时拒绝 codex 执行
-            if (currentMode === "local-only" && currentRunner === "codex") {
+            // local-only 时拒绝 tmux 执行（需要外网访问）
+            if (currentMode === "local-only" && kind === "tmux") {
                 return {
                     success: false,
-                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex 执行臂。\n\n请执行: /policy on （或 /policy egress-allowed）",
+                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
+                };
+            }
+        }
+        // M5-4: 检查策略模式
+        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
+        if (context.projectDir) {
+            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
+            const currentMode = await getPolicyMode(context.projectDir);
+            const kind = await getRuntimeKind(context.projectDir);
+            const client = await getTmuxClient(context.projectDir);
+
+            // local-only 时拒绝 tmux 执行（需要外网访问）
+            if (currentMode === "local-only" && kind === "tmux") {
+                return {
+                    success: false,
+                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
+                };
+            }
+        }
+        // M5-4: 检查策略模式
+        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
+        if (context.projectDir) {
+            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
+            const currentMode = await getPolicyMode(context.projectDir);
+            const kind = await getRuntimeKind(context.projectDir);
+            const client = await getTmuxClient(context.projectDir);
+
+            // local-only 时拒绝 tmux 执行（需要外网访问）
+            if (currentMode === "local-only" && kind === "tmux") {
+                return {
+                    success: false,
+                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
+                };
+            }
+        }
+        // M5-4: 检查策略模式
+        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
+        if (context.projectDir) {
+            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
+            const currentMode = await getPolicyMode(context.projectDir);
+            const kind = await getRuntimeKind(context.projectDir);
+            const client = await getTmuxClient(context.projectDir);
+
+            // local-only 时拒绝 tmux 执行（需要外网访问）
+            if (currentMode === "local-only" && kind === "tmux") {
+                return {
+                    success: false,
+                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
+                };
+            }
+        }
+        // M5-4: 检查策略模式
+        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
+        if (context.projectDir) {
+            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
+            const currentMode = await getPolicyMode(context.projectDir);
+            const kind = await getRuntimeKind(context.projectDir);
+            const client = await getTmuxClient(context.projectDir);
+
+            // local-only 时拒绝 tmux 执行（需要外网访问）
+            if (currentMode === "local-only" && kind === "tmux") {
+                return {
+                    success: false,
+                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
+                };
+            }
+        }
+        // M5-4: 检查策略模式
+        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
+        if (context.projectDir) {
+            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
+            const currentMode = await getPolicyMode(context.projectDir);
+            const kind = await getRuntimeKind(context.projectDir);
+            const client = await getTmuxClient(context.projectDir);
+
+            // local-only 时拒绝 tmux 执行（需要外网访问）
+            if (currentMode === "local-only" && kind === "tmux") {
+                return {
+                    success: false,
+                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
+                };
+            }
+        }
+        // M5-4: 检查策略模式
+        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
+        if (context.projectDir) {
+            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
+            const currentMode = await getPolicyMode(context.projectDir);
+            const kind = await getRuntimeKind(context.projectDir);
+            const client = await getTmuxClient(context.projectDir);
+
+            // local-only 时拒绝 tmux 执行（需要外网访问）
+            if (currentMode === "local-only" && kind === "tmux") {
+                return {
+                    success: false,
+                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
+                };
+            }
+        }
+        // M5-4: 检查策略模式
+        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
+        if (context.projectDir) {
+            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
+            const currentMode = await getPolicyMode(context.projectDir);
+            const kind = await getRuntimeKind(context.projectDir);
+            const client = await getTmuxClient(context.projectDir);
+
+            // local-only 时拒绝 tmux 执行（需要外网访问）
+            if (currentMode === "local-only" && kind === "tmux") {
+                return {
+                    success: false,
+                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
+                };
+            }
+        }
+        // M5-4: 检查策略模式
+        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
+        if (context.projectDir) {
+            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
+            const currentMode = await getPolicyMode(context.projectDir);
+            const kind = await getRuntimeKind(context.projectDir);
+            const client = await getTmuxClient(context.projectDir);
+
+            // local-only 时拒绝 tmux 执行（需要外网访问）
+            if (currentMode === "local-only" && kind === "tmux") {
+                return {
+                    success: false,
+                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
+                };
+            }
+        }
+        // M5-4: 检查策略模式
+        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
+        if (context.projectDir) {
+            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
+            const currentMode = await getPolicyMode(context.projectDir);
+            const kind = await getRuntimeKind(context.projectDir);
+            const client = await getTmuxClient(context.projectDir);
+
+            // local-only 时拒绝 tmux 执行（需要外网访问）
+            if (currentMode === "local-only" && kind === "tmux") {
+                return {
+                    success: false,
+                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
+                };
+            }
+        }
+        // M5-4: 检查策略模式
+        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
+        if (context.projectDir) {
+            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
+            const currentMode = await getPolicyMode(context.projectDir);
+            const kind = await getRuntimeKind(context.projectDir);
+            const client = await getTmuxClient(context.projectDir);
+
+            // local-only 时拒绝 tmux 执行（需要外网访问）
+            if (currentMode === "local-only" && kind === "tmux") {
+                return {
+                    success: false,
+                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
+                };
+            }
+        }
+        // M5-4: 检查策略模式
+        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
+        if (context.projectDir) {
+            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
+            const currentMode = await getPolicyMode(context.projectDir);
+            const kind = await getRuntimeKind(context.projectDir);
+            const client = await getTmuxClient(context.projectDir);
+
+            // local-only 时拒绝 tmux 执行（需要外网访问）
+            if (currentMode === "local-only" && kind === "tmux") {
+                return {
+                    success: false,
+                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
+                };
+            }
+        }
+        // M5-4: 检查策略模式
+        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
+        if (context.projectDir) {
+            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
+            const currentMode = await getPolicyMode(context.projectDir);
+            const kind = await getRuntimeKind(context.projectDir);
+            const client = await getTmuxClient(context.projectDir);
+
+            // local-only 时拒绝 tmux 执行（需要外网访问）
+            if (currentMode === "local-only" && kind === "tmux") {
+                return {
+                    success: false,
+                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
+                };
+            }
+        }
+        // M5-4: 检查策略模式
+        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
+        if (context.projectDir) {
+            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
+            const currentMode = await getPolicyMode(context.projectDir);
+            const kind = await getRuntimeKind(context.projectDir);
+            const client = await getTmuxClient(context.projectDir);
+
+            // local-only 时拒绝 tmux 执行（需要外网访问）
+            if (currentMode === "local-only" && kind === "tmux") {
+                return {
+                    success: false,
+                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
                 };
             }
         }
