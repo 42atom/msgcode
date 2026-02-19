@@ -1,13 +1,15 @@
 /**
- * msgcode: Memory Store（SQLite + FTS5）
+ * msgcode: Memory Store（SQLite + FTS5 + sqlite-vec）
  *
  * 对齐 spec: AIDOCS/msgcode-2.1/memory_spec_v2.1.md
+ * P5.6.13-R1: 新增 sqlite-vec 向量存储
  */
 
 import path from "node:path";
 import os from "node:os";
 import { existsSync, mkdirSync } from "node:fs";
 import Database from "better-sqlite3";
+import * as sqliteVec from "sqlite-vec";
 import type {
   Document,
   Chunk,
@@ -25,8 +27,14 @@ const DEFAULT_INDEX_PATH = path.join(os.homedir(), ".config/msgcode/memory/index
 /** FTS5 表名 */
 const FTS_TABLE_NAME = "chunks_fts";
 
+/** 向量表名 */
+const VEC_TABLE_NAME = "chunks_vec";
+
+/** 向量维度（P5.6.13-R1: text-embedding-embeddinggemma-300m） */
+const VECTOR_DIMENSIONS = 768;
+
 /** Schema 版本 */
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 // ============================================
 // Memory Store 类
@@ -35,6 +43,7 @@ const SCHEMA_VERSION = 1;
 export class MemoryStore {
   private db: Database.Database;
   private config: MemoryStoreConfig;
+  private vectorAvailable: boolean = false;
 
   constructor(config?: Partial<MemoryStoreConfig>) {
     this.config = {
@@ -53,6 +62,9 @@ export class MemoryStore {
     this.db = new Database(this.config.indexPath);
     this.db.pragma("journal_mode = WAL");
 
+    // 尝试加载 sqlite-vec 扩展（P5.6.13-R1）
+    this.loadVectorExtension();
+
     // 初始化 Schema
     this.ensureSchema();
   }
@@ -65,6 +77,35 @@ export class MemoryStore {
   /** 获取数据库实例（供内部使用） */
   getDb(): Database.Database {
     return this.db;
+  }
+
+  /** 获取向量是否可用 */
+  isVectorAvailable(): boolean {
+    return this.vectorAvailable;
+  }
+
+  // ============================================
+  // 扩展加载
+  // ============================================
+
+  /**
+   * 加载 sqlite-vec 扩展（P5.6.13-R1）
+   * 不可用时自动降级到 FTS-only 模式
+   */
+  private loadVectorExtension(): void {
+    try {
+      sqliteVec.load(this.db);
+      // 验证扩展加载成功
+      const result = this.db.prepare("select vec_version() as version").get() as { version: string } | undefined;
+      if (result?.version) {
+        this.vectorAvailable = true;
+      }
+    } catch (err) {
+      // sqlite-vec 不可用，记录并继续（FTS-only 模式）
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`sqlite-vec 不可用，使用 FTS-only 模式: ${message}`);
+      this.vectorAvailable = false;
+    }
   }
 
   // ============================================
@@ -152,6 +193,22 @@ export class MemoryStore {
       // FTS5 不可用（某些平台可能不支持）
       const message = err instanceof Error ? err.message : String(err);
       console.warn(`FTS5 不可用: ${message}`);
+    }
+
+    // sqlite-vec 向量虚拟表（P5.6.13-R1）
+    if (this.vectorAvailable) {
+      try {
+        this.db.exec(`
+          CREATE VIRTUAL TABLE IF NOT EXISTS ${VEC_TABLE_NAME} USING vec0(
+            embedding float[${VECTOR_DIMENSIONS}]
+          );
+        `);
+      } catch (err) {
+        // 向量表创建失败，降级到 FTS-only
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`向量表创建失败，使用 FTS-only 模式: ${message}`);
+        this.vectorAvailable = false;
+      }
     }
   }
 
@@ -334,6 +391,7 @@ export class MemoryStore {
     indexedFiles: number;
     indexedChunks: number;
     ftsAvailable: boolean;
+    vectorAvailable: boolean;
   } {
     const workspaces = this.db.prepare(`
       SELECT COUNT(DISTINCT workspace_id) as count FROM documents
@@ -363,6 +421,7 @@ export class MemoryStore {
       indexedFiles: files.count,
       indexedChunks: chunks.count,
       ftsAvailable,
+      vectorAvailable: this.vectorAvailable,
     };
   }
 
