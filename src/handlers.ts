@@ -24,7 +24,6 @@ import { handleTmuxSend } from "./tmux/responder.js";
 
 // 导入 runtime 编排器
 import * as session from "./runtime/session-orchestrator.js";
-import * as skill from "./runtime/skill-orchestrator.js";
 
 // P5.6.2-R1: 导入会话窗口
 import { loadWindow, appendWindow, type WindowMessage } from "./session-window.js";
@@ -147,14 +146,6 @@ export abstract class BaseHandler implements CommandHandler {
                 groupName: context.groupName,
             });
             return result;
-        }
-
-        const skillCommand = await skill.handleSkillRunCommand(trimmed, {
-            workspacePath: context.projectDir,
-            chatId: context.chatId,
-        });
-        if (skillCommand) {
-            return skillCommand;
         }
 
         // === 非命令消息：转发给 Claude（请求-响应模式）===
@@ -306,14 +297,6 @@ export class FileHandler extends BaseHandler {
 export class RuntimeRouterHandler implements CommandHandler {
     async handle(message: string, context: HandlerContext): Promise<HandleResult> {
         const trimmed = message.trim();
-
-        const skillCommand = await skill.handleSkillRunCommand(trimmed, {
-            workspacePath: context.projectDir,
-            chatId: context.chatId,
-        });
-        if (skillCommand) {
-            return skillCommand;
-        }
 
         // P5.5: 关键词主触发已禁用，自然语言由 LLM tool_calls 自主决策
         // if (!trimmed.startsWith("/")) {
