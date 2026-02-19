@@ -29,6 +29,8 @@ import * as session from "./runtime/session-orchestrator.js";
 import { loadWindow, appendWindow, type WindowMessage } from "./session-window.js";
 import { loadSummary, formatSummaryAsContext } from "./summary.js";
 import { resolveSoulContext } from "./config/souls.js";
+// P5.6.13-R2: 导入线程存储
+import { ensureThread, appendTurn, getThreadInfo } from "./runtime/thread-store.js";
 
 const TMUX_STYLE_MAX_CHARS = 800;
 
@@ -321,12 +323,15 @@ export class RuntimeRouterHandler implements CommandHandler {
 
             // /mode - 查看语音模式
             if (trimmed === "/mode" || trimmed === "mode") {
-                const refAudio = (process.env.INDEXTTS_REF_AUDIO || "").trim();
+                const ttsBackend = (process.env.TTS_BACKEND || "qwen").trim().toLowerCase();
+                const refAudio = ttsBackend === "qwen"
+                  ? (process.env.QWEN_TTS_REF_AUDIO || "").trim()
+                  : (process.env.INDEXTTS_REF_AUDIO || "").trim();
                 return {
                     success: true,
                     response: [
                         `语音回复模式: ${voiceMode}`,
-                        `TTS: backend=indextts normalize=${process.env.TTS_NORMALIZE_TEXT || "1"}`,
+                        `TTS: backend=${ttsBackend} normalize=${process.env.TTS_NORMALIZE_TEXT || "1"}`,
                         refAudio ? `refAudio=${refAudio}` : "",
                         ttsPrefs.instruct ? `style=${ttsPrefs.instruct}` : "",
                     ].filter(Boolean).join("\n"),
@@ -624,6 +629,27 @@ export class RuntimeRouterHandler implements CommandHandler {
                     await appendWindow(context.projectDir, context.chatId, { role: "assistant", content: clean });
                 } catch {
                     // 窗口写回失败不影响主流程
+                }
+            }
+
+            // P5.6.13-R2: 写回线程文件（首次消息自动创建线程）
+            if (context.projectDir && clean) {
+                try {
+                    // 检查线程是否存在，不存在则创建
+                    let threadInfo = getThreadInfo(context.chatId);
+                    if (!threadInfo) {
+                        // 首次消息，创建新线程
+                        const runtimeMeta = {
+                            kind: "agent" as const,
+                            provider: "lmstudio",
+                            tmuxClient: undefined,
+                        };
+                        await ensureThread(context.chatId, context.projectDir, trimmed, runtimeMeta);
+                    }
+                    // 追加 turn
+                    await appendTurn(context.chatId, trimmed, clean);
+                } catch {
+                    // 线程写回失败不影响主流程
                 }
             }
 
