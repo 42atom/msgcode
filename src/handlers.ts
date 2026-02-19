@@ -323,15 +323,21 @@ export class RuntimeRouterHandler implements CommandHandler {
 
             // /mode - 查看语音模式
             if (trimmed === "/mode" || trimmed === "mode") {
-                const ttsBackend = (process.env.TTS_BACKEND || "qwen").trim().toLowerCase();
-                const refAudio = ttsBackend === "qwen"
+                const backendEnv = (process.env.TTS_BACKEND || "").trim().toLowerCase();
+                const ttsMode =
+                    backendEnv === "qwen"
+                        ? "strict:qwen"
+                        : backendEnv === "indextts"
+                            ? "strict:indextts"
+                            : "fallback:qwen->indextts";
+                const refAudio = (backendEnv === "qwen" || !backendEnv)
                   ? (process.env.QWEN_TTS_REF_AUDIO || "").trim()
                   : (process.env.INDEXTTS_REF_AUDIO || "").trim();
                 return {
                     success: true,
                     response: [
                         `语音回复模式: ${voiceMode}`,
-                        `TTS: backend=${ttsBackend} normalize=${process.env.TTS_NORMALIZE_TEXT || "1"}`,
+                        `TTS: mode=${ttsMode} normalize=${process.env.TTS_NORMALIZE_TEXT || "1"}`,
                         refAudio ? `refAudio=${refAudio}` : "",
                         ttsPrefs.instruct ? `style=${ttsPrefs.instruct}` : "",
                     ].filter(Boolean).join("\n"),
