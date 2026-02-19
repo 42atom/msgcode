@@ -5,6 +5,7 @@
 1. `P5.6.8-R4h`：Tool Root 收口 + 失败防幻想（direct 主链止血）
 2. `P5.6.10`：Runtime 硬化收口（Tool Bus 解耦 + 冷启动遥测 + 崩溃兜底）
 3. `P5.6.10-R5`：终态运行时检验（三工作区 + 双管道）
+4. `P5.6.13-R1`：本地语义记忆检索（sqlite-vec + FTS，停用 OV 方案）
 
 ## P5 当前唯一执行主线（冻结）
 
@@ -76,6 +77,7 @@
 - `p5-6-10-runtime-hardening-from-review-v2.md`：P5.6.10（审查 v2 的 Runtime 硬化响应单）
 - `p5-6-10-r5-runtime-final-validation.md`：P5.6.10-R5（终态运行时检验与签收）
 - `p5-6-10-r6-pi-mono-benchmark-and-adoption.md`：P5.6.10-R6（pi-mono 三包对照评审与落地参考）
+- `p5-6-13-r1-sqlite-vec-local-semantic-memory.md`：P5.6.13-R1（sqlite-vec 本地语义记忆检索）
 
 ## 规则
 

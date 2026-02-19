@@ -100,12 +100,6 @@ IMSG_PATH=/Users/<you>/msgcode/vendor/imsg/v0.4.0/imsg
 
 # 工作空间根目录（可选；默认 ~/msgcode-workspaces）
 WORKSPACE_ROOT=/Users/<you>/msgcode-workspaces
-
-# （可选）OpenViking 记忆增强
-OPENVIKING_ENABLED=1
-OPENVIKING_BASE_URL=http://localhost:8080
-OPENVIKING_TIMEOUT_MS=5000
-OPENVIKING_FALLBACK=1
 ```
 
 ### 4. 启动 Bot
@@ -274,11 +268,11 @@ Tool Bus 详细命令请参考 `/help` 或文档 [docs/toolbus](./docs/toolbus/)
 - `index.json`：轻量索引
 - `deposition.jsonl`：沉淀事件流
 
-### OpenViking 说明
+### 记忆检索实现口径
 
-- 默认本地 memory 可用（离线、稳定）
-- 开启 OV 后增强语义召回能力（适合更长历史）
-- OV 不可用时自动 fallback 到本地 memory（不影响对话）
+- 记忆真相源保持本地文件（`<WORKSPACE>/.msgcode/memory/`）。
+- 检索路线为本地单进程实现（SQLite + FTS，逐步接入 sqlite-vec 语义召回）。
+- 不依赖外部向量服务，不引入 Docker 容器。
 
 ---
 
