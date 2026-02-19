@@ -212,6 +212,15 @@ describe("P5.6.8-R4e: handlers.ts SOUL 注入观测", () => {
     expect(handlersContent).toContain("soulPath:");
     expect(handlersContent).toContain("soulChars:");
   });
+
+  it("R4e-6.8b: direct 主链必须透传 workspacePath 到 ToolLoop", async () => {
+    const handlersContent = await readFile(
+      join(process.cwd(), "src", "handlers.ts"),
+      "utf-8"
+    );
+
+    expect(handlersContent).toContain("workspacePath: context.projectDir");
+  });
 });
 
 describe("P5.6.8-R4e: lmstudio.ts SOUL 系统提示注入", () => {

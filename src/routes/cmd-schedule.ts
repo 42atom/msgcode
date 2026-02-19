@@ -221,7 +221,8 @@ export async function handleReloadCommand(options: CommandHandlerOptions): Promi
   const soulHash = soulContext.chars > 0 ? `#${soulContext.chars}c` : "none";
 
   results.push(`SOUL: source=${soulContext.source} path=${soulContext.path || "none"} ${soulHash}`);
-  results.push(`SOUL Entries: ${souls.length} (active=${activeSoul?.id || "none"})`);
+  results.push(`SOUL Entries: ${souls.length} (global, active=${activeSoul?.id || "none"})`);
+  results.push(`Workspace SOUL: ${workspaceSoulExists ? "yes" : "no"} (${workspaceSoulPath})`);
   results.push(`\n✓ 重新加载完成`);
 
   return {

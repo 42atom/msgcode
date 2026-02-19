@@ -49,7 +49,9 @@ describe("P5.6.7-R6: 集成冒烟静态验证", () => {
                 path.join(process.cwd(), "src/routes/cmd-schedule.ts"),
                 "utf-8"
             );
-            expect(code).toContain("SOUL: workspace=");
+            // P5.6.9-R4: 更新为字段语义锁（不锁历史文案）
+            expect(code).toContain("SOUL: source=");
+            expect(code).toContain("soulContext");
             expect(code).toContain("SOUL Entries:");
         });
 

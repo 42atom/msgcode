@@ -267,5 +267,63 @@ describe("File Transport Logger", () => {
             const logContent = readFileSync(logFilePath, "utf-8");
             expect(logContent).not.toContain('inboundText="请执行 pwd"');
         });
+
+        test("应该输出 toolCallCount 和 toolName 字段", async () => {
+            const { FileTransport } = await import("../src/logger/file-transport.js");
+
+            const transport = new FileTransport({
+                filename: logFilePath,
+                maxSize: 1024 * 1024,
+            });
+
+            transport.write({
+                timestamp: "2025-02-06 12:00:00",
+                level: "info",
+                message: "LM Studio 请求完成",
+                module: "handlers",
+                meta: {
+                    toolCallCount: 1,
+                    toolName: "bash",
+                },
+            });
+
+            await new Promise(resolve => setTimeout(resolve, 100));
+            transport.close();
+
+            const logContent = readFileSync(logFilePath, "utf-8");
+            expect(logContent).toContain("toolCallCount=1");
+            expect(logContent).toContain("toolName=bash");
+        });
+
+        test("应该输出 SOUL 注入观测字段", async () => {
+            const { FileTransport } = await import("../src/logger/file-transport.js");
+
+            const transport = new FileTransport({
+                filename: logFilePath,
+                maxSize: 1024 * 1024,
+            });
+
+            transport.write({
+                timestamp: "2025-02-06 12:00:00",
+                level: "info",
+                message: "LM Studio 请求开始",
+                module: "handlers",
+                meta: {
+                    soulInjected: true,
+                    soulSource: "workspace",
+                    soulPath: "/tmp/workspace/.msgcode/SOUL.md",
+                    soulChars: 1024,
+                },
+            });
+
+            await new Promise(resolve => setTimeout(resolve, 100));
+            transport.close();
+
+            const logContent = readFileSync(logFilePath, "utf-8");
+            expect(logContent).toContain("soulInjected=true");
+            expect(logContent).toContain("soulSource=workspace");
+            expect(logContent).toContain("soulPath=/tmp/workspace/.msgcode/SOUL.md");
+            expect(logContent).toContain("soulChars=1024");
+        });
     });
 });

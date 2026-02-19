@@ -621,15 +621,13 @@ export class RuntimeRouterHandler implements CommandHandler {
                 soulChars: soulContext?.chars || 0,
             });
 
-            // P0: 只在 MCP 真正启用时才传递 workspace（避免注入 MCP 规则导致元叙事）
-            const useMcp = process.env.LMSTUDIO_ENABLE_MCP === "1";
             // P5.6.1-R2: Persona 全量退役，不再注入 personaContent
             const personaContent = undefined;
             // P5.6.2-R1: 主链统一走 ToolLoop
             const toolLoopResult = await runLmStudioToolLoop({
                 prompt: trimmed,
                 system: personaContent,
-                ...(useMcp && context.projectDir ? { workspacePath: context.projectDir } : {}),
+                ...(context.projectDir ? { workspacePath: context.projectDir } : {}),
                 // P5.6.8-R4b: 注入短期记忆上下文
                 windowMessages,
                 summaryContext,

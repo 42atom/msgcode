@@ -158,6 +158,12 @@ export class FileTransport implements Transport {
             if (meta.responseText !== undefined && meta.responseText !== null) {
                 parts.push(`responseText="${formatLogTextField(meta.responseText)}"`);
             }
+            if (meta.toolCallCount !== undefined) parts.push(`toolCallCount=${meta.toolCallCount}`);
+            if (meta.toolName !== undefined) parts.push(`toolName=${meta.toolName}`);
+            if (meta.soulInjected !== undefined) parts.push(`soulInjected=${meta.soulInjected}`);
+            if (meta.soulSource !== undefined) parts.push(`soulSource=${meta.soulSource}`);
+            if (meta.soulPath !== undefined && meta.soulPath !== "") parts.push(`soulPath=${meta.soulPath}`);
+            if (meta.soulChars !== undefined) parts.push(`soulChars=${meta.soulChars}`);
             if (meta.rowid !== undefined) parts.push(`rowid=${meta.rowid}`);
 
             // Phase 6: 添加常用错误字段输出（P1 日志可观测性）
