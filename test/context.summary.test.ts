@@ -73,7 +73,7 @@ describe("Summary Layer", () => {
 
       const messages: WindowMessage[] = [
         { role: "user", content: "执行 ls 命令" },
-        { role: "assistant", content: "我来执行", tool_calls: [{ id: "call_1", type: "function", function: { name: "shell", arguments: "{}" } }] },
+        { role: "assistant", content: "我来执行", tool_calls: [{ id: "call_1", type: "function", function: { name: "bash", arguments: "{}" } }] },
         { role: "tool", tool_call_id: "call_1", content: JSON.stringify({ success: true, data: { path: "/home/user/project" } }) },
       ];
 

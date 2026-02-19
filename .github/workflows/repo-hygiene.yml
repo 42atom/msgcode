@@ -1,0 +1,46 @@
+name: Repo Hygiene
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  block-cache-and-large-files:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate tracked files
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          max_bytes=$((20 * 1024 * 1024))
+          failed=0
+
+          while IFS= read -r -d '' file; do
+            if [[ "$file" == checkpoints/hf_cache/* ]]; then
+              echo "ERROR: forbidden tracked cache path -> $file"
+              failed=1
+            fi
+
+            if [[ ! -f "$file" ]]; then
+              continue
+            fi
+
+            size=$(wc -c < "$file")
+            if (( size > max_bytes )); then
+              echo "ERROR: tracked file exceeds 20MB -> $file (${size} bytes)"
+              failed=1
+            fi
+          done < <(git ls-files -z)
+
+          if (( failed != 0 )); then
+            echo "Repo hygiene check failed."
+            exit 1
+          fi
+
+          echo "Repo hygiene check passed."

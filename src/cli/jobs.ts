@@ -13,8 +13,7 @@
  */
 
 import { Command } from "commander";
-import { randomUUID } from "node:crypto";
-import type { Envelope, Diagnostic } from "../memory/types.js";
+import type { Diagnostic } from "../memory/types.js";
 import type {
   CronJob,
   JobListData,
@@ -29,44 +28,12 @@ import {
 } from "../jobs/types.js";
 import { computeNextRunAtMs } from "../jobs/cron.js";
 import { executeJob } from "../jobs/runner.js";
+import { createEnvelope } from "./command-runner.js";
+import { randomUUID } from "node:crypto";
 
 // ============================================
 // 辅助函数
 // ============================================
-
-/**
- * 创建 Envelope
- */
-function createEnvelope<T>(
-  command: string,
-  startTime: number,
-  status: "pass" | "warning" | "error",
-  data: T,
-  warnings: Diagnostic[] = [],
-  errors: Diagnostic[] = []
-): Envelope<T> {
-  const summary = {
-    warnings: warnings.length,
-    errors: errors.length,
-  };
-
-  const exitCode = status === "error" ? 1 : status === "warning" ? 2 : 0;
-  const durationMs = Date.now() - startTime;
-
-  return {
-    schemaVersion: 2,
-    command,
-    requestId: randomUUID(),
-    timestamp: new Date().toISOString(),
-    durationMs,
-    status,
-    exitCode,
-    summary,
-    data,
-    warnings,
-    errors,
-  };
-}
 
 /**
  * 创建默认 CronJob

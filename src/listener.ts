@@ -556,6 +556,7 @@ export async function handleMessage(
     textLength: text.length,
     textDigest,
     isCommand: text.startsWith("/"),
+    ...(process.env.MSGCODE_LOG_PLAINTEXT_INPUT === "1" ? { inboundText: text } : {}),
   });
 
   // 路由控制面命令：/bind /where /unbind（必须在未绑定时也能用）
@@ -891,6 +892,7 @@ export async function handleMessage(
         elapsedMs,
         responseLength: responseLen,
         responseDigest,
+        responseText: result.response ?? null,
       });
     }
 

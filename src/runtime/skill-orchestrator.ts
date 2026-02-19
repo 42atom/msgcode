@@ -3,17 +3,17 @@
  *
  * 职责：
  * - Skill 触发检测（auto skill）
- * - Skill 执行入口（/skill run + tool_calls）
+ * - Skill 索引（供 LLM 决策）
  * - 统一日志记录（autoSkill, autoSkillResult）
  * - 不承载 skill 业务逻辑，只做编排与分发
+ *
+ * P5.6.8-R3e: 删除 /skill run 命令面（硬切割）
  */
 
 import { logger } from "../logger/index.js";
 import {
   detectAutoSkill,
-  normalizeSkillId,
   runAutoSkill,
-  runSkill,
   type SkillMatch,
   type SkillId,
 } from "../skills/auto.js";
@@ -32,59 +32,6 @@ export interface SkillResult {
   success: boolean;
   response?: string;
   error?: string;
-}
-
-// ============================================
-// Skill 命令处理（/skill run）
-// ============================================
-
-/**
- * 处理 /skill run 命令
- *
- * @param command 原始命令文本
- * @param ctx Skill 上下文
- * @returns 处理结果（null 表示不是 skill 命令）
- */
-export async function handleSkillRunCommand(
-  command: string,
-  ctx: SkillContext
-): Promise<SkillResult | null> {
-  const trimmed = command.trim();
-  if (!trimmed.startsWith("/skill")) return null;
-
-  const parts = trimmed.split(/\s+/);
-  if (parts[0] !== "/skill") return null;
-
-  if (parts[1] !== "run") {
-    return { success: true, response: "用法: /skill run <skillId>" };
-  }
-
-  const rawId = parts[2] ?? "";
-  const skillId = normalizeSkillId(rawId);
-  if (!skillId) {
-    return { success: false, error: `未知 skill: ${rawId || "<empty>"}` };
-  }
-
-  const input = parts.slice(3).join(" ").trim();
-  const result = await runSkill(skillId, input, {
-    workspacePath: ctx.workspacePath,
-    chatId: ctx.chatId,
-    requestId: ctx.requestId,
-  });
-
-  // P5.5 观测字段：autoSkill, autoSkillResult
-  logger.info("Skill run (debug)", {
-    module: "skill-orchestrator",
-    chatId: ctx.chatId,
-    autoSkill: skillId,
-    autoSkillResult: result.ok ? "ok" : "error",
-  });
-
-  if (!result.ok) {
-    return { success: false, error: result.error || "skill failed" };
-  }
-
-  return { success: true, response: result.output || "（无输出）" };
 }
 
 // ============================================

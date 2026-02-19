@@ -6,7 +6,7 @@
  * - Scenario B: autonomous 模式允许 llm-tool-call
  * - Scenario C: 工具灰度配置
  * - Scenario D: 工具执行记录到 telemetry
- * - Scenario E: shell 工具执行
+ * - Scenario E: bash 工具执行
  * - Scenario F: allowlist 仍生效
  * - Scenario G: 默认模式守卫（确保默认为 explicit）
  */
@@ -93,14 +93,14 @@ describe("Tool Bus", () => {
     });
 
     test("应该拒绝 media-pipeline 来源的非 asr/vision 工具", async () => {
-      const policy: ToolPolicy = { mode: "explicit", allow: ["tts", "asr", "vision", "shell"], requireConfirm: [] };
+      const policy: ToolPolicy = { mode: "explicit", allow: ["tts", "asr", "vision", "bash"], requireConfirm: [] };
 
-      // shell 不应该被 media-pipeline 调用
-      const shellGate = canExecuteTool(policy, "shell", "media-pipeline");
-      expect(shellGate.ok).toBe(false);
-      expect(shellGate.code).toBe("TOOL_NOT_ALLOWED");
-      // 即使 shell 在 allow 列表中，media-pipeline 也不应该能调用它
-      expect(shellGate.message).toContain("not allowed from media-pipeline");
+      // bash 不应该被 media-pipeline 调用
+      const bashGate = canExecuteTool(policy, "bash", "media-pipeline");
+      expect(bashGate.ok).toBe(false);
+      expect(bashGate.code).toBe("TOOL_NOT_ALLOWED");
+      // 即使 bash 在 allow 列表中，media-pipeline 也不应该能调用它
+      expect(bashGate.message).toContain("not allowed from media-pipeline");
     });
 
     test("应该允许 internal 来源的工具调用", async () => {
@@ -117,7 +117,7 @@ describe("Tool Bus", () => {
   describe("Scenario B: autonomous 模式允许 llm-tool-call", () => {
     test("应该允许 llm-tool-call 来源的工具调用", async () => {
       const gate = canExecuteTool(
-        { mode: "autonomous", allow: ["tts", "asr", "shell"], requireConfirm: [] },
+        { mode: "autonomous", allow: ["tts", "asr", "bash"], requireConfirm: [] },
         "tts",
         "llm-tool-call"
       );
@@ -125,10 +125,10 @@ describe("Tool Bus", () => {
       expect(gate.ok).toBe(true);
     });
 
-    test("应该允许 llm-tool-call 来源调用 shell", async () => {
+    test("应该允许 llm-tool-call 来源调用 bash", async () => {
       const gate = canExecuteTool(
-        { mode: "autonomous", allow: ["tts", "asr", "shell"], requireConfirm: [] },
-        "shell",
+        { mode: "autonomous", allow: ["tts", "asr", "bash"], requireConfirm: [] },
+        "bash",
         "llm-tool-call"
       );
 
@@ -154,7 +154,7 @@ describe("Tool Bus", () => {
       expect(policy.allow).toContain("asr");
       expect(policy.allow).toContain("vision");
       // 默认不应该包含高风险工具
-      expect(policy.allow).not.toContain("shell");
+      expect(policy.allow).not.toContain("bash");
       expect(policy.allow).not.toContain("browser");
     });
 
@@ -166,7 +166,7 @@ describe("Tool Bus", () => {
       writeFileSync(configPath, JSON.stringify({
         "tooling.mode": "explicit",
         "tooling.allow": ["tts"], // 只允许 tts
-        "tooling.require_confirm": ["shell", "browser"],
+        "tooling.require_confirm": ["bash", "browser"],
       }));
 
       // 需要重新加载配置才能看到效果
@@ -185,7 +185,7 @@ describe("Tool Bus", () => {
       writeFileSync(configPath, JSON.stringify({
         "tooling.mode": "explicit",
         "tooling.allow": ["tts"], // 只允许 tts
-        "tooling.require_confirm": ["shell", "browser"],
+        "tooling.require_confirm": ["bash", "browser"],
       }));
 
       // 需要重新加载配置才能看到效果
@@ -199,18 +199,18 @@ describe("Tool Bus", () => {
     test("应该记录成功的工具执行", async () => {
       clearToolEvents();
 
-      // 显式允许 shell，避免触发真实 TTS/发送链路导致测试卡住
+      // 显式允许 bash，避免触发真实 TTS/发送链路导致测试卡住
       const configDir = join(tempWorkspace, ".msgcode");
       mkdirSync(configDir, { recursive: true });
       writeFileSync(join(configDir, "config.json"), JSON.stringify({
         "tooling.mode": "explicit",
-        "tooling.allow": ["shell"],
+        "tooling.allow": ["bash"],
         "tooling.require_confirm": [],
       }));
 
       const requestId = randomUUID();
       const result = await executeTool(
-        "shell",
+        "bash",
         { command: "echo 42" },
         {
           workspacePath: tempWorkspace,
@@ -224,7 +224,7 @@ describe("Tool Bus", () => {
       const stats = getToolStats(60000); // 1 分钟窗口
       expect(stats.totalCalls).toBe(1);
       expect(stats.successCount).toBe(1);
-      expect(stats.byTool.shell?.calls).toBe(1);
+      expect(stats.byTool.bash?.calls).toBe(1);
     });
 
     test("应该记录失败的工具执行", async () => {
@@ -235,13 +235,13 @@ describe("Tool Bus", () => {
       mkdirSync(configDir, { recursive: true });
       writeFileSync(join(configDir, "config.json"), JSON.stringify({
         "tooling.mode": "explicit",
-        "tooling.allow": ["tts"], // 不包含 shell
+        "tooling.allow": ["tts"], // 不包含 bash
         "tooling.require_confirm": [],
       }));
 
       const requestId = randomUUID();
       const result = await executeTool(
-        "shell",
+        "bash",
         { command: "ls" },
         {
           workspacePath: tempWorkspace,
@@ -378,22 +378,22 @@ describe("Tool Bus", () => {
     });
   });
 
-  describe("Scenario E: shell 工具执行", () => {
+  describe("Scenario E: bash 工具执行", () => {
     beforeEach(() => {
-      // Scenario E: 设置 autonomous 模式并允许 shell
+      // Scenario E: 设置 autonomous 模式并允许 bash
       const configDir = join(tempWorkspace, ".msgcode");
       mkdirSync(configDir, { recursive: true });
       writeFileSync(join(configDir, "config.json"), JSON.stringify({
         "tooling.mode": "autonomous",
-        "tooling.allow": ["tts", "asr", "vision", "shell"],
+        "tooling.allow": ["tts", "asr", "vision", "bash"],
         "tooling.require_confirm": [],
       }));
     });
 
-    test("应该成功执行 shell 命令并返回结果", async () => {
+    test("应该成功执行 bash 命令并返回结果", async () => {
       // 在 macOS 上，echo 命令应该成功
       const result = await executeTool(
-        "shell",
+        "bash",
         { command: "echo 'hello world'" },
         {
           workspacePath: tempWorkspace,
@@ -403,16 +403,16 @@ describe("Tool Bus", () => {
       );
 
       expect(result.ok).toBe(true);
-      expect(result.tool).toBe("shell");
+      expect(result.tool).toBe("bash");
       expect(result.data?.exitCode).toBe(0);
       expect(result.data?.stdout).toContain("hello world");
     });
 
-    test("应该记录 shell 执行到 telemetry", async () => {
+    test("应该记录 bash 执行到 telemetry", async () => {
       clearToolEvents();
 
       await executeTool(
-        "shell",
+        "bash",
         { command: "echo 'test'" },
         {
           workspacePath: tempWorkspace,
@@ -423,12 +423,12 @@ describe("Tool Bus", () => {
 
       const stats = getToolStats(60000);
       expect(stats.totalCalls).toBeGreaterThan(0);
-      expect(stats.byTool["shell"]).toBeDefined();
+      expect(stats.byTool["bash"]).toBeDefined();
     });
 
-    test("shell 命令失败时应该返回非零退出码", async () => {
+    test("bash 命令失败时应该返回非零退出码", async () => {
       const result = await executeTool(
-        "shell",
+        "bash",
         { command: "exit 1" }, // 模拟失败命令
         {
           workspacePath: tempWorkspace,
@@ -443,7 +443,7 @@ describe("Tool Bus", () => {
 
     test("空命令应该返回错误", async () => {
       const result = await executeTool(
-        "shell",
+        "bash",
         { command: "   " }, // 只有空格
         {
           workspacePath: tempWorkspace,
@@ -461,14 +461,14 @@ describe("Tool Bus", () => {
     test("allowlist 中没有的工具应该被拒绝", () => {
       const policy: ToolPolicy = {
         mode: "autonomous",
-        allow: ["tts", "asr"], // 不包含 shell
+        allow: ["tts", "asr"], // 不包含 bash
         requireConfirm: [],
       };
 
-      const gate = canExecuteTool(policy, "shell", "llm-tool-call");
+      const gate = canExecuteTool(policy, "bash", "llm-tool-call");
       expect(gate.ok).toBe(false);
       expect(gate.code).toBe("TOOL_NOT_ALLOWED");
-      expect(gate.message).toContain("tool not allowed: shell");
+      expect(gate.message).toContain("tool not allowed: bash");
     });
 
     test("autonomous 模式下 allowlist 仍然生效", () => {
@@ -496,12 +496,12 @@ describe("Tool Bus", () => {
       const configPath = join(configDir, "config.json");
       writeFileSync(configPath, JSON.stringify({
         "tooling.mode": "autonomous",
-        "tooling.allow": ["tts", "asr"], // 不包含 shell
+        "tooling.allow": ["tts", "asr"], // 不包含 bash
         "tooling.require_confirm": [],
       }));
 
       const result = await executeTool(
-        "shell",
+        "bash",
         { command: "echo test" },
         {
           workspacePath: tempWorkspace,
@@ -528,7 +528,7 @@ describe("Tool Bus", () => {
       expect(policy.allow).toContain("asr");
       expect(policy.allow).toContain("vision");
       // 默认不应该包含高风险工具
-      expect(policy.allow).not.toContain("shell");
+      expect(policy.allow).not.toContain("bash");
       expect(policy.allow).not.toContain("browser");
     });
 

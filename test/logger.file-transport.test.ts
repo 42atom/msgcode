@@ -15,14 +15,21 @@ import { mkdirSync, rmSync, readFileSync, existsSync } from "node:fs";
 describe("File Transport Logger", () => {
     let tempWorkspace: string;
     let logFilePath: string;
+    let prevPlaintextInputEnv: string | undefined;
 
     beforeEach(() => {
         tempWorkspace = join(tmpdir(), `msgcode-log-test-${randomUUID()}`);
         mkdirSync(tempWorkspace, { recursive: true });
         logFilePath = join(tempWorkspace, "test.log");
+        prevPlaintextInputEnv = process.env.MSGCODE_LOG_PLAINTEXT_INPUT;
     });
 
     afterEach(() => {
+        if (prevPlaintextInputEnv === undefined) {
+            delete process.env.MSGCODE_LOG_PLAINTEXT_INPUT;
+        } else {
+            process.env.MSGCODE_LOG_PLAINTEXT_INPUT = prevPlaintextInputEnv;
+        }
         if (existsSync(tempWorkspace)) {
             rmSync(tempWorkspace, { recursive: true, force: true });
         }
@@ -207,6 +214,116 @@ describe("File Transport Logger", () => {
             const errorMatch = logContent.match(/error=(.{200})/);
             expect(errorMatch).toBeTruthy();
             expect(errorMatch?.[1]).toHaveLength(200);
+        });
+
+        test("开启明文开关时应该输出 inboundText", async () => {
+            process.env.MSGCODE_LOG_PLAINTEXT_INPUT = "1";
+            const { FileTransport } = await import("../src/logger/file-transport.js");
+
+            const transport = new FileTransport({
+                filename: logFilePath,
+                maxSize: 1024 * 1024,
+            });
+
+            transport.write({
+                timestamp: "2025-02-06 12:00:00",
+                level: "info",
+                message: "收到消息",
+                module: "listener",
+                meta: {
+                    inboundText: "请执行 pwd",
+                },
+            });
+
+            await new Promise(resolve => setTimeout(resolve, 100));
+            transport.close();
+
+            const logContent = readFileSync(logFilePath, "utf-8");
+            expect(logContent).toContain('inboundText="请执行 pwd"');
+        });
+
+        test("关闭明文开关时不应该输出 inboundText", async () => {
+            process.env.MSGCODE_LOG_PLAINTEXT_INPUT = "0";
+            const { FileTransport } = await import("../src/logger/file-transport.js");
+
+            const transport = new FileTransport({
+                filename: logFilePath,
+                maxSize: 1024 * 1024,
+            });
+
+            transport.write({
+                timestamp: "2025-02-06 12:00:00",
+                level: "info",
+                message: "收到消息",
+                module: "listener",
+                meta: {
+                    inboundText: "请执行 pwd",
+                },
+            });
+
+            await new Promise(resolve => setTimeout(resolve, 100));
+            transport.close();
+
+            const logContent = readFileSync(logFilePath, "utf-8");
+            expect(logContent).not.toContain('inboundText="请执行 pwd"');
+        });
+
+        test("应该输出 toolCallCount 和 toolName 字段", async () => {
+            const { FileTransport } = await import("../src/logger/file-transport.js");
+
+            const transport = new FileTransport({
+                filename: logFilePath,
+                maxSize: 1024 * 1024,
+            });
+
+            transport.write({
+                timestamp: "2025-02-06 12:00:00",
+                level: "info",
+                message: "LM Studio 请求完成",
+                module: "handlers",
+                meta: {
+                    toolCallCount: 1,
+                    toolName: "bash",
+                },
+            });
+
+            await new Promise(resolve => setTimeout(resolve, 100));
+            transport.close();
+
+            const logContent = readFileSync(logFilePath, "utf-8");
+            expect(logContent).toContain("toolCallCount=1");
+            expect(logContent).toContain("toolName=bash");
+        });
+
+        test("应该输出 SOUL 注入观测字段", async () => {
+            const { FileTransport } = await import("../src/logger/file-transport.js");
+
+            const transport = new FileTransport({
+                filename: logFilePath,
+                maxSize: 1024 * 1024,
+            });
+
+            transport.write({
+                timestamp: "2025-02-06 12:00:00",
+                level: "info",
+                message: "LM Studio 请求开始",
+                module: "handlers",
+                meta: {
+                    soulInjected: true,
+                    soulSource: "workspace",
+                    soulPath: "/tmp/workspace/.msgcode/SOUL.md",
+                    soulChars: 1024,
+                },
+            });
+
+            await new Promise(resolve => setTimeout(resolve, 100));
+            transport.close();
+
+            const logContent = readFileSync(logFilePath, "utf-8");
+            expect(logContent).toContain("soulInjected=true");
+            expect(logContent).toContain("soulSource=workspace");
+            expect(logContent).toContain("soulPath=/tmp/workspace/.msgcode/SOUL.md");
+            expect(logContent).toContain("soulChars=1024");
         });
     });
 });

@@ -55,7 +55,7 @@ export interface WorkspaceConfig {
   /**
    * 工具执行模式：explicit（默认稳态）、autonomous（可选）、tool-calls（预留）
    * - explicit: 只允许显式命令触发工具（/tts、/asr 等）
-   * - autonomous: 模型可自主编排调用工具（含 shell/browser）
+   * - autonomous: 模型可自主编排调用工具（含 bash/browser）
    * - tool-calls: 预留，标准 tool_calls 自动工具调用
    */
   "tooling.mode"?: ToolingMode;
@@ -68,7 +68,7 @@ export interface WorkspaceConfig {
 
   /**
    * 需要确认的工具列表
-   * - 默认: ["shell", "browser"]
+   * - 默认: []
    */
   "tooling.require_confirm"?: ToolName[];
 }
@@ -77,12 +77,15 @@ export interface WorkspaceConfig {
  * 工具相关类型
  */
 export type ToolingMode = "explicit" | "autonomous" | "tool-calls";
-export type ToolName = "tts" | "asr" | "vision" | "mem" | "shell" | "browser" | "desktop";
+export type ToolName =
+  | "tts" | "asr" | "vision" | "mem" | "bash" | "browser" | "desktop"
+  | "read_file" | "write_file" | "edit_file";
 
 /**
  * Workspace 配置的默认值
+ * P5.6.8-R4g: 导出供测试使用
  */
-const DEFAULT_WORKSPACE_CONFIG: Required<WorkspaceConfig> = {
+export const DEFAULT_WORKSPACE_CONFIG: Required<WorkspaceConfig> = {
   "memory.inject.enabled": true, // 测试期默认开启记忆注入
   "memory.inject.topK": 5,
   "memory.inject.maxChars": 2000,
@@ -90,7 +93,7 @@ const DEFAULT_WORKSPACE_CONFIG: Required<WorkspaceConfig> = {
   "runner.default": "lmstudio", // 默认使用本地模型
   "pi.enabled": true, // 测试期默认开启 PI
   "tooling.mode": "autonomous", // P5.5: 测试期统一 autonomous（LLM 自主决策 tool_calls）
-  "tooling.allow": ["tts", "asr", "vision", "mem", "shell", "browser", "desktop"], // 测试期默认开放全工具
+  "tooling.allow": ["tts", "asr", "vision", "mem", "bash", "browser", "desktop", "read_file", "write_file", "edit_file"], // P5.6.8-R4g: PI 四工具直达
   "tooling.require_confirm": [], // 默认不要求确认
 };
 

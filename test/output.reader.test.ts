@@ -9,6 +9,8 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { OutputReader } from "../src/output/reader.js";
 
+const ORIGINAL_HOME = process.env.HOME;
+
 describe("OutputReader", () => {
     const testDir = path.join(process.cwd(), ".test-output-reader");
     const testFile = path.join(testDir, "test.jsonl");
@@ -217,10 +219,42 @@ describe("OutputReader", () => {
         // 验证字节偏移正确（两次读取的字节数应该相等）
         expect(result2.newOffset - offset1).toBe(offset1);
     });
+
+    test("选路应优先最新文件（即使旧文件是 deliverable）", async () => {
+        const reader = new OutputReader();
+        const fakeHome = path.join(testDir, "home");
+        process.env.HOME = fakeHome;
+
+        const projectDir = "/Users/admin/msgcode-workspaces/game01";
+        const claudeDirName = "-" + projectDir.replace(/[^a-zA-Z0-9]/g, "-").replace(/^-/, "").replace(/-+/g, "-");
+        const claudeProjectDir = path.join(fakeHome, ".claude", "projects", claudeDirName);
+        await fs.mkdir(claudeProjectDir, { recursive: true });
+
+        const oldDeliverableFile = path.join(claudeProjectDir, "old-deliverable.jsonl");
+        const latestNonDeliverableFile = path.join(claudeProjectDir, "latest-working.jsonl");
+
+        // 旧文件：含 assistant（deliverable）
+        await fs.writeFile(oldDeliverableFile, `${JSON.stringify({ type: "assistant", content: "old" })}\n`, "utf-8");
+        // 新文件：还在对话中，仅 user（non-deliverable）
+        await fs.writeFile(latestNonDeliverableFile, `${JSON.stringify({ type: "user", content: "new" })}\n`, "utf-8");
+
+        const oldMtime = new Date("2026-02-19T07:30:00.000Z");
+        const newMtime = new Date("2026-02-19T07:40:00.000Z");
+        await fs.utimes(oldDeliverableFile, oldMtime, oldMtime);
+        await fs.utimes(latestNonDeliverableFile, newMtime, newMtime);
+
+        const selected = await reader.findLatestJsonl(projectDir);
+        expect(selected).toBe(latestNonDeliverableFile);
+    });
 });
 
 // 清理测试文件
 afterAll(async () => {
+    if (ORIGINAL_HOME !== undefined) {
+        process.env.HOME = ORIGINAL_HOME;
+    } else {
+        delete process.env.HOME;
+    }
     const testDir = path.join(process.cwd(), ".test-output-reader");
     await fs.rm(testDir, { recursive: true, force: true });
 });

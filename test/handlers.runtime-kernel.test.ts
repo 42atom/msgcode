@@ -109,7 +109,7 @@ describe("handlers 运行时内核契约", () => {
             // 验证：handlers 应该通过 runtime/* orchestrator 调用业务逻辑
             // 不应该直接 import 业务实现（如 TmuxSession 的具体方法）
             expect(handlersCode).toContain('import * as session from "./runtime/session-orchestrator.js"');
-            expect(handlersCode).toContain('import * as skill from "./runtime/skill-orchestrator.js"');
+            // P5.6.8-R3e: skill-orchestrator 不再被 handlers.ts 导入（/skill run 已删除）
         });
 
         it("handlers.ts 行数符合目标（当前阶段：< 1000 行）", () => {

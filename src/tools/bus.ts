@@ -26,10 +26,13 @@ const TOOL_META: Record<ToolName, { sideEffect: SideEffectLevel }> = {
   asr: { sideEffect: "local-write" },
   vision: { sideEffect: "local-write" },
   mem: { sideEffect: "local-write" },
-  shell: { sideEffect: "process-control" },
+  bash: { sideEffect: "process-control" },
   browser: { sideEffect: "process-control" },
   desktop: { sideEffect: "local-write" },  // T6.1: observe 会落盘 evidence
   run_skill: { sideEffect: "read-only" },  // P5.5: Skill execution (read-only)
+  read_file: { sideEffect: "read-only" },  // P5.6.8-R3: PI 四基础工具
+  write_file: { sideEffect: "local-write" },
+  edit_file: { sideEffect: "local-write" },
 };
 
 const MEDIA_PIPELINE_ALLOWED: ToolName[] = ["asr", "vision"];
@@ -200,7 +203,7 @@ export async function executeTool(
         };
         break;
       }
-      case "shell": {
+      case "bash": {  // P5.6.8-R4g: 统一使用 bash 命名
         const command = String(args.command ?? "").trim();
         if (!command) throw new Error("empty command");
 
@@ -495,6 +498,110 @@ export async function executeTool(
           tool,
           data: { output: skillResult.output },
           error: skillResult.error ? { code: "TOOL_EXEC_FAILED", message: skillResult.error } : undefined,
+          durationMs: Date.now() - started,
+        };
+        break;
+      }
+      case "read_file": {
+        // P5.6.8-R3: 读取文件内容
+        const { resolve } = await import("node:path");
+        const filePath = resolve(ctx.workspacePath, String(args.path || ""));
+
+        // 安全检查：文件必须在 workspace 内
+        if (!filePath.startsWith(ctx.workspacePath)) {
+          throw new Error("path must be under workspace");
+        }
+
+        const content = await withTimeout(
+          (await import("node:fs/promises")).readFile(filePath, "utf-8"),
+          ctx.timeoutMs ?? 30000
+        );
+
+        result = {
+          ok: true,
+          tool,
+          data: { content },
+          durationMs: Date.now() - started,
+        };
+        break;
+      }
+      case "write_file": {
+        // P5.6.8-R3: 整文件写入
+        const { resolve, dirname } = await import("node:path");
+        const filePath = resolve(ctx.workspacePath, String(args.path || ""));
+        const content = String(args.content ?? "");
+
+        // 安全检查
+        if (!filePath.startsWith(ctx.workspacePath)) {
+          throw new Error("path must be under workspace");
+        }
+
+        // 确保目录存在
+        const { mkdir } = await import("node:fs/promises");
+        await mkdir(dirname(filePath), { recursive: true });
+
+        await withTimeout(
+          (await import("node:fs/promises")).writeFile(filePath, content, "utf-8"),
+          ctx.timeoutMs ?? 30000
+        );
+
+        result = {
+          ok: true,
+          tool,
+          data: { path: args.path as string },
+          durationMs: Date.now() - started,
+        };
+        break;
+      }
+      case "edit_file": {
+        // P5.6.8-R3: 补丁式编辑（禁止整文件覆盖）
+        const { resolve } = await import("node:path");
+        const filePath = resolve(ctx.workspacePath, String(args.path || ""));
+        const edits = args.edits as Array<{ oldText: string; newText: string }> | undefined;
+
+        // 安全检查
+        if (!filePath.startsWith(ctx.workspacePath)) {
+          throw new Error("path must be under workspace");
+        }
+
+        if (!edits || !Array.isArray(edits) || edits.length === 0) {
+          throw new Error("edits must be a non-empty array of { oldText, newText }");
+        }
+
+        // 读取原文件
+        const fsPromises = await import("node:fs/promises");
+        let content = await withTimeout(
+          fsPromises.readFile(filePath, "utf-8"),
+          ctx.timeoutMs ?? 30000
+        );
+
+        // 逐个应用补丁
+        let editsApplied = 0;
+        for (const edit of edits) {
+          if (typeof edit.oldText !== "string" || typeof edit.newText !== "string") {
+            throw new Error("each edit must have oldText and newText as strings");
+          }
+
+          if (!content.includes(edit.oldText)) {
+            throw new Error(
+              `oldText not found in file: ${edit.oldText.substring(0, 100)}...`
+            );
+          }
+
+          content = content.replace(edit.oldText, edit.newText);
+          editsApplied++;
+        }
+
+        // 写回
+        await withTimeout(
+          fsPromises.writeFile(filePath, content, "utf-8"),
+          ctx.timeoutMs ?? 30000
+        );
+
+        result = {
+          ok: true,
+          tool,
+          data: { path: args.path as string, editsApplied },
           durationMs: Date.now() - started,
         };
         break;

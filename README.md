@@ -54,6 +54,12 @@ msgcode 是一个运行在 Mac 上的 AI 智能体系统，默认以 iMessage �
 - **JSONL 读取**: claude 和 claude-code 优先 JSONL 日志读取（pane 为 fallback），确保响应完整准确
 - **安全机制**: 白名单验证 + owner 收口
 
+### 双管道边界（固定约束）
+
+- **tmux 管道（codex/claude-code）**：只做“忠实转发与回传”，不注入 SOUL/记忆等业务语义。
+- **direct 管道（lmstudio + openclaw 私有实现）**：承载 SOUL、记忆、tool loop 等智能体能力。
+- 两条管道职责隔离，配置独立，不互相隐式继承行为。
+
 ---
 
 ## 快速开始

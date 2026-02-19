@@ -1,50 +1,38 @@
 import { describe, it, expect } from "bun:test";
 
-import { parseToolCallBestEffortFromText } from "../src/lmstudio.js";
+import { parseToolCallBestEffortFromText, isLikelyFakeToolExecutionText } from "../src/lmstudio.js";
 
 describe("lmstudio tool call parse (best-effort)", () => {
-  it("parses <tool_call> XML-ish format", () => {
+  it("parses XML-ish format", () => {
     const parsed = parseToolCallBestEffortFromText({
-      text: `
-tool_calls参数（需要保持原语言不变）：
-<tool_call>list_directory
-<arg_key>path</arg_key>
-<arg_value>./AIDOCS</arg_value>
-<arg_key>limit</arg_key>
-<arg_value>5</arg_value>
-</tool_call>
-      `.trim(),
+      text: `陈列read_file陈列path陈列./AIDOCS/test.txt陈列/read_file`.trim(),
     });
-    expect(parsed?.name).toBe("list_directory");
-    expect(parsed?.args.path).toBe("./AIDOCS");
-    expect(parsed?.args.limit).toBe(5);
+    expect(parsed?.name).toBe("read_file");
+    expect(parsed?.args.path).toBe("./AIDOCS/test.txt");
   });
 
   it("parses JSON array format", () => {
     const parsed = parseToolCallBestEffortFromText({
-      text: `[{"name":"list_directory","arguments":"{\\"path\\":\\"./AIDOCS\\",\\"limit\\":5}"}]`,
+      text: `[{"name":"read_file","arguments":"{\\"path\\":\\"./AIDOCS/test.txt\\"}"}]`,
     });
-    expect(parsed?.name).toBe("list_directory");
-    expect(parsed?.args.path).toBe("./AIDOCS");
-    expect(parsed?.args.limit).toBe(5);
+    expect(parsed?.name).toBe("read_file");
+    expect(parsed?.args.path).toBe("./AIDOCS/test.txt");
   });
 
   it("parses inline name + json object format", () => {
     const parsed = parseToolCallBestEffortFromText({
-      text: `list_directory {"path":"./AIDOCS","limit":5}`,
+      text: `read_file {"path":"./AIDOCS/test.txt"}`,
     });
-    expect(parsed?.name).toBe("list_directory");
-    expect(parsed?.args.path).toBe("./AIDOCS");
-    expect(parsed?.args.limit).toBe(5);
+    expect(parsed?.name).toBe("read_file");
+    expect(parsed?.args.path).toBe("./AIDOCS/test.txt");
   });
 
   it("parses name(args) format", () => {
     const parsed = parseToolCallBestEffortFromText({
-      text: `list_directory(path="./AIDOCS", limit=5)`,
+      text: `read_file(path="./AIDOCS/test.txt")`,
     });
-    expect(parsed?.name).toBe("list_directory");
-    expect(parsed?.args.path).toBe("./AIDOCS");
-    expect(parsed?.args.limit).toBe(5);
+    expect(parsed?.name).toBe("read_file");
+    expect(parsed?.args.path).toBe("./AIDOCS/test.txt");
   });
 
   it("returns null for unknown tool", () => {
@@ -53,5 +41,22 @@ tool_calls参数（需要保持原语言不变）：
     });
     expect(parsed).toBeNull();
   });
-});
 
+  it("detects fake command execution text", () => {
+    const fake = [
+      "```bash",
+      "pwd",
+      "```",
+      "",
+      "执行中...",
+      "",
+      "/home/user",
+    ].join("\n");
+    expect(isLikelyFakeToolExecutionText(fake)).toBeTrue();
+  });
+
+  it("does not flag normal non-tool answer", () => {
+    const normal = "今天是周四，你刚才问的是系统状态。";
+    expect(isLikelyFakeToolExecutionText(normal)).toBeFalse();
+  });
+});

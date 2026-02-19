@@ -735,33 +735,17 @@ export function sanitizeLmStudioOutput(text: string): string {
 const AIDOCS_ROOT = process.env.AIDOCS_ROOT || "AIDOCS";
 
 /**
- * P1: Tool 定义（OpenAI function calling schema）
+ * P5.6.8-R3: PI 四基础工具定义（OpenAI function calling schema）
  *
- * 注意：这些工具仅在 tool-calls 模式下可用（P1 预留）
- * P0 模式下，请使用显式斜杠命令（如 /tts, /asr, /vision）
+ * pi.on 模式：向 LLM 暴露四基础工具
+ * pi.off 模式：不暴露任何工具（普通 direct 聊天 + 记忆注入）
  */
-const AIDOCS_TOOLS = [
+const PI_ON_TOOLS = [
     {
         type: "function",
         function: {
-            name: "list_directory",
-            description: "列出目录下的文件和子目录",
-            parameters: {
-                type: "object",
-                properties: {
-                    path: { type: "string", description: "目录路径（相对或绝对）" },
-                    limit: { type: "integer", default: 20 }
-                },
-                required: ["path"],
-                additionalProperties: false
-            }
-        }
-    },
-    {
-        type: "function",
-        function: {
-            name: "read_text_file",
-            description: "读取 UTF-8 文本文件内容",
+            name: "read_file",
+            description: "读取文件内容",
             parameters: {
                 type: "object",
                 properties: {
@@ -775,13 +759,13 @@ const AIDOCS_TOOLS = [
     {
         type: "function",
         function: {
-            name: "append_text_file",
-            description: "向文本文件追加内容（文件不存在则创建）",
+            name: "write_file",
+            description: "写入文件（整文件覆盖）",
             parameters: {
                 type: "object",
                 properties: {
                     path: { type: "string", description: "文件路径（相对或绝对）" },
-                    content: { type: "string", description: "要追加的内容" }
+                    content: { type: "string", description: "要写入的内容" }
                 },
                 required: ["path", "content"],
                 additionalProperties: false
@@ -791,45 +775,58 @@ const AIDOCS_TOOLS = [
     {
         type: "function",
         function: {
-            name: "run_skill",
-            description: "执行技能任务（当前可用：system-info - 汇报系统配置和环境信息）",
+            name: "edit_file",
+            description: "补丁式编辑文件（禁止整文件覆盖）",
             parameters: {
                 type: "object",
                 properties: {
-                    skill_id: {
-                        type: "string",
-                        enum: ["system-info"],
-                        description: "技能ID（system-info: 汇报系统配置）"
-                    },
-                    input: {
-                        type: "string",
-                        description: "技能输入参数（可选）"
+                    path: { type: "string", description: "文件路径（相对或绝对）" },
+                    edits: {
+                        type: "array",
+                        items: {
+                            type: "object",
+                            properties: {
+                                oldText: { type: "string", description: "要替换的旧文本" },
+                                newText: { type: "string", description: "替换后的新文本" }
+                            },
+                            required: ["oldText", "newText"]
+                        },
+                        description: "补丁数组（每个补丁包含 oldText 和 newText）"
                     }
                 },
-                required: ["skill_id"],
+                required: ["path", "edits"],
+                additionalProperties: false
+            }
+        }
+    },
+    {
+        type: "function",
+        function: {
+            name: "bash",
+            description: "执行命令",
+            parameters: {
+                type: "object",
+                properties: {
+                    command: { type: "string", description: "要执行的命令" }
+                },
+                required: ["command"],
                 additionalProperties: false
             }
         }
     }
 ] as const;
 
-export type AidocsToolDef = (typeof AIDOCS_TOOLS)[number];
+export type AidocsToolDef = (typeof PI_ON_TOOLS)[number];
 
 /**
  * 获取 LLM 可用工具列表（基于 workspace 配置）
  *
- * Autonomous (autonomous 模式): 返回完整工具列表，模型可自主编排调用
- * - 模型可通过 tool_calls 自动调用所有工具（含 shell/browser）
- * - 默认全信任，不要求确认
- *
- * P0 (explicit 模式): 返回空数组，不向 LLM 提供任何工具定义
- * - 用户通过显式斜杠命令触发工具（如 /tts, /asr, /vision）
- * - 避免依赖 tool_calls 的"玄学"稳定性
- *
- * P1 (tool-calls 模式): 返回配置的工具列表（预留，暂未启用）
+ * P5.6.8-R3b: PI 模式分叉
+ * - pi.on: 返回四基础工具（read_file/write_file/edit_file/bash）
+ * - pi.off: 返回空数组（普通 direct 聊天 + 记忆注入）
  *
  * @param workspacePath 工作区路径
- * @returns 工具定义数组（autonomous 为完整工具，explicit 为空）
+ * @returns 工具定义数组（pi.on 为四工具，pi.off 为空）
  */
 export async function getToolsForLlm(workspacePath?: string): Promise<readonly AidocsToolDef[]> {
     // 如果没有提供工作区路径，返回空数组（保守默认）
@@ -838,21 +835,19 @@ export async function getToolsForLlm(workspacePath?: string): Promise<readonly A
     }
 
     try {
-        const { getToolPolicy } = await import("./config/workspace.js");
-        const policy = await getToolPolicy(workspacePath);
+        const { loadWorkspaceConfig } = await import("./config/workspace.js");
+        const cfg = await loadWorkspaceConfig(workspacePath);
 
-        // Autonomous 模式：向 LLM 提供完整工具列表
-        if (policy.mode === "autonomous") {
-            return AIDOCS_TOOLS;
-        }
+        // P5.6.8-R3b: PI 模式分叉
+        const piEnabled = cfg["pi.enabled"] ?? false;
 
-        // P0: explicit 模式下，不向 LLM 提供任何工具定义
-        if (policy.mode === "explicit") {
+        if (piEnabled) {
+            // pi.on: 四基础工具
+            return PI_ON_TOOLS;
+        } else {
+            // pi.off: 空数组（普通 direct 聊天 + 记忆注入）
             return [];
         }
-
-        // P1: tool-calls 模式下，返回配置的工具列表（预留）
-        return AIDOCS_TOOLS;
     } catch {
         // 读取配置失败时，保守返回空数组
         return [];
@@ -860,7 +855,7 @@ export async function getToolsForLlm(workspacePath?: string): Promise<readonly A
 }
 
 const DEFAULT_ALLOWED_TOOL_NAMES = new Set(
-    AIDOCS_TOOLS.map(t => t.function.name)
+    PI_ON_TOOLS.map(t => t.function.name)
 );
 
 export type ParsedToolCall = { name: string; args: Record<string, unknown> };
@@ -885,7 +880,7 @@ export function parseToolCallBestEffortFromText(params: {
         if (!raw) return null;
 
         // 1) XML-ish: <tool_call>name <arg_key>k</arg_key><arg_value>v</arg_value>...</tool_call>
-        if (raw.includes("<tool_call>")) {
+        if (raw.includes("<tool_call>") || raw.includes("陈列")) {
             const parsed = parseXmlToolCall(raw, allowed);
             if (parsed) return parsed;
         }
@@ -918,6 +913,24 @@ export function parseToolCallBestEffortFromText(params: {
 }
 
 function parseXmlToolCall(text: string, allowed: Set<string>): ParsedToolCall | null {
+    // 兼容历史“陈列...陈列/xxx”格式（旧模型输出）
+    if (text.includes("陈列")) {
+        const tokens = text.split("陈列").map(item => item.trim()).filter(Boolean);
+        const name = tokens[0];
+        if (!name || !allowed.has(name)) return null;
+
+        const args: Record<string, unknown> = {};
+        for (let i = 1; i < tokens.length; i += 2) {
+            const key = tokens[i];
+            const value = tokens[i + 1];
+            if (!key || !value) break;
+            if (key.startsWith("/")) break;
+            if (value.startsWith("/")) break;
+            args[key] = parseLooseValue(value);
+        }
+        return { name, args };
+    }
+
     const idx = text.indexOf("<tool_call>");
     if (idx < 0) return null;
     const after = text.slice(idx + "<tool_call>".length).trimStart();
@@ -1112,6 +1125,11 @@ export interface LmStudioToolLoopOptions {
     baseUrl?: string;
     model?: string;
     timeoutMs?: number;
+    // P5.6.8-R4b: 短期记忆上下文
+    windowMessages?: Array<{ role: string; content?: string }>; // 历史窗口消息
+    summaryContext?: string; // summary 格式化后的上下文
+    // P5.6.8-R4e: SOUL 上下文（direct only）
+    soulContext?: { content: string; source: string; path: string; chars: number };
 }
 
 /**
@@ -1120,6 +1138,22 @@ export interface LmStudioToolLoopOptions {
 export interface ToolLoopResult {
     answer: string;
     toolCall?: { name: string; args: Record<string, unknown>; result: unknown };
+}
+
+/**
+ * 检测“伪工具执行”文本（模型未发起 tool_calls，却在正文伪造执行过程/结果）
+ */
+export function isLikelyFakeToolExecutionText(text: string): boolean {
+    const input = (text || "").trim();
+    if (!input) return false;
+
+    const hasShellFence = /```(?:bash|sh|zsh|shell)\b[\s\S]*?```/i.test(input);
+    const hasExecutionCue =
+        /(执行中|正在执行|命令输出|命令结果|已执行)/i.test(input) ||
+        /(?:^|\n)\s*(?:pwd|ls|cat)\b/im.test(input) ||
+        /\/home\/[^\s]*/.test(input);
+
+    return hasShellFence && hasExecutionCue;
 }
 
 /**
@@ -1160,50 +1194,30 @@ function resolveUnderRoot(inputPath: string, root: string): string {
 }
 
 /**
- * 执行工具
+ * 执行工具（P5.6.8-R3a: 统一走 Tool Bus）
+ *
+ * P5.6.8-R4h: 返回完整错误信息（包含 errorCode）
  */
 async function runTool(name: string, args: Record<string, unknown>, root: string): Promise<unknown> {
-    switch (name) {
-        case "list_directory": {
-            const dir = resolveUnderRoot(String(args.path || ""), root);
-            const limitRaw = args.limit;
-            const limit = typeof limitRaw === "number" && Number.isFinite(limitRaw)
-                ? Math.max(1, Math.floor(limitRaw))
-                : 20;
-            const entries = await fsPromises.readdir(dir, { withFileTypes: true });
-            return entries.slice(0, limit).map(e => ({
-                name: e.name,
-                type: e.isDirectory() ? "directory" : "file"
-            }));
-        }
-        case "read_text_file": {
-            const filePath = resolveUnderRoot(String(args.path || ""), root);
-            return await fsPromises.readFile(filePath, "utf-8");
-        }
-        case "append_text_file": {
-            const filePath = resolveUnderRoot(String(args.path || ""), root);
-            await fsPromises.appendFile(filePath, String(args.content ?? ""), "utf-8");
-            return { success: true, path: args.path };
-        }
-        case "run_skill": {
-            // P5.5: Skill 执行工具（调用单一执行器）
-            const skillId = String(args.skill_id || "");
-            const input = typeof args.input === "string" ? args.input : "";
+    const { executeTool } = await import("./tools/bus.js");
+    const { randomUUID } = await import("node:crypto");
 
-            const { runSkill } = await import("./skills/auto.js");
-            const result = await runSkill(skillId as any, input, {
-                workspacePath: root,
-            });
+    const result = await executeTool(name as any, args, {
+        workspacePath: root,
+        source: "llm-tool-call",
+        requestId: `lmstudio-${randomUUID()}`,
+    });
 
-            if (!result.ok) {
-                return { error: result.error || "skill execution failed" };
-            }
-
-            return { output: result.output };
-        }
-        default:
-            return { error: `未知工具: ${name}` };
+    if (!result.ok) {
+        // P5.6.8-R4h: 返回完整错误信息
+        return {
+            error: result.error?.message || "tool execution failed",
+            errorCode: result.error?.code || "TOOL_EXEC_FAILED",
+        };
     }
+
+    // 返回 data 字段（兼容旧格式）
+    return result.data || { success: true };
 }
 
 /**
@@ -1218,17 +1232,101 @@ async function runTool(name: string, args: Record<string, unknown>, root: string
 export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Promise<ToolLoopResult> {
     const baseUrl = options.baseUrl || normalizeBaseUrl(config.lmstudioBaseUrl || "http://127.0.0.1:1234");
     const model = options.model || await resolveLmStudioModelId({ baseUrl });
-    const system = options.system ?? config.lmstudioSystemPrompt;
     const timeoutMs = options.timeoutMs || (typeof config.lmstudioTimeoutMs === "number" && !Number.isNaN(config.lmstudioTimeoutMs)
         ? config.lmstudioTimeoutMs
         : 120_000);
     const root = options.allowRoot || config.workspaceRoot || AIDOCS_ROOT;
+
+    // P5.6.8-R3c: 注入 skill 索引到 system prompt
+    let system = options.system ?? config.lmstudioSystemPrompt ?? "";
+    const workspacePath = options.workspacePath || root;
+
+    try {
+        const { existsSync } = await import("node:fs");
+        const { join } = await import("node:path");
+        const os = await import("node:os");
+
+        const globalSkillIndexPath = join(os.homedir(), ".config", "msgcode", "skills", "index.json");
+        const workspaceSkillIndexPath = join(workspacePath, ".msgcode", "skills", "index.json");
+
+        let skillHint = "\n\n[技能系统]\n";
+
+        if (existsSync(globalSkillIndexPath)) {
+            try {
+                const indexContent = await fsPromises.readFile(globalSkillIndexPath, "utf-8");
+                const index = JSON.parse(indexContent);
+                if (index.skills && Array.isArray(index.skills) && index.skills.length > 0) {
+                    skillHint += `全局技能：${index.skills.map((s: any) => s.id).join(", ")}\n`;
+                }
+            } catch {
+                // 忽略读取错误
+            }
+        }
+
+        if (existsSync(workspaceSkillIndexPath)) {
+            try {
+                const indexContent = await fsPromises.readFile(workspaceSkillIndexPath, "utf-8");
+                const index = JSON.parse(indexContent);
+                if (index.skills && Array.isArray(index.skills) && index.skills.length > 0) {
+                    skillHint += `工作区技能：${index.skills.map((s: any) => s.id).join(", ")}\n`;
+                }
+            } catch {
+                // 忽略读取错误
+            }
+        }
+
+        skillHint += "调用方式：read_file 读取技能文件（~/.config/msgcode/skills/<id>/main.sh 或 <workspace>/.msgcode/skills/<id>/main.sh），bash 执行";
+
+        system += skillHint;
+    } catch {
+        // 忽略 skill 索引注入错误
+    }
+
+    // P5.6.8-R4e: 注入 SOUL 上下文（direct only）
+    if (options.soulContext && options.soulContext.source !== "none") {
+        system += `\n\n[灵魂身份]\n${options.soulContext.content}\n[/灵魂身份]`;
+        system += `\n\n（SOUL 已内置到系统提示中，你不需要也不应该尝试读取"灵魂文件"或"灵魂脚本"）`;
+    }
 
     const messages: Array<{ role: string; content?: string; tool_call_id?: string; tool_calls?: ToolCall[] }> = [];
 
     if (system && system.trim()) {
         messages.push({ role: "system", content: system.trim() });
     }
+
+    // P5.6.8-R4b: 注入短期记忆上下文
+    // 1. 如果有 summary，作为历史上下文注入
+    if (options.summaryContext && options.summaryContext.trim()) {
+        // 将 summary 作为 assistant 的历史总结注入
+        messages.push({
+            role: "assistant",
+            content: `[历史对话摘要]\n${options.summaryContext}`
+        });
+    }
+
+    // 2. 注入最近的窗口消息（有预算限制）
+    const MAX_WINDOW_MESSAGES = 20; // 最多保留 20 条历史消息
+    const MAX_CONTEXT_CHARS = 8000; // 历史上下文最大字符数
+
+    if (options.windowMessages && options.windowMessages.length > 0) {
+        let totalChars = 0;
+        const recentMessages = options.windowMessages.slice(-MAX_WINDOW_MESSAGES);
+
+        for (const msg of recentMessages) {
+            const msgChars = msg.content?.length || 0;
+            if (totalChars + msgChars > MAX_CONTEXT_CHARS) {
+                // 超预算，停止注入
+                break;
+            }
+            messages.push({
+                role: msg.role,
+                content: msg.content
+            });
+            totalChars += msgChars;
+        }
+    }
+
+    // 3. 注入当前用户输入
     messages.push({ role: "user", content: options.prompt });
 
     // P0: 获取基于 workspace 配置的工具列表（explicit 模式下为空）
@@ -1266,14 +1364,45 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
 
     // 3) 无工具调用（含兜底解析失败）：直接清洗返回
     if (!tc) {
-        return { answer: sanitizeLmStudioOutput(assistantContent ?? "") };
+        const cleanedAnswer = sanitizeLmStudioOutput(assistantContent ?? "");
+        if (tools.length > 0 && isLikelyFakeToolExecutionText(cleanedAnswer)) {
+            logger.warn("Detected fake tool execution without tool_calls", {
+                module: "lmstudio",
+                toolCallCount: 0,
+            });
+            return {
+                answer: "未检测到真实工具调用；为避免返回伪造执行结果，本次不输出命令结果。请重试并明确让我调用工具。"
+            };
+        }
+        return { answer: cleanedAnswer };
     }
 
     let toolResult: unknown;
     try {
-        toolResult = await runTool(tc.function.name, args, root);
+        // P5.6.8-R4h: 使用 workspacePath 而非 root（确保工具在正确目录执行）
+        toolResult = await runTool(tc.function.name, args, workspacePath);
     } catch (e) {
         toolResult = { error: e instanceof Error ? e.message : String(e) };
+    }
+
+    // P5.6.8-R4h: 失败短路（工具失败时直接返回结构化错误，不再走第二轮）
+    if (toolResult && typeof toolResult === "object" && "error" in toolResult) {
+        const err = toolResult as { error: string; errorCode?: string };
+        const toolErrorCode = err.errorCode || "TOOL_EXEC_FAILED";
+        const toolErrorMessage = err.error || "工具执行失败";
+
+        logger.info("Tool loop failed (short-circuit)", {
+            module: "lmstudio",
+            toolCallCount: 1,
+            toolName: tc.function.name,
+            toolErrorCode,
+            toolErrorMessage,
+        });
+
+        return {
+            answer: `工具执行失败\n- 工具: ${tc.function.name}\n- 错误码: ${toolErrorCode}\n- 错误: ${toolErrorMessage}`,
+            toolCall: { name: tc.function.name, args, result: toolResult }
+        };
     }
 
     // 构造第二轮消息（将工具调用回灌给模型）
@@ -1309,25 +1438,36 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
 
     const answer = r2.choices[0]?.message?.content ?? "";
 
-    // P5.5: 观测字段记录
+    // P5.6.8-R4h: 补全观测字段（toolErrorCode/toolErrorMessage/exitCode）
     const toolCallCount = tc ? 1 : 0;
-    const isSkillCall = tc?.function.name === "run_skill";
-    if (isSkillCall) {
-        const skillId = String(args.skill_id || "");
-        const skillResult = (toolResult as any)?.output ? "ok" : "error";
-        logger.info("Skill executed via LLM tool_calls", {
-            module: "lmstudio",
-            toolCallCount,
-            autoSkill: skillId,
-            autoSkillResult: skillResult,
-        });
-    } else {
-        logger.info("Tool loop completed", {
-            module: "lmstudio",
-            toolCallCount,
-            toolName: tc?.function.name || null,
-        });
+    const toolName = tc?.function.name || null;
+
+    // 提取错误码和错误消息
+    let toolErrorCode: string | null = null;
+    let toolErrorMessage: string | null = null;
+    let exitCode: number | null = null;
+
+    if (toolResult && typeof toolResult === "object") {
+        const result = toolResult as Record<string, unknown>;
+        if ("errorCode" in result) {
+            toolErrorCode = String(result.errorCode);
+        }
+        if ("error" in result) {
+            toolErrorMessage = String(result.error);
+        }
+        if ("exitCode" in result) {
+            exitCode = typeof result.exitCode === "number" ? result.exitCode : null;
+        }
     }
+
+    logger.info("Tool loop completed", {
+        module: "lmstudio",
+        toolCallCount,
+        toolName,
+        toolErrorCode,
+        toolErrorMessage,
+        exitCode,
+    });
 
     return {
         answer: sanitizeLmStudioOutput(answer),

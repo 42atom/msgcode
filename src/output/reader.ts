@@ -207,21 +207,27 @@ export class OutputReader {
 
     /**
      * P0 Batch-1: 候选文件打分
-     * - deliverable 优先（前 30 行有 assistant 相关内容）
-     * - 同类按 mtime 降序
+     * - 先按 mtime 降序（最新优先）
+     * - mtime 相同再按 deliverable 优先
      */
     private async scoreCandidates(candidates: CandidateFile[]): Promise<Array<CandidateFile & { score: number; isDeliverable: boolean }>> {
         const scored: Array<CandidateFile & { score: number; isDeliverable: boolean }> = [];
 
         for (const cand of candidates) {
             const isDeliverable = await this.checkDeliverable(cand.path);
-            // deliverable 优先（分数 1000 + mtime），非 deliverable（mtime）
-            const score = isDeliverable ? 1000000000000 + cand.mtime : cand.mtime;
+            // score 仅用于日志观测；排序由比较器决定
+            const score = cand.mtime;
             scored.push({ ...cand, score, isDeliverable });
         }
 
-        // 按分数降序
-        scored.sort((a, b) => b.score - a.score);
+        // 关键修复：
+        // 1) 永远优先最新文件，避免“旧 deliverable 文件”长期霸占选路
+        // 2) 仅当 mtime 完全相同，才把 deliverable 作为 tie-breaker
+        scored.sort((a, b) => {
+            if (a.mtime !== b.mtime) return b.mtime - a.mtime;
+            if (a.isDeliverable !== b.isDeliverable) return a.isDeliverable ? -1 : 1;
+            return b.path.localeCompare(a.path);
+        });
         return scored;
     }
 

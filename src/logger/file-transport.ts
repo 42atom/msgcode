@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import type { LogEntry, Transport, TransportOptions } from "./index.js";
+import { formatLogTextField } from "./format-text.js";
 
 /**
  * 文件传输器选项
@@ -150,6 +151,19 @@ export class FileTransport implements Transport {
             if (process.env.DEBUG_TRACE_TEXT === "1" && meta.textPreview) {
                 parts.push(`textPreview="${String(meta.textPreview).slice(0, 30)}"`);
             }
+            if (process.env.MSGCODE_LOG_PLAINTEXT_INPUT === "1" && meta.inboundText !== undefined && meta.inboundText !== null) {
+                parts.push(`inboundText="${formatLogTextField(meta.inboundText)}"`);
+            }
+            // P5.6.8: 记录回复正文（用于冒烟验收"是否幻想执行"）
+            if (meta.responseText !== undefined && meta.responseText !== null) {
+                parts.push(`responseText="${formatLogTextField(meta.responseText)}"`);
+            }
+            if (meta.toolCallCount !== undefined) parts.push(`toolCallCount=${meta.toolCallCount}`);
+            if (meta.toolName !== undefined) parts.push(`toolName=${meta.toolName}`);
+            if (meta.soulInjected !== undefined) parts.push(`soulInjected=${meta.soulInjected}`);
+            if (meta.soulSource !== undefined) parts.push(`soulSource=${meta.soulSource}`);
+            if (meta.soulPath !== undefined && meta.soulPath !== "") parts.push(`soulPath=${meta.soulPath}`);
+            if (meta.soulChars !== undefined) parts.push(`soulChars=${meta.soulChars}`);
             if (meta.rowid !== undefined) parts.push(`rowid=${meta.rowid}`);
 
             // Phase 6: 添加常用错误字段输出（P1 日志可观测性）

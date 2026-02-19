@@ -24,10 +24,11 @@ import { handleTmuxSend } from "./tmux/responder.js";
 
 // 导入 runtime 编排器
 import * as session from "./runtime/session-orchestrator.js";
-import * as skill from "./runtime/skill-orchestrator.js";
 
 // P5.6.2-R1: 导入会话窗口
 import { loadWindow, appendWindow, type WindowMessage } from "./session-window.js";
+import { loadSummary, formatSummaryAsContext } from "./summary.js";
+import { resolveSoulContext } from "./config/souls.js";
 
 const TMUX_STYLE_MAX_CHARS = 800;
 
@@ -147,14 +148,6 @@ export abstract class BaseHandler implements CommandHandler {
                 groupName: context.groupName,
             });
             return result;
-        }
-
-        const skillCommand = await skill.handleSkillRunCommand(trimmed, {
-            workspacePath: context.projectDir,
-            chatId: context.chatId,
-        });
-        if (skillCommand) {
-            return skillCommand;
         }
 
         // === 非命令消息：转发给 Claude（请求-响应模式）===
@@ -307,14 +300,6 @@ export class RuntimeRouterHandler implements CommandHandler {
     async handle(message: string, context: HandlerContext): Promise<HandleResult> {
         const trimmed = message.trim();
 
-        const skillCommand = await skill.handleSkillRunCommand(trimmed, {
-            workspacePath: context.projectDir,
-            chatId: context.chatId,
-        });
-        if (skillCommand) {
-            return skillCommand;
-        }
-
         // P5.5: 关键词主触发已禁用，自然语言由 LLM tool_calls 自主决策
         // if (!trimmed.startsWith("/")) {
         //     const autoSkill = await tryHandleAutoSkill(trimmed, context);
@@ -322,6 +307,151 @@ export class RuntimeRouterHandler implements CommandHandler {
         //         return autoSkill;
         //     }
         // }
+
+        // === 语音命令：必须在委托给 DefaultHandler 之前短路处理（P5.6.12）===
+        // 这些命令在 RuntimeRouterHandler 中实现，不应被 DefaultHandler 吞掉
+        if (trimmed === "/mode" ||
+            trimmed === "mode" ||
+            trimmed.startsWith("/mode ") ||
+            trimmed.startsWith("/tts ") ||
+            trimmed.startsWith("/voice ")) {
+            // 获取语音模式状态（提前获取，供后续逻辑使用）
+            const voiceMode = getVoiceReplyMode(context.chatId);
+            const ttsPrefs = getTtsPrefs(context.chatId);
+
+            // /mode - 查看语音模式
+            if (trimmed === "/mode" || trimmed === "mode") {
+                const refAudio = (process.env.INDEXTTS_REF_AUDIO || "").trim();
+                return {
+                    success: true,
+                    response: [
+                        `语音回复模式: ${voiceMode}`,
+                        `TTS: backend=indextts normalize=${process.env.TTS_NORMALIZE_TEXT || "1"}`,
+                        refAudio ? `refAudio=${refAudio}` : "",
+                        ttsPrefs.instruct ? `style=${ttsPrefs.instruct}` : "",
+                    ].filter(Boolean).join("\n"),
+                };
+            }
+
+            // /mode voice on|off|both|audio
+            if (trimmed.startsWith("/mode voice ")) {
+                const arg = trimmed.slice("/mode voice ".length).trim().toLowerCase();
+                const mode =
+                    arg === "on" ? "both"
+                  : arg === "off" ? "text"
+                  : arg === "both" ? "both"
+                  : arg === "audio" ? "audio"
+                  : arg === "text" ? "text"
+                  : null;
+                if (!mode) {
+                    return { success: true, response: "用法: /mode voice on|off|both|audio" };
+                }
+                setVoiceReplyMode(context.chatId, mode);
+                return { success: true, response: `已设置语音回复模式: ${mode}` };
+            }
+
+            // /mode style <desc>
+            if (trimmed.startsWith("/mode style ")) {
+                const style = trimmed.slice("/mode style ".length).trim();
+                if (!style) {
+                    return { success: true, response: "用法: /mode style <desc>" };
+                }
+                setTtsPrefs(context.chatId, { instruct: style });
+                return { success: true, response: `已设置语音风格: ${style}` };
+            }
+
+            // /mode style-reset
+            if (trimmed === "/mode style-reset" || trimmed === "/mode style reset") {
+                clearTtsPrefs(context.chatId);
+                return { success: true, response: "已清空语音风格（恢复默认）" };
+            }
+
+            // /tts <text>
+            if (trimmed.startsWith("/tts ")) {
+                const body = trimmed.slice("/tts ".length).trim();
+                const parsed = parseTtsRequest(body);
+                const toSpeak = parsed.text;
+                if (!toSpeak) {
+                    return { success: true, response: "用法: /tts <text>" };
+                }
+                if (!context.projectDir) {
+                    return { success: false, error: "缺少工作区路径（projectDir），无法写入 TTS 产物" };
+                }
+                try {
+                    const { executeTool } = await import("./tools/bus.js");
+                    const { randomUUID } = await import("node:crypto");
+
+                    const result = await executeTool("tts", {
+                        text: toSpeak,
+                        ...(parsed.instruct && { instruct: parsed.instruct }),
+                        ...(parsed.speed && { speed: parsed.speed }),
+                        ...(parsed.temperature && { temperature: parsed.temperature }),
+                    }, {
+                        workspacePath: context.projectDir,
+                        chatId: context.chatId,
+                        source: "slash-command",
+                        requestId: randomUUID(),
+                    });
+
+                    if (!result.ok) {
+                        const errorMsg = result.error?.code === "TOOL_NOT_ALLOWED"
+                            ? "TTS 工具未被允许"
+                            : result.error?.message || "TTS 失败";
+                        return { success: false, error: errorMsg };
+                    }
+
+                    if (!result.data?.audioPath) {
+                        return { success: false, error: "TTS 未返回音频文件路径" };
+                    }
+
+                    return { success: true, response: "已生成语音", file: { path: result.data.audioPath } };
+                } catch (e) {
+                    return { success: false, error: e instanceof Error ? e.message : String(e) };
+                }
+            }
+
+            // /voice <question>
+            if (trimmed.startsWith("/voice ")) {
+                const question = trimmed.slice("/voice ".length).trim();
+                if (!question) {
+                    return { success: true, response: "用法: /voice <question>" };
+                }
+                if (!context.projectDir) {
+                    return { success: false, error: "缺少工作区路径（projectDir），无法写入 TTS 产物" };
+                }
+                try {
+                    const useMcp = process.env.LMSTUDIO_ENABLE_MCP === "1";
+                    const personaContent = undefined;
+                    const answer = await runLmStudioChat({
+                        prompt: question,
+                        system: personaContent,
+                        ...(useMcp && context.projectDir ? { workspace: context.projectDir } : {}),
+                    });
+                    const cleanAnswer = (answer || "").trim();
+                    if (!cleanAnswer) {
+                        return { success: false, error: "LM Studio 未返回可展示的文本" };
+                    }
+                    const { executeTool } = await import("./tools/bus.js");
+                    const { randomUUID } = await import("node:crypto");
+
+                    const tts = await executeTool("tts", {
+                        text: cleanAnswer,
+                    }, {
+                        workspacePath: context.projectDir,
+                        chatId: context.chatId,
+                        source: "slash-command",
+                        requestId: randomUUID(),
+                    });
+
+                    if (!tts.ok || !tts.data?.audioPath) {
+                        return { success: true, response: cleanAnswer };
+                    }
+                    return { success: true, response: cleanAnswer, file: { path: tts.data.audioPath } };
+                } catch (e) {
+                    return { success: false, error: e instanceof Error ? e.message : String(e) };
+                }
+            }
+        }
 
         // === slash 命令：委托给 DefaultHandler（使用 BaseHandler 的统一逻辑）===
         if (trimmed.startsWith("/")) {
@@ -381,253 +511,59 @@ export class RuntimeRouterHandler implements CommandHandler {
             }
         }
 
+        // P5.6.12: /help 统一走路由系统，不再在此处内联处理
+        // 语音命令已在上面短路处理，此处直接进入消息处理流程
+
+        // 获取语音模式状态（用于消息处理流程中的自动语音回复）
         const voiceMode = getVoiceReplyMode(context.chatId);
         const ttsPrefs = getTtsPrefs(context.chatId);
-
-        // help
-        if (trimmed === "help" || trimmed === "帮助" || trimmed === "/help" || trimmed === "/?") {
-            const baseUrl = (process.env.LMSTUDIO_BASE_URL || "http://127.0.0.1:1234").replace(/\/+$/, "");
-            const model = process.env.LMSTUDIO_MODEL || "(auto)";
-            // /help 里也显示当前 workspace 的策略与执行臂，避免"到底要不要 /start？"的误解
-            let mode: "local-only" | "egress-allowed" | "unknown" = "unknown";
-            let runner: "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code" | "unknown" = "unknown";
-            if (context.projectDir) {
-                try {
-                    const { getPolicyMode, getDefaultRunner } = await import("./config/workspace.js");
-                    mode = await getPolicyMode(context.projectDir);
-                    runner = await getDefaultRunner(context.projectDir);
-                } catch {
-                    // ignore
-                }
-            }
-            const startLine = runner === "codex" || runner === "claude-code"
-                ? "/start  启动/恢复 tmux 会话"
-                : runner === "lmstudio"
-                ? "/start  启动 LM Studio"
-                : "/start  已就绪（本地模型）";
-            const stopLine = runner === "codex" || runner === "claude-code"
-                ? "/stop   关闭 tmux 会话"
-                : runner === "lmstudio"
-                ? "/stop   停止 LM Studio"
-                : "/stop   无需停止（本地模型）";
-            const clearLine = runner === "codex" || runner === "claude-code"
-                ? "/clear  清空 tmux 会话（等价 kill+start）"
-                : runner === "lmstudio"
-                ? "/clear  清空 session + summary"
-                : "/clear  清空本地会话（本地模型无持久上下文）";
-            return {
-                success: true,
-                response: [
-                    "LM Studio Bot",
-                    `BaseUrl: ${baseUrl}`,
-                    `Model: ${model}`,
-                    context.projectDir ? `Workspace: ${context.projectDir}` : "",
-                    mode !== "unknown" ? `Policy: ${mode}` : "",
-                    runner !== "unknown" ? `Runner: ${runner}` : "",
-                    "",
-                    "直接发送消息即可与模型对话。",
-                    "",
-                    "会话管理:",
-                    startLine,
-                    stopLine,
-                    clearLine,
-                    "/status       查看会话状态",
-                    "/snapshot     获取终端输出",
-                    "/esc          发送 ESC 中断",
-                    "",
-                    "工具能力（Autonomous 模式）:",
-                    "模型可自主调用工具（含 TTS/ASR/OCR/Shell/Browser）",
-                    "/toolstats    查看工具执行统计",
-                    "/tool allow list 查看允许的工具列表",
-                    "",
-                    "语音能力:",
-                    "/tts <text>   朗读指定文本（纯工具命令）",
-                    "/voice <q>    先让模型回答，再把回答转成语音（组合能力）",
-                    "",
-                    "注意：ASR/OCR 为媒体流水线自动能力（收到音频/图片附件时自动处理）",
-                    "",
-                    "语音模式:",
-                    "/mode          查看语音模式",
-                    "/mode voice on|off|both|audio  设置语音回复模式",
-                    "/mode style <desc>  设置语气/情绪描述（IndexTTS emo_text）",
-                    "/mode style-reset    清空语气/情绪描述（恢复默认）",
-                    "",
-                    "示例：",
-                    "/tts 那真是太好了！保持这种好心情。",
-                    "/voice 南京是哪里的城市？",
-                    "/mode voice on",
-                    "/mode style 温柔女声，语速稍慢",
-                    "/mode style-reset",
-                ].join("\n"),
-            };
-        }
-
-        // /mode - 语音模式（RuntimeRouter 独有，BaseHandler 未覆盖）
-        if (trimmed === "/mode" || trimmed === "mode") {
-            const refAudio = (process.env.INDEXTTS_REF_AUDIO || "").trim();
-            return {
-                success: true,
-                response: [
-                    `语音回复模式: ${voiceMode}`,
-                    `TTS: backend=indextts normalize=${process.env.TTS_NORMALIZE_TEXT || "1"}`,
-                    refAudio ? `refAudio=${refAudio}` : "",
-                    ttsPrefs.instruct ? `style=${ttsPrefs.instruct}` : "",
-                ].filter(Boolean).join("\n"),
-            };
-        }
-
-        if (trimmed.startsWith("/mode voice ")) {
-            const arg = trimmed.slice("/mode voice ".length).trim().toLowerCase();
-            const mode =
-                arg === "on" ? "both"
-              : arg === "off" ? "text"
-              : arg === "both" ? "both"
-              : arg === "audio" ? "audio"
-              : arg === "text" ? "text"
-              : null;
-            if (!mode) {
-                return { success: true, response: "用法: /mode voice on|off|both|audio" };
-            }
-            setVoiceReplyMode(context.chatId, mode);
-            return { success: true, response: `已设置语音回复模式: ${mode}` };
-        }
-
-        if (trimmed.startsWith("/mode style ")) {
-            const style = trimmed.slice("/mode style ".length).trim();
-            if (!style) {
-                return { success: true, response: "用法: /mode style <desc>" };
-            }
-            setTtsPrefs(context.chatId, { instruct: style });
-            return { success: true, response: `已设置语音风格: ${style}` };
-        }
-
-        if (trimmed === "/mode style-reset" || trimmed === "/mode style reset") {
-            // 清空风格：完全清空偏好，让环境变量作为真相源
-            clearTtsPrefs(context.chatId);
-            return { success: true, response: "已清空语音风格（恢复默认）" };
-        }
-
-        // /tts: 朗读指定文本（通过 Tool Bus 执行，P0 显式命令）
-        if (trimmed.startsWith("/tts ")) {
-            const body = trimmed.slice("/tts ".length).trim();
-            const parsed = parseTtsRequest(body);
-            const toSpeak = parsed.text;
-            if (!toSpeak) {
-                return { success: true, response: "用法: /tts <text>" };
-            }
-            if (!context.projectDir) {
-                return { success: false, error: "缺少工作区路径（projectDir），无法写入 TTS 产物" };
-            }
-            try {
-                const { executeTool } = await import("./tools/bus.js");
-                const { randomUUID } = await import("node:crypto");
-
-                const result = await executeTool("tts", {
-                    text: toSpeak,
-                    ...(parsed.instruct && { instruct: parsed.instruct }),
-                    ...(parsed.speed && { speed: parsed.speed }),
-                    ...(parsed.temperature && { temperature: parsed.temperature }),
-                }, {
-                    workspacePath: context.projectDir,
-                    chatId: context.chatId,
-                    source: "slash-command",
-                    requestId: randomUUID(),
-                });
-
-                if (!result.ok) {
-                    const errorMsg = result.error?.code === "TOOL_NOT_ALLOWED"
-                        ? "TTS 工具未被允许"
-                        : result.error?.message || "TTS 失败";
-                    return { success: false, error: errorMsg };
-                }
-
-                if (!result.data?.audioPath) {
-                    return { success: false, error: "TTS 未返回音频文件路径" };
-                }
-
-                return { success: true, response: "已生成语音", file: { path: result.data.audioPath } };
-            } catch (e) {
-                return { success: false, error: e instanceof Error ? e.message : String(e) };
-            }
-        }
-
-        // /voice: 先回答，再把回答转为语音
-        if (trimmed.startsWith("/voice ")) {
-            const question = trimmed.slice("/voice ".length).trim();
-            if (!question) {
-                return { success: true, response: "用法: /voice <question>" };
-            }
-            if (!context.projectDir) {
-                return { success: false, error: "缺少工作区路径（projectDir），无法写入 TTS 产物" };
-            }
-            try {
-                const useMcp = process.env.LMSTUDIO_ENABLE_MCP === "1";
-                // P5.6.1-R2: Persona 全量退役，不再注入 personaContent
-                const personaContent = undefined;
-                const answer = await runLmStudioChat({
-                    prompt: question,
-                    system: personaContent,
-                    ...(useMcp && context.projectDir ? { workspace: context.projectDir } : {}),
-                });
-                const cleanAnswer = (answer || "").trim();
-                if (!cleanAnswer) {
-                    return { success: false, error: "LM Studio 未返回可展示的文本" };
-                }
-                const { executeTool } = await import("./tools/bus.js");
-                const { randomUUID } = await import("node:crypto");
-
-                const tts = await executeTool("tts", {
-                    text: cleanAnswer,
-                }, {
-                    workspacePath: context.projectDir,
-                    chatId: context.chatId,
-                    source: "slash-command",
-                    requestId: randomUUID(),
-                });
-
-                if (!tts.ok || !tts.data?.audioPath) {
-                    return { success: true, response: cleanAnswer }; // 降级：至少返回文本
-                }
-                return { success: true, response: cleanAnswer, file: { path: tts.data.audioPath } };
-            } catch (e) {
-                return { success: false, error: e instanceof Error ? e.message : String(e) };
-            }
-        }
-
-        if (trimmed.startsWith("/")) {
-            return {
-                success: true,
-                response: `LM Studio Bot 不支持命令: ${trimmed}
-发送 help 查看帮助`,
-            };
-        }
 
         try {
             const { randomUUID } = await import("node:crypto");
             const traceId = randomUUID();  // 生成链路追踪 ID
+
+            // P5.6.2-R2: 读取短期会话窗口
+            let windowMessages: WindowMessage[] = [];
+            let summaryContext: string | undefined;
+            let soulContext: { content: string; source: string; path: string; chars: number } | undefined;
+
+            if (context.projectDir) {
+                windowMessages = await loadWindow(context.projectDir, context.chatId);
+
+                // P5.6.8-R4b: 读取 summary 并格式化为上下文
+                const summary = await loadSummary(context.projectDir, context.chatId);
+                if (summary) {
+                    summaryContext = formatSummaryAsContext(summary);
+                }
+
+                // P5.6.8-R4e: 读取 SOUL 上下文
+                soulContext = await resolveSoulContext(context.projectDir);
+            }
 
             logger.info("LM Studio 请求开始", {
                 module: "handlers",
                 chatId: context.chatId,
                 traceId,
                 runner: "direct",
+                // P5.6.8-R4e: SOUL 注入观测字段
+                soulInjected: soulContext?.source !== "none",
+                soulSource: soulContext?.source || "none",
+                soulPath: soulContext?.path || "",
+                soulChars: soulContext?.chars || 0,
             });
 
-            // P5.6.2-R2: 读取短期会话窗口
-            let windowMessages: WindowMessage[] = [];
-            if (context.projectDir) {
-                windowMessages = await loadWindow(context.projectDir, context.chatId);
-            }
-
-            // P0: 只在 MCP 真正启用时才传递 workspace（避免注入 MCP 规则导致元叙事）
-            const useMcp = process.env.LMSTUDIO_ENABLE_MCP === "1";
             // P5.6.1-R2: Persona 全量退役，不再注入 personaContent
             const personaContent = undefined;
             // P5.6.2-R1: 主链统一走 ToolLoop
             const toolLoopResult = await runLmStudioToolLoop({
                 prompt: trimmed,
                 system: personaContent,
-                ...(useMcp && context.projectDir ? { workspacePath: context.projectDir } : {}),
+                ...(context.projectDir ? { workspacePath: context.projectDir } : {}),
+                // P5.6.8-R4b: 注入短期记忆上下文
+                windowMessages,
+                summaryContext,
+                // P5.6.8-R4e: 注入 SOUL 上下文（direct only）
+                soulContext,
             });
             const clean = (toolLoopResult.answer || "").trim();
             if (!clean) {
@@ -647,6 +583,11 @@ export class RuntimeRouterHandler implements CommandHandler {
                 // P5.6.2-R1: ToolLoop 观测字段
                 toolCallCount: toolLoopResult.toolCall ? 1 : 0,
                 toolName: toolLoopResult.toolCall?.name,
+                // P5.6.8-R4e: SOUL 注入观测字段
+                soulInjected: soulContext?.source !== "none",
+                soulSource: soulContext?.source || "none",
+                soulPath: soulContext?.path || "",
+                soulChars: soulContext?.chars || 0,
             });
 
             // 自动语音回复：不在 handler 内阻塞生成（避免"很久不回复"）
