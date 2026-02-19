@@ -23,15 +23,35 @@ const LOG_DIR = path.join(CONFIG_DIR, "log");
 const LOG_FILE = path.join(LOG_DIR, "msgcode.log");
 const DAEMON_SCRIPT = path.join(__dirname, "daemon.ts");
 
+function enableDebugProfile(): void {
+  process.env.LOG_LEVEL = "debug";
+  process.env.MEMORY_DEBUG = "1";
+  process.env.DEBUG_TRACE = "1";
+  // 默认不落消息正文，避免调试日志泄露敏感文本
+  process.env.DEBUG_TRACE_TEXT = process.env.DEBUG_TRACE_TEXT ?? "0";
+}
+
+function hasDebugFlag(argv: string[]): boolean {
+  return argv.includes("-d") || argv.includes("--debug");
+}
+
+if (hasDebugFlag(process.argv.slice(2))) {
+  enableDebugProfile();
+}
+
 const program = new Command();
 
 program.name("msgcode").description("msgcode - iMessage-based bot (imsg RPC)").version(getVersion());
 
 program
   .command("start [mode]")
-  .description("启动 msgcode（debug 模式前台运行，否则后台 daemon）")
-  .action(async (mode: string | undefined) => {
+  .description("启动 msgcode（debug 模式前台运行，否则后台 daemon；支持 -d 调试全开）")
+  .option("-d, --debug", "启用调试全开（LOG_LEVEL=debug + MEMORY_DEBUG=1 + DEBUG_TRACE=1）")
+  .action(async (mode: string | undefined, options: { debug?: boolean }) => {
     const normalized = (mode ?? "").toLowerCase();
+    if (options.debug) {
+      enableDebugProfile();
+    }
     if (normalized === "debug") {
       const { startBot } = await import("./commands.js");
       await startBot();
@@ -50,9 +70,13 @@ program
 
 program
   .command("restart [mode]")
-  .description("重启 msgcode（debug 模式前台运行，否则后台 daemon）")
-  .action(async (mode: string | undefined) => {
+  .description("重启 msgcode（debug 模式前台运行，否则后台 daemon；支持 -d 调试全开）")
+  .option("-d, --debug", "启用调试全开（LOG_LEVEL=debug + MEMORY_DEBUG=1 + DEBUG_TRACE=1）")
+  .action(async (mode: string | undefined, options: { debug?: boolean }) => {
     const normalized = (mode ?? "").toLowerCase();
+    if (options.debug) {
+      enableDebugProfile();
+    }
     const { stopBot } = await import("./commands.js");
     await stopBot();
     if (normalized === "debug") {
