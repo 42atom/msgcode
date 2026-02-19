@@ -1,7 +1,7 @@
 /**
  * msgcode: Tool Bus 类型定义
  *
- * Autonomous: 模型可自主编排调用工具（含 shell/browser），默认全信任
+ * Autonomous: 模型可自主编排调用工具（含 bash/browser），默认全信任
  * P0: 显式工具触发，避免依赖 tool-calls 玄学
  */
 

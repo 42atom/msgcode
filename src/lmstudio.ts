@@ -803,11 +803,11 @@ const PI_ON_TOOLS = [
         type: "function",
         function: {
             name: "bash",
-            description: "执行 shell 命令",
+            description: "执行命令",
             parameters: {
                 type: "object",
                 properties: {
-                    command: { type: "string", description: "要执行的 shell 命令" }
+                    command: { type: "string", description: "要执行的命令" }
                 },
                 required: ["command"],
                 additionalProperties: false

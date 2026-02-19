@@ -99,7 +99,7 @@ describe("Budget Layer", () => {
             id: "call_123",
             type: "function",
             function: {
-              name: "shell",
+              name: "bash",
               arguments: JSON.stringify({ command: "ls" }),
             },
           },
@@ -160,7 +160,7 @@ describe("Budget Layer", () => {
 
       const messages: WindowMessage[] = [
         { role: "user", content: "Execute command" },
-        { role: "assistant", content: "I'll do it", tool_calls: [{ id: "call_1", type: "function", function: { name: "shell", arguments: "{}" } }] },
+        { role: "assistant", content: "I'll do it", tool_calls: [{ id: "call_1", type: "function", function: { name: "bash", arguments: "{}" } }] },
         { role: "tool", tool_call_id: "call_1", content: "Result data here" },
         { role: "assistant", content: "Done" },
       ];

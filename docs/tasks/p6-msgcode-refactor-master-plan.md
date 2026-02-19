@@ -92,19 +92,22 @@ src/
 
 1. 清零当前失败用例，形成可比较基线。
 2. 建立 Golden Cases（同输入同输出快照）。
-3. Gate：`test`、`bdd`、`docs:check` 全绿。
+3. 建立 `lmstudio` 线级行为指纹：冻结 `(Input, Raw_Response, Sanitized_Output)` 三元组样本集。
+4. Gate：`test`、`bdd`、`docs:check` 全绿；三元组回放一致。
 
 ### Phase 1: 抽取 Agent Loop 抽象
 
 1. 新建 `agent-core/types/events/loop` 最小闭环。
-2. 把 loop 从 `lmstudio` 业务混合函数中解耦。
-3. Gate：行为不变；命令层回归一致。
+2. 引入 Loop 原生钩子点（固定 8 类）：`before_turn`、`after_turn`、`before_llm`、`after_llm`、`before_tool`、`after_tool`、`on_error`、`on_cancel`。
+3. 把 loop 从 `lmstudio` 业务混合函数中解耦，并将 `SOUL/summary/anti-loop/steering` 下沉为 hook 策略实现。
+4. Gate：行为不变；命令层回归一致；关闭全部 hook 时与基线输出等价；单 hook 失败不拖垮主流程。
 
 ### Phase 2: 管道分轨与术语双写
 
 1. 引入运行时新枚举：`agent | client`，并保留 `direct/tmux` 兼容映射。
 2. 完成 `pipelines/agent` 与 `pipelines/client` 结构分轨，职责边界固定。
-3. Gate：旧术语输入不报错；新术语日志可观测；关键命令回归一致。
+3. 双写兼容窗口必须设置物理倒计时（最多 2 个 Sprint），到期强制进入旧术语清退流程。
+4. Gate：旧术语输入不报错；新术语日志可观测；关键命令回归一致；双写倒计时在运行。
 
 ### Phase 3: 统一消息类型系统
 
@@ -117,24 +120,30 @@ src/
 
 1. 引入 `AgentTool` 合同与工厂模式（按 cwd 注入）。
 2. `tool-spec` 与 `tool-runtime` 分离，闸门策略保持可测。
-3. 建立 `capabilities manifest`（文件真相源）声明可用服务与参数契约。
-4. 清退 `run_skill` 工具暴露；`skill` 仅保留在智能体编排层，不作为工具面能力。
-5. Gate：工具权限、超时、审计事件契约测试通过。
+3. 工具协议信封前置冻结为 JSON-RPC 2.0 风格（`jsonrpc/method/params/id`），同进程实现也按“外部进程协议”约束。
+4. 建立 `capabilities manifest`（文件真相源）声明可用服务与参数契约。
+5. 清退 `run_skill` 工具暴露；`skill` 仅保留在智能体编排层，不作为工具面能力。
+6. `skill` 必须按需加载：仅注入索引/摘要，不预加载 skill 执行体；触发时才读取对应 skill 文件与脚本。
+7. Gate：工具权限、超时、审计事件契约测试通过；`run_skill` 不回流；skill 按需加载链路可观测；JSON-RPC 信封契约测试通过。
 
 ### Phase 5: Provider 抽象（必要）
 
 1. 先抽内部 Provider 最小接口，不让业务层直接依赖第三方库。
 2. Provider 抽象只覆盖“请求、响应、流式输出”差异，不抽象“LLM 概念本体”。
 3. 将现有 `lmstudio` 收敛为 provider adapter，再补 `pi-ai` 适配层。
-4. 系统提示词由 `capabilities manifest` 动态注入能力摘要，不手写长能力清单。
-5. Gate：双 provider 契约测试一致，切换无行为漂移，接口字段不超最小集合。
+4. 新增非 `LM Studio` 本地模型切换能力：先接 OpenAI-compatible 本地端点适配层（如 Ollama/vLLM/LocalAI 兼容口）。
+5. 供应商依赖策略采用“借依赖，不借边界”：第三方 SDK 仅允许存在于 `providers/*` adapter 层。
+6. 系统提示词由 `capabilities manifest` 动态注入能力摘要，不手写长能力清单。
+7. Gate：`lmstudio` 与至少 1 个非 `LM Studio` 本地 provider 可配置切换；双 provider 契约测试一致；切换无行为漂移；接口字段不超最小集合。
 
 ### Phase 6: Session 管理增强
 
 1. 增加会话恢复、分支、压缩、重试、中断注入能力。
 2. Session 状态必须保持可打印、可编辑、可修复（纯文本/JSON 文件），禁止黑盒二进制状态。
-3. 事件与会话生命周期绑定，支持长会话稳定运行。
-4. Gate：长会话压测与恢复演练通过，且可通过手工编辑状态文件恢复。
+3. Session 历史采用 append-only JSONL journaling，配合周期性 snapshot；禁止“单文件全量覆写”作为唯一状态持久化方案。
+4. 记忆必须按需加载：仅在命中注入闸门（enabled + 关键词/force）后触发检索与 store 加载。
+5. 事件与会话生命周期绑定，支持长会话稳定运行。
+6. Gate：长会话压测与恢复演练通过，且可通过手工编辑状态文件恢复；记忆按需加载行为稳定且可观测；journal 回放可恢复状态。
 
 ### Phase 7: 收口与清债
 
@@ -148,17 +157,23 @@ src/
 | 对照建议 | 是否纳入本计划 | 落实动作 | 对应阶段 | 验收标准 |
 |---|---|---|---|---|
 | 三层分离（LLM/Loop/业务） | 已纳入（计划） | `agent-core/providers/pipelines` 分层拆分 | Phase 1-5 | 任一业务策略变更不需改 provider 协议层 |
-| Agent Loop 抽象干净 | 已纳入（计划） | `loop.ts` 独立 + `convertToLlm/transformContext/getSteering/getFollowUp` 钩子 | Phase 1 | Loop 无业务注入分支 |
+| Agent Loop 抽象干净 | 已纳入（计划） | `loop.ts` 独立 + 原生 8 类 hook；`convertToLlm/transformContext/getSteering/getFollowUp` 通过适配层映射到 hook | Phase 1 | Loop 无业务注入分支，hook 全关与基线等价 |
 | 消息类型系统统一 | 已纳入（计划） | 最小消息信封 + 轻量扩展字段（JSON/JSONL） | Phase 3 | 消息协议单一真相源且可打印 |
 | 工具接口标准化+工厂化 | 已纳入（计划） | `AgentTool` 合同 + `createTools(cwd)` | Phase 4 | 工具定义无内联 JSON 散落 |
 | Provider 抽象（可接 `pi-ai`） | 已纳入（计划） | 先内部契约，再接 `pi-ai` adapter | Phase 5 | 双 provider 契约测试通过 |
+| 非 LM Studio 本地模型切换 | 已纳入（新增） | 接入 OpenAI-compatible 本地 provider adapter，并支持配置切换 | Phase 5 | 切换 provider 不改业务层代码 |
 | 能力清单单一真相源 | 已纳入（新增） | `capabilities manifest` + 提示词动态注入摘要 | Phase 4/5 | 改服务无需手改提示词 |
 | `run_skill` 工具面清退 | 已纳入（新增） | 从 Tool Surface 删除 `run_skill`，仅保留编排层 skill | Phase 4/7 | 主链工具定义不再出现 `run_skill` |
+| skill 按需加载 | 已纳入（新增） | 仅注入 skill 索引/摘要；执行体按需读取 | Phase 4/5 | 冷启动无 skill 执行体预加载，触发时才加载 |
+| 工具协议边界前置冻结 | 已纳入（新增） | JSON-RPC 2.0 信封契约先行 | Phase 4 | agent-core 不耦合工具实现细节 |
 | 事件驱动架构 | 已纳入（计划） | 建立 Agent/Turn/Tool 显式生命周期事件流（非全局 Event Bus） | Phase 1/6 | 日志从“散点文本”升级为结构化 JSONL 事件 |
 | 上下文压缩（compaction） | 已纳入（计划） | Session 层实现压缩策略 | Phase 6 | 长会话 token 控制稳定 |
+| 记忆按需加载 | 已纳入（新增） | `memory` 检索在闸门命中后才加载与执行 | Phase 6 | 未命中场景不触发 memory store 加载 |
+| Session append-only 历史 | 已纳入（新增） | JSONL journal + snapshot 组合 | Phase 6 | 崩溃后可回放可修复 |
 | 终端与智能体结构分轨 | 已纳入（新增） | `pipelines/agent` 与 `pipelines/client` 职责隔离 | Phase 2 | 跨管道无隐式语义注入 |
 | 术语收敛（direct/tmux -> agent/client） | 已纳入（新增） | 双写兼容 + 分阶段收口 | Phase 2/7 | 新术语成为唯一主术语 |
 | Session 能力完整化 | 已纳入（新增） | 恢复/分支/压缩/重试/中断注入 | Phase 6 | 长会话稳定且可恢复 |
+| OV 可观测闭环 | 已纳入（新增） | 统一结构化事件字段 + JSONL 落盘 + 回放校验 | Phase 3/6/7 | 工具/记忆/会话链路均可追踪与回放 |
 
 说明：当前为“计划已落实”，代码层为“待实施”。
 
@@ -195,7 +210,7 @@ src/
 1. M1（Phase 0-1）：Loop/事件内核骨架完成，行为不变。
 2. M2（Phase 2）：`agent/client` 分轨完成，术语双写兼容到位。
 3. M3（Phase 3-4）：消息与工具标准化完成，`lmstudio` 明显瘦身。
-4. M4（Phase 5）：Provider 抽象落地，`pi-ai` 适配可切换。
+4. M4（Phase 5）：Provider 抽象落地，支持 `lmstudio` 与非 `LM Studio` 本地 provider 切换，`pi-ai` 适配可切换。
 5. M5（Phase 6-7）：Session 完整能力与清债收口完成。
 
 ## 9. 本文档状态
@@ -236,6 +251,8 @@ Agent/Turn/Tool 生命周期事件通过显式调用链与可读 JSONL 输出，
 阶段切换硬门禁；不满足测试与回滚条件不得进入下一阶段。
 9. `capabilities manifest`：
 服务能力文件真相源；系统提示词从该文件动态生成能力摘要。
+10. `OV`：
+`Observability Verification`，指“可观测字段完整 + 事件落盘 + 可回放验证”的闭环验收。
 
 ## 13. 不可违反约束（Hard Rules）
 
@@ -256,6 +273,18 @@ Agent/Turn/Tool 生命周期事件通过显式调用链与可读 JSONL 输出，
 15. 平台不得对 `skill` 编排做人工策略干预（不做路径限制、不做内容审查）；仅可提供资源边界、超时、隔离与故障恢复能力。
 16. 服务能力声明必须以 `capabilities manifest` 为单一真相源；禁止手工维护多份提示词能力清单。
 17. 本次 `v2.4` 重构中，`run_skill` 必须从工具暴露面移除，不作为 LLM Tool Call 能力存在。
+18. Agent Loop 必须采用原生钩子化，钩子点固定为 8 类：`before_turn`、`after_turn`、`before_llm`、`after_llm`、`before_tool`、`after_tool`、`on_error`、`on_cancel`。
+19. 业务策略必须通过 hook 注入；禁止将策略逻辑回灌到 loop 主流程分支。
+20. hook 执行必须失败隔离与可观测：单 hook 错误只影响该 hook，且必须记录结构化事件（含阶段、耗时、错误）。
+21. `skill` 运行链必须按需加载：禁止在主链冷启动阶段扫描并加载全部 skill 执行体。
+22. `memory` 检索链必须按需加载：未命中注入闸门时，禁止加载 memory store 或触发检索。
+23. `OV` 必须覆盖工具、记忆、会话三条链路，且事件需落盘为可读 JSONL；仅内存态 telemetry 不计为“生效”。
+24. 任一链路的 `OV` 验证失败视为 Gate 失败，不得进入下一阶段。
+25. 分层边界必须由静态规则强制（`import/no-restricted-paths` 或 `dependency-cruiser`），禁止仅靠约定执行。
+26. 工具调用协议必须以 JSON-RPC 2.0 信封作为统一边界，禁止在 agent-core 直接依赖工具实现内部参数形态。
+27. Session 历史必须支持 append-only journal 回放；snapshot 仅用于加速恢复，不得替代可追溯日志。
+28. 第三方供应商依赖只允许出现在 `providers/*` adapter 层；`agent-core/pipelines/tools/runtime/routes` 禁止直接依赖供应商 SDK。
+29. Provider 切换必须由配置驱动；业务层禁止出现 `if provider === ...` 分支。
 
 ### 13.1 Skill 平台边界声明（执行口径）
 
@@ -302,31 +331,45 @@ Agent/Turn/Tool 生命周期事件通过显式调用链与可读 JSONL 输出，
 | T0-1 | Phase 0 | 失败用例清零与归因归档 | 基线复绿报告 | 无 | 1-2d |
 | T0-2 | Phase 0 | Golden Cases 样本冻结 | `golden-cases.md` | T0-1 | 0.5d |
 | T0-3 | Phase 0 | 回滚演练脚本确定 | `rollback-playbook.md` | T0-1 | 0.5d |
+| T0-4 | Phase 0 | `lmstudio` 线级三元组录制 | `wire-fingerprint.jsonl` | T0-1 | 0.5d |
+| T0-5 | Phase 0 | sanitizer 等价性回放脚本 | 三元组一致性报告 | T0-4 | 0.5d |
 | T1-1 | Phase 1 | 抽 `agent-core/loop.ts` 骨架 | loop 入口与调用链 | T0-2 | 1d |
 | T1-2 | Phase 1 | 抽 `agent-core/events.ts`（显式事件流） | 生命周期事件定义 | T1-1 | 0.5d |
 | T1-3 | Phase 1 | loop 接入现有运行链（行为不变） | 回归通过记录 | T1-1 | 1d |
+| T1-4 | Phase 1 | 原生 8 类 hook 合同落地 + 兼容映射 | hook 接口与适配层 | T1-1,T1-2 | 1d |
 | T2-1 | Phase 2 | 新枚举落地：`agent/client` + 兼容映射 | 运行时枚举与兼容层 | T1-3 | 1d |
 | T2-2 | Phase 2 | 建立 `pipelines/agent` 骨架 | agent 管道入口 | T2-1 | 1d |
 | T2-3 | Phase 2 | 建立 `pipelines/client` 骨架 | client 管道入口 | T2-1 | 1d |
 | T2-4 | Phase 2 | `handlers` 路由 map 化 | 薄路由分发器 | T2-2,T2-3 | 1d |
 | T2-5 | Phase 2 | `listener` 管线拆分骨架 | source/filter/router/sink | T2-3 | 1d |
+| T2-6 | Phase 2 | 双写兼容倒计时机制 | 时间盒与清退日历 | T2-1 | 0.5d |
+| T2-7 | Phase 2 | 分层边界 lint 规则落地 | `eslint`/`dep-cruise` 规则集 | T2-2,T2-3 | 0.5d |
 | T3-1 | Phase 3 | 定义最小消息信封 | `agent-core/types.ts` | T2-5 | 0.5d |
 | T3-2 | Phase 3 | 旧消息结构适配到最小信封 | 消息适配层 | T3-1 | 1d |
 | T3-3 | Phase 3 | 消息 JSONL 落盘与回放 | 可观测消息日志 | T3-2 | 1d |
+| T4-0 | Phase 4 | JSON-RPC 工具协议信封冻结 | 协议文档 + 契约测试样例 | T3-3 | 0.5d |
 | T4-1 | Phase 4 | 工具注册表抽取 | `tools/registry.ts` | T3-3 | 1d |
 | T4-2 | Phase 4 | 工具执行协议边界收敛（JSON） | 统一执行协议 | T4-1 | 1d |
 | T4-3 | Phase 4 | `tools/bus` 去核心 switch 化 | 插件式分发入口 | T4-2 | 1d |
 | T4-4 | Phase 4 | `DesktopSessionPool` 独立模块化 | 独立池管理器 | T4-3 | 0.5d |
 | T4-5 | Phase 4 | `capabilities manifest` 落地 | 服务能力声明文件 | T4-3 | 0.5d |
 | T4-6 | Phase 4 | `run_skill` 工具面清退 | tools/types + tools/bus 收口 | T4-3 | 0.5d |
+| T4-7 | Phase 4 | skill 按需加载收口 | skill 索引注入与懒加载执行链 | T4-5,T4-6 | 0.5d |
 | T5-1 | Phase 5 | Provider 最小接口定义 | `providers/types.ts` | T4-2 | 0.5d |
 | T5-2 | Phase 5 | `lmstudio` 拆分为子模块 | native/openai/sanitizer/retry | T5-1 | 2d |
 | T5-3 | Phase 5 | `pi-ai` 适配接入 | `providers/pi-ai.ts` | T5-1 | 1d |
 | T5-4 | Phase 5 | 双 provider 契约测试 | `test/providers/*` | T5-2,T5-3 | 1d |
 | T5-5 | Phase 5 | 提示词动态注入能力摘要 | prompt 注入器 | T4-5,T5-4 | 0.5d |
+| T5-6 | Phase 5 | OV 字段统一（provider/tool/session） | 结构化事件字段字典 | T5-4 | 0.5d |
+| T5-7 | Phase 5 | 非 LM Studio 本地 provider 接入 | `providers/openai-local.ts`（或等价） | T5-1 | 1d |
+| T5-8 | Phase 5 | provider 切换回归（本地双 provider） | 切换回归报告 | T5-2,T5-7 | 0.5d |
+| T5-9 | Phase 5 | 供应商依赖边界扫描 | 禁跨层依赖报告 | T2-7,T5-7 | 0.5d |
+| T6-0 | Phase 6 | append-only journal 方案落地 | `state/session/*.jsonl` 方案 | T5-4 | 0.5d |
 | T6-1 | Phase 6 | session 文本状态收敛 | `state/session/*.json` 方案 | T5-4 | 1d |
 | T6-2 | Phase 6 | 崩溃恢复一致性机制 | cursor/window/session 对齐 | T6-1 | 1d |
 | T6-3 | Phase 6 | 压缩/重试/中断注入接线 | session 管理增强 | T6-2 | 1d |
+| T6-4 | Phase 6 | 记忆按需加载收口 | memory 闸门与懒加载验证 | T6-1 | 0.5d |
+| T6-5 | Phase 6 | OV 回放验收脚本 | JSONL 回放与对账报告 | T5-6,T6-2 | 0.5d |
 | T7-1 | Phase 7 | 移除旧术语主路径引用 | `direct/tmux` 清退 | T2-1 | 1d |
 | T7-2 | Phase 7 | 兼容层缩减与收口 | 兼容窗口结束说明 | T7-1 | 0.5d |
 | T7-3 | Phase 7 | 文档与发布说明对齐 | README + release notes | T7-2 | 0.5d |
@@ -341,6 +384,8 @@ Agent/Turn/Tool 生命周期事件通过显式调用链与可读 JSONL 输出，
 - [ ] 基线失败项已归因并关闭
 - [ ] Golden Cases 已冻结
 - [ ] 回滚脚本可执行
+- [ ] `lmstudio` 三元组样本（Input/Raw/Sanitized）已冻结
+- [ ] sanitizer 回放一致性通过（同 Raw 得到同 Sanitized）
 
 ### 16.2 Phase 1 Gate
 
@@ -348,6 +393,10 @@ Agent/Turn/Tool 生命周期事件通过显式调用链与可读 JSONL 输出，
 - [ ] 运行行为与基线一致
 - [ ] 事件流可追踪（显式调用链）
 - [ ] 无全局 Event Bus 引入
+- [ ] 原生 8 类 hook 已落地（名称与语义固定）
+- [ ] 全部 hook 关闭时与基线输出等价
+- [ ] 单 hook 失败不影响主流程推进（失败隔离已验证）
+- [ ] hook 调用具备结构化追踪（阶段/耗时/错误）
 
 ### 16.3 Phase 2 Gate
 
@@ -356,6 +405,8 @@ Agent/Turn/Tool 生命周期事件通过显式调用链与可读 JSONL 输出，
 - [ ] `pipelines/agent` 与 `pipelines/client` 已分轨
 - [ ] `handlers` 仅路由，不含跨域业务逻辑
 - [ ] `listener` 完成 source/filter/router/sink 拆分
+- [ ] 双写倒计时已启动（<= 2 Sprint）
+- [ ] 分层边界 lint 规则生效并阻断跨层依赖
 
 ### 16.4 Phase 3 Gate
 
@@ -373,6 +424,9 @@ Agent/Turn/Tool 生命周期事件通过显式调用链与可读 JSONL 输出，
 - [ ] `DesktopSessionPool` 已解耦
 - [ ] `capabilities manifest` 已落地并可被读取
 - [ ] `run_skill` 不再出现在 Tool Surface（定义/暴露/调用）
+- [ ] skill 执行体未在冷启动预加载（按需触发才读取）
+- [ ] skill 触发链路日志可观测（至少含 skillId/source/duration/result）
+- [ ] JSON-RPC 信封契约测试通过（同进程/伪外进程口径一致）
 
 ### 16.6 Phase 5 Gate
 
@@ -382,6 +436,10 @@ Agent/Turn/Tool 生命周期事件通过显式调用链与可读 JSONL 输出，
 - [ ] 双 provider 契约测试一致
 - [ ] 未引入“LLM 概念本体”抽象层
 - [ ] 系统提示词能力摘要由 `capabilities manifest` 动态注入
+- [ ] OV 字段字典统一并发布（provider/tool/session 同口径）
+- [ ] `lmstudio` 与至少 1 个非 `LM Studio` 本地 provider 可配置切换
+- [ ] provider 切换无需修改业务层代码
+- [ ] 供应商 SDK 依赖未越过 provider adapter 边界（静态扫描通过）
 
 ### 16.7 Phase 6 Gate
 
@@ -389,6 +447,10 @@ Agent/Turn/Tool 生命周期事件通过显式调用链与可读 JSONL 输出，
 - [ ] 崩溃恢复后 cursor/window/session 一致推进
 - [ ] 支持手工修复后继续运行
 - [ ] 压缩/重试/中断注入路径可观测
+- [ ] 未命中注入闸门时不加载 memory store
+- [ ] 命中注入闸门时记忆注入字段完整（hitCount/injectedChars/usedPaths）
+- [ ] Session journal 为 append-only，且可回放恢复
+- [ ] snapshot + journal 联合恢复演练通过
 
 ### 16.8 Phase 7 Gate
 
@@ -398,6 +460,7 @@ Agent/Turn/Tool 生命周期事件通过显式调用链与可读 JSONL 输出，
 - [ ] 文档、计划、发布说明已对齐
 - [ ] 全量回归全绿且性能无明显退化
 - [ ] 全仓主链不再存在 `run_skill` 工具暴露（仅允许历史文档引用）
+- [ ] OV 回放报告通过（工具/记忆/会话三链路）
 
 ## 17. 附件 C：风险登记册（执行态）
 
@@ -411,6 +474,9 @@ Agent/Turn/Tool 生命周期事件通过显式调用链与可读 JSONL 输出，
 | R-06 | listener 管线拆分导致漏处理 | 收到消息但无响应 | 入站/出站对账 | 增加 pipeline 追踪 ID | 临时回滚到旧 listener |
 | R-07 | session 新状态与旧数据冲突 | 恢复失败或重复处理 | 恢复回放用例 | 加读时迁移与校验 | 回退到旧状态读取器 |
 | R-08 | 文档与代码口径漂移 | 评审结论无法复现 | docs:check + PR 模板 | 文档变更强制同步 | 阻断合并，回滚文档 |
+| R-09 | skill 回流为预加载模式 | 冷启动时间上升、内存占用异常 | 冷启动 profile + 模块加载日志 | 强制 skill 懒加载检查项 | 回退到懒加载实现 |
+| R-10 | OV 假生效（只内存不落盘） | 现场无法回放与对账 | JSONL 落盘审计 + 回放脚本 | 将关键事件强制落盘并回放验收 | 回退到上个可回放版本 |
+| R-11 | 供应商依赖越层渗透 | 业务层被 SDK 绑死、切换成本升高 | 依赖图与静态扫描 | 强制 adapter 边界 + 依赖审查 | 回退越层依赖提交 |
 
 ## 18. 附件 D：评审展示顺序（对外阅读版）
 
@@ -438,13 +504,18 @@ Agent/Turn/Tool 生命周期事件通过显式调用链与可读 JSONL 输出，
 10. 崩溃一致性：cursor/window/session 三者推进一致，无脏重放。
 11. `/reload` 关键回执：配置生效信息与运行态一致。
 12. 文档契约：`docs:check` 与运行命令口径一致。
+13. skill 按需加载：冷启动阶段无 skill 执行体预加载，触发时才读取目标 skill。
+14. 记忆按需加载：未命中注入闸门时不加载 memory store，命中时注入字段完整。
+15. OV 回放：工具/记忆/会话三链路的 JSONL 事件可回放且结果可对账。
+16. 本地模型切换：`lmstudio` 与至少 1 个非 `LM Studio` 本地 provider 可配置切换，业务层零改动。
 
 ### 19.2 Dual Write 退出条件（Phase 2 -> Phase 7）
 
-1. 连续两个小版本窗口内，`direct/tmux` 入口命中率为 0（日志可证）。
-2. 兼容入口仅剩外部历史输入适配，不再被主链内部调用。
-3. 所有用户文档、帮助文案、日志字段均以 `agent/client` 为唯一主术语。
-4. 回归与 Golden Cases 全绿后，方可执行兼容层移除。
+1. 双写窗口时间盒固定为 `<= 2 Sprint`，到期必须执行清退评审，不得自动延期。
+2. 连续两个小版本窗口内，`direct/tmux` 入口命中率为 0（日志可证）。
+3. 兼容入口仅剩外部历史输入适配，不再被主链内部调用。
+4. 所有用户文档、帮助文案、日志字段均以 `agent/client` 为唯一主术语。
+5. 回归与 Golden Cases 全绿后，方可执行兼容层移除。
 
 ### 19.3 阶段 Owner 与时间盒（模板）
 
@@ -458,6 +529,27 @@ Agent/Turn/Tool 生命周期事件通过显式调用链与可读 JSONL 输出，
 | Phase 5 | 待指定 | 3-4d | 待填 | 未开始 |
 | Phase 6 | 待指定 | 3-4d | 待填 | 未开始 |
 | Phase 7 | 待指定 | 1-2d | 待填 | 未开始 |
+
+### 19.3A 执行工期评估（C兄口径）
+
+1. 总体评估：若由 C兄执行本次重构，预计需要 `10-14` 个工作日（约 `2` 周）专注时间。
+2. 最快情况：`10` 天（测试覆盖足够，且未出现异常 iMessage 行为差异）。
+3. 正常情况：`14` 天（`lmstudio` 与 `tools/bus` 隐式耦合排查通常超预期）。
+
+| 阶段 | 预估耗时 | 复杂度/风险点 |
+|---|---|---|
+| Phase 0: 基线复绿 | 1d | 主要是修复 `bun:test` 环境问题与 flaky tests。 |
+| Phase 1: Loop 抽取 | 2d | `agent-core` 为心脏手术，需谨慎剥离 `lmstudio.ts` 业务逻辑并保持行为不变。 |
+| Phase 2: Client/Agent 分轨 | 2d | 以文件移动与重命名为主，风险是漏改导致运行时报错。 |
+| Phase 3: 消息协议 | 1d | 主要是 TypeScript 类型收敛与适配。 |
+| Phase 4: 工具总线重构 | 3d | `tools/bus.ts` 耦合深，插件化注册表改造风险高。 |
+| Phase 5: Provider 拆分 | 3d | `lmstudio.ts` 需拆为 `native/openai/retry/sanitize` 等子模块。 |
+| Phase 6: Session 状态 | 2d | 崩溃恢复与手工编辑恢复需要较重测试验证。 |
+| Phase 7: 收口清理 | 1d | 删除旧逻辑与文档对齐。 |
+
+执行策略建议（时间维度）：
+1. `Phase 0` 与 `Phase 1` 以稳定优先，可放慢节奏确保基线可靠。
+2. `Phase 4` 与 `Phase 5` 为攻坚段，建议预留缓冲并连续排期。
 
 ### 19.4 统一回滚触发线（任何一条触发即回滚）
 
@@ -476,6 +568,11 @@ Agent/Turn/Tool 生命周期事件通过显式调用链与可读 JSONL 输出，
 | 会话恢复成功率 | 恢复成功会话 / 恢复尝试 | session 恢复日志 | 不低于基线 |
 | 平均响应时延 | 请求到首条可发送输出的平均时延 | 端到端打点 | 不高于基线显著阈值 |
 | 崩溃后重放率 | 崩溃后重复处理比例 | cursor/window/session 对账 | 接近 0，且不高于基线 |
+| skill 懒加载命中率 | 触发时加载次数 / 冷启动预加载次数 | 模块加载事件统计 | 冷启动预加载应为 0 |
+| memory 闸门误触发率 | 未命中场景却触发检索比例 | 记忆闸门日志对账 | 接近 0，且不高于基线 |
+| OV 回放通过率 | 回放成功用例 / 回放总用例 | 回放脚本报告 | 100% 通过（Gate 级） |
+| sanitizer 等价通过率 | 三元组中 Sanitized 输出一致比例 | wire-level 回放报告 | 100% 通过（Gate 级） |
+| provider 切换成功率 | 配置切换后成功请求数 / 切换后总请求数 | provider 切换回归报告 | 100% 通过（Gate 级） |
 
 注：阈值在 Phase 0 基线冻结后填写，不允许执行中途随意调低标准。
 

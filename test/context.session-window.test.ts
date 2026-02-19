@@ -222,7 +222,7 @@ describe("Session Window", () => {
             id: "call_123",
             type: "function",
             function: {
-              name: "shell",
+              name: "bash",
               arguments: JSON.stringify({ command: "ls -la" }),
             },
           },
@@ -248,7 +248,7 @@ describe("Session Window", () => {
       const assistantMsg = history[1];
       expect(assistantMsg.tool_calls).toBeDefined();
       expect(assistantMsg.tool_calls).toHaveLength(1);
-      expect(assistantMsg.tool_calls![0].function.name).toBe("shell");
+      expect(assistantMsg.tool_calls![0].function.name).toBe("bash");
 
       // 验证 tool 消息结构
       const toolMsg = history[2];

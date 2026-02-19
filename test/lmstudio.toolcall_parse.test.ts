@@ -42,7 +42,7 @@ describe("lmstudio tool call parse (best-effort)", () => {
     expect(parsed).toBeNull();
   });
 
-  it("detects fake shell execution text", () => {
+  it("detects fake command execution text", () => {
     const fake = [
       "```bash",
       "pwd",
