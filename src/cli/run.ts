@@ -8,62 +8,12 @@
 
 import { Command } from "commander";
 import { randomUUID } from "node:crypto";
-import type { Envelope, Diagnostic } from "../memory/types.js";
+import type { Diagnostic } from "../memory/types.js";
 import { existsSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { join } from "node:path";
 import { runAsr } from "../runners/asr.js";
 import { runTts } from "../runners/tts.js";
-
-// ============================================
-// 辅助函数
-// ============================================
-
-/**
- * 创建 Envelope
- */
-function createEnvelope<T>(
-  command: string,
-  startTime: number,
-  status: "pass" | "warning" | "error",
-  data: T,
-  warnings: Diagnostic[] = [],
-  errors: Diagnostic[] = []
-): Envelope<T> {
-  const summary = {
-    warnings: warnings.length,
-    errors: errors.length,
-  };
-
-  const exitCode = status === "error" ? 1 : status === "warning" ? 2 : 0;
-  const durationMs = Date.now() - startTime;
-
-  return {
-    schemaVersion: 2,
-    command,
-    requestId: randomUUID(),
-    timestamp: new Date().toISOString(),
-    durationMs,
-    status,
-    exitCode,
-    summary,
-    data,
-    warnings,
-    errors,
-  };
-}
-
-/**
- * 获取工作区路径
- */
-function getWorkspacePath(label: string): string {
-  const workspaceRoot = process.env.WORKSPACE_ROOT || join(process.env.HOME || "", "msgcode-workspaces");
-  const raw = String(label || "").trim();
-  if (!raw) return join(workspaceRoot, raw);
-  if (raw === "~") return process.env.HOME ? process.env.HOME : raw;
-  if (raw.startsWith("~/")) return process.env.HOME ? join(process.env.HOME, raw.slice(2)) : raw;
-  if (isAbsolute(raw)) return resolve(raw);
-  return join(workspaceRoot, raw);
-}
+import { createEnvelope, getWorkspacePath } from "./command-runner.js";
 
 // ============================================
 // ASR 子命令

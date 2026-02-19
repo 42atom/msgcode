@@ -8,6 +8,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import type { LogEntry, Transport, TransportOptions } from "./index.js";
+import { formatLogTextField } from "./format-text.js";
 
 /**
  * 文件传输器选项
@@ -151,29 +152,11 @@ export class FileTransport implements Transport {
                 parts.push(`textPreview="${String(meta.textPreview).slice(0, 30)}"`);
             }
             if (process.env.MSGCODE_LOG_PLAINTEXT_INPUT === "1" && meta.inboundText !== undefined && meta.inboundText !== null) {
-                const rawInboundText = String(meta.inboundText);
-                const normalizedInboundText = rawInboundText
-                    .replace(/\\/g, "\\\\")
-                    .replace(/"/g, '\\"')
-                    .replace(/\r?\n/g, "\\n");
-                const maxChars = 500;
-                const clippedInboundText = normalizedInboundText.length > maxChars
-                    ? `${normalizedInboundText.slice(0, maxChars)}…`
-                    : normalizedInboundText;
-                parts.push(`inboundText="${clippedInboundText}"`);
+                parts.push(`inboundText="${formatLogTextField(meta.inboundText)}"`);
             }
-            // P5.6.8: 记录回复正文（用于冒烟验收“是否幻想执行”）
+            // P5.6.8: 记录回复正文（用于冒烟验收"是否幻想执行"）
             if (meta.responseText !== undefined && meta.responseText !== null) {
-                const rawResponse = String(meta.responseText);
-                const normalizedResponse = rawResponse
-                    .replace(/\\/g, "\\\\")
-                    .replace(/"/g, '\\"')
-                    .replace(/\r?\n/g, "\\n");
-                const maxChars = 500;
-                const clippedResponse = normalizedResponse.length > maxChars
-                    ? `${normalizedResponse.slice(0, maxChars)}…`
-                    : normalizedResponse;
-                parts.push(`responseText="${clippedResponse}"`);
+                parts.push(`responseText="${formatLogTextField(meta.responseText)}"`);
             }
             if (meta.rowid !== undefined) parts.push(`rowid=${meta.rowid}`);
 

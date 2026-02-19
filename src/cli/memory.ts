@@ -15,8 +15,7 @@
 import { Command } from "commander";
 import path from "node:path";
 import { existsSync, mkdirSync, appendFileSync, readFileSync } from "node:fs";
-import { randomUUID } from "node:crypto";
-import type { Envelope, Diagnostic } from "../memory/types.js";
+import type { Diagnostic } from "../memory/types.js";
 import {
   parseWorkspaceParam,
   MEMORY_ERROR_CODES,
@@ -26,6 +25,7 @@ import {
 import { createMemoryStore, getDefaultIndexPath } from "../memory/store.js";
 import { createChunker } from "../memory/chunker.js";
 import { getWorkspaceRootForDisplay } from "../routes/store.js";
+import { createEnvelope } from "./command-runner.js";
 
 // ============================================
 // 常量
@@ -43,40 +43,6 @@ const MAX_GET_LINES = 200;
 // ============================================
 // 辅助函数
 // ============================================
-
-/**
- * 创建 Envelope
- */
-function createEnvelope<T>(
-  command: string,
-  startTime: number,
-  status: "pass" | "warning" | "error",
-  data: T,
-  warnings: Diagnostic[] = [],
-  errors: Diagnostic[] = []
-): Envelope<T> {
-  const summary = {
-    warnings: warnings.length,
-    errors: errors.length,
-  };
-
-  const exitCode = status === "error" ? 1 : status === "warning" ? 2 : 0;
-  const durationMs = Date.now() - startTime;
-
-  return {
-    schemaVersion: 2,
-    command,
-    requestId: randomUUID(),
-    timestamp: new Date().toISOString(),
-    durationMs,
-    status,
-    exitCode,
-    summary,
-    data,
-    warnings,
-    errors,
-  };
-}
 
 /**
  * 解析 workspace 参数为绝对路径

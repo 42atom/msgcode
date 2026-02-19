@@ -27,6 +27,9 @@
 20. `P5.6.8-R4d`：三工作区运行时冒烟验收（`medicpass/charai/game01`）
 21. `P5.6.8-R4e`：PI on/off 提示词与工具硬门一致性收口
 22. `P5.6.8-R5a`：artifact→send 回传桥接（发送保持内核能力，不进入 skill）
+23. `P5.6.8-R4f`：日志文本格式化去重（`inboundText/responseText` 单一 helper）
+24. `P5.6.9`：CLI 执行层收口（Command Runner + Validator + 契约锁）
+25. `P5.6.10`：Runtime 硬化收口（Tool Bus 解耦 + 冷启动遥测 + 崩溃兜底）
 
 ## 当前任务单
 
@@ -54,7 +57,10 @@
 - `p5-6-8-r4c-long-memory-injection-observability.md`：P5.6.8-R4c（长期记忆注入稳态与观测锁）
 - `p5-6-8-r4d-three-workspace-runtime-smoke.md`：P5.6.8-R4d（三工作区运行时冒烟）
 - `p5-6-8-r4e-pi-on-off-prompt-tooling-alignment.md`：P5.6.8-R4e（PI on/off 提示词与工具双保险收口）
+- `p5-6-8-r4f-log-text-format-helper.md`：P5.6.8-R4f（日志文本转义与截断逻辑去重）
 - `p5-6-8-r5a-artifact-send-bridge.md`：P5.6.8-R5a（artifact 到发送通道桥接）
+- `p5-6-9-cli-command-runner-convergence.md`：P5.6.9（CLI 命令执行层收口）
+- `p5-6-10-runtime-hardening-from-review-v2.md`：P5.6.10（审查 v2 的 Runtime 硬化响应单）
 
 ## 规则
 
