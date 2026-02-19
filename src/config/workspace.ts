@@ -35,16 +35,15 @@ export interface WorkspaceConfig {
   "policy.mode"?: "local-only" | "egress-allowed";
 
   /**
-   * 默认执行臂：mlx | lmstudio | codex | claude-code | llama | claude | openai
-   * - mlx: MLX LM Server（GLM4.7 Flash MLX，工具闭环推荐）
-   * - lmstudio: 本地 LM Studio 模型（兼容保留）
+   * 默认执行臂：lmstudio | codex | claude-code | llama | claude | openai
+   * - lmstudio: 本地 LM Studio 模型
    * - llama: llama-server / llama.cpp（*.gguf 裸模型）
    * - claude: Anthropic Claude API
    * - openai: OpenAI API（GPT-4, o1, etc.）
    * - codex: Codex CLI（需要 egress-allowed）
    * - claude-code: Claude Code CLI（需要 egress-allowed）
    */
-  "runner.default"?: "mlx" | "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code";
+  "runner.default"?: "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code";
 
   // ==================== PI 配置 ====================
   /**
@@ -72,37 +71,6 @@ export interface WorkspaceConfig {
    * - 默认: ["shell", "browser"]
    */
   "tooling.require_confirm"?: ToolName[];
-
-  // ==================== MLX Provider 配置 ====================
-  /**
-   * MLX LM Server 基础 URL
-   * - 默认: http://127.0.0.1:18000
-   */
-  "mlx.baseUrl"?: string;
-
-  /**
-   * MLX 模型 ID
-   * - 默认: 空（自动从 /v1/models 探测第一个）
-   */
-  "mlx.modelId"?: string;
-
-  /**
-   * MLX 最大 tokens
-   * - 默认: 512
-   */
-  "mlx.maxTokens"?: number;
-
-  /**
-   * MLX 温度参数
-   * - 默认: 0.7
-   */
-  "mlx.temperature"?: number;
-
-  /**
-   * MLX top_p 参数
-   * - 默认: 1
-   */
-  "mlx.topP"?: number;
 }
 
 /**
@@ -124,12 +92,6 @@ const DEFAULT_WORKSPACE_CONFIG: Required<WorkspaceConfig> = {
   "tooling.mode": "autonomous", // P5.5: 测试期统一 autonomous（LLM 自主决策 tool_calls）
   "tooling.allow": ["tts", "asr", "vision", "mem", "shell", "browser", "desktop"], // 测试期默认开放全工具
   "tooling.require_confirm": [], // 默认不要求确认
-  // MLX Provider 默认值（Unsloth 稳态参数）
-  "mlx.baseUrl": "http://127.0.0.1:18000",
-  "mlx.modelId": "",
-  "mlx.maxTokens": 2048,  // 降低空回复/finish_reason=length 概率
-  "mlx.temperature": 0.7,
-  "mlx.topP": 1,
 };
 
 /**
@@ -258,11 +220,11 @@ export async function setPolicyMode(
  * 获取默认执行臂
  *
  * @param projectDir 工作区路径
- * @returns 默认执行臂（mlx | lmstudio | llama | claude | openai | codex | claude-code）
+ * @returns 默认执行臂（lmstudio | llama | claude | openai | codex | claude-code）
  */
 export async function getDefaultRunner(
   projectDir: string
-): Promise<"mlx" | "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code"> {
+): Promise<"lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code"> {
   const workspaceConfig = await loadWorkspaceConfig(projectDir);
   return workspaceConfig["runner.default"] ?? DEFAULT_WORKSPACE_CONFIG["runner.default"];
 }
@@ -277,7 +239,7 @@ export async function getDefaultRunner(
  */
 export async function setDefaultRunner(
   projectDir: string,
-  runner: "mlx" | "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code",
+  runner: "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code",
   currentMode?: "local-only" | "egress-allowed"
 ): Promise<{ success: boolean; error?: string }> {
   // 如果没有提供 currentMode，读取当前配置
@@ -293,8 +255,7 @@ export async function setDefaultRunner(
       error: `当前策略模式为 local-only，不允许使用 ${runner}（需要外网访问）。\n\n` +
         `请先执行以下命令之一：\n` +
         `1. /policy on             （允许外网访问；等同 /policy egress-allowed）\n` +
-        `2. /model lmstudio        （使用本地模型）\n` +
-        `3. /model mlx             （使用 MLX LM Server）`,
+        `2. /model lmstudio        （使用本地模型）`,
     };
   }
 
@@ -360,59 +321,4 @@ export async function setToolingRequireConfirm(
   requireConfirm: ToolName[]
 ): Promise<void> {
   await saveWorkspaceConfig(projectDir, { "tooling.require_confirm": requireConfirm });
-}
-
-// ============================================
-// MLX Provider 配置
-// ============================================
-
-/**
- * MLX 配置接口
- */
-export interface MlxConfig {
-  baseUrl: string;
-  modelId: string;
-  maxTokens: number;
-  temperature: number;
-  topP: number;
-}
-
-/**
- * 获取 MLX 配置
- *
- * @param projectDir 工作区路径
- * @returns MLX 配置
- */
-export async function getMlxConfig(
-  projectDir: string
-): Promise<MlxConfig> {
-  const workspaceConfig = await loadWorkspaceConfig(projectDir);
-  return {
-    baseUrl: workspaceConfig["mlx.baseUrl"] ?? DEFAULT_WORKSPACE_CONFIG["mlx.baseUrl"],
-    modelId: workspaceConfig["mlx.modelId"] ?? DEFAULT_WORKSPACE_CONFIG["mlx.modelId"],
-    maxTokens: workspaceConfig["mlx.maxTokens"] ?? DEFAULT_WORKSPACE_CONFIG["mlx.maxTokens"],
-    temperature: workspaceConfig["mlx.temperature"] ?? DEFAULT_WORKSPACE_CONFIG["mlx.temperature"],
-    topP: workspaceConfig["mlx.topP"] ?? DEFAULT_WORKSPACE_CONFIG["mlx.topP"],
-  };
-}
-
-/**
- * 设置 MLX 配置
- *
- * @param projectDir 工作区路径
- * @param config MLX 配置（部分更新）
- */
-export async function setMlxConfig(
-  projectDir: string,
-  config: Partial<MlxConfig>
-): Promise<void> {
-  const partial: Partial<WorkspaceConfig> = {};
-
-  if (config.baseUrl !== undefined) partial["mlx.baseUrl"] = config.baseUrl;
-  if (config.modelId !== undefined) partial["mlx.modelId"] = config.modelId;
-  if (config.maxTokens !== undefined) partial["mlx.maxTokens"] = config.maxTokens;
-  if (config.temperature !== undefined) partial["mlx.temperature"] = config.temperature;
-  if (config.topP !== undefined) partial["mlx.topP"] = config.topP;
-
-  await saveWorkspaceConfig(projectDir, partial);
 }

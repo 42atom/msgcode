@@ -331,7 +331,7 @@ export class RuntimeRouterHandler implements CommandHandler {
 
         // === 非 slash 命令：消息路由（lmstudio/codex/claude-code）===
         if (context.projectDir) {
-            let currentRunner: "lmstudio" | "mlx" | "llama" | "claude" | "openai" | "codex" | "claude-code" | "unknown" = "unknown";
+            let currentRunner: "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code" | "unknown" = "unknown";
             try {
                 const { getPolicyMode, getDefaultRunner, getToolPolicy } = await import("./config/workspace.js");
                 const currentMode = await getPolicyMode(context.projectDir);
@@ -391,7 +391,7 @@ export class RuntimeRouterHandler implements CommandHandler {
             const model = process.env.LMSTUDIO_MODEL || "(auto)";
             // /help 里也显示当前 workspace 的策略与执行臂，避免"到底要不要 /start？"的误解
             let mode: "local-only" | "egress-allowed" | "unknown" = "unknown";
-            let runner: "lmstudio" | "mlx" | "llama" | "claude" | "openai" | "codex" | "claude-code" | "unknown" = "unknown";
+            let runner: "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code" | "unknown" = "unknown";
             if (context.projectDir) {
                 try {
                     const { getPolicyMode, getDefaultRunner } = await import("./config/workspace.js");

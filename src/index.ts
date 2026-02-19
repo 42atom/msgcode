@@ -57,50 +57,6 @@ async function main(): Promise<void> {
         imsgPath: config.imsgPath,
     });
 
-    // P0: 自动管理 MLX server（如果启用）
-    // 统一基座管理，避免手动启动导致多进程问题
-    const autoManageMlx = process.env.MLX_AUTO_MANAGE !== "0";
-    if (autoManageMlx) {
-        try {
-            const { MlxServer } = await import("./runners/mlx.js");
-            const status = await MlxServer.getStatus();
-
-            if (!status.running) {
-                // 使用默认配置启动
-                logger.info("MLX server 未运行，自动启动中...", { module: "main" });
-
-                try {
-                    const modelPath = process.env.MLX_MODEL_PATH;
-                    if (!modelPath) {
-                        logger.warn("MLX server 自动启动失败：缺少 MLX_MODEL_PATH", {
-                            module: "main",
-                        });
-                    } else {
-                        const result = await MlxServer.start({
-                            modelPath,
-                            host: "127.0.0.1",
-                            port: 18000,
-                            maxTokens: 2048,
-                        });
-                        logger.info(`MLX server 已自动启动: ${result}`, { module: "main" });
-                    }
-                } catch (err) {
-                    logger.warn("MLX server 自动启动失败", {
-                        module: "main",
-                        error: err instanceof Error ? err.message : String(err),
-                    });
-                }
-            } else {
-                logger.info(`MLX server 已运行 (PID: ${status.pid})`, { module: "main" });
-            }
-        } catch (err) {
-            logger.warn("MLX server 检查失败", {
-                module: "main",
-                error: err instanceof Error ? err.message : String(err),
-            });
-        }
-    }
-
     // 崩溃/异常通知（最佳努力，无路由则静默）
     async function sendAlert(text: string): Promise<void> {
         try {
@@ -159,20 +115,6 @@ async function main(): Promise<void> {
     // 优雅关闭
     process.on("SIGINT", async () => {
         logger.info("收到 SIGINT，正在关闭", { module: "main" });
-
-        // 停止 MLX server（如果是由 msgcode 管理的）
-        if (autoManageMlx) {
-            try {
-                const { MlxServer } = await import("./runners/mlx.js");
-                await MlxServer.stop();
-                logger.info("MLX server 已停止", { module: "main" });
-            } catch (err) {
-                logger.warn("停止 MLX server 失败", {
-                    module: "main",
-                    error: err instanceof Error ? err.message : String(err),
-                });
-            }
-        }
 
         await imsgClient.stop();
         logger.close();
