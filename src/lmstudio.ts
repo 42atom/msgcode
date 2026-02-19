@@ -1187,11 +1187,55 @@ async function runTool(name: string, args: Record<string, unknown>, root: string
 export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Promise<ToolLoopResult> {
     const baseUrl = options.baseUrl || normalizeBaseUrl(config.lmstudioBaseUrl || "http://127.0.0.1:1234");
     const model = options.model || await resolveLmStudioModelId({ baseUrl });
-    const system = options.system ?? config.lmstudioSystemPrompt;
     const timeoutMs = options.timeoutMs || (typeof config.lmstudioTimeoutMs === "number" && !Number.isNaN(config.lmstudioTimeoutMs)
         ? config.lmstudioTimeoutMs
         : 120_000);
     const root = options.allowRoot || config.workspaceRoot || AIDOCS_ROOT;
+
+    // P5.6.8-R3c: 注入 skill 索引到 system prompt
+    let system = options.system ?? config.lmstudioSystemPrompt ?? "";
+    const workspacePath = options.workspacePath || root;
+
+    try {
+        const { existsSync } = await import("node:fs");
+        const { join } = await import("node:path");
+        const os = await import("node:os");
+
+        const globalSkillIndexPath = join(os.homedir(), ".config", "msgcode", "skills", "index.json");
+        const workspaceSkillIndexPath = join(workspacePath, ".msgcode", "skills", "index.json");
+
+        let skillHint = "\n\n[技能系统]\n";
+
+        if (existsSync(globalSkillIndexPath)) {
+            try {
+                const indexContent = await fsPromises.readFile(globalSkillIndexPath, "utf-8");
+                const index = JSON.parse(indexContent);
+                if (index.skills && Array.isArray(index.skills) && index.skills.length > 0) {
+                    skillHint += `全局技能：${index.skills.map((s: any) => s.id).join(", ")}\n`;
+                }
+            } catch {
+                // 忽略读取错误
+            }
+        }
+
+        if (existsSync(workspaceSkillIndexPath)) {
+            try {
+                const indexContent = await fsPromises.readFile(workspaceSkillIndexPath, "utf-8");
+                const index = JSON.parse(indexContent);
+                if (index.skills && Array.isArray(index.skills) && index.skills.length > 0) {
+                    skillHint += `工作区技能：${index.skills.map((s: any) => s.id).join(", ")}\n`;
+                }
+            } catch {
+                // 忽略读取错误
+            }
+        }
+
+        skillHint += "调用方式：read_file 读取技能文件（~/.config/msgcode/skills/<id>/main.sh 或 <workspace>/.msgcode/skills/<id>/main.sh），bash 执行";
+
+        system += skillHint;
+    } catch {
+        // 忽略 skill 索引注入错误
+    }
 
     const messages: Array<{ role: string; content?: string; tool_call_id?: string; tool_calls?: ToolCall[] }> = [];
 
@@ -1278,25 +1322,13 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
 
     const answer = r2.choices[0]?.message?.content ?? "";
 
-    // P5.5: 观测字段记录
+    // P5.6.8-R3c: 统一日志（不再特殊处理 run_skill）
     const toolCallCount = tc ? 1 : 0;
-    const isSkillCall = tc?.function.name === "run_skill";
-    if (isSkillCall) {
-        const skillId = String(args.skill_id || "");
-        const skillResult = (toolResult as any)?.output ? "ok" : "error";
-        logger.info("Skill executed via LLM tool_calls", {
-            module: "lmstudio",
-            toolCallCount,
-            autoSkill: skillId,
-            autoSkillResult: skillResult,
-        });
-    } else {
-        logger.info("Tool loop completed", {
-            module: "lmstudio",
-            toolCallCount,
-            toolName: tc?.function.name || null,
-        });
-    }
+    logger.info("Tool loop completed", {
+        module: "lmstudio",
+        toolCallCount,
+        toolName: tc?.function.name || null,
+    });
 
     return {
         answer: sanitizeLmStudioOutput(answer),
