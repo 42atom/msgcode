@@ -44,8 +44,8 @@ describe("P5.6.13-R4: listener 接线与触发收口回归锁", () => {
             expect(listenerCode).toContain("store.isVectorAvailable()");
         });
 
-        it("R4-6: debug 输出包含 mode 和 vectorAvailable", () => {
-            expect(listenerCode).toContain("mode:");
+        it("R4-6: debug 输出包含 memoryMode 和 vectorAvailable", () => {
+            expect(listenerCode).toContain("memoryMode");
             expect(listenerCode).toContain("vectorAvailable");
         });
     });

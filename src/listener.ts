@@ -257,22 +257,28 @@ interface MemoryInjectResult {
   injected: boolean;
   /** 注入后的内容（如果有注入） */
   content: string;
-  /** 调试信息 */
+  /** 调试信息（P5.6.13-R5: 观测字段） */
   debug?: {
-    /** 检索模式 */
-    mode?: "hybrid" | "fts-only";
+    /** 是否尝试检索 */
+    memoryAttempted?: boolean;
+    /** 检索模式（hybrid/fts-only） */
+    memoryMode?: string;
     /** 向量是否可用 */
     vectorAvailable?: boolean;
     /** 检索结果数 */
-    hitCount: number;
+    memoryHitCount: number;
+    /** 是否成功注入 */
+    memoryInjected?: boolean;
     /** 注入字符数 */
-    injectedChars: number;
+    memoryInjectedChars: number;
     /** 使用的文件路径（不含绝对路径） */
     usedPaths: string[];
     /** 跳过原因 */
     skippedReason?: string;
     /** 强制注入标志 */
     forced?: boolean;
+    /** 检索延迟（毫秒） */
+    memoryLatencyMs?: number;
   };
 }
 
@@ -290,6 +296,7 @@ async function injectMemory(
   force: boolean = false
 ): Promise<MemoryInjectResult> {
   const debug = process.env.MEMORY_DEBUG === "1";
+  const startTime = Date.now(); // P5.6.13-R5: 追踪延迟
 
   // 1. 获取记忆注入配置
   const memConfig = await getMemoryInjectConfig(projectDir);
@@ -301,10 +308,15 @@ async function injectMemory(
         injected: false,
         content,
         debug: {
-          hitCount: 0,
-          injectedChars: 0,
+          memoryAttempted: false,
+          memoryMode: undefined,
+          vectorAvailable: false,
+          memoryHitCount: 0,
+          memoryInjected: false,
+          memoryInjectedChars: 0,
           usedPaths: [],
           skippedReason: "记忆注入未启用",
+          memoryLatencyMs: Date.now() - startTime,
         },
       };
     }
@@ -331,19 +343,25 @@ async function injectMemory(
     const results = store.search(workspaceId, query, memConfig.topK);
     store.close();
 
+    const latencyMs = Date.now() - startTime;
+    const memoryMode = vectorAvailable ? "hybrid" : "fts-only"; // P5.6.13-R5: 模式标识
+
     if (results.length === 0) {
       if (debug) {
         return {
           injected: false,
           content,
           debug: {
-            mode: vectorAvailable ? "fts-only" : "fts-only",
+            memoryAttempted: true,
+            memoryMode,
             vectorAvailable,
-            hitCount: 0,
-            injectedChars: 0,
+            memoryHitCount: 0,
+            memoryInjected: false,
+            memoryInjectedChars: 0,
             usedPaths: [],
             skippedReason: "无搜索结果",
             forced: force,
+            memoryLatencyMs: latencyMs,
           },
         };
       }
@@ -375,13 +393,16 @@ async function injectMemory(
           injected: false,
           content,
           debug: {
-            mode: vectorAvailable ? "fts-only" : "fts-only",
+            memoryAttempted: true,
+            memoryMode,
             vectorAvailable,
-            hitCount: results.length,
-            injectedChars: 0,
+            memoryHitCount: results.length,
+            memoryInjected: false,
+            memoryInjectedChars: 0,
             usedPaths: [],
             skippedReason: "证据块超出字符限制",
             forced: force,
+            memoryLatencyMs: latencyMs,
           },
         };
       }
@@ -400,12 +421,14 @@ async function injectMemory(
     if (debug) {
       logger.debug("记忆注入已触发", {
         module: "listener",
-        mode: vectorAvailable ? "fts-only" : "fts-only",
+        memoryMode,
         vectorAvailable,
-        hitCount: results.length,
-        injectedChars,
+        memoryHitCount: results.length,
+        memoryInjected: true,
+        memoryInjectedChars: injectedChars,
         usedPaths,
         forced: force,
+        memoryLatencyMs: latencyMs,
       });
     }
 
@@ -413,12 +436,15 @@ async function injectMemory(
       injected: true,
       content: injectedContent,
       debug: {
-        mode: vectorAvailable ? "fts-only" : "fts-only",
+        memoryAttempted: true,
+        memoryMode,
         vectorAvailable,
-        hitCount: results.length,
-        injectedChars,
+        memoryHitCount: results.length,
+        memoryInjected: true,
+        memoryInjectedChars: injectedChars,
         usedPaths,
         forced: force,
+        memoryLatencyMs: latencyMs,
       },
     };
   } catch (error) {
@@ -433,13 +459,16 @@ async function injectMemory(
         injected: false,
         content,
         debug: {
-          mode: undefined,
+          memoryAttempted: true,
+          memoryMode: undefined,
           vectorAvailable: false,
-          hitCount: 0,
-          injectedChars: 0,
+          memoryHitCount: 0,
+          memoryInjected: false,
+          memoryInjectedChars: 0,
           usedPaths: [],
           skippedReason: `搜索失败: ${error instanceof Error ? error.message : String(error)}`,
           forced: force,
+          memoryLatencyMs: Date.now() - startTime,
         },
       };
     }
