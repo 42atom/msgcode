@@ -6,6 +6,7 @@
 import { routeByChatId } from "../router.js";
 import { getRouteByChatId } from "./store.js";
 import type { CommandHandlerOptions, CommandResult } from "./cmd-types.js";
+import type { AgentProvider, ToolName } from "../config/workspace.js";
 
 export async function handleModelCommand(options: CommandHandlerOptions): Promise<CommandResult> {
   const { chatId, args } = options;
@@ -165,7 +166,7 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
   try {
     // P5.6.14-R4: 确保 runtime.kind=agent 后设置 provider
     await setRuntimeKind(projectDir, "agent");
-    await setAgentProvider(projectDir, requestedRunner as any);
+    await setAgentProvider(projectDir, requestedRunner as AgentProvider);
 
     const oldProvider = await getAgentProvider(projectDir);
     return {
@@ -333,9 +334,9 @@ export async function handlePiCommand(options: CommandHandlerOptions): Promise<C
     const piTools = ["read_file", "write_file", "edit_file", "bash"] as const;
 
     // 确保 PI 四工具在 allow 列表中
-    const missingTools = piTools.filter(t => !policy.allow.includes(t as any));
+    const missingTools = piTools.filter(t => !policy.allow.includes(t));
     if (missingTools.length > 0) {
-      const newAllow = [...new Set([...policy.allow, ...piTools])] as any[];
+      const newAllow: ToolName[] = [...new Set([...policy.allow, ...piTools])];
       await setToolingAllow(projectDir, newAllow);
     }
 
