@@ -28,6 +28,7 @@ import * as session from "./runtime/session-orchestrator.js";
 // P5.6.2-R1: 导入会话窗口
 import { loadWindow, appendWindow, type WindowMessage } from "./session-window.js";
 import { loadSummary, formatSummaryAsContext } from "./summary.js";
+import { resolveSoulContext } from "./config/souls.js";
 
 const TMUX_STYLE_MAX_CHARS = 800;
 
@@ -590,16 +591,10 @@ export class RuntimeRouterHandler implements CommandHandler {
             const { randomUUID } = await import("node:crypto");
             const traceId = randomUUID();  // 生成链路追踪 ID
 
-            logger.info("LM Studio 请求开始", {
-                module: "handlers",
-                chatId: context.chatId,
-                traceId,
-                runner: "direct",
-            });
-
             // P5.6.2-R2: 读取短期会话窗口
             let windowMessages: WindowMessage[] = [];
             let summaryContext: string | undefined;
+            let soulContext: { content: string; source: string; path: string; chars: number } | undefined;
 
             if (context.projectDir) {
                 windowMessages = await loadWindow(context.projectDir, context.chatId);
@@ -609,7 +604,22 @@ export class RuntimeRouterHandler implements CommandHandler {
                 if (summary) {
                     summaryContext = formatSummaryAsContext(summary);
                 }
+
+                // P5.6.8-R4e: 读取 SOUL 上下文
+                soulContext = await resolveSoulContext(context.projectDir);
             }
+
+            logger.info("LM Studio 请求开始", {
+                module: "handlers",
+                chatId: context.chatId,
+                traceId,
+                runner: "direct",
+                // P5.6.8-R4e: SOUL 注入观测字段
+                soulInjected: soulContext?.source !== "none",
+                soulSource: soulContext?.source || "none",
+                soulPath: soulContext?.path || "",
+                soulChars: soulContext?.chars || 0,
+            });
 
             // P0: 只在 MCP 真正启用时才传递 workspace（避免注入 MCP 规则导致元叙事）
             const useMcp = process.env.LMSTUDIO_ENABLE_MCP === "1";
@@ -623,6 +633,8 @@ export class RuntimeRouterHandler implements CommandHandler {
                 // P5.6.8-R4b: 注入短期记忆上下文
                 windowMessages,
                 summaryContext,
+                // P5.6.8-R4e: 注入 SOUL 上下文（direct only）
+                soulContext,
             });
             const clean = (toolLoopResult.answer || "").trim();
             if (!clean) {
@@ -642,6 +654,11 @@ export class RuntimeRouterHandler implements CommandHandler {
                 // P5.6.2-R1: ToolLoop 观测字段
                 toolCallCount: toolLoopResult.toolCall ? 1 : 0,
                 toolName: toolLoopResult.toolCall?.name,
+                // P5.6.8-R4e: SOUL 注入观测字段
+                soulInjected: soulContext?.source !== "none",
+                soulSource: soulContext?.source || "none",
+                soulPath: soulContext?.path || "",
+                soulChars: soulContext?.chars || 0,
             });
 
             // 自动语音回复：不在 handler 内阻塞生成（避免"很久不回复"）

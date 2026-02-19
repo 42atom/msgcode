@@ -1,6 +1,6 @@
 import { describe, it, expect } from "bun:test";
 
-import { parseToolCallBestEffortFromText } from "../src/lmstudio.js";
+import { parseToolCallBestEffortFromText, isLikelyFakeToolExecutionText } from "../src/lmstudio.js";
 
 describe("lmstudio tool call parse (best-effort)", () => {
   it("parses XML-ish format", () => {
@@ -40,5 +40,23 @@ describe("lmstudio tool call parse (best-effort)", () => {
       text: `rm -rf {"path":"/"}`,
     });
     expect(parsed).toBeNull();
+  });
+
+  it("detects fake shell execution text", () => {
+    const fake = [
+      "```bash",
+      "pwd",
+      "```",
+      "",
+      "执行中...",
+      "",
+      "/home/user",
+    ].join("\n");
+    expect(isLikelyFakeToolExecutionText(fake)).toBeTrue();
+  });
+
+  it("does not flag normal non-tool answer", () => {
+    const normal = "今天是周四，你刚才问的是系统状态。";
+    expect(isLikelyFakeToolExecutionText(normal)).toBeFalse();
   });
 });

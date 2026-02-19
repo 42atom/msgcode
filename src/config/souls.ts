@@ -219,3 +219,64 @@ export async function getWorkspaceSoul(workspacePath: string): Promise<Soul | nu
   }
 }
 
+
+// ============================================
+// P5.6.8-R4e: SOUL 主链注入
+// ============================================
+
+/**
+ * SOUL 解析结果
+ */
+export interface SoulContext {
+  /** SOUL 内容（Markdown 文本） */
+  content: string;
+  /** SOUL 来源：workspace | global | none */
+  source: "workspace" | "global" | "none";
+  /** SOUL 文件路径 */
+  path: string;
+  /** SOUL 字符数 */
+  chars: number;
+}
+
+/**
+ * 解析 SOUL 上下文（P5.6.8-R4e）
+ *
+ * 优先级：
+ * 1. workspace SOUL: <workspace>/.msgcode/SOUL.md
+ * 2. global SOUL: ~/.config/msgcode/souls/default/*.md（取 active）
+ * 3. none: 没有 SOUL
+ *
+ * @param workspacePath 工作区路径
+ * @returns SoulContext 对象
+ */
+export async function resolveSoulContext(workspacePath: string): Promise<SoulContext> {
+  // 1. 尝试读取 workspace SOUL
+  const workspaceSoul = await getWorkspaceSoul(workspacePath);
+  if (workspaceSoul) {
+    return {
+      content: workspaceSoul.content,
+      source: "workspace",
+      path: getWorkspaceSoulPath(workspacePath),
+      chars: workspaceSoul.content.length,
+    };
+  }
+
+  // 2. 尝试读取 global SOUL（active）
+  const activeSoul = await getActiveSoul();
+  if (activeSoul) {
+    return {
+      content: activeSoul.content,
+      source: "global",
+      path: getSoulPath(activeSoul.id),
+      chars: activeSoul.content.length,
+    };
+  }
+
+  // 3. none
+  return {
+    content: "",
+    source: "none",
+    path: "",
+    chars: 0,
+  };
+}

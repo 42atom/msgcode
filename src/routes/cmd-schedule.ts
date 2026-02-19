@@ -209,14 +209,18 @@ export async function handleReloadCommand(options: CommandHandlerOptions): Promi
   const skillsExist = existsSync(skillsDir);
   results.push(`Skills: ${skillsExist ? "已配置" : "未配置"} (~/.config/msgcode/skills/)`);
 
-  const { getActiveSoul, listSouls } = await import("../config/souls.js");
+  const { getActiveSoul, listSouls, resolveSoulContext } = await import("../config/souls.js");
   // SOUL.md 位于工作区 .msgcode 目录
   const workspaceSoulPath = join(entry.workspacePath, ".msgcode", "SOUL.md");
   const workspaceSoulExists = existsSync(workspaceSoulPath);
   const activeSoul = await getActiveSoul();
   const souls = await listSouls();
 
-  results.push(`SOUL: workspace=${workspaceSoulExists ? "已发现" : "未发现"} (${workspaceSoulPath})`);
+  // P5.6.8-R4e: 显示真实 SOUL 注入状态
+  const soulContext = await resolveSoulContext(entry.workspacePath);
+  const soulHash = soulContext.chars > 0 ? `#${soulContext.chars}c` : "none";
+
+  results.push(`SOUL: source=${soulContext.source} path=${soulContext.path || "none"} ${soulHash}`);
   results.push(`SOUL Entries: ${souls.length} (active=${activeSoul?.id || "none"})`);
   results.push(`\n✓ 重新加载完成`);
 

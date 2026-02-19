@@ -880,7 +880,7 @@ export function parseToolCallBestEffortFromText(params: {
         if (!raw) return null;
 
         // 1) XML-ish: <tool_call>name <arg_key>k</arg_key><arg_value>v</arg_value>...</tool_call>
-        if (raw.includes("<tool_call>")) {
+        if (raw.includes("<tool_call>") || raw.includes("陈列")) {
             const parsed = parseXmlToolCall(raw, allowed);
             if (parsed) return parsed;
         }
@@ -913,6 +913,24 @@ export function parseToolCallBestEffortFromText(params: {
 }
 
 function parseXmlToolCall(text: string, allowed: Set<string>): ParsedToolCall | null {
+    // 兼容历史“陈列...陈列/xxx”格式（旧模型输出）
+    if (text.includes("陈列")) {
+        const tokens = text.split("陈列").map(item => item.trim()).filter(Boolean);
+        const name = tokens[0];
+        if (!name || !allowed.has(name)) return null;
+
+        const args: Record<string, unknown> = {};
+        for (let i = 1; i < tokens.length; i += 2) {
+            const key = tokens[i];
+            const value = tokens[i + 1];
+            if (!key || !value) break;
+            if (key.startsWith("/")) break;
+            if (value.startsWith("/")) break;
+            args[key] = parseLooseValue(value);
+        }
+        return { name, args };
+    }
+
     const idx = text.indexOf("<tool_call>");
     if (idx < 0) return null;
     const after = text.slice(idx + "<tool_call>".length).trimStart();
@@ -1110,6 +1128,8 @@ export interface LmStudioToolLoopOptions {
     // P5.6.8-R4b: 短期记忆上下文
     windowMessages?: Array<{ role: string; content?: string }>; // 历史窗口消息
     summaryContext?: string; // summary 格式化后的上下文
+    // P5.6.8-R4e: SOUL 上下文（direct only）
+    soulContext?: { content: string; source: string; path: string; chars: number };
 }
 
 /**
@@ -1118,6 +1138,22 @@ export interface LmStudioToolLoopOptions {
 export interface ToolLoopResult {
     answer: string;
     toolCall?: { name: string; args: Record<string, unknown>; result: unknown };
+}
+
+/**
+ * 检测“伪工具执行”文本（模型未发起 tool_calls，却在正文伪造执行过程/结果）
+ */
+export function isLikelyFakeToolExecutionText(text: string): boolean {
+    const input = (text || "").trim();
+    if (!input) return false;
+
+    const hasShellFence = /```(?:bash|sh|zsh|shell)\b[\s\S]*?```/i.test(input);
+    const hasExecutionCue =
+        /(执行中|正在执行|命令输出|命令结果|已执行)/i.test(input) ||
+        /(?:^|\n)\s*(?:pwd|ls|cat)\b/im.test(input) ||
+        /\/home\/[^\s]*/.test(input);
+
+    return hasShellFence && hasExecutionCue;
 }
 
 /**
@@ -1240,6 +1276,12 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
         // 忽略 skill 索引注入错误
     }
 
+    // P5.6.8-R4e: 注入 SOUL 上下文（direct only）
+    if (options.soulContext && options.soulContext.source !== "none") {
+        system += `\n\n[灵魂身份]\n${options.soulContext.content}\n[/灵魂身份]`;
+        system += `\n\n（SOUL 已内置到系统提示中，你不需要也不应该尝试读取"灵魂文件"或"灵魂脚本"）`;
+    }
+
     const messages: Array<{ role: string; content?: string; tool_call_id?: string; tool_calls?: ToolCall[] }> = [];
 
     if (system && system.trim()) {
@@ -1316,7 +1358,17 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
 
     // 3) 无工具调用（含兜底解析失败）：直接清洗返回
     if (!tc) {
-        return { answer: sanitizeLmStudioOutput(assistantContent ?? "") };
+        const cleanedAnswer = sanitizeLmStudioOutput(assistantContent ?? "");
+        if (tools.length > 0 && isLikelyFakeToolExecutionText(cleanedAnswer)) {
+            logger.warn("Detected fake tool execution without tool_calls", {
+                module: "lmstudio",
+                toolCallCount: 0,
+            });
+            return {
+                answer: "未检测到真实工具调用；为避免返回伪造执行结果，本次不输出命令结果。请重试并明确让我调用工具。"
+            };
+        }
+        return { answer: cleanedAnswer };
     }
 
     let toolResult: unknown;

@@ -1,19 +1,60 @@
-# 任务单索引（主线冻结）
+# 任务单索引（唯一时间线）
 
-## P5 主线顺序（冻结）
+## P5 当前唯一执行主线（冻结）
 
 1. `P5.4-R2`：Autonomous Skill 默认主路径收敛（自然语言触发优先）
-2. `P5.5`：Skill 编排主线收敛（LLM 决策 + `tool_calls(run_skill)`）
+2. `P5.5`：Skill 编排主线收敛（LLM 决策 + tool_calls）
 3. `P5.6.1`：运行时内核收敛（`handlers` 只做路由/编排入口）
 4. `P5.6.2`：模型执行层三分（协议适配 / tool loop / 输出清洗）
-5. `P5.6.3`：Skill 执行单一真相源（自动触发与 `/skill run` 同执行器）
-6. `P5.6.4`：状态域边界化（window/pending/memory，`/clear` 只清短期）
-7. `P5.6.5`：命令层最终瘦身（`commands.ts` 只留注册+分发+fallback）
-8. `P5.6.6`：测试 DI 化与回归锁固化
+5. `P5.6.2-R1`：后置回归修复（ToolLoop 主链 + `/reload` SOUL + 记忆链路）
+6. `P5.6.3`：Skill 执行单一真相源（执行路径统一）
+7. `P5.6.4`：状态域边界化（window/pending/memory，`/clear` 只清短期）
+8. `P5.6.5`：命令层最终瘦身（`commands.ts` 只留注册+分发+fallback）
+9. `P5.6.6`：测试 DI 化与回归锁固化
+
+## P5 后续排队（前置主线完成后再启用）
+
+10. `P5.6.7`：双管道契约锁定 + 三工作区集成冒烟（`medicpass/charai/game01`）
+11. `P5.6.7-R9`：P0 插单（SOUL 路径与注入闭环、窗口读链路接线）
+12. `P5.6.8-R1`：短期记忆窗口读链路闭环（ToolLoop 真接线）
+13. `P5.6.8-R2`：长期记忆注入自动化闭环（不依赖纯 CLI 手工）
+14. `P5.6.8-R3`：PI 开关语义收敛（off=普通聊天+记忆，on=Pi 核心循环+四基础工具+skill 索引提示）
+15. `P5.6.8-R3e`：遗留硬切（删除 `/skill run`、`run_skill`、旧工具名）
+16. `P5.6.8-PLAN`：Pi 文章能力对齐总控计划（R3 内核切换 → R4 SOUL/记忆闭环 → R5 skill 去耦 → R6 回归锁）
+17. `P5.6.8-R4a`：SOUL 运行时真读取闭环（workspace/global 优先级 + `/reload` 真回执）
+18. `P5.6.8-R4b`：短期记忆窗口接入 Pi Tool Loop（window/summary 真接线）
+19. `P5.6.8-R4c`：长期记忆注入稳态化与可观测收口
+20. `P5.6.8-R4d`：三工作区运行时冒烟验收（`medicpass/charai/game01`）
+21. `P5.6.8-R4e`：PI on/off 提示词与工具硬门一致性收口
+22. `P5.6.8-R5a`：artifact→send 回传桥接（发送保持内核能力，不进入 skill）
 
 ## 当前任务单
 
 - `p5-5-skill-orchestration-toolcalls.md`：P5.5（按最新冻结口径执行）
+- `p5-6-1-runtime-kernel-convergence.md`：P5.6.1（运行时内核收敛）
+- `p5-6-1-r2a-persona-residue-cleanup.md`：P5.6.1-R2A（persona 残留清理）
+- `p5-6-1-r2b-root-slim-pr-checklist.md`：P5.6.1-R2B（根目录瘦身）
+- `p5-6-1-r3-mlx-final-retirement.md`：P5.6.1-R3（MLX 最终退役）
+- `p5-6-2-r1-postfix-toolloop-reload-soul.md`：P5.6.2-R1（回归修复）
+- `p5-6-2-r4b2-lmstudio-slim.md`：P5.6.2-R4b2（lmstudio.ts 继续瘦身）
+- `p5-6-2-p0-soul-minimal-extract.md`：P5.6.2-P0（SOUL 修复最小摘取）
+- `p5-6-2-r5-branch-consolidation.md`：P5.6.2-R5（分支收口与主线归并计划）
+- `p5-6-3-skill-single-source.md`：P5.6.3（Skill 执行单一真相源）
+- `p5-6-4-r0a-pipeline-boundary-audit.md`：P5.6.4-R0A（双管道边界审计检查单）
+- `p5-6-5-command-layer-final-slim.md`：P5.6.5（命令层最终瘦身）
+- `p5-6-7-r6-smoke-checklist.md`：P5.6.7-R6（集成冒烟清单）
+- `p5-6-7-r9-soul-memory-mainline-insert.md`：P5.6.7-R9（SOUL/记忆 P0 插单）
+- `p5-6-8-memory-soul-closure.md`：P5.6.8（记忆与 SOUL 主链闭环）
+- `p5-6-8-r3-pi-core-switch.md`：P5.6.8-R3（PI on/off 语义与四基础工具收敛）
+- `p5-6-8-r3abc-toolchain-convergence.md`：P5.6.8-R3ABC（Tool 链路收敛派发单）
+- `p5-6-8-r3e-legacy-hard-cut.md`：P5.6.8-R3e（历史兼容壳硬切）
+- `p5-6-8-pi-article-full-implementation-plan.md`：P5.6.8 总控（Pi 文章能力对齐完整开发计划）
+- `p5-6-8-r4a-soul-runtime-read.md`：P5.6.8-R4a（SOUL 真读取与 `/reload` 口径修正）
+- `p5-6-8-r4b-short-memory-window-loop.md`：P5.6.8-R4b（短期窗口/摘要接入 Tool Loop）
+- `p5-6-8-r4c-long-memory-injection-observability.md`：P5.6.8-R4c（长期记忆注入稳态与观测锁）
+- `p5-6-8-r4d-three-workspace-runtime-smoke.md`：P5.6.8-R4d（三工作区运行时冒烟）
+- `p5-6-8-r4e-pi-on-off-prompt-tooling-alignment.md`：P5.6.8-R4e（PI on/off 提示词与工具双保险收口）
+- `p5-6-8-r5a-artifact-send-bridge.md`：P5.6.8-R5a（artifact 到发送通道桥接）
 
 ## 规则
 

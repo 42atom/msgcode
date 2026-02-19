@@ -150,6 +150,31 @@ export class FileTransport implements Transport {
             if (process.env.DEBUG_TRACE_TEXT === "1" && meta.textPreview) {
                 parts.push(`textPreview="${String(meta.textPreview).slice(0, 30)}"`);
             }
+            if (process.env.MSGCODE_LOG_PLAINTEXT_INPUT === "1" && meta.inboundText !== undefined && meta.inboundText !== null) {
+                const rawInboundText = String(meta.inboundText);
+                const normalizedInboundText = rawInboundText
+                    .replace(/\\/g, "\\\\")
+                    .replace(/"/g, '\\"')
+                    .replace(/\r?\n/g, "\\n");
+                const maxChars = 500;
+                const clippedInboundText = normalizedInboundText.length > maxChars
+                    ? `${normalizedInboundText.slice(0, maxChars)}…`
+                    : normalizedInboundText;
+                parts.push(`inboundText="${clippedInboundText}"`);
+            }
+            // P5.6.8: 记录回复正文（用于冒烟验收“是否幻想执行”）
+            if (meta.responseText !== undefined && meta.responseText !== null) {
+                const rawResponse = String(meta.responseText);
+                const normalizedResponse = rawResponse
+                    .replace(/\\/g, "\\\\")
+                    .replace(/"/g, '\\"')
+                    .replace(/\r?\n/g, "\\n");
+                const maxChars = 500;
+                const clippedResponse = normalizedResponse.length > maxChars
+                    ? `${normalizedResponse.slice(0, maxChars)}…`
+                    : normalizedResponse;
+                parts.push(`responseText="${clippedResponse}"`);
+            }
             if (meta.rowid !== undefined) parts.push(`rowid=${meta.rowid}`);
 
             // Phase 6: 添加常用错误字段输出（P1 日志可观测性）

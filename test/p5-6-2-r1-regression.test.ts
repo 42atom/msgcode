@@ -48,17 +48,17 @@ describe("P5.6.2-R2: Session Window 链路防回流锁", () => {
 });
 
 describe("P5.6.2-R3: /reload SOUL 可观测防回流锁", () => {
-    it("src/routes/commands.ts handleReloadCommand 必须输出 SOUL:", () => {
+    it("src/routes/cmd-schedule.ts handleReloadCommand 必须输出 SOUL:", () => {
         const code = fs.readFileSync(
-            path.join(process.cwd(), "src/routes/commands.ts"),
+            path.join(process.cwd(), "src/routes/cmd-schedule.ts"),
             "utf-8"
         );
         expect(code).toContain("SOUL: workspace=");
     });
 
-    it("src/routes/commands.ts handleReloadCommand 必须输出 SOUL Entries:", () => {
+    it("src/routes/cmd-schedule.ts handleReloadCommand 必须输出 SOUL Entries:", () => {
         const code = fs.readFileSync(
-            path.join(process.cwd(), "src/routes/commands.ts"),
+            path.join(process.cwd(), "src/routes/cmd-schedule.ts"),
             "utf-8"
         );
         expect(code).toContain("SOUL Entries:");
