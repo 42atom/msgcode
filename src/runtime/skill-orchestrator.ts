@@ -41,6 +41,8 @@ export interface SkillResult {
 /**
  * 处理 /skill run 命令
  *
+ * P5.6.8-R3d: 降级为调试入口（仅开发模式可用）
+ *
  * @param command 原始命令文本
  * @param ctx Skill 上下文
  * @returns 处理结果（null 表示不是 skill 命令）
@@ -49,6 +51,23 @@ export async function handleSkillRunCommand(
   command: string,
   ctx: SkillContext
 ): Promise<SkillResult | null> {
+  // P5.6.8-R3d: 仅在开发模式下可用
+  if (process.env.MSGCODE_DEV_MODE !== "true") {
+    const trimmed = command.trim();
+    if (!trimmed.startsWith("/skill")) return null;
+
+    const parts = trimmed.split(/\s+/);
+    if (parts[0] !== "/skill") return null;
+
+    if (parts[1] === "run") {
+      return {
+        success: false,
+        response: "/skill run 仅在开发模式下可用（设置 MSGCODE_DEV_MODE=true）"
+      };
+    }
+    return null;
+  }
+
   const trimmed = command.trim();
   if (!trimmed.startsWith("/skill")) return null;
 
