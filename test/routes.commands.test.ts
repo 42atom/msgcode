@@ -436,14 +436,14 @@ describe("路由命令处理器", () => {
 
       expect(result.success).toBe(true);
       expect(result.message).toContain("PI: 已禁用");
-      expect(result.message).toContain("执行臂:");
+      expect(result.message).toContain("运行形态");
     });
 
-    it("/pi on 启用 PI（仅限本地执行臂）", async () => {
+    it("/pi on 启用 PI（仅限 agent 模式）", async () => {
       const options: CommandHandlerOptions = { chatId: testChatId, args: ["on"] };
       const result = await handlePiCommand(options);
 
-      // 注意：默认 runner 是 lmstudio（本地执行臂），应该成功
+      // 注意：默认 runtime.kind 是 agent，应该成功
       expect(result.success).toBe(true);
       expect(result.message).toContain("PI 已启用");
     });
