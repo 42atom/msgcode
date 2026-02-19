@@ -15,7 +15,7 @@ export type ToolName =
   | "bash"
   | "browser"
   | "desktop"  // T6.1: Desktop Bridge (msgcode-desktopctl)
-  | "run_skill"  // P5.5: Skill execution tool
+  // P5.6.13-R1A-EXEC: run_skill 已退役
   | "read_file"  // P5.6.8-R3: PI 四基础工具
   | "write_file"
   | "edit_file";
@@ -29,8 +29,7 @@ export type ToolDataMap = {
   browser: Record<string, unknown>;
   // T6.1: Desktop tool data (exitCode + stdout + stderr from desktopctl)
   desktop: { exitCode: number | null; stdout: string; stderr: string };
-  // P5.5: Skill execution result
-  run_skill: { output: string };
+  // P5.6.13-R1A-EXEC: run_skill 已退役
   // P5.6.8-R3: PI 四基础工具 data
   read_file: { content: string };
   write_file: { path: string };

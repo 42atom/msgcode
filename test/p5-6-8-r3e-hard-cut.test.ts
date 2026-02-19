@@ -197,3 +197,41 @@ describe("P5.6.8-R3e: 硬切割回归锁", () => {
         });
     });
 });
+
+// P5.6.13-R1A-EXEC: 静态锁 - 禁止 run_skill 回归
+// 验收口径：run_skill 在可执行代码路径必须为 0；测试断言与退役注释可保留
+describe("run_skill 硬退场静态锁", () => {
+    // 工具函数：递归搜索文件
+    const grepRecursive = (dir: string, pattern: RegExp): string[] => {
+        const results: string[] = [];
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+        for (const entry of entries) {
+            const fullPath = path.join(dir, entry.name);
+            if (entry.isDirectory()) {
+                results.push(...grepRecursive(fullPath, pattern));
+            } else if (entry.isFile() && entry.name.endsWith(".ts")) {
+                const content = fs.readFileSync(fullPath, "utf-8");
+                if (pattern.test(content)) {
+                    results.push(fullPath);
+                }
+            }
+        }
+        return results;
+    };
+
+    it("src/tools/ 不应包含 case \"run_skill\"", () => {
+        const toolsDir = path.join(process.cwd(), "src/tools");
+        const matches = grepRecursive(toolsDir, /case\s+"run_skill"/);
+        expect(matches.length).toBe(0);
+    });
+
+    it("src/tools/types.ts 不应包含 ToolName = \"run_skill\"", () => {
+        const code = fs.readFileSync(path.join(process.cwd(), "src/tools/types.ts"), "utf-8");
+        // 允许注释中包含 run_skill，但不允许类型定义中包含
+        const typeDefMatch = code.match(/type\s+ToolName\s*=\s*[\s\S]*?;\s*\n/);
+        if (typeDefMatch) {
+            expect(typeDefMatch[0]).not.toContain('"run_skill"');
+        }
+    });
+});

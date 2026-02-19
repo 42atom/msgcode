@@ -29,7 +29,7 @@ const TOOL_META: Record<ToolName, { sideEffect: SideEffectLevel }> = {
   bash: { sideEffect: "process-control" },
   browser: { sideEffect: "process-control" },
   desktop: { sideEffect: "local-write" },  // T6.1: observe 会落盘 evidence
-  run_skill: { sideEffect: "read-only" },  // P5.5: Skill execution (read-only)
+  // P5.6.13-R1A-EXEC: run_skill 已退役
   read_file: { sideEffect: "read-only" },  // P5.6.8-R3: PI 四基础工具
   write_file: { sideEffect: "local-write" },
   edit_file: { sideEffect: "local-write" },
@@ -554,42 +554,7 @@ export async function executeTool(
           break;
         }
       }
-      case "run_skill": {
-        // P5.5: 统一 skill 执行器入口
-        const skillId = String(args.skill_id ?? "").trim();
-        if (!skillId) throw new Error("missing skill_id");
-
-        const input = typeof args.input === "string" ? args.input : "";
-
-        // 调用 skills/auto.ts:runSkill()（单一执行器）
-        const { runSkill } = await import("../skills/auto.js");
-        const skillResult = await withTimeout(
-          runSkill(skillId as any, input, {
-            workspacePath: ctx.workspacePath,
-            chatId: ctx.chatId,
-            requestId: ctx.requestId,
-          }),
-          ctx.timeoutMs ?? 60000
-        );
-
-        // 记录 skill 执行事件（含观测字段）
-        logger.info("Skill executed via tool_calls", {
-          module: "tools-bus",
-          chatId: ctx.chatId,
-          autoSkill: skillResult.skillId,
-          autoSkillResult: skillResult.ok ? "ok" : "error",
-          durationMs: skillResult.durationMs,
-        });
-
-        result = {
-          ok: skillResult.ok,
-          tool,
-          data: { output: skillResult.output },
-          error: skillResult.error ? { code: "TOOL_EXEC_FAILED", message: skillResult.error } : undefined,
-          durationMs: Date.now() - started,
-        };
-        break;
-      }
+      // P5.6.13-R1A-EXEC: run_skill 已退役
       case "read_file": {
         // P5.6.8-R3: 读取文件内容
         const { resolve } = await import("node:path");

@@ -20,10 +20,12 @@ describe("P5.6.8-R4g: 命名收口", () => {
     const { ToolName } = await import("../src/tools/types.js");
 
     // 通过类型系统验证：shell 已从 ToolName 中删除
-    const validTools = ["tts", "asr", "vision", "mem", "bash", "browser", "desktop", "run_skill", "read_file", "write_file", "edit_file"];
+    // P5.6.13-R1A-EXEC: run_skill 已退役
+    const validTools = ["tts", "asr", "vision", "mem", "bash", "browser", "desktop", "read_file", "write_file", "edit_file"];
 
     expect(validTools).toContain("bash");
     expect(validTools).not.toContain("shell");
+    expect(validTools).not.toContain("run_skill");
   });
 
   it("R4g-2: 默认 tooling.allow 包含 PI 四工具", async () => {
