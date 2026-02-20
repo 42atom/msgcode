@@ -9,7 +9,7 @@
 import { Command } from "commander";
 import { randomUUID } from "node:crypto";
 import type { Envelope, Diagnostic } from "../memory/types.js";
-import { getFileSendContract, getFileFindContract, getFileReadContract } from "./file.js";
+import { getFileSendContract, getFileFindContract, getFileReadContract, getFileWriteContract } from "./file.js";
 import { getWebCommandContract } from "./web.js";
 import { getSystemCommandContract } from "./system.js";
 
@@ -95,10 +95,11 @@ export function createHelpDocsCommand(): Command {
 
         // 构建命令合同列表
         const commands: Record<string, unknown>[] = [
-          // File 命令组（P5.7-R1b + R3）
+          // File 命令组（P5.7-R1b + R3-1/R3-2）
           getFileSendContract() as Record<string, unknown>,
           getFileFindContract() as Record<string, unknown>,
           getFileReadContract() as Record<string, unknown>,
+          getFileWriteContract() as Record<string, unknown>,
           // Web 命令组（P5.7-R2）
           ...(getWebCommandContract() as Record<string, unknown>[]),
           // System 命令组（P5.7-R2）

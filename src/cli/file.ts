@@ -13,9 +13,9 @@
 import { Command } from "commander";
 import { randomUUID } from "node:crypto";
 import type { Envelope, Diagnostic } from "../memory/types.js";
-import { existsSync, statSync, readdirSync, readFileSync } from "node:fs";
-import { readFile } from "node:fs/promises";
-import { join, relative, isAbsolute } from "node:path";
+import { existsSync, statSync, readdirSync, readFileSync, writeFileSync, appendFileSync, mkdirSync } from "node:fs";
+import { readFile, writeFile, appendFile } from "node:fs/promises";
+import { join, relative, isAbsolute, dirname } from "node:path";
 import { config } from "../config.js";
 import { homedir } from "node:os";
 
@@ -54,6 +54,15 @@ interface FileReadData {
   path?: string;
   content?: string;
   size?: number;
+  errorMessage?: string;
+  errorCode?: string;
+}
+
+interface FileWriteData {
+  ok: boolean;
+  writeResult: "OK" | "ACCESS_DENIED" | "WRITE_FAILED";
+  path?: string;
+  bytesWritten?: number;
   errorMessage?: string;
   errorCode?: string;
 }
@@ -673,11 +682,143 @@ function createFileReadCommand(): Command {
 }
 
 // ============================================
+// File Write 命令实现（P5.7-R3）
+// ============================================
+
+/**
+ * 创建 file write 子命令（P5.7-R3：写入文件，越界需 --force）
+ */
+function createFileWriteCommand(): Command {
+  const cmd = new Command("write");
+
+  cmd
+    .description("写入文件内容（P5.7-R3，越界需 --force）")
+    .argument("<path>", "文件路径")
+    .requiredOption("--content <content>", "要写入的内容")
+    .option("--append", "追加模式（默认覆盖）")
+    .option("--force", "允许越界写入（默认只允许 workspace 内）")
+    .option("--json", "JSON 格式输出")
+    .action(async (pathArg, options) => {
+      const startTime = Date.now();
+      const command = `msgcode file write ${pathArg}`;
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      try {
+        // P5.7-R3: 越界检查
+        if (!options.force && isPathOutOfBounds(pathArg)) {
+          errors.push({
+            code: "FILE_WRITE_ACCESS_DENIED",
+            message: `越界写入被拒绝：${pathArg}（需添加 --force）`,
+            hint: " workspace 默认只允许写入 workspace 内的文件，越界操作需显式 --force",
+          });
+          const envelope = createEnvelope<FileWriteData>(
+            command,
+            startTime,
+            "error",
+            {
+              ok: false,
+              writeResult: "ACCESS_DENIED",
+              errorCode: "OUT_OF_BOUNDS",
+              errorMessage: `越界写入被拒绝：${pathArg}`,
+            },
+            warnings,
+            errors
+          );
+          if (options.json) {
+            console.log(JSON.stringify(envelope, null, 2));
+          } else {
+            console.error(`错误：${errors[0].message}`);
+          }
+          process.exit(1);
+        }
+
+        // 确保父目录存在
+        const dir = dirname(pathArg);
+        if (!existsSync(dir)) {
+          mkdirSync(dir, { recursive: true });
+        }
+
+        // 写入文件
+        const content = options.content;
+        if (options.append) {
+          // 追加模式
+          if (existsSync(pathArg)) {
+            appendFileSync(pathArg, content, "utf-8");
+          } else {
+            writeFileSync(pathArg, content, "utf-8");
+          }
+        } else {
+          // 覆盖模式
+          writeFileSync(pathArg, content, "utf-8");
+        }
+
+        // 获取写入后大小
+        const stats = statSync(pathArg);
+
+        // 成功
+        const envelope = createEnvelope<FileWriteData>(
+          command,
+          startTime,
+          "pass",
+          {
+            ok: true,
+            writeResult: "OK",
+            path: pathArg,
+            bytesWritten: stats.size,
+          },
+          warnings,
+          errors
+        );
+
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.log(`文件已写入 ${pathArg}:`);
+          console.log(`  大小：${stats.size} bytes`);
+          console.log(`  模式：${options.append ? "追加" : "覆盖"}`);
+        }
+
+        process.exit(0);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        errors.push({
+          code: "FILE_WRITE_UNEXPECTED_ERROR",
+          message: `写入失败：${message}`,
+        });
+
+        const envelope = createEnvelope<FileWriteData>(
+          command,
+          startTime,
+          "error",
+          {
+            ok: false,
+            writeResult: "WRITE_FAILED",
+            errorCode: "WRITE_ERROR",
+            errorMessage: message,
+          },
+          warnings,
+          errors
+        );
+
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.error(`错误：${message}`);
+        }
+        process.exit(1);
+      }
+    });
+
+  return cmd;
+}
+
+// ============================================
 // 导出
 // ============================================
 
 /**
- * 创建 file 命令组（P5.7-R1b + R3）
+ * 创建 file 命令组（P5.7-R1b + R3-1/R3-2）
  */
 export function createFileCommand(): Command {
   const fileCmd = new Command("file");
@@ -686,6 +827,7 @@ export function createFileCommand(): Command {
   fileCmd.addCommand(createFileSendCommand());
   fileCmd.addCommand(createFileFindCommand());
   fileCmd.addCommand(createFileReadCommand());
+  fileCmd.addCommand(createFileWriteCommand());
 
   return fileCmd;
 }
@@ -835,6 +977,53 @@ export function getFileReadContract() {
       workspaceDefault: true,
       forceRequiredForOutOfBounds: true,
       maxSizeDefault: 1048576, // 1MB
+    },
+  };
+}
+
+/**
+ * 导出 file write 合同（供 help-docs --json 使用）
+ */
+export function getFileWriteContract() {
+  return {
+    name: "file write",
+    description: "写入文件内容（P5.7-R3，越界需 --force）",
+    options: {
+      required: {
+        "<path>": "文件路径",
+        "--content <content>": "要写入的内容",
+      },
+      optional: {
+        "--append": "追加模式（默认覆盖）",
+        "--force": "允许越界写入（默认只允许 workspace 内）",
+        "--json": "JSON 格式输出",
+      },
+    },
+    output: {
+      success: {
+        ok: true,
+        writeResult: "OK",
+        path: "<文件路径>",
+        bytesWritten: "<写入字节数>",
+      },
+      accessDenied: {
+        ok: false,
+        writeResult: "ACCESS_DENIED",
+        errorCode: "OUT_OF_BOUNDS",
+        errorMessage: "越界写入被拒绝（需 --force）",
+      },
+      writeFailed: {
+        ok: false,
+        writeResult: "WRITE_FAILED",
+        errorCode: "WRITE_ERROR",
+        errorMessage: "<错误信息>",
+      },
+    },
+    errorCodes: ["OK", "ACCESS_DENIED", "WRITE_FAILED"],
+    constraints: {
+      workspaceDefault: true,
+      forceRequiredForOutOfBounds: true,
+      createParentDirs: true,
     },
   };
 }
