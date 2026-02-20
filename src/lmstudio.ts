@@ -1364,22 +1364,13 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
     const msg1 = r1.choices[0]?.message;
     const toolCalls = msg1?.tool_calls ?? [];
 
-    // 2) P5.5-R1: 只认标准 tool_calls，移除文本兜底解析
-    let tc: ToolCall | null = toolCalls.length > 0 ? toolCalls[0] : null;
-    let args: Record<string, unknown> = {};
+    // 2) P5.7-R1: 只认标准 tool_calls，移除文本兜底解析
+    const executedToolCalls: Array<{ tc: ToolCall; args: Record<string, unknown>; result: unknown }> = [];
     let assistantRole = msg1?.role || "assistant";
     const assistantContent = msg1?.content;
 
-    if (tc) {
-        try {
-            args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
-        } catch {
-            args = {};
-        }
-    }
-
-    // 3) 无工具调用（含兜底解析失败）：直接清洗返回
-    if (!tc) {
+    // 无工具调用：直接清洗返回
+    if (toolCalls.length === 0) {
         const cleanedAnswer = sanitizeLmStudioOutput(assistantContent ?? "");
         if (tools.length > 0 && isLikelyFakeToolExecutionText(cleanedAnswer)) {
             logger.warn("Detected fake tool execution without tool_calls", {
@@ -1393,51 +1384,65 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
         return { answer: cleanedAnswer };
     }
 
-    let toolResult: unknown;
-    try {
-        // P5.6.8-R4h: 使用 workspacePath 而非 root（确保工具在正确目录执行）
-        toolResult = await runTool(tc.function.name, args, workspacePath);
-    } catch (e) {
-        toolResult = { error: e instanceof Error ? e.message : String(e) };
+    // P5.7-R3g: 顺序执行所有工具调用
+    for (const tc of toolCalls) {
+        let args: Record<string, unknown> = {};
+        try {
+            args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
+        } catch {
+            args = {};
+        }
+
+        let toolResult: unknown;
+        try {
+            toolResult = await runTool(tc.function.name, args, workspacePath);
+        } catch (e) {
+            toolResult = { error: e instanceof Error ? e.message : String(e) };
+        }
+
+        // 失败短路
+        if (toolResult && typeof toolResult === "object" && "error" in toolResult) {
+            const err = toolResult as { error: string; errorCode?: string };
+            const toolErrorCode = err.errorCode || "TOOL_EXEC_FAILED";
+            const toolErrorMessage = err.error || "工具执行失败";
+
+            logger.info("Tool loop failed (short-circuit)", {
+                module: "lmstudio",
+                toolCallCount: executedToolCalls.length + 1,
+                toolName: tc.function.name,
+                toolErrorCode,
+                toolErrorMessage,
+            });
+
+            return {
+                answer: `工具执行失败\n- 工具: ${tc.function.name}\n- 错误码: ${toolErrorCode}\n- 错误: ${toolErrorMessage}`,
+                toolCall: { name: tc.function.name, args, result: toolResult }
+            };
+        }
+
+        executedToolCalls.push({ tc, args, result: toolResult });
     }
 
-    // P5.6.8-R4h: 失败短路（工具失败时直接返回结构化错误，不再走第二轮）
-    if (toolResult && typeof toolResult === "object" && "error" in toolResult) {
-        const err = toolResult as { error: string; errorCode?: string };
-        const toolErrorCode = err.errorCode || "TOOL_EXEC_FAILED";
-        const toolErrorMessage = err.error || "工具执行失败";
-
-        logger.info("Tool loop failed (short-circuit)", {
-            module: "lmstudio",
-            toolCallCount: 1,
-            toolName: tc.function.name,
-            toolErrorCode,
-            toolErrorMessage,
-        });
-
-        return {
-            answer: `工具执行失败\n- 工具: ${tc.function.name}\n- 错误码: ${toolErrorCode}\n- 错误: ${toolErrorMessage}`,
-            toolCall: { name: tc.function.name, args, result: toolResult }
-        };
-    }
-
-    // 构造第二轮消息（将工具调用回灌给模型）
+    // 构造第二轮消息（将所有工具调用回灌给模型）
     const assistantMsg: { role: string; content?: string; tool_calls?: ToolCall[] } = {
         role: assistantRole,
-        tool_calls: [tc],
+        tool_calls: executedToolCalls.map(({ tc }) => tc),
     };
     if (assistantContent !== undefined) {
         assistantMsg.content = assistantContent;
     }
 
+    // 构建所有工具结果消息
+    const toolResultMessages = executedToolCalls.map(({ tc, result }) => ({
+        role: "tool" as const,
+        tool_call_id: tc.id,
+        content: typeof result === "string" ? result : JSON.stringify(result)
+    }));
+
     const messages2 = [
         ...messages,
         assistantMsg,
-        {
-            role: "tool",
-            tool_call_id: tc.id,
-            content: typeof toolResult === "string" ? toolResult : JSON.stringify(toolResult)
-        }
+        ...toolResultMessages
     ];
 
     // 4) 第二次：强制不再调用工具，只总结
@@ -1454,23 +1459,15 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
 
     const answer = r2.choices[0]?.message?.content ?? "";
 
-    // P5.6.8-R4h: 补全观测字段（toolErrorCode/toolErrorMessage/exitCode）
-    const toolCallCount = tc ? 1 : 0;
-    const toolName = tc?.function.name || null;
+    // P5.7-R3g: 日志增加 toolCallCount 与每个 toolName 列表
+    const toolCallCount = executedToolCalls.length;
+    const toolNames = executedToolCalls.map(({ tc }) => tc.function.name);
 
-    // 提取错误码和错误消息
-    let toolErrorCode: string | null = null;
-    let toolErrorMessage: string | null = null;
+    // 提取最后一个工具的 exitCode（如果存在）
     let exitCode: number | null = null;
-
-    if (toolResult && typeof toolResult === "object") {
-        const result = toolResult as Record<string, unknown>;
-        if ("errorCode" in result) {
-            toolErrorCode = String(result.errorCode);
-        }
-        if ("error" in result) {
-            toolErrorMessage = String(result.error);
-        }
+    const lastResult = executedToolCalls[executedToolCalls.length - 1]?.result;
+    if (lastResult && typeof lastResult === "object") {
+        const result = lastResult as Record<string, unknown>;
         if ("exitCode" in result) {
             exitCode = typeof result.exitCode === "number" ? result.exitCode : null;
         }
@@ -1479,15 +1476,17 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
     logger.info("Tool loop completed", {
         module: "lmstudio",
         toolCallCount,
-        toolName,
-        toolErrorCode,
-        toolErrorMessage,
+        toolNames,
         exitCode,
     });
 
+    // P5.7-R3g: 返回第一个工具调用信息（兼容旧接口）
+    const firstCall = executedToolCalls[0];
     return {
         answer: sanitizeLmStudioOutput(answer),
-        toolCall: { name: tc.function.name, args, result: toolResult }
+        toolCall: firstCall
+            ? { name: firstCall.tc.function.name, args: firstCall.args, result: firstCall.result }
+            : undefined
     };
 }
 
