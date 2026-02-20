@@ -15,9 +15,11 @@
 5. `P5.6.13-R1A`：Tool Calling 架构调研（openclaw / pi-mono / msgcode 对照）
 6. `P5.6.13-R2`：Workspace 对话落盘（`.msgcode/threads`）
 7. `P5.6.14`：运行臂二分（agent/tmux）+ provider 下沉（专项）
-8. `P5.7-PLAN`：CLI-First Skill 能力扩充总纲（对齐 Alma 使用模式）
-9. `P5.7-R1`：CLI-First 文件发送先跑通（`help --json` + `file send`）
+8. `P5.7-PLAN`：CLI-First Skill 能力扩充总纲（Unix 风格 CLI，Alma 仅作参考样例）
+9. `P5.7-R1`：CLI-First 文件发送先跑通（`help --json` + `file send`，合同层）
 10. `P5.7-R2`：实时信息三件套（`web search` / `web fetch` / `system info`）
+11. `P5.7-R1b`：文件发送真实交付闭环（禁止“合同壳即通过”）
+12. `P5.7-R1c`：CLI 基座能力硬门（真执行 + 可观测 + 安全底线）
 
 ## P5 当前唯一执行主线（冻结）
 
@@ -57,12 +59,14 @@
 
 1. `P5.7-R1`：文件发送先跑通（`file send` + `help --json`）
 2. `P5.7-R2`：实时信息三件套（`web search` / `web fetch` / `system info`）
-3. `P5.7-R3`：文件管理能力（find/move/rename/zip）
-4. `P5.7-R4`：记忆与线程检索（memory/thread）
-5. `P5.7-R5`：任务编排（todo/schedule）
-6. `P5.7-R6`：可视化取证与媒体辅助（screenshot/voice）
-7. `P5.7-R7`：浏览器自动化（browser actions）
-8. `P5.7-R8`：编码子代理委派（coding-agent）
+3. `P5.7-R1b`：文件发送真实交付闭环（`--to` + 真发送 + 真失败）
+4. `P5.7-R1c`：CLI 基座能力硬门（真执行 + 可观测 + 安全底线）
+5. `P5.7-R3`：文件管理能力（find/move/rename/zip）
+6. `P5.7-R4`：记忆与线程检索（memory/thread）
+7. `P5.7-R5`：任务编排（todo/schedule）
+8. `P5.7-R6`：可视化取证与媒体辅助（screenshot/voice）
+9. `P5.7-R7`：浏览器自动化（browser actions）
+10. `P5.7-R8`：编码子代理委派（coding-agent）
 
 ## 当前任务单
 
@@ -109,6 +113,8 @@
 - `p5-7-cli-first-skill-expansion-master-plan.md`：P5.7-PLAN（CLI-First Skill 能力扩充总纲）
 - `p5-7-r1-cli-first-file-send.md`：P5.7-R1（CLI-First 文件发送先跑通，含后续能力扩充模板）
 - `p5-7-r2-realtime-info-triad.md`：P5.7-R2（实时信息三件套任务单）
+- `p5-7-r1b-file-send-real-delivery.md`：P5.7-R1b（文件发送真实交付闭环，禁止合同壳验收）
+- `p5-7-r1c-cli-substrate-capability-baseline.md`：P5.7-R1c（CLI 基座能力硬门任务单）
 
 ## 规则
 
