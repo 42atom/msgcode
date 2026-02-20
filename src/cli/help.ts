@@ -2,7 +2,7 @@
  * msgcode: Help CLI 命令（P5.7-R1）
  *
  * 职责：
- * - msgcode help [--json]：机器可读帮助
+ * - msgcode help-docs [--json]：机器可读帮助
  * - 输出所有可用命令的合同信息
  */
 
@@ -72,17 +72,17 @@ function createEnvelope<T>(
 // ============================================
 
 /**
- * 创建 help 命令
+ * 创建 help-docs 命令（避免与 commander 内置 help 冲突）
  */
-export function createHelpCommand(): Command {
-  const cmd = new Command("help");
+export function createHelpDocsCommand(): Command {
+  const cmd = new Command("help-docs");
 
   cmd
     .description("查看可用命令帮助（支持 --json 机器可读）")
     .option("--json", "JSON 格式输出（机器可读）")
     .action(async (options) => {
       const startTime = Date.now();
-      const command = "msgcode help";
+      const command = "msgcode help-docs";
       const warnings: Diagnostic[] = [];
       const errors: Diagnostic[] = [];
 
@@ -114,31 +114,31 @@ export function createHelpCommand(): Command {
           console.log(JSON.stringify(envelope, null, 2));
         } else {
           // 文本格式帮助
-          console.log(`msgcode help v${version}`);
+          console.log(`msgcode help-docs v${version}`);
           console.log("");
           console.log("可用命令:");
           console.log("");
 
-          for (const command of commands) {
-            console.log(`  ${command.name}`);
-            console.log(`    ${command.description}`);
+          for (const cmd of commands) {
+            console.log(`  ${cmd.name}`);
+            console.log(`    ${cmd.description}`);
 
-            if (command.options?.required) {
+            if (cmd.options?.required) {
               console.log("    必填参数:");
-              for (const [opt, desc] of Object.entries(command.options.required)) {
+              for (const [opt, desc] of Object.entries(cmd.options.required)) {
                 console.log(`      ${opt}: ${desc}`);
               }
             }
 
-            if (command.options?.optional) {
+            if (cmd.options?.optional) {
               console.log("    可选参数:");
-              for (const [opt, desc] of Object.entries(command.options.optional)) {
+              for (const [opt, desc] of Object.entries(cmd.options.optional)) {
                 console.log(`      ${opt}: ${desc}`);
               }
             }
 
-            if (command.errorCodes) {
-              console.log(`    错误码：${command.errorCodes.join(", ")}`);
+            if (cmd.errorCodes) {
+              console.log(`    错误码：${cmd.errorCodes.join(", ")}`);
             }
 
             console.log("");

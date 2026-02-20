@@ -234,10 +234,10 @@ async function loadFileCommands() {
   program.addCommand(createFileCommand());
 }
 
-// Help 命令（P5.7-R1：机器可读帮助）
-async function loadHelpCommand() {
-  const { createHelpCommand } = await import("./cli/help.js");
-  program.addCommand(createHelpCommand());
+// Help-Docs 命令（P5.7-R1：机器可读帮助）
+async function loadHelpDocsCommand() {
+  const { createHelpDocsCommand } = await import("./cli/help.js");
+  program.addCommand(createHelpDocsCommand());
 }
 
 // 主入口（异步）
@@ -265,18 +265,18 @@ async function main() {
   if (top === "file") {
     await loadFileCommands();
   }
-  if (top === "help") {
-    await loadHelpCommand();
+  if (top === "help-docs") {
+    await loadHelpDocsCommand();
   }
 
   // 对于 help（无参数或 --help），也加载一遍子命令，让帮助信息完整
-  if (!top || top === "-h" || top === "--help" || top === "help") {
+  if (!top || top === "-h" || top === "--help") {
     await loadMemoryCommands();
     await loadJobCommands();
     await loadPreflightCommands();
     await loadRunCommands();
     await loadFileCommands();
-    await loadHelpCommand();
+    await loadHelpDocsCommand();
   }
   program.parse();
 }
