@@ -1704,47 +1704,60 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
     });
 
     // 3. 根据路由分发
+    // P5.7-R3j-1: 路由约束固化 - no-tool 只走 responder，tool/complex-tool 只走 executor
     if (route === "no-tool") {
         // no-tool: 简单聊天（不触发工具循环，使用 responder 模型 + temperature=0.2）
+        // P5.7-R3j-1: 显式绑定 responder 模型
+        const usedModel = responderModel;
+        const usedTemperature = 0.2;  // P5.7-R3j-2: 硬锁温度
+
         const answer = await runLmStudioChat({
             prompt: options.prompt,
             system: options.system,
             workspace: options.workspacePath,
-            model: responderModel, // P5.7-R3e-hotfix: 使用 responder 模型
-            temperature, // P5.7-R3e-hotfix: 传递温度参数（默认 0.2）
+            model: usedModel,
+            temperature: usedTemperature,
         });
 
         logger.info("routed chat completed (no-tool)", {
             module: "lmstudio",
             route,
-            temperature,
+            temperature: usedTemperature,
             responseLength: answer.length,
-            model: responderModel,
+            model: usedModel,
         });
 
         return {
             answer,
             route,
-            temperature,
+            temperature: usedTemperature,
         };
     }
 
     // P5.7-R3e-hotfix: complex-tool 先计划再执行再收口
+    // P5.7-R3j-1: 显式绑定 executor 模型
     if (route === "complex-tool") {
+        // P5.7-R3j-1: 显式绑定 executor 模型
+        const usedModel = executorModel;
+        const usedTemperature = 0;  // P5.7-R3j-2: 硬锁温度
+
         // 第一阶段：计划（使用 executor 模型，temperature=0）
         const planPrompt = `请先分析这个任务并制定执行计划，不需要执行具体操作：${options.prompt}`;
         const planResult = await runLmStudioChat({
             prompt: planPrompt,
             system: options.system,
             workspace: options.workspacePath,
-            model: executorModel,
-            temperature: 0, // 计划阶段需要稳定性
+            model: usedModel,
+            temperature: usedTemperature,
         });
 
         logger.info("complex-tool plan phase completed", {
             module: "lmstudio",
             route,
+            temperature: usedTemperature,
+            model: usedModel,
             planLength: planResult.length,
+            phase: "plan",
         });
 
         // 第二阶段：执行（走工具循环，使用 executor 模型 + 计划上下文）
@@ -1756,7 +1769,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             windowMessages: options.windowMessages,
             summaryContext: options.summaryContext,
             soulContext: options.soulContext,
-            model: executorModel, // P5.7-R3e-hotfix-2: 执行阶段必须绑定 executor 模型
+            model: usedModel,
         });
 
         // 第三阶段：收口（使用 executor 模型总结结果）
@@ -1765,27 +1778,34 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             prompt: summaryPrompt,
             system: options.system,
             workspace: options.workspacePath,
-            model: executorModel,
-            temperature: 0, // 收口阶段需要准确性
+            model: usedModel,
+            temperature: usedTemperature,
         });
 
         logger.info("complex-tool completed (plan->execute->summarize)", {
             module: "lmstudio",
             route,
-            temperature: 0,
+            temperature: usedTemperature,
+            model: usedModel,
             responseLength: summaryResult.length,
             toolCallCount: toolLoopResult.toolCall ? 1 : 0,
+            phase: "summarize",
         });
 
         return {
             answer: summaryResult,
             route: "complex-tool",
-            temperature: 0,
+            temperature: usedTemperature,
             toolCall: toolLoopResult.toolCall,
         };
     }
 
     // tool: 走工具循环（temperature=0，稳定触发，使用 executor 模型）
+    // P5.7-R3j-1: 显式绑定 executor 模型
+    // P5.7-R3j-2: 硬锁温度为 0
+    const usedModel = executorModel;
+    const usedTemperature = 0;
+
     const toolLoopResult = await runLmStudioToolLoop({
         prompt: options.prompt,
         system: options.system,
@@ -1793,13 +1813,14 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
         windowMessages: options.windowMessages,
         summaryContext: options.summaryContext,
         soulContext: options.soulContext,
-        model: executorModel, // P5.7-R3e-hotfix-2: tool 分支必须绑定 executor 模型
+        model: usedModel,
     });
 
     logger.info("routed chat completed (tool)", {
         module: "lmstudio",
         route,
-        temperature,
+        temperature: usedTemperature,
+        model: usedModel,
         responseLength: toolLoopResult.answer.length,
         toolCallCount: toolLoopResult.toolCall ? 1 : 0,
         toolName: toolLoopResult.toolCall?.name,
@@ -1808,7 +1829,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
     return {
         answer: toolLoopResult.answer,
         route,
-        temperature: 0, // tool 永远使用 temperature=0
+        temperature: usedTemperature,
         toolCall: toolLoopResult.toolCall,
     };
 }
