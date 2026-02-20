@@ -1246,6 +1246,9 @@ async function runTool(name: string, args: Record<string, unknown>, root: string
  * 4. 只对最终 answer 走清洗链
  */
 export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Promise<ToolLoopResult> {
+    // P5.7-R3g: 每轮工具步数上限
+    const MAX_TOOL_CALLS_PER_TURN = 8;
+
     const baseUrl = options.baseUrl || normalizeBaseUrl(config.lmstudioBaseUrl || "http://127.0.0.1:1234");
     const model = options.model || await resolveLmStudioModelId({ baseUrl });
     const timeoutMs = options.timeoutMs || (typeof config.lmstudioTimeoutMs === "number" && !Number.isNaN(config.lmstudioTimeoutMs)
@@ -1382,6 +1385,20 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
             };
         }
         return { answer: cleanedAnswer };
+    }
+
+    // P5.7-R3g: 上限保护 - 超过步数限制直接返回错误
+    if (toolCalls.length > MAX_TOOL_CALLS_PER_TURN) {
+        logger.warn("Tool loop limit exceeded", {
+            module: "lmstudio",
+            requestedToolCalls: toolCalls.length,
+            maxToolCallsPerTurn: MAX_TOOL_CALLS_PER_TURN,
+            toolNames: toolCalls.map(tc => tc.function.name),
+        });
+
+        return {
+            answer: `工具调用次数超过上限\n- 请求数：${toolCalls.length}\n- 上限：${MAX_TOOL_CALLS_PER_TURN}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n请简化任务或分步执行。`
+        };
     }
 
     // P5.7-R3g: 顺序执行所有工具调用
