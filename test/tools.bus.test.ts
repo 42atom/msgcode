@@ -315,6 +315,67 @@ describe("Tool Bus", () => {
     });
   });
 
+  describe("Scenario H: 文件工具跨 workspace 访问", () => {
+    test("read_file 应允许读取 workspace 外绝对路径", async () => {
+      const externalFile = join(tmpdir(), `msgcode-external-read-${randomUUID()}.txt`);
+      writeFileSync(externalFile, "external-read-ok");
+
+      try {
+        const configDir = join(tempWorkspace, ".msgcode");
+        mkdirSync(configDir, { recursive: true });
+        writeFileSync(join(configDir, "config.json"), JSON.stringify({
+          "tooling.mode": "explicit",
+          "tooling.allow": ["read_file"],
+          "tooling.require_confirm": [],
+        }));
+
+        const result = await executeTool(
+          "read_file",
+          { path: externalFile },
+          {
+            workspacePath: tempWorkspace,
+            source: "slash-command",
+            requestId: randomUUID(),
+          }
+        );
+
+        expect(result.ok).toBe(true);
+        expect(result.data?.content).toBe("external-read-ok");
+      } finally {
+        rmSync(externalFile, { force: true });
+      }
+    });
+
+    test("write_file 应允许写入 workspace 外绝对路径", async () => {
+      const externalFile = join(tmpdir(), `msgcode-external-write-${randomUUID()}.txt`);
+
+      try {
+        const configDir = join(tempWorkspace, ".msgcode");
+        mkdirSync(configDir, { recursive: true });
+        writeFileSync(join(configDir, "config.json"), JSON.stringify({
+          "tooling.mode": "explicit",
+          "tooling.allow": ["write_file"],
+          "tooling.require_confirm": [],
+        }));
+
+        const result = await executeTool(
+          "write_file",
+          { path: externalFile, content: "external-write-ok" },
+          {
+            workspacePath: tempWorkspace,
+            source: "slash-command",
+            requestId: randomUUID(),
+          }
+        );
+
+        expect(result.ok).toBe(true);
+        expect(readFileSync(externalFile, "utf-8")).toBe("external-write-ok");
+      } finally {
+        rmSync(externalFile, { force: true });
+      }
+    });
+  });
+
   describe("Scenario D: Ring buffer 行为", () => {
     test("应该限制最大事件数量", () => {
       clearToolEvents();

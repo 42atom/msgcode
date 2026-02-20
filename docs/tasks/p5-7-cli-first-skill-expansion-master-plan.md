@@ -30,7 +30,7 @@
 
 1. **禁止静默副作用**：关键操作必须显式参数触发（如 `--to` 必填）
 2. **禁止"伪成功"**：失败必须返回非 0 退出码 + 结构化错误
-3. **禁止隐式破坏**：破坏性操作必须 `--force` 显式确认
+3. **禁止隐式破坏**：破坏性操作必须显式子命令 + 明确路径参数，不允许隐式目标
 
 ### 观测字段（统一日志口径）
 
@@ -92,8 +92,8 @@
 
 - 建议能力：
   1. `msgcode file find --dir --name`
-  2. `msgcode file read --path [--lines] [--force]`
-  3. `msgcode file write --path --content [--append] [--force]`
+  2. `msgcode file read --path [--lines]`
+  3. `msgcode file write --path --content [--append]`
   4. `msgcode file move|rename|delete|copy|zip ...`
   5. `msgcode system env [--key]`
 - 参考样例映射（Alma）：`file-manager`
@@ -149,8 +149,8 @@
 ```text
 P5.7-R3（file 域）
 ├── file find（最简单，纯读）
-├── file read（加 --force 边界检查）
-├── file write（加 --force + --append）
+├── file read（开放路径读取）
+├── file write（加 --append）
 └── file move/rename/delete/copy/zip（状态变更，需要回归锁）
 
 P5.7-R3a（技术债插单）

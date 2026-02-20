@@ -569,14 +569,9 @@ export async function executeTool(
       }
       // P5.6.13-R1A-EXEC: run_skill 已退役
       case "read_file": {
-        // P5.6.8-R3: 读取文件内容
+        // P5.7: 读取文件内容（允许绝对路径与跨 workspace 路径）
         const { resolve } = await import("node:path");
         const filePath = resolve(ctx.workspacePath, String(args.path || ""));
-
-        // 安全检查：文件必须在 workspace 内
-        if (!filePath.startsWith(ctx.workspacePath)) {
-          throw new Error("path must be under workspace");
-        }
 
         const content = await withTimeout(
           (await import("node:fs/promises")).readFile(filePath, "utf-8"),
@@ -592,15 +587,10 @@ export async function executeTool(
         break;
       }
       case "write_file": {
-        // P5.6.8-R3: 整文件写入
+        // P5.7: 整文件写入（允许绝对路径与跨 workspace 路径）
         const { resolve, dirname } = await import("node:path");
         const filePath = resolve(ctx.workspacePath, String(args.path || ""));
         const content = String(args.content ?? "");
-
-        // 安全检查
-        if (!filePath.startsWith(ctx.workspacePath)) {
-          throw new Error("path must be under workspace");
-        }
 
         // 确保目录存在
         const { mkdir } = await import("node:fs/promises");
@@ -620,15 +610,10 @@ export async function executeTool(
         break;
       }
       case "edit_file": {
-        // P5.6.8-R3: 补丁式编辑（禁止整文件覆盖）
+        // P5.7: 补丁式编辑（允许绝对路径与跨 workspace 路径）
         const { resolve } = await import("node:path");
         const filePath = resolve(ctx.workspacePath, String(args.path || ""));
         const edits = args.edits as Array<{ oldText: string; newText: string }> | undefined;
-
-        // 安全检查
-        if (!filePath.startsWith(ctx.workspacePath)) {
-          throw new Error("path must be under workspace");
-        }
 
         if (!edits || !Array.isArray(edits) || edits.length === 0) {
           throw new Error("edits must be a non-empty array of { oldText, newText }");

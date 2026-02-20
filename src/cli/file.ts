@@ -7,26 +7,22 @@
  * - msgcode file read <path>：读取文件内容
  * - msgcode file write <path> --content：写入文件
  * - 仅限制文件大小 <= 1GB（send 命令）
- * - 越界操作必须 --force（R3 命令）
+ * - 不做文件区域限制（允许跨 workspace 路径）
  */
 
 import { Command } from "commander";
 import { randomUUID } from "node:crypto";
 import type { Envelope, Diagnostic } from "../memory/types.js";
 import { existsSync, statSync, readdirSync, readFileSync, writeFileSync, appendFileSync, mkdirSync, renameSync, copyFileSync, unlinkSync } from "node:fs";
-import { readFile, writeFile, appendFile } from "node:fs/promises";
-import { join, relative, isAbsolute, dirname, basename } from "node:path";
+import { readFile } from "node:fs/promises";
+import { join, dirname } from "node:path";
 import { config } from "../config.js";
-import { homedir } from "node:os";
 
 // ============================================
 // 常量和类型定义
 // ============================================
 
 const SIZE_LIMIT_BYTES = 1024 * 1024 * 1024; // 1GB
-
-// P5.7-R3: 默认 workspace 边界
-const DEFAULT_WORKSPACE_ROOT = join(homedir(), "msgcode-workspaces");
 
 interface FileSendData {
   ok: boolean;
@@ -50,7 +46,7 @@ interface FileFindData {
 
 interface FileReadData {
   ok: boolean;
-  readResult: "OK" | "NOT_FOUND" | "ACCESS_DENIED" | "READ_FAILED";
+  readResult: "OK" | "NOT_FOUND" | "READ_FAILED";
   path?: string;
   content?: string;
   size?: number;
@@ -60,7 +56,7 @@ interface FileReadData {
 
 interface FileWriteData {
   ok: boolean;
-  writeResult: "OK" | "ACCESS_DENIED" | "WRITE_FAILED";
+  writeResult: "OK" | "WRITE_FAILED";
   path?: string;
   bytesWritten?: number;
   errorMessage?: string;
@@ -69,7 +65,7 @@ interface FileWriteData {
 
 interface FileDeleteData {
   ok: boolean;
-  deleteResult: "OK" | "NOT_FOUND" | "ACCESS_DENIED" | "DELETE_FAILED";
+  deleteResult: "OK" | "NOT_FOUND" | "DELETE_FAILED";
   path?: string;
   errorMessage?: string;
   errorCode?: string;
@@ -77,7 +73,7 @@ interface FileDeleteData {
 
 interface FileMoveData {
   ok: boolean;
-  moveResult: "OK" | "NOT_FOUND" | "ACCESS_DENIED" | "MOVE_FAILED";
+  moveResult: "OK" | "NOT_FOUND" | "MOVE_FAILED";
   from?: string;
   to?: string;
   errorMessage?: string;
@@ -86,7 +82,7 @@ interface FileMoveData {
 
 interface FileCopyData {
   ok: boolean;
-  copyResult: "OK" | "NOT_FOUND" | "ACCESS_DENIED" | "COPY_FAILED";
+  copyResult: "OK" | "NOT_FOUND" | "COPY_FAILED";
   from?: string;
   to?: string;
   errorMessage?: string;
@@ -494,39 +490,14 @@ function createFileFindCommand(): Command {
 // ============================================
 
 /**
- * 检查路径是否越界（超出 workspace）
- */
-function isPathOutOfBounds(pathArg: string): boolean {
-  const normalized = isAbsolute(pathArg) ? pathArg : join(process.cwd(), pathArg);
-  const workspaceRoot = process.env.WORKSPACE_ROOT || DEFAULT_WORKSPACE_ROOT;
-
-  // 如果路径在 workspace 内，返回 false
-  if (normalized.startsWith(workspaceRoot)) {
-    return false;
-  }
-
-  // 检查是否是常见安全路径（/tmp, /etc 等）
-  const safePaths = ["/tmp", "/var/tmp"];
-  for (const safe of safePaths) {
-    if (normalized.startsWith(safe)) {
-      return false;
-    }
-  }
-
-  // 其他情况视为越界
-  return true;
-}
-
-/**
  * 创建 file read 子命令（P5.7-R3：读取文件）
  */
 function createFileReadCommand(): Command {
   const cmd = new Command("read");
 
   cmd
-    .description("读取文件内容（P5.7-R3，越界需 --force）")
+    .description("读取文件内容（P5.7-R3）")
     .argument("<path>", "文件路径")
-    .option("--force", "允许越界读取（默认只允许 workspace 内）")
     .option("--max-size <bytes>", "最大读取大小（默认：1MB）", "1048576")
     .option("--json", "JSON 格式输出")
     .action(async (pathArg, options) => {
@@ -536,34 +507,6 @@ function createFileReadCommand(): Command {
       const errors: Diagnostic[] = [];
 
       try {
-        // P5.7-R3: 越界检查
-        if (!options.force && isPathOutOfBounds(pathArg)) {
-          errors.push({
-            code: "FILE_READ_ACCESS_DENIED",
-            message: `越界读取被拒绝：${pathArg}（需添加 --force）`,
-            hint: " workspace 默认只允许读取 workspace 内的文件，越界操作需显式 --force",
-          });
-          const envelope = createEnvelope<FileReadData>(
-            command,
-            startTime,
-            "error",
-            {
-              ok: false,
-              readResult: "ACCESS_DENIED",
-              errorCode: "OUT_OF_BOUNDS",
-              errorMessage: `越界读取被拒绝：${pathArg}`,
-            },
-            warnings,
-            errors
-          );
-          if (options.json) {
-            console.log(JSON.stringify(envelope, null, 2));
-          } else {
-            console.error(`错误：${errors[0].message}`);
-          }
-          process.exit(1);
-        }
-
         // 验证文件存在
         if (!existsSync(pathArg)) {
           errors.push({
@@ -712,17 +655,16 @@ function createFileReadCommand(): Command {
 // ============================================
 
 /**
- * 创建 file write 子命令（P5.7-R3：写入文件，越界需 --force）
+ * 创建 file write 子命令（P5.7-R3：写入文件）
  */
 function createFileWriteCommand(): Command {
   const cmd = new Command("write");
 
   cmd
-    .description("写入文件内容（P5.7-R3，越界需 --force）")
+    .description("写入文件内容（P5.7-R3）")
     .argument("<path>", "文件路径")
     .requiredOption("--content <content>", "要写入的内容")
     .option("--append", "追加模式（默认覆盖）")
-    .option("--force", "允许越界写入（默认只允许 workspace 内）")
     .option("--json", "JSON 格式输出")
     .action(async (pathArg, options) => {
       const startTime = Date.now();
@@ -731,34 +673,6 @@ function createFileWriteCommand(): Command {
       const errors: Diagnostic[] = [];
 
       try {
-        // P5.7-R3: 越界检查
-        if (!options.force && isPathOutOfBounds(pathArg)) {
-          errors.push({
-            code: "FILE_WRITE_ACCESS_DENIED",
-            message: `越界写入被拒绝：${pathArg}（需添加 --force）`,
-            hint: " workspace 默认只允许写入 workspace 内的文件，越界操作需显式 --force",
-          });
-          const envelope = createEnvelope<FileWriteData>(
-            command,
-            startTime,
-            "error",
-            {
-              ok: false,
-              writeResult: "ACCESS_DENIED",
-              errorCode: "OUT_OF_BOUNDS",
-              errorMessage: `越界写入被拒绝：${pathArg}`,
-            },
-            warnings,
-            errors
-          );
-          if (options.json) {
-            console.log(JSON.stringify(envelope, null, 2));
-          } else {
-            console.error(`错误：${errors[0].message}`);
-          }
-          process.exit(1);
-        }
-
         // 确保父目录存在
         const dir = dirname(pathArg);
         if (!existsSync(dir)) {
@@ -844,15 +758,14 @@ function createFileWriteCommand(): Command {
 // ============================================
 
 /**
- * 创建 file delete 子命令（P5.7-R3-3：删除文件，越界需 --force）
+ * 创建 file delete 子命令（P5.7-R3-3：删除文件）
  */
 function createFileDeleteCommand(): Command {
   const cmd = new Command("delete");
 
   cmd
-    .description("删除文件（P5.7-R3-3，越界需 --force）")
+    .description("删除文件（P5.7-R3-3）")
     .argument("<path>", "文件路径")
-    .option("--force", "允许越界删除（默认只允许 workspace 内）")
     .option("--json", "JSON 格式输出")
     .action(async (pathArg, options) => {
       const startTime = Date.now();
@@ -861,33 +774,6 @@ function createFileDeleteCommand(): Command {
       const errors: Diagnostic[] = [];
 
       try {
-        // P5.7-R3: 越界检查
-        if (!options.force && isPathOutOfBounds(pathArg)) {
-          errors.push({
-            code: "FILE_DELETE_ACCESS_DENIED",
-            message: `越界删除被拒绝：${pathArg}（需添加 --force）`,
-          });
-          const envelope = createEnvelope<FileDeleteData>(
-            command,
-            startTime,
-            "error",
-            {
-              ok: false,
-              deleteResult: "ACCESS_DENIED",
-              errorCode: "OUT_OF_BOUNDS",
-              errorMessage: `越界删除被拒绝：${pathArg}`,
-            },
-            warnings,
-            errors
-          );
-          if (options.json) {
-            console.log(JSON.stringify(envelope, null, 2));
-          } else {
-            console.error(`错误：${errors[0].message}`);
-          }
-          process.exit(1);
-        }
-
         // 验证文件存在
         if (!existsSync(pathArg)) {
           errors.push({
@@ -983,10 +869,9 @@ function createFileMoveCommand(): Command {
   const cmd = new Command("move");
 
   cmd
-    .description("移动/重命名文件（P5.7-R3-3，越界需 --force）")
+    .description("移动/重命名文件（P5.7-R3-3）")
     .argument("<from>", "源文件路径")
     .argument("<to>", "目标文件路径")
-    .option("--force", "允许越界操作（默认只允许 workspace 内）")
     .option("--json", "JSON 格式输出")
     .action(async (fromArg, toArg, options) => {
       const startTime = Date.now();
@@ -995,34 +880,6 @@ function createFileMoveCommand(): Command {
       const errors: Diagnostic[] = [];
 
       try {
-        // P5.7-R3: 越界检查
-        if ((!options.force && isPathOutOfBounds(fromArg)) ||
-            (!options.force && isPathOutOfBounds(toArg))) {
-          errors.push({
-            code: "FILE_MOVE_ACCESS_DENIED",
-            message: `越界移动被拒绝（需添加 --force）`,
-          });
-          const envelope = createEnvelope<FileMoveData>(
-            command,
-            startTime,
-            "error",
-            {
-              ok: false,
-              moveResult: "ACCESS_DENIED",
-              errorCode: "OUT_OF_BOUNDS",
-              errorMessage: `越界移动被拒绝`,
-            },
-            warnings,
-            errors
-          );
-          if (options.json) {
-            console.log(JSON.stringify(envelope, null, 2));
-          } else {
-            console.error(`错误：${errors[0].message}`);
-          }
-          process.exit(1);
-        }
-
         // 验证源文件存在
         if (!existsSync(fromArg)) {
           errors.push({
@@ -1119,10 +976,9 @@ function createFileCopyCommand(): Command {
   const cmd = new Command("copy");
 
   cmd
-    .description("复制文件（P5.7-R3-3，越界需 --force）")
+    .description("复制文件（P5.7-R3-3）")
     .argument("<from>", "源文件路径")
     .argument("<to>", "目标文件路径")
-    .option("--force", "允许越界操作（默认只允许 workspace 内）")
     .option("--json", "JSON 格式输出")
     .action(async (fromArg, toArg, options) => {
       const startTime = Date.now();
@@ -1131,34 +987,6 @@ function createFileCopyCommand(): Command {
       const errors: Diagnostic[] = [];
 
       try {
-        // P5.7-R3: 越界检查
-        if ((!options.force && isPathOutOfBounds(fromArg)) ||
-            (!options.force && isPathOutOfBounds(toArg))) {
-          errors.push({
-            code: "FILE_COPY_ACCESS_DENIED",
-            message: `越界复制被拒绝（需添加 --force）`,
-          });
-          const envelope = createEnvelope<FileCopyData>(
-            command,
-            startTime,
-            "error",
-            {
-              ok: false,
-              copyResult: "ACCESS_DENIED",
-              errorCode: "OUT_OF_BOUNDS",
-              errorMessage: `越界复制被拒绝`,
-            },
-            warnings,
-            errors
-          );
-          if (options.json) {
-            console.log(JSON.stringify(envelope, null, 2));
-          } else {
-            console.error(`错误：${errors[0].message}`);
-          }
-          process.exit(1);
-        }
-
         // 验证源文件存在
         if (!existsSync(fromArg)) {
           errors.push({
@@ -1368,13 +1196,12 @@ export function getFileFindContract() {
 export function getFileReadContract() {
   return {
     name: "file read",
-    description: "读取文件内容（P5.7-R3，越界需 --force）",
+    description: "读取文件内容（P5.7-R3）",
     options: {
       required: {
         "<path>": "文件路径",
       },
       optional: {
-        "--force": "允许越界读取（默认只允许 workspace 内）",
         "--max-size <bytes>": "最大读取大小（默认：1MB）",
         "--json": "JSON 格式输出",
       },
@@ -1393,12 +1220,6 @@ export function getFileReadContract() {
         errorCode: "FILE_NOT_FOUND",
         errorMessage: "<错误信息>",
       },
-      accessDenied: {
-        ok: false,
-        readResult: "ACCESS_DENIED",
-        errorCode: "OUT_OF_BOUNDS",
-        errorMessage: "越界读取被拒绝（需 --force）",
-      },
       readFailed: {
         ok: false,
         readResult: "READ_FAILED",
@@ -1406,10 +1227,9 @@ export function getFileReadContract() {
         errorMessage: "<错误信息>",
       },
     },
-    errorCodes: ["OK", "NOT_FOUND", "ACCESS_DENIED", "READ_FAILED"],
+    errorCodes: ["OK", "NOT_FOUND", "READ_FAILED"],
     constraints: {
-      workspaceDefault: true,
-      forceRequiredForOutOfBounds: true,
+      workspaceBoundary: "none",
       maxSizeDefault: 1048576, // 1MB
     },
   };
@@ -1421,7 +1241,7 @@ export function getFileReadContract() {
 export function getFileWriteContract() {
   return {
     name: "file write",
-    description: "写入文件内容（P5.7-R3，越界需 --force）",
+    description: "写入文件内容（P5.7-R3）",
     options: {
       required: {
         "<path>": "文件路径",
@@ -1429,7 +1249,6 @@ export function getFileWriteContract() {
       },
       optional: {
         "--append": "追加模式（默认覆盖）",
-        "--force": "允许越界写入（默认只允许 workspace 内）",
         "--json": "JSON 格式输出",
       },
     },
@@ -1440,12 +1259,6 @@ export function getFileWriteContract() {
         path: "<文件路径>",
         bytesWritten: "<写入字节数>",
       },
-      accessDenied: {
-        ok: false,
-        writeResult: "ACCESS_DENIED",
-        errorCode: "OUT_OF_BOUNDS",
-        errorMessage: "越界写入被拒绝（需 --force）",
-      },
       writeFailed: {
         ok: false,
         writeResult: "WRITE_FAILED",
@@ -1453,10 +1266,9 @@ export function getFileWriteContract() {
         errorMessage: "<错误信息>",
       },
     },
-    errorCodes: ["OK", "ACCESS_DENIED", "WRITE_FAILED"],
+    errorCodes: ["OK", "WRITE_FAILED"],
     constraints: {
-      workspaceDefault: true,
-      forceRequiredForOutOfBounds: true,
+      workspaceBoundary: "none",
       createParentDirs: true,
     },
   };
@@ -1468,13 +1280,12 @@ export function getFileWriteContract() {
 export function getFileDeleteContract() {
   return {
     name: "file delete",
-    description: "删除文件（P5.7-R3-3，越界需 --force）",
+    description: "删除文件（P5.7-R3-3）",
     options: {
       required: {
         "<path>": "文件路径",
       },
       optional: {
-        "--force": "允许越界删除（默认只允许 workspace 内）",
         "--json": "JSON 格式输出",
       },
     },
@@ -1490,12 +1301,6 @@ export function getFileDeleteContract() {
         errorCode: "FILE_NOT_FOUND",
         errorMessage: "<错误信息>",
       },
-      accessDenied: {
-        ok: false,
-        deleteResult: "ACCESS_DENIED",
-        errorCode: "OUT_OF_BOUNDS",
-        errorMessage: "越界删除被拒绝（需 --force）",
-      },
       deleteFailed: {
         ok: false,
         deleteResult: "DELETE_FAILED",
@@ -1503,10 +1308,9 @@ export function getFileDeleteContract() {
         errorMessage: "<错误信息>",
       },
     },
-    errorCodes: ["OK", "NOT_FOUND", "ACCESS_DENIED", "DELETE_FAILED"],
+    errorCodes: ["OK", "NOT_FOUND", "DELETE_FAILED"],
     constraints: {
-      workspaceDefault: true,
-      forceRequiredForOutOfBounds: true,
+      workspaceBoundary: "none",
     },
   };
 }
@@ -1517,14 +1321,13 @@ export function getFileDeleteContract() {
 export function getFileMoveContract() {
   return {
     name: "file move",
-    description: "移动/重命名文件（P5.7-R3-3，越界需 --force）",
+    description: "移动/重命名文件（P5.7-R3-3）",
     options: {
       required: {
         "<from>": "源文件路径",
         "<to>": "目标文件路径",
       },
       optional: {
-        "--force": "允许越界操作（默认只允许 workspace 内）",
         "--json": "JSON 格式输出",
       },
     },
@@ -1541,12 +1344,6 @@ export function getFileMoveContract() {
         errorCode: "SOURCE_NOT_FOUND",
         errorMessage: "<错误信息>",
       },
-      accessDenied: {
-        ok: false,
-        moveResult: "ACCESS_DENIED",
-        errorCode: "OUT_OF_BOUNDS",
-        errorMessage: "越界移动被拒绝（需 --force）",
-      },
       moveFailed: {
         ok: false,
         moveResult: "MOVE_FAILED",
@@ -1554,10 +1351,9 @@ export function getFileMoveContract() {
         errorMessage: "<错误信息>",
       },
     },
-    errorCodes: ["OK", "NOT_FOUND", "ACCESS_DENIED", "MOVE_FAILED"],
+    errorCodes: ["OK", "NOT_FOUND", "MOVE_FAILED"],
     constraints: {
-      workspaceDefault: true,
-      forceRequiredForOutOfBounds: true,
+      workspaceBoundary: "none",
     },
   };
 }
@@ -1568,14 +1364,13 @@ export function getFileMoveContract() {
 export function getFileCopyContract() {
   return {
     name: "file copy",
-    description: "复制文件（P5.7-R3-3，越界需 --force）",
+    description: "复制文件（P5.7-R3-3）",
     options: {
       required: {
         "<from>": "源文件路径",
         "<to>": "目标文件路径",
       },
       optional: {
-        "--force": "允许越界操作（默认只允许 workspace 内）",
         "--json": "JSON 格式输出",
       },
     },
@@ -1592,12 +1387,6 @@ export function getFileCopyContract() {
         errorCode: "SOURCE_NOT_FOUND",
         errorMessage: "<错误信息>",
       },
-      accessDenied: {
-        ok: false,
-        copyResult: "ACCESS_DENIED",
-        errorCode: "OUT_OF_BOUNDS",
-        errorMessage: "越界复制被拒绝（需 --force）",
-      },
       copyFailed: {
         ok: false,
         copyResult: "COPY_FAILED",
@@ -1605,10 +1394,9 @@ export function getFileCopyContract() {
         errorMessage: "<错误信息>",
       },
     },
-    errorCodes: ["OK", "NOT_FOUND", "ACCESS_DENIED", "COPY_FAILED"],
+    errorCodes: ["OK", "NOT_FOUND", "COPY_FAILED"],
     constraints: {
-      workspaceDefault: true,
-      forceRequiredForOutOfBounds: true,
+      workspaceBoundary: "none",
     },
   };
 }

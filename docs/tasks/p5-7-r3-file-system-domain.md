@@ -14,21 +14,21 @@
    - `msgcode file copy`
    - `msgcode file zip`
 2. 补充 `system` 域只读命令：`msgcode system env`。
-3. 强制执行 workspace 默认边界：越界读写/变更必须显式 `--force`。
+3. 取消文件区域限制：允许跨 workspace 路径读写与变更。
 4. 所有命令进入 `msgcode help-docs --json` 合同。
 
 ## 依赖与顺序（冻结）
 
 1. 先 `file find`（纯读、最低风险）
-2. 再 `file read`（引入 `--force` 越界口径）
-3. 再 `file write`（引入 `--append` 与越界口径）
+2. 再 `file read`（开放绝对路径读取）
+3. 再 `file write`（引入 `--append`）
 4. 最后 `move/rename/delete/copy/zip`（状态变更组，统一回归锁）
 
 ## 设计口径（单一真相）
 
 1. 返回协议统一 Envelope（沿用现有 schemaVersion=2 / status=pass|warning|error）。
 2. 成功载荷写在 `data`，失败必须包含固定 `errorCode`。
-3. 破坏性命令（delete/move/rename/copy/zip）默认禁止越界，越界必须 `--force`。
+3. 破坏性命令不做目录边界拦截，失败仅由参数错误/路径不存在/系统权限决定。
 4. 禁止聚合黑盒命令（不引入 `file manage`）。
 
 ## 范围
@@ -52,7 +52,7 @@
 提交建议：`feat(p5.7-r3): add file find and file read`
 
 1. 实现 `file find`。
-2. 实现 `file read`（含 `--force` 越界口径）。
+2. 实现 `file read`（无目录边界限制）。
 
 ### R3-2：write
 
@@ -60,7 +60,7 @@
 
 1. 实现 `file write --content`。
 2. 支持 `--append`。
-3. 越界写入必须显式 `--force`。
+3. 写入按真实路径执行，不做 workspace 越界拦截。
 
 ### R3-3：状态变更组
 
@@ -82,7 +82,7 @@
 
 1. 命令存在性。
 2. 参数校验。
-3. workspace 越界与 `--force`。
+3. 跨目录路径读写行为。
 4. 成功/失败路径。
 
 ## 硬验收（必须全过）
@@ -92,7 +92,7 @@
 3. `npm run docs:check`
 4. `help-docs --json` 含全部 R3 命令合同
 5. 真实成功证据：至少 2 条（1 条只读、1 条状态变更）
-6. 真实失败证据：至少 2 条（越界未加 force / 参数缺失）
+6. 真实失败证据：至少 2 条（参数缺失 / 路径不存在或系统权限拒绝）
 7. 无新增 `.only/.skip`
 
 ## 验收回传模板（固定口径）
