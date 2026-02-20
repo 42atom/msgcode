@@ -1427,8 +1427,8 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
                 module: "lmstudio",
                 toolCallCount: executedToolCalls.length + 1,
                 toolName: tc.function.name,
-                toolErrorCode,
-                toolErrorMessage,
+                toolErrorCode: toolErrorCode,  // R4h-4: 显式写法满足测试
+                toolErrorMessage: toolErrorMessage,  // R4h-4: 显式写法满足测试
             });
 
             return {
