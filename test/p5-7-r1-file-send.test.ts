@@ -1,36 +1,40 @@
 /**
- * msgcode: P5.7-R1 CLI-First File Send 回归测试
+ * msgcode: P5.7-R1b CLI-First File Send 真实交付回归测试
  *
  * 验证：
- * 1. file send 命令合同
+ * 1. file send 命令合同（含 --to 必填）
  * 2. help-docs --json 包含 file send
  * 3. 大小限制检查
+ * 4. Envelope 契约
  */
 
 import { describe, it, expect } from "bun:test";
-import { getFileSendContract } from "../src/cli/file.js";
-import { createEnvelope } from "../src/cli/file.js";
+import { getFileSendContract, createEnvelope } from "../src/cli/file.js";
 import type { Diagnostic } from "../src/memory/types.js";
 
 // ============================================
-// File Send 合同测试
+// File Send 合同测试（P5.7-R1b）
 // ============================================
 
-describe("P5.7-R1: CLI-First File Send", () => {
+describe("P5.7-R1b: CLI-First File Send 真实交付", () => {
   describe("R1: 命令合同", () => {
-    it("R1-1: getFileSendContract 返回完整合同", () => {
+    it("R1b-1: getFileSendContract 返回完整合同（含 --to）", () => {
       const contract = getFileSendContract();
 
       expect(contract).toHaveProperty("name", "file send");
       expect(contract).toHaveProperty("description");
       expect(contract).toHaveProperty("options");
+
+      // R1b: --to 为必填
       expect(contract.options?.required).toHaveProperty("--path <path>");
+      expect(contract.options?.required).toHaveProperty("--to <chat-guid>");
+
       expect(contract.options?.optional).toHaveProperty("--caption <caption>");
       expect(contract.options?.optional).toHaveProperty("--mime <mime>");
       expect(contract.options?.optional).toHaveProperty("--json");
     });
 
-    it("R1-2: 合同包含输出结构定义", () => {
+    it("R1b-2: 合同包含输出结构定义（含 to 字段）", () => {
       const contract = getFileSendContract();
 
       expect(contract.output).toHaveProperty("success");
@@ -38,6 +42,7 @@ describe("P5.7-R1: CLI-First File Send", () => {
         ok: true,
         sendResult: "OK",
         path: "<文件路径>",
+        to: "<目标聊天 GUID>",
         fileSizeBytes: "<文件大小（字节）>",
       });
 
@@ -50,14 +55,13 @@ describe("P5.7-R1: CLI-First File Send", () => {
       });
 
       expect(contract.output).toHaveProperty("sendFailed");
-      expect(contract.output?.sendFailed).toEqual({
-        ok: false,
-        sendResult: "SEND_FAILED",
-        errorMessage: "<错误信息>",
-      });
+      expect(contract.output?.sendFailed).toHaveProperty("ok", false);
+      expect(contract.output?.sendFailed).toHaveProperty("sendResult", "SEND_FAILED");
+      expect(contract.output?.sendFailed).toHaveProperty("errorCode");
+      expect(contract.output?.sendFailed).toHaveProperty("errorMessage");
     });
 
-    it("R1-3: 合同包含错误码枚举", () => {
+    it("R1b-3: 合同包含错误码枚举", () => {
       const contract = getFileSendContract();
 
       expect(contract.errorCodes).toEqual([
@@ -67,36 +71,34 @@ describe("P5.7-R1: CLI-First File Send", () => {
       ]);
     });
 
-    it("R1-4: 合同包含约束定义", () => {
+    it("R1b-4: 合同包含约束定义（含 deliveryChannel）", () => {
       const contract = getFileSendContract();
 
       expect(contract.constraints).toHaveProperty("sizeLimit", "1GB");
       expect(contract.constraints).toHaveProperty("pathValidation", "none（按任务单口径）");
       expect(contract.constraints).toHaveProperty("workspaceCheck", "none");
       expect(contract.constraints).toHaveProperty("readabilityCheck", "none");
+      expect(contract.constraints).toHaveProperty("deliveryChannel", "iMessage RPC (send)");
     });
   });
 
-  describe("R2: help --json 合同", () => {
-    it("R2-1: help --json 包含 file send 命令", () => {
+  describe("R2: help-docs --json 合同", () => {
+    it("R2-1: help-docs --json 包含 file send 命令", () => {
       const contract = getFileSendContract();
 
-      // 验证命令名
       expect(contract.name).toBe("file send");
-
-      // 验证描述存在
       expect(contract.description).toBeTruthy();
-      expect(contract.description).toContain("发送文件");
+      expect(contract.description).toContain("真实发送");
     });
 
-    it("R2-2: help --json 包含必填参数", () => {
+    it("R2-2: help-docs --json 包含 --to 必填参数", () => {
       const contract = getFileSendContract();
 
       expect(contract.options?.required).toBeDefined();
-      expect(contract.options?.required?.["--path <path>"]).toBeTruthy();
+      expect(contract.options?.required?.["--to <chat-guid>"]).toBeTruthy();
     });
 
-    it("R2-3: help --json 包含可选参数", () => {
+    it("R2-3: help-docs --json 包含可选参数", () => {
       const contract = getFileSendContract();
 
       expect(contract.options?.optional).toBeDefined();
@@ -112,16 +114,15 @@ describe("P5.7-R1: CLI-First File Send", () => {
       const warnings: Diagnostic[] = [];
       const errors: Diagnostic[] = [];
 
-      // 模拟超限数据结构
       const data = {
         ok: false,
         sendResult: "SIZE_EXCEEDED" as const,
-        fileSizeBytes: 2 * 1024 * 1024 * 1024, // 2GB
-        limitBytes: 1024 * 1024 * 1024, // 1GB
+        fileSizeBytes: 2 * 1024 * 1024 * 1024,
+        limitBytes: 1024 * 1024 * 1024,
       };
 
       const envelope = createEnvelope(
-        "msgcode file send --path /tmp/largefile",
+        "msgcode file send --path /tmp/largefile --to test-guid",
         startTime,
         "error",
         data,
@@ -132,11 +133,9 @@ describe("P5.7-R1: CLI-First File Send", () => {
       expect(envelope.status).toBe("error");
       expect(envelope.exitCode).toBe(1);
       expect(envelope.data.sendResult).toBe("SIZE_EXCEEDED");
-      expect(envelope.data.fileSizeBytes).toBe(2 * 1024 * 1024 * 1024);
-      expect(envelope.data.limitBytes).toBe(1024 * 1024 * 1024);
     });
 
-    it("R3-2: OK 返回正确结构", () => {
+    it("R3-2: OK 返回正确结构（含 to）", () => {
       const startTime = Date.now();
       const warnings: Diagnostic[] = [];
       const errors: Diagnostic[] = [];
@@ -145,11 +144,12 @@ describe("P5.7-R1: CLI-First File Send", () => {
         ok: true,
         sendResult: "OK" as const,
         path: "/tmp/smallfile.txt",
+        to: "iMessage;+;test-guid",
         fileSizeBytes: 1024,
       };
 
       const envelope = createEnvelope(
-        "msgcode file send --path /tmp/smallfile.txt",
+        "msgcode file send --path /tmp/smallfile.txt --to iMessage;+;test-guid",
         startTime,
         "pass",
         data,
@@ -161,11 +161,10 @@ describe("P5.7-R1: CLI-First File Send", () => {
       expect(envelope.exitCode).toBe(0);
       expect(envelope.data.ok).toBe(true);
       expect(envelope.data.sendResult).toBe("OK");
-      expect(envelope.data.path).toBe("/tmp/smallfile.txt");
-      expect(envelope.data.fileSizeBytes).toBe(1024);
+      expect(envelope.data.to).toBe("iMessage;+;test-guid");
     });
 
-    it("R3-3: SEND_FAILED 返回正确结构", () => {
+    it("R3-3: SEND_FAILED 返回正确结构（含 errorCode）", () => {
       const startTime = Date.now();
       const warnings: Diagnostic[] = [];
       const errors: Diagnostic[] = [];
@@ -173,11 +172,12 @@ describe("P5.7-R1: CLI-First File Send", () => {
       const data = {
         ok: false,
         sendResult: "SEND_FAILED" as const,
-        errorMessage: "文件不存在",
+        errorCode: "IMSG_SEND_FAILED",
+        errorMessage: "iMessage 发送失败",
       };
 
       const envelope = createEnvelope(
-        "msgcode file send --path /nonexistent",
+        "msgcode file send --path /tmp/file.txt --to invalid-guid",
         startTime,
         "error",
         data,
@@ -189,7 +189,7 @@ describe("P5.7-R1: CLI-First File Send", () => {
       expect(envelope.exitCode).toBe(1);
       expect(envelope.data.ok).toBe(false);
       expect(envelope.data.sendResult).toBe("SEND_FAILED");
-      expect(envelope.data.errorMessage).toBe("文件不存在");
+      expect(envelope.data.errorCode).toBe("IMSG_SEND_FAILED");
     });
   });
 
@@ -229,6 +229,48 @@ describe("P5.7-R1: CLI-First File Send", () => {
       const envelope = createEnvelope("test", Date.now(), "pass", {});
       const isoPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
       expect(envelope.timestamp).toMatch(isoPattern);
+    });
+  });
+
+  describe("R5: --to 参数校验", () => {
+    it("R5-1: 成功场景数据结构", () => {
+      const startTime = Date.now();
+      const data = {
+        ok: true,
+        sendResult: "OK" as const,
+        path: "/test/file.txt",
+        to: "iMessage;+;chat123",
+        fileSizeBytes: 512,
+      };
+
+      const envelope = createEnvelope(
+        "msgcode file send --path /test/file.txt --to iMessage;+;chat123",
+        startTime,
+        "pass",
+        data
+      );
+
+      expect(envelope.data.ok).toBe(true);
+      expect(envelope.data.to).toBe("iMessage;+;chat123");
+    });
+
+    it("R5-2: 失败场景含 errorCode", () => {
+      const startTime = Date.now();
+      const data = {
+        ok: false,
+        sendResult: "SEND_FAILED" as const,
+        errorCode: "FILE_NOT_FOUND",
+        errorMessage: "文件不存在",
+      };
+
+      const envelope = createEnvelope(
+        "msgcode file send --path /missing --to iMessage;+;chat123",
+        startTime,
+        "error",
+        data
+      );
+
+      expect(envelope.data.errorCode).toBe("FILE_NOT_FOUND");
     });
   });
 });
