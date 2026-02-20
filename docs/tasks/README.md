@@ -16,10 +16,16 @@
 6. `P5.6.13-R2`：Workspace 对话落盘（`.msgcode/threads`）
 7. `P5.6.14`：运行臂二分（agent/tmux）+ provider 下沉（专项）
 8. `P5.7-PLAN`：CLI-First Skill 能力扩充总纲（Unix 风格 CLI，Alma 仅作参考样例）
-9. `P5.7-R1`：CLI-First 文件发送先跑通（`help --json` + `file send`，合同层）
+9. `P5.7-R1`：CLI-First 文件发送先跑通（`help-docs --json` + `file send`，合同层）
 10. `P5.7-R2`：实时信息三件套（`web search` / `web fetch` / `system info`）
 11. `P5.7-R1b`：文件发送真实交付闭环（禁止“合同壳即通过”）
 12. `P5.7-R1c`：CLI 基座能力硬门（真执行 + 可观测 + 安全底线）
+13. `P5.7-R3`：文件与环境域（`file *` + `system env`）
+14. `P5.7-R4`：记忆与线程域（`memory *` + `thread *`）
+15. `P5.7-R5`：编排与调度域（`todo *` + `schedule *`）
+16. `P5.7-R6`：多模态域（`media *` + `gen *`）
+17. `P5.7-R7`：浏览器域（`browser *`）
+18. `P5.7-R8`：代理域（`agent run/status`）
 
 ## P5 当前唯一执行主线（冻结）
 
@@ -73,16 +79,25 @@
 
 ### 任务列表
 
-1. `P5.7-R1`：文件发送先跑通（`file send` + `help --json`）✅
+1. `P5.7-R1`：文件发送先跑通（`file send` + `help-docs --json`）✅
 2. `P5.7-R2`：实时信息三件套（`web search` / `web fetch` / `system info`）✅
 3. `P5.7-R1b`：文件发送真实交付闭环（`--to` + 真发送 + 真失败）✅
 4. `P5.7-R1c`：CLI 基座能力硬门（真执行 + 可观测 + 安全底线）✅
-5. `P5.7-R3`：文件管理能力（find/move/rename/zip）
-6. `P5.7-R4`：记忆与线程检索（memory/thread）
-7. `P5.7-R5`：任务编排（todo/schedule）
-8. `P5.7-R6`：可视化取证与媒体辅助（screenshot/voice）
-9. `P5.7-R7`：浏览器自动化（browser actions）
-10. `P5.7-R8`：编码子代理委派（coding-agent）
+5. `P5.7-R3`：文件与环境域（`file find/read/write/move/rename/delete/copy/zip` + `system env`）
+6. `P5.7-R4`：记忆与线程域（`memory search/add/stats` + `thread list/messages/active/switch`）
+7. `P5.7-R5`：编排与调度域（`todo add/list/done` + `schedule add/list/remove`）
+8. `P5.7-R6`：多模态域（`media screen` + `gen image/selfie/tts/music`）
+9. `P5.7-R7`：浏览器域（`browser open/click/type`）
+10. `P5.7-R8`：代理域（`agent run/status`）
+
+### 派单顺序（冻结）
+
+1. `P5.7-R3`（file 域）
+2. `P5.7-R4`（memory/thread 域）
+3. `P5.7-R5`（todo/schedule 域）
+4. `P5.7-R6`（media/gen 域）
+5. `P5.7-R7`（browser 域）
+6. `P5.7-R8`（agent 域）
 
 ## 当前任务单
 
@@ -131,6 +146,13 @@
 - `p5-7-r2-realtime-info-triad.md`：P5.7-R2（实时信息三件套任务单）
 - `p5-7-r1b-file-send-real-delivery.md`：P5.7-R1b（文件发送真实交付闭环，禁止合同壳验收）
 - `p5-7-r1c-cli-substrate-capability-baseline.md`：P5.7-R1c（CLI 基座能力硬门任务单）
+- `p5-7-r3-r8-mainline-dispatch-pack.md`：P5.7-R3~R8 总整理与派单包
+- `p5-7-r3-file-system-domain.md`：P5.7-R3（文件与环境域任务单）
+- `p5-7-r4-memory-thread-domain.md`：P5.7-R4（记忆与线程域任务单）
+- `p5-7-r5-todo-schedule-domain.md`：P5.7-R5（编排与调度域任务单）
+- `p5-7-r6-media-gen-domain.md`：P5.7-R6（多模态域任务单）
+- `p5-7-r7-browser-domain.md`：P5.7-R7（浏览器域任务单）
+- `p5-7-r8-agent-domain.md`：P5.7-R8（代理域任务单）
 
 ## 规则
 

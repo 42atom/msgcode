@@ -46,7 +46,7 @@
 
 ## 统一原则（全系列必须遵守）
 
-1. 模型调用流程固定：`msgcode help --json -> bash 调 msgcode 子命令 -> 读取结构化结果`。
+1. 模型调用流程固定：`msgcode help-docs --json -> bash 调 msgcode 子命令 -> 读取结构化结果`。
 2. Skill 只做指引，不承载通道私有实现细节。
 3. 每个能力必须有明确错误码，不允许“文本猜测成功”。
 4. 每个能力必须有回归锁：命令存在、参数校验、成功路径、失败路径。
@@ -60,7 +60,7 @@
 ### R1（P0）：文件发送先跑通
 
 - 任务单：`p5-7-r1-cli-first-file-send.md`
-- 目标：`msgcode file send` + `msgcode help --json` 首次打通。
+- 目标：`msgcode file send` + `msgcode help-docs --json` 首次打通。
 - 产物合同：
   - `msgcode file send --path <path> [--caption] [--mime]`
 
@@ -91,10 +91,11 @@
 ### R3（P1）：文件管理能力
 
 - 建议能力：
-  1. `msgcode file find ...`
-  2. `msgcode file move ...`
-  3. `msgcode file rename ...`
-  4. `msgcode file zip ...`
+  1. `msgcode file find --dir --name`
+  2. `msgcode file read --path [--lines] [--force]`
+  3. `msgcode file write --path --content [--append] [--force]`
+  4. `msgcode file move|rename|delete|copy|zip ...`
+  5. `msgcode system env [--key]`
 - 参考样例映射（Alma）：`file-manager`
 
 ### R4（P1）：记忆与线程检索
@@ -121,21 +122,60 @@
 ### R7（P2）：浏览器自动化
 
 - 建议能力：
-  1. `msgcode browser open|click|type|snapshot ...`
+  1. `msgcode browser open|click|type ...`
 - 参考样例映射（Alma）：`agent-browser`、`browser`
 
 ### R8（P2）：编码子代理委派
 
 - 建议能力：
-  1. `msgcode agent code run --dir <path> "<task>"`
+  1. `msgcode agent run --role --dir --prompt [--async]`
+  2. `msgcode agent status --id`
 - 参考样例映射（Alma）：`coding-agent`
+
+## 派单顺序与依赖关系（冻结）
+
+```text
+P5.7-R3（file 域）
+├── file find（最简单，纯读）
+├── file read（加 --force 边界检查）
+├── file write（加 --force + --append）
+└── file move/rename/delete/copy/zip（状态变更，需要回归锁）
+
+P5.7-R4（memory/thread 域）
+├── memory search/add/stats（依赖现有记忆系统）
+└── thread list/messages/switch/active（依赖 thread 管理）
+
+P5.7-R5（todo/schedule 域）
+├── todo add/list/done（独立存储）
+└── schedule add/list/remove（依赖 cron 解析）
+
+P5.7-R6（media/gen 域）
+├── media screen（本地截图）
+├── gen image/selfie（调用现有图片生成后端）
+└── gen tts/music（调用现有音频生成后端）
+
+P5.7-R7（browser 域）
+└── browser open/click/type（依赖 Playwright）
+
+P5.7-R8（agent 域）
+└── agent run/status（最重，依赖其他域成熟后收尾）
+```
+
+## 任务单文件映射（可直接派发）
+
+1. `p5-7-r3-file-system-domain.md`
+2. `p5-7-r4-memory-thread-domain.md`
+3. `p5-7-r5-todo-schedule-domain.md`
+4. `p5-7-r6-media-gen-domain.md`
+5. `p5-7-r7-browser-domain.md`
+6. `p5-7-r8-agent-domain.md`
 
 ## 每个子任务统一验收（硬门）
 
 1. `npx tsc --noEmit`
 2. `npm test`（0 fail）
 3. `npm run docs:check`
-4. `msgcode help --json` 含新增能力合同
+4. `msgcode help-docs --json` 含新增能力合同
 5. 至少 1 条真实成功冒烟（必须可复现）
 6. 至少 1 条真实失败冒烟（错误码可验证）
 7. 无新增 `.only/.skip`
@@ -152,7 +192,7 @@
 ## 目标（冻结）
 1. <能力目标1>
 2. <能力目标2>
-3. 模型调用路径固定为：help --json -> bash -> msgcode 子命令
+3. 模型调用路径固定为：help-docs --json -> bash -> msgcode 子命令
 
 ## 范围
 - <src 文件>
@@ -179,7 +219,7 @@
 1. npx tsc --noEmit
 2. npm test（0 fail）
 3. npm run docs:check
-4. msgcode help --json 包含能力合同
+4. msgcode help-docs --json 包含能力合同
 5. 至少 1 条真实成功冒烟（非 mock）
 6. 至少 1 条真实失败冒烟（非 mock）
 7. 无新增 .only/.skip
