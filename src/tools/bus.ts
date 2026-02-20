@@ -18,6 +18,7 @@ import { loadWorkspaceConfig } from "../config/workspace.js";
 import { runTts } from "../runners/tts.js";
 import { runAsr } from "../runners/asr.js";
 import { runVisionOcr } from "../runners/vision_ocr.js";
+import { runBashCommand } from "../runners/bash-runner.js";
 import { logger } from "../logger/index.js";
 import { recordToolEvent } from "./telemetry.js";
 
@@ -308,36 +309,26 @@ export async function executeTool(
         const command = String(args.command ?? "").trim();
         if (!command) throw new Error("empty command");
 
-        // 使用 spawn 执行 shell 命令（shell: true = 完整 shell 解释，支持管道/重定向）
-        const { spawn } = await import("node:child_process");
+        // P5.7-R3f: 改接 bash-runner，支持 timeout/abort/输出截断
         const out = await withTimeout(
-          new Promise<{ exitCode: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-            const proc = spawn(command, {
-              cwd: ctx.workspacePath,
-              shell: true,
-              env: { ...process.env, PWD: ctx.workspacePath },
-            });
-            let stdout = "";
-            let stderr = "";
-
-            proc.stdout?.on("data", (data) => { stdout += data; });
-            proc.stderr?.on("data", (data) => { stderr += data; });
-
-            proc.on("close", (code) => {
-              resolve({ exitCode: code, stdout, stderr });
-            });
-
-            proc.on("error", (err) => {
-              reject(err);
-            });
+          runBashCommand({
+            command,
+            cwd: ctx.workspacePath,
+            timeoutMs: ctx.timeoutMs ?? 120000,
           }),
           ctx.timeoutMs ?? 120000
         );
 
+        // P5.7-R3f: 结构化日志（exitCode/stdoutTail/stderrTail/fullOutputPath）
         result = {
-          ok: out.exitCode === 0,
+          ok: out.ok,
           tool,
-          data: { exitCode: out.exitCode ?? -1, stdout: out.stdout, stderr: out.stderr },
+          data: {
+            exitCode: out.exitCode,
+            stdout: out.stdoutTail,
+            stderr: out.stderrTail,
+            fullOutputPath: out.fullOutputPath,
+          },
           durationMs: Date.now() - started,
         };
         break;
