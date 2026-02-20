@@ -267,12 +267,14 @@ export function parseChatCompletionResponse(raw: string): ParsedChatCompletionWi
 
     // P5.7-R3b: 检测二轮格式漂移
     // 条件：tool_calls 为空 + content 含工具调用标记 + finish_reason 为 stop
+    // 使用正则匹配 XML 工具调用标签，兼容各种空格/属性变体
+    const toolCallPattern = /<tool_call\b[\s\S]*?<\/tool_call\s*>/i;
     const secondRoundMalformedToolCall =
         toolCalls.length === 0 &&
         content !== null &&
         content !== "" &&
         finishReason === "stop" &&
-        (content.includes("") || content.includes("<tool_call ") || content.includes("tool_call"));
+        toolCallPattern.test(content);
 
     return {
         content,
