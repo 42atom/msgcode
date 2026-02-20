@@ -25,7 +25,8 @@ export type ToolDataMap = {
   asr: { txtPath: string };
   vision: { textPath: string };
   mem: Record<string, unknown>;
-  bash: { exitCode: number; stdout: string; stderr: string };
+  // P5.7-R3f/R3h: bash 工具数据（含诊断字段）
+  bash: { exitCode: number; stdout: string; stderr: string; fullOutputPath?: string };
   browser: Record<string, unknown>;
   // T6.1: Desktop tool data (exitCode + stdout + stderr from desktopctl)
   desktop: { exitCode: number | null; stdout: string; stderr: string };
@@ -62,23 +63,49 @@ export interface ToolContext {
   timeoutMs?: number;
 }
 
+/**
+ * P5.7-R3h: 统一工具失败错误码枚举
+ * - MODEL_PROTOCOL_FAILED: 模型协议层失败（无 tool_calls 响应/格式错误）
+ * - TOOL_EXEC_FAILED: 工具执行失败（非零退出码/异常抛出）
+ * - EMPTY_DISPLAY_OUTPUT: 空展示输出失败（执行成功但无有效输出）
+ */
+export type ToolErrorCode =
+  | "MODEL_PROTOCOL_FAILED"   // 模型协议层失败
+  | "TOOL_EXEC_FAILED"        // 工具执行失败
+  | "EMPTY_DISPLAY_OUTPUT"    // 空展示输出失败
+  | "TOOL_NOT_ALLOWED"        // 工具不允许
+  | "TOOL_CONFIRM_REQUIRED"   // 需要用户确认
+  | "TOOL_TIMEOUT"            // 工具超时
+  | "TOOL_BAD_ARGS";          // 工具参数错误
+
 export interface ToolResult<TTool extends ToolName = ToolName> {
+  /** 成功与否 */
   ok: boolean;
+  /** 工具名称 */
   tool: TTool;
+  /** 成功时的数据（仅 ok=true 时存在） */
   data?: ToolDataMap[TTool];
+  /** 错误信息（仅 ok=false 时存在） */
   error?: {
-    code:
-      | "TOOL_NOT_ALLOWED"
-      | "TOOL_CONFIRM_REQUIRED"
-      | "TOOL_TIMEOUT"
-      | "TOOL_EXEC_FAILED"
-      | "TOOL_BAD_ARGS";
+    /** 错误码 */
+    code: ToolErrorCode;
+    /** 错误描述 */
     message: string;
   };
+  /** P5.7-R3h: 诊断字段 - 退出码（bash/desktop 工具） */
+  exitCode?: number | null;
+  /** P5.7-R3h: 诊断字段 - stderr 尾部截断 */
+  stderrTail?: string;
+  /** P5.7-R3h: 诊断字段 - stdout 尾部截断 */
+  stdoutTail?: string;
+  /** P5.7-R3h: 诊断字段 - 完整输出文件路径（超阈值时） */
+  fullOutputPath?: string;
+  /** artifacts（可选） */
   artifacts?: Array<{
     kind: "tts" | "asr" | "vision" | "log" | "desktop";
     path: string;
     digest?: string;
   }>;
+  /** 执行耗时（毫秒） */
   durationMs: number;
 }

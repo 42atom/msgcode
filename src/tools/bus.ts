@@ -320,6 +320,7 @@ export async function executeTool(
         );
 
         // P5.7-R3f: 结构化日志（exitCode/stdoutTail/stderrTail/fullOutputPath）
+        // P5.7-R3h: 诊断字段透传到 ToolResult 顶层
         result = {
           ok: out.ok,
           tool,
@@ -329,6 +330,11 @@ export async function executeTool(
             stderr: out.stderrTail,
             fullOutputPath: out.fullOutputPath,
           },
+          // P5.7-R3h: 诊断字段透传
+          exitCode: out.exitCode,
+          stdoutTail: out.stdoutTail,
+          stderrTail: out.stderrTail,
+          fullOutputPath: out.fullOutputPath,
           durationMs: Date.now() - started,
         };
         break;

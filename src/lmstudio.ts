@@ -1213,6 +1213,7 @@ function resolveUnderRoot(inputPath: string, root: string): string {
  * 执行工具（P5.6.8-R3a: 统一走 Tool Bus）
  *
  * P5.6.8-R4h: 返回完整错误信息（包含 errorCode）
+ * P5.7-R3h: 透传诊断字段（exitCode/stderrTail/fullOutputPath）
  */
 async function runTool(name: string, args: Record<string, unknown>, root: string): Promise<unknown> {
     const { executeTool } = await import("./tools/bus.js");
@@ -1225,10 +1226,14 @@ async function runTool(name: string, args: Record<string, unknown>, root: string
     });
 
     if (!result.ok) {
-        // P5.6.8-R4h: 返回完整错误信息
+        // P5.7-R3h: 透传诊断字段（exitCode/stderrTail/fullOutputPath）
         return {
             error: result.error?.message || "tool execution failed",
             errorCode: result.error?.code || "TOOL_EXEC_FAILED",
+            exitCode: result.exitCode ?? null,
+            stderrTail: result.stderrTail ?? "",
+            stdoutTail: result.stdoutTail ?? "",
+            fullOutputPath: result.fullOutputPath,
         };
     }
 
@@ -1373,12 +1378,22 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
     const assistantContent = msg1?.content;
 
     // 无工具调用：直接清洗返回
+    // P5.7-R3h: 区分模型协议失败（无 tool_calls）与工具执行失败
     if (toolCalls.length === 0) {
+        // P5.7-R3h: 记录 MODEL_PROTOCOL_FAILED 诊断信息
+        logger.info("Model returned no tool calls (MODEL_PROTOCOL_FAILED scenario)", {
+            module: "lmstudio",
+            toolCallCount: 0,
+            errorCode: "MODEL_PROTOCOL_FAILED",  // 协议层未返回工具调用
+            assistantContentLength: assistantContent?.length ?? 0,
+        });
+
         const cleanedAnswer = sanitizeLmStudioOutput(assistantContent ?? "");
         if (tools.length > 0 && isLikelyFakeToolExecutionText(cleanedAnswer)) {
             logger.warn("Detected fake tool execution without tool_calls", {
                 module: "lmstudio",
                 toolCallCount: 0,
+                errorCode: "MODEL_PROTOCOL_FAILED",
             });
             return {
                 answer: "未检测到真实工具调用；为避免返回伪造执行结果，本次不输出命令结果。请重试并明确让我调用工具。"
@@ -1388,12 +1403,14 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
     }
 
     // P5.7-R3g: 上限保护 - 超过步数限制直接返回错误
+    // P5.7-R3h: 添加 TOOL_LOOP_LIMIT_EXCEEDED 错误码
     if (toolCalls.length > MAX_TOOL_CALLS_PER_TURN) {
         logger.warn("Tool loop limit exceeded", {
             module: "lmstudio",
             requestedToolCalls: toolCalls.length,
             maxToolCallsPerTurn: MAX_TOOL_CALLS_PER_TURN,
             toolNames: toolCalls.map(tc => tc.function.name),
+            errorCode: "TOOL_LOOP_LIMIT_EXCEEDED",
         });
 
         return {
@@ -1419,20 +1436,45 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
 
         // 失败短路
         if (toolResult && typeof toolResult === "object" && "error" in toolResult) {
-            const err = toolResult as { error: string; errorCode?: string };
+            // P5.7-R3h: 提取诊断字段
+            const err = toolResult as {
+                error: string;
+                errorCode?: string;
+                exitCode?: number | null;
+                stderrTail?: string;
+                stdoutTail?: string;
+                fullOutputPath?: string;
+            };
             const toolErrorCode = err.errorCode || "TOOL_EXEC_FAILED";
             const toolErrorMessage = err.error || "工具执行失败";
 
+            // P5.7-R3h: 日志增加诊断字段
             logger.info("Tool loop failed (short-circuit)", {
                 module: "lmstudio",
                 toolCallCount: executedToolCalls.length + 1,
                 toolName: tc.function.name,
                 toolErrorCode: toolErrorCode,  // R4h-4: 显式写法满足测试
                 toolErrorMessage: toolErrorMessage,  // R4h-4: 显式写法满足测试
+                toolExitCode: err.exitCode ?? null,
+                toolHasStderr: !!err.stderrTail,
+                toolFullOutputPath: err.fullOutputPath,
             });
 
+            // P5.7-R3h: 错误信息包含诊断字段
+            let answerText = `工具执行失败\n- 工具: ${tc.function.name}\n- 错误码: ${toolErrorCode}\n- 错误: ${toolErrorMessage}`;
+            if (err.exitCode !== undefined && err.exitCode !== null) {
+                answerText += `\n- 退出码: ${err.exitCode}`;
+            }
+            if (err.stderrTail) {
+                const stderrPreview = err.stderrTail.length > 200 ? err.stderrTail.slice(-200) : err.stderrTail;
+                answerText += `\n- stderr 尾部: ${stderrPreview}`;
+            }
+            if (err.fullOutputPath) {
+                answerText += `\n- 完整日志: ${err.fullOutputPath}`;
+            }
+
             return {
-                answer: `工具执行失败\n- 工具: ${tc.function.name}\n- 错误码: ${toolErrorCode}\n- 错误: ${toolErrorMessage}`,
+                answer: answerText,
                 toolCall: { name: tc.function.name, args, result: toolResult }
             };
         }
@@ -1479,6 +1521,8 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
     // P5.7-R3g: 日志增加 toolCallCount 与每个 toolName 列表
     const toolCallCount = executedToolCalls.length;
     const toolNames = executedToolCalls.map(({ tc }) => tc.function.name);
+    // P5.7-R3h: 增加 toolCallIds 列表
+    const toolCallIds = executedToolCalls.map(({ tc }) => tc.id);
 
     // 提取最后一个工具的 exitCode（如果存在）
     let exitCode: number | null = null;
@@ -1490,11 +1534,22 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
         }
     }
 
+    // P5.7-R3h: 日志增加 toolCallIds 和每个工具的 exitCode 列表
+    const toolExitCodes = executedToolCalls.map(({ result }) => {
+        if (result && typeof result === "object") {
+            const r = result as Record<string, unknown>;
+            return r.exitCode ?? null;
+        }
+        return null;
+    });
+
     logger.info("Tool loop completed", {
         module: "lmstudio",
         toolCallCount,
         toolNames,
-        exitCode,
+        toolCallIds,  // P5.7-R3h: 增加 toolCallIds
+        toolExitCodes,  // P5.7-R3h: 增加每个工具的 exitCode
+        exitCode,  // 最后一个工具的 exitCode（兼容旧字段）
     });
 
     // P5.7-R3g: 返回第一个工具调用信息（兼容旧接口）
