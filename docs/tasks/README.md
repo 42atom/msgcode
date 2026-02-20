@@ -1,5 +1,11 @@
 # 任务单索引（唯一时间线）
 
+## P5.6 归档状态
+
+1. `P5.6` 系列状态：`CLOSED`（2026-02-20）
+2. 归档说明：`p5-6-archive-closure-note.md`
+3. 新能力扩展统一转入 `P5.7` 系列执行
+
 ## 当前执行窗口（只看这一段）
 
 1. `P5.6.8-R4h`：Tool Root 收口 + 失败防幻想（direct 主链止血）
@@ -98,6 +104,7 @@
 - `p5-6-13-r1a-exec-toolloop-contract-convergence.md`：P5.6.13-R1A-EXEC（ToolLoop 契约收口执行单）
 - `p5-6-13-r2-workspace-threads-persistence.md`：P5.6.13-R2（按 workspace 落盘会话线程）
 - `p5-6-14-agent-tmux-runtime-bifurcation.md`：P5.6.14（运行臂二分与 provider 下沉专项）
+- `p5-6-archive-closure-note.md`：P5.6 归档说明（主线完成，转入 P5.7）
 - `p5-7-cli-first-skill-expansion-master-plan.md`：P5.7-PLAN（CLI-First Skill 能力扩充总纲）
 - `p5-7-r1-cli-first-file-send.md`：P5.7-R1（CLI-First 文件发送先跑通，含后续能力扩充模板）
 
