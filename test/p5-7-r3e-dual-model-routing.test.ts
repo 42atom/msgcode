@@ -237,6 +237,24 @@ describe("P5.7-R3e-hotfix: 双模型分流验证", () => {
         // 验证 complex-tool 分支使用 executorModel
         expect(code).toContain("executorModel");
     });
+
+    // P5.7-R3e-hotfix-2: 验证 tool 分支绑定 executor 模型
+    it("tool 分支的 toolLoop 调用必须传递 executorModel", async () => {
+        const code = await import("node:fs").then(fs =>
+            fs.readFileSync(require.resolve("../src/lmstudio.ts"), "utf-8")
+        );
+        // 验证 tool 分支传递 model: executorModel 给 runLmStudioToolLoop
+        expect(code).toContain("model: executorModel, // P5.7-R3e-hotfix-2: tool 分支必须绑定 executor 模型");
+    });
+
+    // P5.7-R3e-hotfix-2: 验证 complex-tool 执行阶段绑定 executor 模型
+    it("complex-tool 执行阶段的 toolLoop 调用必须传递 executorModel", async () => {
+        const code = await import("node:fs").then(fs =>
+            fs.readFileSync(require.resolve("../src/lmstudio.ts"), "utf-8")
+        );
+        // 验证 complex-tool 执行阶段传递 model: executorModel 给 runLmStudioToolLoop
+        expect(code).toContain("model: executorModel, // P5.7-R3e-hotfix-2: 执行阶段必须绑定 executor 模型");
+    });
 });
 
 describe("P5.7-R3e-hotfix: complex-tool 计划阶段验证", () => {

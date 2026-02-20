@@ -74,6 +74,7 @@ export async function runLmStudioChat(options: LmStudioChatOptions): Promise<str
             maxOutputTokens: Math.max(maxOutputTokens, mcpMaxTokens),
             timeoutMs,
             useMcp,
+            temperature, // P5.7-R3e-hotfix-2: 传递温度参数
         });
         return sanitizeLmStudioOutput(native);
     }
@@ -321,6 +322,7 @@ type LmStudioNativeMcpParams = {
     maxOutputTokens: number;
     timeoutMs: number;
     useMcp: boolean;
+    temperature?: number; // P5.7-R3e-hotfix-2: 可选温度参数
 };
 
 async function runLmStudioChatNativeMcp(params: LmStudioNativeMcpParams): Promise<string> {
@@ -331,7 +333,7 @@ async function runLmStudioChatNativeMcp(params: LmStudioNativeMcpParams): Promis
         input: params.prompt,
         stream: false,
         max_output_tokens: params.maxOutputTokens,
-        temperature: 0,  // 降低随机性，减少循环
+        temperature: params.temperature ?? 0,  // P5.7-R3e-hotfix-2: 支持传入温度，默认 0（降低随机性）
     };
 
     // 添加 system_prompt（如果提供）
@@ -1683,6 +1685,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             windowMessages: options.windowMessages,
             summaryContext: options.summaryContext,
             soulContext: options.soulContext,
+            model: executorModel, // P5.7-R3e-hotfix-2: 执行阶段必须绑定 executor 模型
         });
 
         // 第三阶段：收口（使用 executor 模型总结结果）
@@ -1711,7 +1714,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
         };
     }
 
-    // tool: 走工具循环（temperature=0，稳定触发）
+    // tool: 走工具循环（temperature=0，稳定触发，使用 executor 模型）
     const toolLoopResult = await runLmStudioToolLoop({
         prompt: options.prompt,
         system: options.system,
@@ -1719,6 +1722,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
         windowMessages: options.windowMessages,
         summaryContext: options.summaryContext,
         soulContext: options.soulContext,
+        model: executorModel, // P5.7-R3e-hotfix-2: tool 分支必须绑定 executor 模型
     });
 
     logger.info("routed chat completed (tool)", {
