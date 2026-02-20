@@ -46,6 +46,7 @@ task_plan.md
 refs/
 ref/
 CLAUDE.md
+AGENTS.md
 
 # Built binaries (not tracked)
 vendor/imsg/
