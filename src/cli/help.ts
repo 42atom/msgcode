@@ -105,7 +105,7 @@ export function createHelpDocsCommand(): Command {
           getFileCopyContract() as Record<string, unknown>,
           // Web 命令组（P5.7-R2）
           ...(getWebCommandContract() as Record<string, unknown>[]),
-          // System 命令组（P5.7-R2）
+          // System 命令组（P5.7-R2 + R3-4）
           ...(getSystemCommandContract() as Record<string, unknown>[]),
         ];
 
