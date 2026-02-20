@@ -1,10 +1,22 @@
 # 任务单索引（唯一时间线）
 
+## P5.6 归档状态
+
+1. `P5.6` 系列状态：`CLOSED`（2026-02-20）
+2. 归档说明：`p5-6-archive-closure-note.md`
+3. 新能力扩展统一转入 `P5.7` 系列执行
+
 ## 当前执行窗口（只看这一段）
 
 1. `P5.6.8-R4h`：Tool Root 收口 + 失败防幻想（direct 主链止血）
 2. `P5.6.10`：Runtime 硬化收口（Tool Bus 解耦 + 冷启动遥测 + 崩溃兜底）
 3. `P5.6.10-R5`：终态运行时检验（三工作区 + 双管道）
+4. `P5.6.13-R1`：本地语义记忆检索（sqlite-vec + FTS，停用 OV 方案）
+5. `P5.6.13-R1A`：Tool Calling 架构调研（openclaw / pi-mono / msgcode 对照）
+6. `P5.6.13-R2`：Workspace 对话落盘（`.msgcode/threads`）
+7. `P5.6.14`：运行臂二分（agent/tmux）+ provider 下沉（专项）
+8. `P5.7-PLAN`：CLI-First Skill 能力扩充总纲（对齐 Alma 使用模式）
+9. `P5.7-R1`：CLI-First 文件发送先跑通（`help --json` + `file send`）
 
 ## P5 当前唯一执行主线（冻结）
 
@@ -39,6 +51,17 @@
 26. `P5.6.8-R4g`：PI 核心四工具可用性收口（`bash/shell` 门禁漂移修复）
 27. `P5.6.9-R4`：CLI 回归锁口径收敛（清退过期锁 + Gate 复绿）
 28. `P5.6.8-R4g-R1`：`bash/shell` 类型与门禁硬收口（类型错误与运行时漂移止血）
+
+## P5.7 系列（CLI-First 能力扩充）
+
+1. `P5.7-R1`：文件发送先跑通（`file send` + `help --json`）
+2. `P5.7-R2`：实时信息三件套（`web search` / `web fetch` / `system info`）
+3. `P5.7-R3`：文件管理能力（find/move/rename/zip）
+4. `P5.7-R4`：记忆与线程检索（memory/thread）
+5. `P5.7-R5`：任务编排（todo/schedule）
+6. `P5.7-R6`：可视化取证与媒体辅助（screenshot/voice）
+7. `P5.7-R7`：浏览器自动化（browser actions）
+8. `P5.7-R8`：编码子代理委派（coding-agent）
 
 ## 当前任务单
 
@@ -76,6 +99,14 @@
 - `p5-6-10-runtime-hardening-from-review-v2.md`：P5.6.10（审查 v2 的 Runtime 硬化响应单）
 - `p5-6-10-r5-runtime-final-validation.md`：P5.6.10-R5（终态运行时检验与签收）
 - `p5-6-10-r6-pi-mono-benchmark-and-adoption.md`：P5.6.10-R6（pi-mono 三包对照评审与落地参考）
+- `p5-6-13-r1-sqlite-vec-local-semantic-memory.md`：P5.6.13-R1（sqlite-vec 本地语义记忆检索）
+- `p5-6-13-r1a-toolcall-architecture-research.md`：P5.6.13-R1A（Tool Calling 架构调研与实施建议）
+- `p5-6-13-r1a-exec-toolloop-contract-convergence.md`：P5.6.13-R1A-EXEC（ToolLoop 契约收口执行单）
+- `p5-6-13-r2-workspace-threads-persistence.md`：P5.6.13-R2（按 workspace 落盘会话线程）
+- `p5-6-14-agent-tmux-runtime-bifurcation.md`：P5.6.14（运行臂二分与 provider 下沉专项）
+- `p5-6-archive-closure-note.md`：P5.6 归档说明（主线完成，转入 P5.7）
+- `p5-7-cli-first-skill-expansion-master-plan.md`：P5.7-PLAN（CLI-First Skill 能力扩充总纲）
+- `p5-7-r1-cli-first-file-send.md`：P5.7-R1（CLI-First 文件发送先跑通，含后续能力扩充模板）
 
 ## 规则
 

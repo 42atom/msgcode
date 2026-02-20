@@ -4,7 +4,7 @@
  * Shared types for all TTS backend implementations
  */
 
-export type TtsBackend = "indextts";
+export type TtsBackend = "qwen" | "indextts";
 
 export type TtsResult = {
   success: boolean;

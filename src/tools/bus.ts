@@ -29,7 +29,7 @@ const TOOL_META: Record<ToolName, { sideEffect: SideEffectLevel }> = {
   bash: { sideEffect: "process-control" },
   browser: { sideEffect: "process-control" },
   desktop: { sideEffect: "local-write" },  // T6.1: observe 会落盘 evidence
-  run_skill: { sideEffect: "read-only" },  // P5.5: Skill execution (read-only)
+  // P5.6.13-R1A-EXEC: run_skill 已退役
   read_file: { sideEffect: "read-only" },  // P5.6.8-R3: PI 四基础工具
   write_file: { sideEffect: "local-write" },
   edit_file: { sideEffect: "local-write" },
@@ -100,6 +100,67 @@ export function canExecuteTool(
   return { ok: true };
 }
 
+// ============================================
+// P5.6.13-R1A-EXEC R2: 四核心工具参数校验
+// ============================================
+
+interface ValidationError {
+  code: "TOOL_BAD_ARGS";
+  message: string;
+}
+
+/**
+ * 校验四核心工具参数
+ * 校验失败返回结构化错误，不进入工具执行体
+ */
+function validateToolArgs(
+  tool: ToolName,
+  args: Record<string, unknown>
+): ValidationError | null {
+  switch (tool) {
+    case "read_file": {
+      if (!args.path || typeof args.path !== "string" || !args.path.trim()) {
+        return { code: "TOOL_BAD_ARGS", message: "read_file: 'path' must be a non-empty string" };
+      }
+      break;
+    }
+    case "write_file": {
+      if (!args.path || typeof args.path !== "string" || !args.path.trim()) {
+        return { code: "TOOL_BAD_ARGS", message: "write_file: 'path' must be a non-empty string" };
+      }
+      if (args.content === undefined || args.content === null) {
+        return { code: "TOOL_BAD_ARGS", message: "write_file: 'content' is required" };
+      }
+      break;
+    }
+    case "edit_file": {
+      if (!args.path || typeof args.path !== "string" || !args.path.trim()) {
+        return { code: "TOOL_BAD_ARGS", message: "edit_file: 'path' must be a non-empty string" };
+      }
+      if (!Array.isArray(args.edits) || args.edits.length === 0) {
+        return { code: "TOOL_BAD_ARGS", message: "edit_file: 'edits' must be a non-empty array" };
+      }
+      for (let i = 0; i < args.edits.length; i++) {
+        const edit = args.edits[i] as Record<string, unknown>;
+        if (typeof edit.oldText !== "string") {
+          return { code: "TOOL_BAD_ARGS", message: `edit_file: edits[${i}].oldText must be a string` };
+        }
+        if (typeof edit.newText !== "string") {
+          return { code: "TOOL_BAD_ARGS", message: `edit_file: edits[${i}].newText must be a string` };
+        }
+      }
+      break;
+    }
+    case "bash": {
+      if (!args.command || typeof args.command !== "string" || !args.command.trim()) {
+        return { code: "TOOL_BAD_ARGS", message: "bash: 'command' must be a non-empty string" };
+      }
+      break;
+    }
+  }
+  return null;
+}
+
 async function withTimeout<T>(p: Promise<T>, ms = 120000): Promise<T> {
   return await Promise.race([
     p,
@@ -149,6 +210,33 @@ export async function executeTool(
     return result;
   }
 
+  // P5.6.13-R1A-EXEC R2: 参数校验（四核心工具）
+  const validationError = validateToolArgs(tool, args);
+  if (validationError) {
+    const result: ToolResult = {
+      ok: false,
+      tool,
+      error: { code: validationError.code, message: validationError.message },
+      durationMs: Date.now() - started,
+    };
+
+    // 记录参数校验失败事件
+    recordToolEvent({
+      requestId,
+      workspacePath: ctx.workspacePath,
+      chatId: ctx.chatId,
+      tool,
+      source: ctx.source,
+      durationMs: result.durationMs,
+      ok: false,
+      errorCode: validationError.code,
+      artifactPaths: [],
+      timestamp: Date.now(),
+    });
+
+    return result;
+  }
+
   try {
     let result: ToolResult;
 
@@ -156,8 +244,21 @@ export async function executeTool(
       case "tts": {
         const text = String(args.text ?? "").trim();
         if (!text) throw new Error("empty text");
+        const instruct = typeof args.instruct === "string" ? args.instruct.trim() : undefined;
+        const speedNum = typeof args.speed === "number"
+          ? args.speed
+          : (typeof args.speed === "string" ? Number(args.speed) : Number.NaN);
+        const temperatureNum = typeof args.temperature === "number"
+          ? args.temperature
+          : (typeof args.temperature === "string" ? Number(args.temperature) : Number.NaN);
         const out = await withTimeout(
-          runTts({ workspacePath: ctx.workspacePath, text }),
+          runTts({
+            workspacePath: ctx.workspacePath,
+            text,
+            ...(instruct ? { instruct } : {}),
+            ...(Number.isFinite(speedNum) && speedNum > 0 ? { speed: speedNum } : {}),
+            ...(Number.isFinite(temperatureNum) && temperatureNum > 0 ? { temperature: temperatureNum } : {}),
+          }),
           ctx.timeoutMs ?? 120000
         );
         if (!out.success || !out.audioPath) throw new Error(out.error || "tts failed");
@@ -466,42 +567,7 @@ export async function executeTool(
           break;
         }
       }
-      case "run_skill": {
-        // P5.5: 统一 skill 执行器入口
-        const skillId = String(args.skill_id ?? "").trim();
-        if (!skillId) throw new Error("missing skill_id");
-
-        const input = typeof args.input === "string" ? args.input : "";
-
-        // 调用 skills/auto.ts:runSkill()（单一执行器）
-        const { runSkill } = await import("../skills/auto.js");
-        const skillResult = await withTimeout(
-          runSkill(skillId as any, input, {
-            workspacePath: ctx.workspacePath,
-            chatId: ctx.chatId,
-            requestId: ctx.requestId,
-          }),
-          ctx.timeoutMs ?? 60000
-        );
-
-        // 记录 skill 执行事件（含观测字段）
-        logger.info("Skill executed via tool_calls", {
-          module: "tools-bus",
-          chatId: ctx.chatId,
-          autoSkill: skillResult.skillId,
-          autoSkillResult: skillResult.ok ? "ok" : "error",
-          durationMs: skillResult.durationMs,
-        });
-
-        result = {
-          ok: skillResult.ok,
-          tool,
-          data: { output: skillResult.output },
-          error: skillResult.error ? { code: "TOOL_EXEC_FAILED", message: skillResult.error } : undefined,
-          durationMs: Date.now() - started,
-        };
-        break;
-      }
+      // P5.6.13-R1A-EXEC: run_skill 已退役
       case "read_file": {
         // P5.6.8-R3: 读取文件内容
         const { resolve } = await import("node:path");

@@ -1,10 +1,12 @@
 /**
  * msgcode: 配置域命令（model/policy/pi）
+ * P5.6.14-R4: /model 命令面兼容收口 - 基于 runtime.kind 二分
  */
 
 import { routeByChatId } from "../router.js";
 import { getRouteByChatId } from "./store.js";
 import type { CommandHandlerOptions, CommandResult } from "./cmd-types.js";
+import type { AgentProvider, ToolName } from "../config/workspace.js";
 
 export async function handleModelCommand(options: CommandHandlerOptions): Promise<CommandResult> {
   const { chatId, args } = options;
@@ -12,6 +14,13 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
     getPolicyMode,
     getDefaultRunner,
     setDefaultRunner,
+    // P5.6.14-R4: 使用新配置 API
+    getRuntimeKind,
+    getAgentProvider,
+    getTmuxClient,
+    setAgentProvider,
+    setTmuxClient,
+    setRuntimeKind,
   } = await import("../config/workspace.js");
 
   function formatPolicyMode(mode: "local-only" | "egress-allowed"): string {
@@ -33,95 +42,146 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
     };
   }
 
+  // P5.6.14-R4: 基于 runtime.kind 二分展示
   if (args.length === 0) {
     const currentMode = await getPolicyMode(projectDir);
-    const currentRunner = await getDefaultRunner(projectDir);
+    const kind = await getRuntimeKind(projectDir);
+    const provider = await getAgentProvider(projectDir);
+    const client = await getTmuxClient(projectDir);
 
+    if (kind === "tmux") {
+      // tmux 模式：显示 client 信息
+      return {
+        success: true,
+        message: `执行臂配置（tmux 透传模式）\n` +
+          `\n` +
+          `运行形态：tmux（透传执行臂）\n` +
+          `Tmux Client: ${client}\n` +
+          `策略模式：${formatPolicyMode(currentMode)}\n` +
+          `工作目录：${label || projectDir}\n` +
+          `\n` +
+          `说明：tmux 模式下 provider 不参与执行，仅透传到 tmux client\n` +
+          `\n` +
+          `可用 Tmux Client:\n` +
+          `  codex       Codex CLI（默认）\n` +
+          `  claude-code Claude Code CLI\n` +
+          `\n` +
+          `使用 /model <client> 切换 Tmux Client\n` +
+          `使用 /policy <mode> 切换策略模式`,
+      };
+    } else {
+      // agent 模式：显示 provider 信息
+      return {
+        success: true,
+        message: `执行臂配置（agent 编排模式）\n` +
+          `\n` +
+          `运行形态：agent（智能体编排）\n` +
+          `Agent Provider: ${provider}\n` +
+          `策略模式：${formatPolicyMode(currentMode)}\n` +
+          `工作目录：${label || projectDir}\n` +
+          `\n` +
+          `可用 Agent Provider:\n` +
+          `  lmstudio    本地模型（默认）\n` +
+          `  openai      OpenAI API\n` +
+          `\n` +
+          `计划中（planned）:\n` +
+          `  minimax     MiniMax 模型\n` +
+          `  llama       llama-server / llama.cpp\n` +
+          `  claude      Anthropic Claude API\n` +
+          `\n` +
+          `使用 /model <provider> 切换 Agent Provider\n` +
+          `使用 /model codex|claude-code 切换到 tmux 模式\n` +
+          `使用 /policy <mode> 切换策略模式`,
+      };
+    }
+  }
+
+  // P5.6.14-R4: 处理设置命令
+  const requestedRunner = args[0];
+
+  // 兼容旧输入：codex/claude-code -> tmux 模式
+  if (requestedRunner === "codex" || requestedRunner === "claude-code") {
+    const currentMode = await getPolicyMode(projectDir);
+    if (currentMode === "local-only") {
+      return {
+        success: false,
+        message: `当前策略模式为 local-only，不允许使用 ${requestedRunner}（需要外网访问）。\n\n` +
+          `请先执行以下命令之一：\n` +
+          `1. /policy on             （允许外网访问；等同 /policy egress-allowed）\n` +
+          `2. /model lmstudio        （使用本地模型）`,
+      };
+    }
+
+    // P5.6.14-R4: 映射到 runtime.kind=tmux + tmux.client
+    await setRuntimeKind(projectDir, "tmux");
+    await setTmuxClient(projectDir, requestedRunner);
+
+    const oldClient = await getTmuxClient(projectDir);
     return {
       success: true,
-      message: `执行臂配置\n` +
+      message: `已切换到 tmux 模式\n` +
         `\n` +
-        `策略模式: ${formatPolicyMode(currentMode)}\n` +
-        `默认执行臂: ${currentRunner}\n` +
-        `工作目录: ${label || projectDir}\n` +
+        `运行形态：tmux（透传执行臂）\n` +
+        `Tmux Client: ${requestedRunner}\n` +
         `\n` +
-        `可用执行臂:\n` +
+        `下次提问时将使用 ${requestedRunner}（tmux 透传）`,
+    };
+  }
+
+  // agent provider 设置
+  const validProviders = ["lmstudio", "openai"];
+  const plannedProviders = ["minimax", "llama", "claude"];
+
+  if (plannedProviders.includes(requestedRunner)) {
+    return {
+      success: false,
+      message: `"${requestedRunner}" Provider 尚未实现。\n` +
+        `\n` +
+        `计划中的 Provider:\n` +
+        `  minimax     MiniMax 模型\n` +
+        `  llama       llama-server / llama.cpp\n` +
+        `  claude      Anthropic Claude API\n` +
+        `\n` +
+        `目前可用的 Provider:\n` +
         `  lmstudio    本地模型（默认）\n` +
-        `  codex       Codex CLI（需要 egress-allowed）\n` +
-        `  claude-code Claude Code CLI（需要 egress-allowed）\n` +
-        `\n` +
-        `计划中（planned）:\n` +
-        `  llama       llama-server / llama.cpp（*.gguf）\n` +
-        `  claude      Anthropic Claude API\n` +
-        `  openai      OpenAI API（GPT-4, o1, etc.）\n` +
-        `\n` +
-        `使用 /model <runner> 切换执行臂\n` +
-        `使用 /policy <mode> 切换策略模式`,
+        `  openai      OpenAI API`,
     };
   }
 
-  const requestedRunner = args[0];
-  const plannedRunners = ["llama", "claude", "openai"];
-  const validRunners = ["lmstudio", "codex", "claude-code"];
-
-  if (plannedRunners.includes(requestedRunner)) {
+  if (!validProviders.includes(requestedRunner)) {
     return {
       success: false,
-      message: `"${requestedRunner}" 执行臂尚未实现。\n` +
+      message: `无效的 Provider: ${requestedRunner}\n` +
         `\n` +
-        `计划中的执行臂:\n` +
-        `  llama       llama-server / llama.cpp（*.gguf）\n` +
-        `  claude      Anthropic Claude API\n` +
-        `  openai      OpenAI API（GPT-4, o1, etc.）\n` +
-        `\n` +
-        `目前可用的执行臂:\n` +
+        `可用的 Agent Provider:\n` +
         `  lmstudio    本地模型\n` +
-        `  codex       Codex CLI\n` +
-        `  claude-code Claude Code CLI`,
-    };
-  }
-
-  if (!validRunners.includes(requestedRunner)) {
-    return {
-      success: false,
-      message: `无效的执行臂: ${requestedRunner}\n` +
+        `  openai      OpenAI API\n` +
         `\n` +
-        `可用的执行臂:\n` +
-        `  lmstudio    本地模型\n` +
-        `  codex       Codex CLI\n` +
-        `  claude-code Claude Code CLI`,
+        `切换到 tmux 模式:\n` +
+        `  /model codex       Codex CLI\n` +
+        `  /model claude-code Claude Code CLI`,
     };
   }
 
   try {
-    const currentMode = await getPolicyMode(projectDir);
-    const oldRunner = await getDefaultRunner(projectDir);
-    const result = await setDefaultRunner(
-      projectDir,
-      requestedRunner as "lmstudio" | "codex" | "claude-code",
-      currentMode
-    );
+    // P5.6.14-R4: 确保 runtime.kind=agent 后设置 provider
+    await setRuntimeKind(projectDir, "agent");
+    await setAgentProvider(projectDir, requestedRunner as AgentProvider);
 
-    if (!result.success) {
-      return {
-        success: false,
-        message: result.error || `切换失败`,
-      };
-    }
-
+    const oldProvider = await getAgentProvider(projectDir);
     return {
       success: true,
-      message: `已切换执行臂\n` +
+      message: `已切换 Agent Provider\n` +
         `\n` +
-        `旧执行臂: ${oldRunner}\n` +
-        `新执行臂: ${requestedRunner}\n` +
+        `运行形态：agent（智能体编排）\n` +
+        `Agent Provider: ${requestedRunner}\n` +
         `\n` +
         `下次提问时将使用 ${requestedRunner}`,
     };
   } catch (error) {
     return {
       success: false,
-      message: `切换失败: ${error instanceof Error ? error.message : String(error)}`,
+      message: `切换失败：${error instanceof Error ? error.message : String(error)}`,
     };
   }
 }
@@ -170,8 +230,8 @@ export async function handlePolicyCommand(options: CommandHandlerOptions): Promi
       success: true,
       message: `策略模式\n` +
         `\n` +
-        `当前: ${current.short}（${current.label}；raw=${current.raw}）\n` +
-        `工作目录: ${label || projectDir}\n` +
+        `当前：${current.short}（${current.label}；raw=${current.raw}）\n` +
+        `工作目录：${label || projectDir}\n` +
         `\n` +
         `可用模式:\n` +
         `  full   外网已开（可使用 codex/claude-code；= egress-allowed）\n` +
@@ -188,7 +248,7 @@ export async function handlePolicyCommand(options: CommandHandlerOptions): Promi
   if (!requestedMode) {
     return {
       success: false,
-      message: `无效的策略模式: ${args[0]}\n` +
+      message: `无效的策略模式：${args[0]}\n` +
         `\n` +
         `可用模式:\n` +
         `  on / egress-allowed   允许外网访问\n` +
@@ -207,7 +267,7 @@ export async function handlePolicyCommand(options: CommandHandlerOptions): Promi
         success: true,
         message: `策略模式未变更\n` +
           `\n` +
-          `当前: ${newDesc.short}（${newDesc.label}；raw=${newDesc.raw}）`,
+          `当前：${newDesc.short}（${newDesc.label}；raw=${newDesc.raw}）`,
       };
     }
 
@@ -215,8 +275,8 @@ export async function handlePolicyCommand(options: CommandHandlerOptions): Promi
       success: true,
       message: `已切换策略模式\n` +
         `\n` +
-        `旧模式: ${oldDesc.short}（${oldDesc.label}；raw=${oldDesc.raw}）\n` +
-        `新模式: ${newDesc.short}（${newDesc.label}；raw=${newDesc.raw}）\n` +
+        `旧模式：${oldDesc.short}（${oldDesc.label}；raw=${oldDesc.raw}）\n` +
+        `新模式：${newDesc.short}（${newDesc.label}；raw=${newDesc.raw}）\n` +
         `\n` +
         `${requestedMode === "egress-allowed"
           ? "现在可以使用 codex/claude-code 执行臂了"
@@ -225,14 +285,14 @@ export async function handlePolicyCommand(options: CommandHandlerOptions): Promi
   } catch (error) {
     return {
       success: false,
-      message: `切换失败: ${error instanceof Error ? error.message : String(error)}`,
+      message: `切换失败：${error instanceof Error ? error.message : String(error)}`,
     };
   }
 }
 
 export async function handlePiCommand(options: CommandHandlerOptions): Promise<CommandResult> {
   const { chatId, args } = options;
-  const { loadWorkspaceConfig, saveWorkspaceConfig, getDefaultRunner } = await import("../config/workspace.js");
+  const { loadWorkspaceConfig, saveWorkspaceConfig, getRuntimeKind } = await import("../config/workspace.js");
 
   const entry = getRouteByChatId(chatId);
   const fallback = !entry ? routeByChatId(chatId) : null;
@@ -245,7 +305,8 @@ export async function handlePiCommand(options: CommandHandlerOptions): Promise<C
     };
   }
 
-  const runner = await getDefaultRunner(projectDir);
+  // P5.6.14-R4: 改用 runtime.kind 判断
+  const kind = await getRuntimeKind(projectDir);
   const config = await loadWorkspaceConfig(projectDir);
   const enabled = config["pi.enabled"] ?? false;
   const action = (args[0] ?? "status").trim().toLowerCase();
@@ -254,15 +315,16 @@ export async function handlePiCommand(options: CommandHandlerOptions): Promise<C
     return {
       success: true,
       message: `PI: ${enabled ? "已启用" : "已禁用"}\n` +
-        `执行臂: ${runner}`,
+        `运行形态：${kind}`,
     };
   }
 
   if (action === "on") {
-    if (runner === "codex" || runner === "claude-code") {
+    // P5.6.14-R4: tmux 模式不支持 PI
+    if (kind === "tmux") {
       return {
         success: false,
-        message: "PI 仅支持本地执行臂（lmstudio）",
+        message: "PI 仅支持 agent 模式（需要上下文编排），当前为 tmux 透传模式",
       };
     }
 
@@ -272,16 +334,16 @@ export async function handlePiCommand(options: CommandHandlerOptions): Promise<C
     const piTools = ["read_file", "write_file", "edit_file", "bash"] as const;
 
     // 确保 PI 四工具在 allow 列表中
-    const missingTools = piTools.filter(t => !policy.allow.includes(t as any));
+    const missingTools = piTools.filter(t => !policy.allow.includes(t));
     if (missingTools.length > 0) {
-      const newAllow = [...new Set([...policy.allow, ...piTools])] as any[];
+      const newAllow: ToolName[] = [...new Set([...policy.allow, ...piTools])];
       await setToolingAllow(projectDir, newAllow);
     }
 
     await saveWorkspaceConfig(projectDir, { "pi.enabled": true });
     return {
       success: true,
-      message: "PI 已启用" + (missingTools.length > 0 ? `\n\n已自动添加工具: ${missingTools.join(", ")}` : ""),
+      message: "PI 已启用" + (missingTools.length > 0 ? `\n\n已自动添加工具：${missingTools.join(", ")}` : ""),
     };
   }
 
@@ -295,7 +357,7 @@ export async function handlePiCommand(options: CommandHandlerOptions): Promise<C
 
   return {
     success: false,
-    message: `未知操作: ${action}\n` +
-      `用法: /pi | /pi on | /pi off`,
+    message: `未知操作：${action}\n` +
+      `用法：/pi | /pi on | /pi off`,
   };
 }

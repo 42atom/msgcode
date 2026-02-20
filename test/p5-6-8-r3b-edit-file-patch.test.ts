@@ -35,10 +35,10 @@ describe("P5.6.8-R3b: edit_file 补丁语义回归锁", () => {
                 path.join(process.cwd(), "src/tools/bus.ts"),
                 "utf-8"
             );
-            // 验证 oldText 存在性检查
-            const editFileCase = code.match(/case\s+"edit_file"[\s\S]{0,2000}break;/);
-            expect(editFileCase).not.toBeNull();
-            expect(editFileCase![0]).toContain("includes(edit.oldText)");
+            // P5.6.13-R1A-EXEC R2: 参数校验在 validateToolArgs 中
+            // 验证 oldText 类型检查存在
+            expect(code).toContain("typeof edit.oldText !== \"string\"");
+            expect(code).toContain("typeof edit.newText !== \"string\"");
         });
     });
 

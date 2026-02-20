@@ -89,15 +89,7 @@ describe("P5.6.7-R6: 集成冒烟静态验证", () => {
             expect(code).toContain("await executeTool(name as any, args");
         });
 
-        it("tools/bus.ts: run_skill 在 Tool Bus 中实现（单一执行入口）", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/tools/bus.ts"),
-                "utf-8"
-            );
-            // 验证 Tool Bus 中有 run_skill 实现
-            expect(code).toContain("case \"run_skill\"");
-            expect(code).toContain("const { runSkill } = await import");
-        });
+        // P5.6.13-R1A-EXEC: run_skill 已退役，测试已移除
     });
 
     describe("回归锁一致性", () => {
@@ -106,10 +98,7 @@ describe("P5.6.7-R6: 集成冒烟静态验证", () => {
             expect(fs.existsSync(testPath)).toBe(true);
         });
 
-        it("P5.6.3 回归锁存在", () => {
-            const testPath = path.join(process.cwd(), "test/p5-6-3-skill-single-source.test.ts");
-            expect(fs.existsSync(testPath)).toBe(true);
-        });
+        // P5.6.13-R1A-EXEC: P5.6.3 skill 测试已随 run_skill 一起退役
 
         it("P5.6.4 回归锁存在", () => {
             const testPath = path.join(process.cwd(), "test/p5-6-4-state-boundary.test.ts");

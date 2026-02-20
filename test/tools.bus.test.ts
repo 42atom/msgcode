@@ -452,8 +452,9 @@ describe("Tool Bus", () => {
         }
       );
 
+      // P5.6.13-R1A-EXEC R2: 参数校验返回 TOOL_BAD_ARGS
       expect(result.ok).toBe(false);
-      expect(result.error?.code).toBe("TOOL_EXEC_FAILED");
+      expect(result.error?.code).toBe("TOOL_BAD_ARGS");
     });
   });
 

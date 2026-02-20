@@ -1,25 +1,26 @@
 /**
- * msgcode: P5.6.6-R2 direct 日志语义对齐回归锁测试
+ * msgcode: P5.6.6-R2 / P5.6.14-R3 日志语义对齐回归锁测试
  *
- * 目标：确保 direct 主链日志包含 runner: "direct" 字段
+ * 目标：确保 agent 主链日志包含 runtimeKind/injectionEnabled 等字段
+ * P5.6.14-R3: 改用 runtimeKind 代替 runner，新增 injectionEnabled
  */
 
 import { describe, it, expect } from "bun:test";
 import fs from "node:fs";
 import path from "node:path";
 
-describe("P5.6.6-R2: direct 日志语义对齐回归锁", () => {
-    it("handlers.ts direct 路径日志必须包含 runner 字段", () => {
+describe("P5.6.6-R2: agent 日志语义对齐回归锁", () => {
+    it("handlers.ts agent 路径日志必须包含 runtimeKind 字段", () => {
         const code = fs.readFileSync(
             path.join(process.cwd(), "src/handlers.ts"),
             "utf-8"
         );
 
-        // 检查 LM Studio 请求日志包含 runner: "direct"
-        const requestStartPattern = /LM Studio 请求开始[\s\S]*?runner:\s*"direct"/;
+        // P5.6.14-R3: 检查 agent 请求日志包含 runtimeKind: "agent"
+        const requestStartPattern = /agent request started[\s\S]*?runtimeKind:\s*"agent"/;
         expect(requestStartPattern.test(code)).toBe(true);
 
-        const requestCompletePattern = /LM Studio 请求完成[\s\S]*?runner:\s*"direct"/;
+        const requestCompletePattern = /agent request completed[\s\S]*?runtimeKind:\s*"agent"/;
         expect(requestCompletePattern.test(code)).toBe(true);
     });
 
@@ -29,9 +30,11 @@ describe("P5.6.6-R2: direct 日志语义对齐回归锁", () => {
             "utf-8"
         );
 
-        // 确保 direct 路径日志包含必要的观测字段
+        // P5.6.14-R3: 确保 agent 路径日志包含必要的观测字段
         expect(code).toContain("module: \"handlers\"");
         expect(code).toContain("traceId");
-        expect(code).toContain("runner: \"direct\"");
+        expect(code).toContain("runtimeKind: \"agent\"");
+        expect(code).toContain("injectionEnabled");
+        expect(code).toContain("agentProvider");
     });
 });

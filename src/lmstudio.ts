@@ -20,7 +20,8 @@ import { logger } from "./logger/index.js";
 // P5.6.2: 导入提取的 provider 层
 import { normalizeBaseUrl as normalizeBaseUrlAdapter, fetchWithTimeout } from "./providers/openai-compat-adapter.js";
 import { sanitizeLmStudioOutput as sanitizeCore, dropBeforeLastClosingTag } from "./providers/output-normalizer.js";
-import { runToolLoop } from "./providers/tool-loop.js";
+// P5.6.13-R1A-EXEC R3: Provider adapter 契约
+import { buildChatCompletionRequest, parseChatCompletionResponse } from "./providers/openai-compat-adapter.js";
 
 export interface LmStudioChatOptions {
     prompt: string;
@@ -1477,6 +1478,7 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
 
 /**
  * 调用 OpenAI 兼容 /v1/chat/completions（返回原始 JSON）
+ * P5.6.13-R1A-EXEC R3: 使用 provider adapter 契约
  */
 async function callChatCompletionsRaw(params: {
     baseUrl: string;
@@ -1494,35 +1496,53 @@ async function callChatCompletionsRaw(params: {
     // 只在工具调用模式时添加，最终回答模式不需要
     const stop = params.toolChoice === "none" ? undefined : ["[END_TOOL_REQUEST]"];
 
+    // P5.6.13-R1A-EXEC R3: 使用 adapter 契约构建请求体
+    const body = buildChatCompletionRequest({
+        model: params.model,
+        messages: params.messages,
+        tools: params.tools,
+        toolChoice: params.toolChoice,
+        maxTokens: params.maxTokens,
+        temperature: params.temperature,
+        stop,
+    });
+
     const rawText = await fetchTextWithTimeout({
         url,
         method: "POST",
         timeoutMs: params.timeoutMs,
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-            model: params.model,
-            messages: params.messages,
-            tools: params.tools,
-            tool_choice: params.toolChoice,
-            stream: false,
-            max_tokens: params.maxTokens,
-            temperature: params.temperature,
-            stop,
-        }),
+        body,
     });
 
-    let json: unknown;
-    try {
-        json = JSON.parse(rawText);
-    } catch {
-        throw new Error(`LM Studio API 返回非 JSON：${sanitizeLmStudioOutput(rawText).slice(0, 400)}`);
+    // P5.6.13-R1A-EXEC R3: 使用 adapter 契约解析响应
+    const parsed = parseChatCompletionResponse(rawText);
+
+    if (parsed.error) {
+        throw new Error(`LM Studio API 错误：${parsed.error}`);
     }
 
-    if (!isChatCompletion(json)) {
-        throw new Error(`LM Studio API 返回格式错误`);
-    }
+    // 重建 ChatResponse 格式（兼容现有调用方）
+    const json: ChatResponse = {
+        choices: [{
+            message: {
+                role: "assistant",
+                content: parsed.content ?? undefined,
+                tool_calls: parsed.toolCalls.length > 0
+                    ? parsed.toolCalls.map((tc, idx) => ({
+                        id: tc.id || `tool_call_${idx}`,
+                        type: "function",
+                        function: {
+                            name: tc.name,
+                            arguments: tc.arguments,
+                        },
+                    }))
+                    : undefined,
+            },
+        }],
+    };
 
-    return json as ChatResponse;
+    return json;
 }
 
 // ============================================

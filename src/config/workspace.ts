@@ -8,6 +8,10 @@
  * 2. ENV 变量 (MEMORY_INJECT_ENABLED/TOPK/MAX_CHARS)
  * 3. workspace config.json
  * 4. 默认值
+ *
+ * P5.6.14-R1: 配置域拆分
+ * - 新增：runtime.kind、agent.provider、tmux.client
+ * - 保留：runner.default（只读兼容映射）
  */
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
@@ -16,6 +20,7 @@ import { join } from "node:path";
 
 /**
  * Workspace 配置（存储在 .msgcode/config.json）
+ * P5.6.14-R1: 配置域拆分 - 新增 runtime.kind/agent.provider/tmux.client
  */
 export interface WorkspaceConfig {
   // ==================== 记忆注入配置 ====================
@@ -26,7 +31,31 @@ export interface WorkspaceConfig {
   /** 记忆注入最大字符数（默认 2000） */
   "memory.inject.maxChars"?: number;
 
-  // ==================== M5: Codex 兼容配置 ====================
+  // ==================== P5.6.14-R1: 运行形态配置 ====================
+  /**
+   * 运行形态：agent（默认）| tmux
+   * - agent: 智能体执行形态（有上下文编排：SOUL/记忆/工具注入）
+   * - tmux: 透传执行形态（无上下文编排，忠实转发）
+   */
+  "runtime.kind"?: "agent" | "tmux";
+
+  /**
+   * Agent Provider（仅 runtime.kind=agent 时有效）
+   * - lmstudio: 本地 LM Studio 模型（默认）
+   * - minimax: MiniMax 模型
+   * - openai: OpenAI API
+   * - ...
+   */
+  "agent.provider"?: AgentProvider;
+
+  /**
+   * Tmux Client（仅 runtime.kind=tmux 时有效）
+   * - codex: Codex CLI
+   * - claude-code: Claude Code CLI
+   */
+  "tmux.client"?: TmuxClient;
+
+  // ==================== M5: 兼容配置（只读映射） ====================
   /**
    * 策略模式：local-only（仅本地）或 egress-allowed（允许外联）
    * - local-only: 禁止使用需要外网的 runner（如 codex）
@@ -35,13 +64,11 @@ export interface WorkspaceConfig {
   "policy.mode"?: "local-only" | "egress-allowed";
 
   /**
-   * 默认执行臂：lmstudio | codex | claude-code | llama | claude | openai
-   * - lmstudio: 本地 LM Studio 模型
-   * - llama: llama-server / llama.cpp（*.gguf 裸模型）
-   * - claude: Anthropic Claude API
-   * - openai: OpenAI API（GPT-4, o1, etc.）
-   * - codex: Codex CLI（需要 egress-allowed）
-   * - claude-code: Claude Code CLI（需要 egress-allowed）
+   * 默认执行臂（只读兼容，v2.3.x 保留映射，v2.4.0 移除）
+   * 映射规则：
+   * - codex|claude-code -> runtime.kind=tmux + tmux.client=<runner>
+   * - lmstudio|openai|minimax -> runtime.kind=agent + agent.provider=<runner>
+   * - llama|claude -> runtime.kind=agent + agent.provider=lmstudio（兼容降级）
    */
   "runner.default"?: "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code";
 
@@ -62,19 +89,20 @@ export interface WorkspaceConfig {
 
   /**
    * 允许的工具列表
-   * - 默认: ["tts", "asr", "vision"]
+   * - 默认：["tts", "asr", "vision"]
    */
   "tooling.allow"?: ToolName[];
 
   /**
    * 需要确认的工具列表
-   * - 默认: []
+   * - 默认：[]
    */
   "tooling.require_confirm"?: ToolName[];
 }
 
 /**
  * 工具相关类型
+ * P5.6.14-R1b: 新增 AgentProvider/TmuxClient 类型别名
  */
 export type ToolingMode = "explicit" | "autonomous" | "tool-calls";
 export type ToolName =
@@ -82,15 +110,30 @@ export type ToolName =
   | "read_file" | "write_file" | "edit_file";
 
 /**
+ * P5.6.14-R1b: Agent Provider 类型（agent 模式下有效）
+ */
+export type AgentProvider = "lmstudio" | "minimax" | "openai" | "llama" | "claude";
+
+/**
+ * P5.6.14-R1b: Tmux Client 类型（tmux 模式下有效）
+ */
+export type TmuxClient = "codex" | "claude-code";
+
+/**
  * Workspace 配置的默认值
  * P5.6.8-R4g: 导出供测试使用
+ * P5.6.14-R1: 新增 runtime.kind 默认值为 agent
+ * P5.6.14-R1b: 使用 AgentProvider/TmuxClient 类型
  */
 export const DEFAULT_WORKSPACE_CONFIG: Required<WorkspaceConfig> = {
   "memory.inject.enabled": true, // 测试期默认开启记忆注入
   "memory.inject.topK": 5,
   "memory.inject.maxChars": 2000,
   "policy.mode": "egress-allowed", // 默认允许外联（远程场景避免被门禁卡住；高敏 workspace 可手动切回 local-only）
-  "runner.default": "lmstudio", // 默认使用本地模型
+  "runtime.kind": "agent", // P5.6.14-R1: 默认 agent 形态
+  "agent.provider": "lmstudio", // P5.6.14-R1: 默认 lmstudio provider
+  "tmux.client": "codex", // P5.6.14-R1: 默认 codex client
+  "runner.default": "lmstudio", // 兼容字段，默认 lmstudio
   "pi.enabled": true, // 测试期默认开启 PI
   "tooling.mode": "autonomous", // P5.5: 测试期统一 autonomous（LLM 自主决策 tool_calls）
   "tooling.allow": ["tts", "asr", "vision", "mem", "bash", "browser", "desktop", "read_file", "write_file", "edit_file"], // P5.6.8-R4g: PI 四工具直达
@@ -190,7 +233,148 @@ export async function getMemoryInjectConfig(
 }
 
 // ============================================
-// M5: Policy & Runner 配置
+// P5.6.14-R1: 运行形态配置（Kind/Provider/Client）
+// ============================================
+
+/**
+ * 从 runner.default 映射到 runtime.kind/provider/client
+ * P5.6.14-R1: 兼容映射层（只读）
+ * P5.6.14-R1b: 使用 AgentProvider/TmuxClient 类型
+ */
+function mapRunnerToKindProviderClient(
+  runner: "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code" | undefined
+): { kind: "agent" | "tmux"; provider?: AgentProvider; client?: TmuxClient } {
+  if (!runner) {
+    return { kind: "agent", provider: "lmstudio" };
+  }
+
+  // codex|claude-code -> tmux + client
+  if (runner === "codex" || runner === "claude-code") {
+    return { kind: "tmux", client: runner };
+  }
+
+  // lmstudio|openai|minimax -> agent + provider
+  if (runner === "lmstudio" || runner === "openai") {
+    return { kind: "agent", provider: runner };
+  }
+
+  // llama|claude -> agent + provider=lmstudio（兼容降级）
+  return { kind: "agent", provider: "lmstudio" };
+}
+
+/**
+ * 获取运行形态
+ * P5.6.14-R1: 优先读新字段，无新字段时从 runner.default 映射
+ *
+ * @param projectDir 工作区路径
+ * @returns 运行形态（agent | tmux）
+ */
+export async function getRuntimeKind(
+  projectDir: string
+): Promise<"agent" | "tmux"> {
+  const workspaceConfig = await loadWorkspaceConfig(projectDir);
+
+  // 优先读新字段
+  if (workspaceConfig["runtime.kind"]) {
+    return workspaceConfig["runtime.kind"];
+  }
+
+  // Fallback: 从 runner.default 映射
+  const runner = workspaceConfig["runner.default"];
+  return mapRunnerToKindProviderClient(runner).kind;
+}
+
+/**
+ * 获取 Agent Provider
+ * P5.6.14-R1: 优先读新字段，无新字段时从 runner.default 映射
+ * P5.6.14-R1b: 使用 AgentProvider 类型
+ *
+ * @param projectDir 工作区路径
+ * @returns Agent Provider（lmstudio | minimax | openai | none）
+ */
+export async function getAgentProvider(
+  projectDir: string
+): Promise<AgentProvider | "none"> {
+  const workspaceConfig = await loadWorkspaceConfig(projectDir);
+
+  // 优先读新字段
+  if (workspaceConfig["agent.provider"]) {
+    return workspaceConfig["agent.provider"];
+  }
+
+  // Fallback: 从 runner.default 映射
+  const runner = workspaceConfig["runner.default"];
+  const mapped = mapRunnerToKindProviderClient(runner);
+  return (mapped.provider as AgentProvider) || "none";
+}
+
+/**
+ * 获取 Tmux Client
+ * P5.6.14-R1: 优先读新字段，无新字段时从 runner.default 映射
+ * P5.6.14-R1b: 使用 TmuxClient 类型
+ *
+ * @param projectDir 工作区路径
+ * @returns Tmux Client（codex | claude-code | none）
+ */
+export async function getTmuxClient(
+  projectDir: string
+): Promise<TmuxClient | "none"> {
+  const workspaceConfig = await loadWorkspaceConfig(projectDir);
+
+  // 优先读新字段
+  if (workspaceConfig["tmux.client"]) {
+    return workspaceConfig["tmux.client"];
+  }
+
+  // Fallback: 从 runner.default 映射
+  const runner = workspaceConfig["runner.default"];
+  const mapped = mapRunnerToKindProviderClient(runner);
+  return (mapped.client as TmuxClient) || "none";
+}
+
+/**
+ * 设置运行形态（写配置只写新字段）
+ *
+ * @param projectDir 工作区路径
+ * @param kind 运行形态
+ */
+export async function setRuntimeKind(
+  projectDir: string,
+  kind: "agent" | "tmux"
+): Promise<void> {
+  await saveWorkspaceConfig(projectDir, { "runtime.kind": kind });
+}
+
+/**
+ * 设置 Agent Provider（写配置只写新字段）
+ * P5.6.14-R1b: 使用 AgentProvider 类型
+ *
+ * @param projectDir 工作区路径
+ * @param provider Agent Provider
+ */
+export async function setAgentProvider(
+  projectDir: string,
+  provider: AgentProvider
+): Promise<void> {
+  await saveWorkspaceConfig(projectDir, { "agent.provider": provider });
+}
+
+/**
+ * 设置 Tmux Client（写配置只写新字段）
+ * P5.6.14-R1b: 使用 TmuxClient 类型
+ *
+ * @param projectDir 工作区路径
+ * @param client Tmux Client
+ */
+export async function setTmuxClient(
+  projectDir: string,
+  client: TmuxClient
+): Promise<void> {
+  await saveWorkspaceConfig(projectDir, { "tmux.client": client });
+}
+
+// ============================================
+// M5: Policy & Runner 配置（兼容层）
 // ============================================
 
 /**
@@ -220,7 +404,8 @@ export async function setPolicyMode(
 }
 
 /**
- * 获取默认执行臂
+ * 获取默认执行臂（兼容层，只读）
+ * P5.6.14-R1: 从新字段反向映射（只读兼容）
  *
  * @param projectDir 工作区路径
  * @returns 默认执行臂（lmstudio | llama | claude | openai | codex | claude-code）
@@ -229,11 +414,30 @@ export async function getDefaultRunner(
   projectDir: string
 ): Promise<"lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code"> {
   const workspaceConfig = await loadWorkspaceConfig(projectDir);
+
+  // 优先从新字段反向映射
+  if (workspaceConfig["runtime.kind"] === "tmux") {
+    return (workspaceConfig["tmux.client"] || "codex") as "codex" | "claude-code";
+  }
+
+  if (workspaceConfig["runtime.kind"] === "agent") {
+    const provider = workspaceConfig["agent.provider"];
+    if (provider) {
+      // minimax/llama/claude 映射回 lmstudio（兼容返回）
+      if (provider === "minimax" || provider === "llama" || provider === "claude") {
+        return "lmstudio";
+      }
+      return provider as "lmstudio" | "openai";
+    }
+  }
+
+  // Fallback: 读旧字段
   return workspaceConfig["runner.default"] ?? DEFAULT_WORKSPACE_CONFIG["runner.default"];
 }
 
 /**
- * 设置默认执行臂
+ * 设置默认执行臂（兼容层，写新字段）
+ * P5.6.14-R1: 根据 runner 映射到新字段
  *
  * @param projectDir 工作区路径
  * @param runner 默认执行臂
@@ -251,7 +455,6 @@ export async function setDefaultRunner(
   }
 
   // M5-1: local-only 时禁止 codex/claude-code（需要外网访问）
-  // 注意：claude/openai 也是远程 API，但当前仅在规划中，暂不校验
   if (currentMode === "local-only" && (runner === "codex" || runner === "claude-code")) {
     return {
       success: false,
@@ -262,7 +465,20 @@ export async function setDefaultRunner(
     };
   }
 
-  await saveWorkspaceConfig(projectDir, { "runner.default": runner });
+  // P5.6.14-R1: 映射到新字段
+  const { kind, provider, client } = mapRunnerToKindProviderClient(runner);
+  const configToSave: Partial<WorkspaceConfig> = {
+    "runtime.kind": kind,
+  };
+
+  if (provider) {
+    configToSave["agent.provider"] = provider;
+  }
+  if (client) {
+    configToSave["tmux.client"] = client;
+  }
+
+  await saveWorkspaceConfig(projectDir, configToSave);
   return { success: true };
 }
 

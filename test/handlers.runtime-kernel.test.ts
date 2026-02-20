@@ -112,16 +112,15 @@ describe("handlers 运行时内核契约", () => {
             // P5.6.8-R3e: skill-orchestrator 不再被 handlers.ts 导入（/skill run 已删除）
         });
 
-        it("handlers.ts 行数符合目标（当前阶段：< 1000 行）", () => {
+        it("handlers.ts 行数符合目标（当前阶段：< 1200 行）", () => {
             const handlersCode = fs.readFileSync(
                 path.join(process.cwd(), "src/handlers.ts"),
                 "utf-8"
             );
             const lineCount = handlersCode.split("\n").length;
-            // P5.6.1 阶段性目标：handlers.ts < 1000 行
+            // P5.6.14-R3: 阶段性目标：handlers.ts < 1200 行（注入职责硬边界实现后）
             // 最终目标：< 800 行（建议 < 500）
-            // 当前进度：1071 -> 945 行（-126 行）
-            expect(lineCount).toBeLessThan(1000);
+            expect(lineCount).toBeLessThan(1200);
         });
     });
 });

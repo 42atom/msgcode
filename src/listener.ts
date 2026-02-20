@@ -246,12 +246,8 @@ export const __test = process.env.NODE_ENV === "test"
 
 // ============================================
 // M5-3: 记忆注入闸门与检索注入闭环
+// P5.6.13-R4: 删除关键词闸门，enabled=true 时每轮检索
 // ============================================
-
-/**
- * 记忆注入触发关键词（默认关闭，只在匹配关键词时触发）
- */
-const MEMORY_TRIGGER_KEYWORDS = ["上次", "记得", "复盘", "错误码", "命令", "之前", "历史"];
 
 /**
  * 记忆注入结果
@@ -261,20 +257,28 @@ interface MemoryInjectResult {
   injected: boolean;
   /** 注入后的内容（如果有注入） */
   content: string;
-  /** 调试信息 */
+  /** 调试信息（P5.6.13-R5: 观测字段） */
   debug?: {
-    /** 命中关键词 */
-    hitKeyword?: string;
+    /** 是否尝试检索 */
+    memoryAttempted?: boolean;
+    /** 检索模式（hybrid/fts-only） */
+    memoryMode?: string;
+    /** 向量是否可用 */
+    vectorAvailable?: boolean;
     /** 检索结果数 */
-    hitCount: number;
+    memoryHitCount: number;
+    /** 是否成功注入 */
+    memoryInjected?: boolean;
     /** 注入字符数 */
-    injectedChars: number;
+    memoryInjectedChars: number;
     /** 使用的文件路径（不含绝对路径） */
     usedPaths: string[];
     /** 跳过原因 */
     skippedReason?: string;
     /** 强制注入标志 */
     forced?: boolean;
+    /** 检索延迟（毫秒） */
+    memoryLatencyMs?: number;
   };
 }
 
@@ -292,6 +296,7 @@ async function injectMemory(
   force: boolean = false
 ): Promise<MemoryInjectResult> {
   const debug = process.env.MEMORY_DEBUG === "1";
+  const startTime = Date.now(); // P5.6.13-R5: 追踪延迟
 
   // 1. 获取记忆注入配置
   const memConfig = await getMemoryInjectConfig(projectDir);
@@ -303,33 +308,23 @@ async function injectMemory(
         injected: false,
         content,
         debug: {
-          hitCount: 0,
-          injectedChars: 0,
+          memoryAttempted: false,
+          memoryMode: undefined,
+          vectorAvailable: false,
+          memoryHitCount: 0,
+          memoryInjected: false,
+          memoryInjectedChars: 0,
           usedPaths: [],
           skippedReason: "记忆注入未启用",
+          memoryLatencyMs: Date.now() - startTime,
         },
       };
     }
     return { injected: false, content };
   }
 
-  // 3. 检查触发关键词（强制注入时跳过关键词检查）
-  const hitKeyword = MEMORY_TRIGGER_KEYWORDS.find(kw => content.includes(kw));
-  if (!hitKeyword && !force) {
-    if (debug) {
-      return {
-        injected: false,
-        content,
-        debug: {
-          hitCount: 0,
-          injectedChars: 0,
-          usedPaths: [],
-          skippedReason: "未命中触发关键词",
-        },
-      };
-    }
-    return { injected: false, content };
-  }
+  // 3. P5.6.13-R4: 删除关键词闸门，enabled=true 时直接检索
+  // --force-mem 仅做"放宽阈值强制注入"（未来可实现相关度阈值覆盖）
 
   // 4. 提取搜索查询（使用原始内容，避免噪声）
   const query = content.trim().slice(0, 200); // 限制查询长度
@@ -340,10 +335,16 @@ async function injectMemory(
     const path = await import("node:path");
     const store = createMemoryStore();
 
+    // P5.6.13-R4: 获取向量可用状态
+    const vectorAvailable = store.isVectorAvailable();
+
     // 使用 workspace basename 作为 workspaceId（与 memory index 一致，避免跨 workspace 泄露）
     const workspaceId = path.basename(projectDir);
     const results = store.search(workspaceId, query, memConfig.topK);
     store.close();
+
+    const latencyMs = Date.now() - startTime;
+    const memoryMode = vectorAvailable ? "hybrid" : "fts-only"; // P5.6.13-R5: 模式标识
 
     if (results.length === 0) {
       if (debug) {
@@ -351,12 +352,16 @@ async function injectMemory(
           injected: false,
           content,
           debug: {
-            hitKeyword,
-            hitCount: 0,
-            injectedChars: 0,
+            memoryAttempted: true,
+            memoryMode,
+            vectorAvailable,
+            memoryHitCount: 0,
+            memoryInjected: false,
+            memoryInjectedChars: 0,
             usedPaths: [],
             skippedReason: "无搜索结果",
             forced: force,
+            memoryLatencyMs: latencyMs,
           },
         };
       }
@@ -388,12 +393,16 @@ async function injectMemory(
           injected: false,
           content,
           debug: {
-            hitKeyword,
-            hitCount: results.length,
-            injectedChars: 0,
+            memoryAttempted: true,
+            memoryMode,
+            vectorAvailable,
+            memoryHitCount: results.length,
+            memoryInjected: false,
+            memoryInjectedChars: 0,
             usedPaths: [],
             skippedReason: "证据块超出字符限制",
             forced: force,
+            memoryLatencyMs: latencyMs,
           },
         };
       }
@@ -412,11 +421,14 @@ async function injectMemory(
     if (debug) {
       logger.debug("记忆注入已触发", {
         module: "listener",
-        hitKeyword,
-        hitCount: results.length,
-        injectedChars,
+        memoryMode,
+        vectorAvailable,
+        memoryHitCount: results.length,
+        memoryInjected: true,
+        memoryInjectedChars: injectedChars,
         usedPaths,
         forced: force,
+        memoryLatencyMs: latencyMs,
       });
     }
 
@@ -424,11 +436,15 @@ async function injectMemory(
       injected: true,
       content: injectedContent,
       debug: {
-        hitKeyword,
-        hitCount: results.length,
-        injectedChars,
+        memoryAttempted: true,
+        memoryMode,
+        vectorAvailable,
+        memoryHitCount: results.length,
+        memoryInjected: true,
+        memoryInjectedChars: injectedChars,
         usedPaths,
         forced: force,
+        memoryLatencyMs: latencyMs,
       },
     };
   } catch (error) {
@@ -443,12 +459,16 @@ async function injectMemory(
         injected: false,
         content,
         debug: {
-          hitKeyword,
-          hitCount: 0,
-          injectedChars: 0,
+          memoryAttempted: true,
+          memoryMode: undefined,
+          vectorAvailable: false,
+          memoryHitCount: 0,
+          memoryInjected: false,
+          memoryInjectedChars: 0,
           usedPaths: [],
           skippedReason: `搜索失败: ${error instanceof Error ? error.message : String(error)}`,
           forced: force,
+          memoryLatencyMs: Date.now() - startTime,
         },
       };
     }

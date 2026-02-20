@@ -51,6 +51,31 @@ function resolveIndexTtsConfig(root: string): string {
   return join(root, "checkpoints", "config.yaml");
 }
 
+function resolveQwenRoot(): string {
+  const raw = (process.env.QWEN_TTS_ROOT || "").trim();
+  if (raw) return resolve(expandHome(raw));
+  const fallback = "/Users/admin/GitProjects/GithubDown/qwen3-tts-apple-silicon";
+  return resolve(fallback);
+}
+
+function resolveQwenPython(root: string): string {
+  const raw = (process.env.QWEN_TTS_PYTHON || "").trim();
+  if (raw) return resolve(expandHome(raw));
+  return join(root, ".venv", "bin", "python");
+}
+
+function resolveQwenCustomModel(root: string): string {
+  const raw = (process.env.QWEN_TTS_MODEL_CUSTOM || "").trim();
+  if (raw) return resolve(expandHome(raw));
+  return join(root, "models", "Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit");
+}
+
+function resolveQwenCloneModel(root: string): string {
+  const raw = (process.env.QWEN_TTS_MODEL_CLONE || "").trim();
+  if (raw) return resolve(expandHome(raw));
+  return join(root, "models", "Qwen3-TTS-12Hz-0.6B-Base-8bit");
+}
+
 function parseWorkerPids(psOutput: string): number[] {
   const pids: number[] = [];
   const lines = (psOutput || "").split("\n");
@@ -88,12 +113,62 @@ export async function probeTts(options?: ProbeOptions): Promise<ProbeResult> {
   const issues: string[] = [];
 
   const timeout = options?.timeout ?? 1500;
-  const backend = (process.env.TTS_BACKEND || "indextts").trim();
+  const backend = (process.env.TTS_BACKEND || "qwen").trim().toLowerCase();
   // P0: 默认关闭常驻 worker（稳定优先）；只有显式配置 INDEX_TTS_USE_WORKER=1 才开启
   const useWorker = (process.env.INDEX_TTS_USE_WORKER || "0") !== "0";
 
   details.backend = backend;
   details.useWorker = useWorker;
+
+  // Qwen backend probe
+  if (backend === "qwen") {
+    const root = resolveQwenRoot();
+    const python = resolveQwenPython(root);
+    const customModel = resolveQwenCustomModel(root);
+    const cloneModel = resolveQwenCloneModel(root);
+    const refAudio = (process.env.QWEN_TTS_REF_AUDIO || "").trim();
+
+    details.qwen = {
+      root,
+      python,
+      customModel,
+      cloneModel,
+      refAudio: refAudio || undefined,
+      voice: process.env.QWEN_TTS_VOICE || "Vivian",
+      instruct: process.env.QWEN_TTS_INSTRUCT || "Normal tone",
+    };
+
+    const rootOk = existsSync(root);
+    const pythonOk = existsSync(python);
+    const customModelOk = existsSync(customModel);
+    const cloneModelOk = existsSync(cloneModel);
+    const refAudioOk = !refAudio || existsSync(expandHome(refAudio));
+
+    details.qwenHealth = {
+      rootOk,
+      pythonOk,
+      customModelOk,
+      cloneModelOk,
+      refAudioOk,
+    };
+
+    if (!rootOk) issues.push("QWEN_TTS_ROOT 不存在");
+    if (!pythonOk) issues.push("QWEN_TTS_PYTHON 不存在");
+    if (!customModelOk) issues.push("QWEN_TTS_MODEL_CUSTOM 不存在");
+    if (!refAudioOk) issues.push("QWEN_TTS_REF_AUDIO 不存在");
+
+    const status: ProbeResult["status"] = issues.length > 0 ? "warning" : "pass";
+
+    return {
+      name: "tts",
+      status,
+      message: issues.length > 0 ? `Qwen TTS 配置不完整: ${issues.join("; ")}` : "Qwen TTS 检查通过",
+      details,
+      fixHint: issues.length > 0
+        ? "检查 ~/.config/msgcode/.env 的 Qwen 配置（QWEN_TTS_ROOT/QWEN_TTS_PYTHON/QWEN_TTS_MODEL_CUSTOM）"
+        : undefined,
+    };
+  }
 
   // P0: “生效值”口径（msgcode 会对缺省的 IndexTTS env 注入稳定默认值）
   const effective = {
