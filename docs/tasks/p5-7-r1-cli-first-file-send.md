@@ -5,8 +5,8 @@
 ## 目标（冻结）
 
 1. 新增可调用能力命令：`msgcode file send --path <path> [--caption "..."] [--mime "..."]`。
-2. 新增机器可读帮助：`msgcode help --json`，让模型可先读能力再执行。
-3. 固定模型调用流程：`help --json -> bash 调 CLI -> 返回发送结果 -> 继续下一任务`。
+2. 新增机器可读帮助：`msgcode help-docs --json`，让模型可先读能力再执行。
+3. 固定模型调用流程：`help-docs --json -> bash 调 CLI -> 返回发送结果 -> 继续下一任务`。
 4. 口径固定：系统不做路径/可读/workspace 边界校验，只限制文件大小不超过 `1GB`。
 
 ## 背景（问题本质）
@@ -38,7 +38,7 @@
 
 ### 3) 帮助合同（固定）
 
-- `msgcode help --json` 必须包含：
+- `msgcode help-docs --json` 必须包含：
   - `file send` 命令名
   - 必填/可选参数
   - 成功与失败示例
@@ -73,7 +73,7 @@
 
 提交建议：`help-json-contract`
 
-1. 实现 `msgcode help --json`。
+1. 实现 `msgcode help-docs --json`。
 2. 将 `file send` 合同落入 JSON 帮助输出。
 
 ### R3：大小限制
@@ -87,7 +87,7 @@
 
 提交建议：`regression-lock`
 
-1. `help --json` 含 `file send` 合同。
+1. `help-docs --json` 含 `file send` 合同。
 2. 小文件发送成功。
 3. `>1GB` 返回 `SIZE_EXCEEDED`。
 4. 不新增 `.only/.skip`。
@@ -98,7 +98,7 @@
 2. `npm test`（0 fail）
 3. `npm run docs:check`
 4. 冒烟：
-   - `msgcode help --json` 可见 `file send`
+   - `msgcode help-docs --json` 可见 `file send`
    - `msgcode file send` 小文件成功
    - 大文件触发 `SIZE_EXCEEDED`
 
@@ -124,7 +124,7 @@
 - npm run docs:check:
 
 ## 关键证据
-- help --json 包含 file send:
+- help-docs --json 包含 file send:
 - 小文件发送:
 - 大文件超限:
 
@@ -145,7 +145,7 @@
 ## 目标（冻结）
 1. <能力目标1>
 2. <能力目标2>
-3. <模型调用路径：help --json -> bash -> msgcode 子命令>
+3. <模型调用路径：help-docs --json -> bash -> msgcode 子命令>
 
 ## 范围
 - <src 文件>
