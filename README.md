@@ -42,36 +42,56 @@ npx tsx src/cli.ts /desktop click --selector '{"byRole": "AXButton"}' --phrase "
 
 ---
 
-## 简介
+## 产品定义
 
-msgcode 是一个运行在 Mac 上的 AI 智能体系统，默认以 iMessage 作为优先通道，通过群组路由实现多 Agent 会话。无需云服务器，简化运维。
+### 软件介绍
 
-### 核心特性
+msgcode 是一个运行在 macOS 上的私有智能体基座。  
+它面向“本地隐私处理 + 远程算力协作”的混合场景，帮助你把个人任务编排、数据处理和自动化执行沉淀成可复用能力。
 
-- **iMessage 集成**: 基于 `imsg rpc`（无 SDK / 无 AppleScript）
-- **群组路由**: 不同群组 → 对应工作区
-- **双向通信**: iMessage → tmux → Claude/LM Studio → iMessage
-- **JSONL 读取**: claude 和 claude-code 优先 JSONL 日志读取（pane 为 fallback），确保响应完整准确
-- **安全机制**: 白名单验证 + owner 收口
+### 一句话
+
+在本地建立“智能体 + 终端管道”的可控系统，让你既能利用本地算力做隐私闭环，也能在需要时调用订阅算力完成高强度任务。
+
+### 系统需求
+
+- 硬件：Mac mini / MacBook，建议 Apple Silicon（M 系列）
+- 内存：建议 32GB+（内存越大，本地模型能力与并发稳定性越好）
+- 系统：macOS（长期运行建议开启常驻进程与会话保活）
+
+### 模型策略
+
+- 本地模型用于隐私优先与离线兜底
+- 系统不绑定单一模型，支持逐步接入多模型与多供应商
+- 在隐私、成本、速度之间按任务动态选择执行路径
+
+### 基础结构（分层不分包）
+
+- `agent`：本地智能体执行层（本地模型 + 工具编排 + 会话上下文）
+- `client`：终端管道层（tmux 会话转发，支持手机端一键唤起 Codex / Claude Code）
+- `services + tools`：文件、命令、语音等能力以服务化方式暴露，供智能体按需调用
+- `desktop`（可选）：本地控制台与运行观测入口，用于会话状态查看、任务触发与日志排查
+- `GUI`（规划中）：后续提供图形化管理界面，当前以终端与手机端为主
+
+### 主要能力
+
+- 任务编排：把多步骤工作流固化为可重复执行的流程
+- 私有数据处理：本地优先，减少敏感数据外发
+- 手机远程协作：在 iMessage 侧发起、观察、接管任务
+- 多模型协同：本地与远程模型按场景切换
+- 可运维可审计：日志、状态、产物可追踪
 
 ### 双管道边界（固定约束）
 
-- **tmux 管道（codex/claude-code）**：只做“忠实转发与回传”，不注入 SOUL/记忆等业务语义。
-- **direct 管道（lmstudio + openclaw 私有实现）**：承载 SOUL、记忆、tool loop 等智能体能力。
-- 两条管道职责隔离，配置独立，不互相隐式继承行为。
+- `client` 管道（codex/claude-code）：只做忠实转发与回传，不注入 SOUL/记忆等业务语义
+- `agent` 管道（lmstudio、openai、minimax 等）：承载 SOUL、记忆、tool loop 等智能体能力
+- 两条管道职责隔离，配置独立，不互相隐式继承行为
 
 ---
 
 ## 快速开始
 
-### 1. 系统要求
-
-- macOS (需授予 Terminal/IDE "完全磁盘访问权限")
-- Node.js >= 18.0.0
-- iMessage 已登录
-- Claude Code 或 LM Studio 已安装
-
-### 2. 安装
+### 1. 安装
 
 ```bash
 # 克隆项目
@@ -89,7 +109,7 @@ msgcode init
 - `~/.config/msgcode/souls/active.json`（全局 SOUL 激活映射）
 - `~/.config/msgcode/skills/`（全局 Skills 根目录）
 
-### 3. 配置 ~/.config/msgcode/.env
+### 2. 配置 ~/.config/msgcode/.env
 
 ```bash
 # 配置白名单
@@ -102,17 +122,17 @@ IMSG_PATH=/Users/<you>/msgcode/vendor/imsg/v0.4.0/imsg
 WORKSPACE_ROOT=/Users/<you>/msgcode-workspaces
 ```
 
-### 4. 启动 Bot
+### 3. 启动 Bot
 
 ```bash
 # 后台启动
 msgcode start
 
 # 或前台 debug
-msgcode start debug
+msgcode start -d
 ```
 
-### 5. 绑定群聊
+### 4. 绑定群聊
 
 1. 在 iMessage 里手动建一个群聊，把 msgcode 的 iMessage 账号拉进群
 2. 在群里发送：
@@ -203,9 +223,9 @@ Tool Bus 详细命令请参考 `/help` 或文档 [docs/toolbus](./docs/toolbus/)
 
 ---
 
-## LM Studio（默认执行臂）
+## LM Studio（默认 provider）
 
-当前默认执行臂固定为 LM Studio。`mlx` 仅保留兼容别名，会归一化到 `lmstudio`。
+默认运行形态为 `agent`，默认 provider 为 `lmstudio`。`mlx` 仅保留兼容别名，会归一化到 `lmstudio`。
 
 ### 特性
 
@@ -314,4 +334,4 @@ MIT
 
 ---
 
-*更新: 2026-02-10*
+*更新: 2026-02-20*
