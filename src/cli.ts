@@ -240,6 +240,18 @@ async function loadHelpDocsCommand() {
   program.addCommand(createHelpDocsCommand());
 }
 
+// Web 命令组（P5.7-R2）
+async function loadWebCommands() {
+  const { createWebCommand } = await import("./cli/web.js");
+  program.addCommand(createWebCommand());
+}
+
+// System 命令组（P5.7-R2）
+async function loadSystemCommands() {
+  const { createSystemCommand } = await import("./cli/system.js");
+  program.addCommand(createSystemCommand());
+}
+
 // 主入口（异步）
 async function main() {
   // P0: 仅按需加载子命令，避免在"未初始化配置"时也强制 import 导致 CLI 直接崩溃。
@@ -265,6 +277,12 @@ async function main() {
   if (top === "file") {
     await loadFileCommands();
   }
+  if (top === "web") {
+    await loadWebCommands();
+  }
+  if (top === "system") {
+    await loadSystemCommands();
+  }
   if (top === "help-docs") {
     await loadHelpDocsCommand();
   }
@@ -276,6 +294,8 @@ async function main() {
     await loadPreflightCommands();
     await loadRunCommands();
     await loadFileCommands();
+    await loadWebCommands();
+    await loadSystemCommands();
     await loadHelpDocsCommand();
   }
   program.parse();

@@ -10,6 +10,8 @@ import { Command } from "commander";
 import { randomUUID } from "node:crypto";
 import type { Envelope, Diagnostic } from "../memory/types.js";
 import { getFileSendContract } from "./file.js";
+import { getWebCommandContract } from "./web.js";
+import { getSystemCommandContract } from "./system.js";
 
 // ============================================
 // 类型定义
@@ -29,7 +31,7 @@ interface HelpCommandContract {
 
 interface HelpData {
   version: string;
-  commands: HelpCommandContract[];
+  commands: Record<string, unknown>[];
 }
 
 // ============================================
@@ -92,9 +94,13 @@ export function createHelpDocsCommand(): Command {
         const version = getVersion();
 
         // 构建命令合同列表
-        const commands: HelpCommandContract[] = [
+        const commands: Record<string, unknown>[] = [
           // File 命令组（P5.7-R1）
-          getFileSendContract(),
+          getFileSendContract() as Record<string, unknown>,
+          // Web 命令组（P5.7-R2）
+          ...(getWebCommandContract() as Record<string, unknown>[]),
+          // System 命令组（P5.7-R2）
+          ...(getSystemCommandContract() as Record<string, unknown>[]),
         ];
 
         const data: HelpData = {
@@ -120,25 +126,35 @@ export function createHelpDocsCommand(): Command {
           console.log("");
 
           for (const cmd of commands) {
-            console.log(`  ${cmd.name}`);
-            console.log(`    ${cmd.description}`);
+            const command = cmd as {
+              name: string;
+              description: string;
+              options?: {
+                required?: Record<string, string>;
+                optional?: Record<string, string>;
+              };
+              errorCodes?: string[];
+            };
 
-            if (cmd.options?.required) {
+            console.log(`  ${command.name}`);
+            console.log(`    ${command.description}`);
+
+            if (command.options?.required) {
               console.log("    必填参数:");
-              for (const [opt, desc] of Object.entries(cmd.options.required)) {
+              for (const [opt, desc] of Object.entries(command.options.required)) {
                 console.log(`      ${opt}: ${desc}`);
               }
             }
 
-            if (cmd.options?.optional) {
+            if (command.options?.optional) {
               console.log("    可选参数:");
-              for (const [opt, desc] of Object.entries(cmd.options.optional)) {
+              for (const [opt, desc] of Object.entries(command.options.optional)) {
                 console.log(`      ${opt}: ${desc}`);
               }
             }
 
-            if (cmd.errorCodes) {
-              console.log(`    错误码：${cmd.errorCodes.join(", ")}`);
+            if (command.errorCodes) {
+              console.log(`    错误码：${command.errorCodes.join(", ")}`);
             }
 
             console.log("");
