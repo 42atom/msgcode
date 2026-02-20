@@ -55,7 +55,7 @@
 7. 每个能力必须提供至少 1 条真实执行成功证据（非 mock、非静态断言）。
 8. 每个能力必须提供至少 1 条真实失败证据（真实错误码与错误消息）。
 
-## 系列拆分（P5.7-R1 ~ R8）
+## 系列拆分（P5.7-R1 ~ R8b）
 
 ### R1（P0）：文件发送先跑通
 
@@ -98,6 +98,12 @@
   5. `msgcode system env [--key]`
 - 参考样例映射（Alma）：`file-manager`
 
+### R3a（P0，技术债插单）：runSkill 残留硬清理
+
+- 任务单：`p5-7-r3a-runskill-residue-hard-cut.md`
+- 目标：清理 `runSkill/runAutoSkill/skill-orchestrator` 运行时残留，锁死单一 CLI 主链。
+- 说明：R4 前必须完成，防止历史执行链回流。
+
 ### R4（P1）：记忆与线程检索
 
 - 建议能力：
@@ -132,6 +138,12 @@
   2. `msgcode agent status --id`
 - 参考样例映射（Alma）：`coding-agent`
 
+### R8b（P1，收尾）：SKILL.md 与真实能力合同对齐
+
+- 任务单：`p5-7-r8b-skill-doc-contract-alignment.md`
+- 目标：清理过期命令示例，建立 `SKILL.md -> help-docs --json` 一致性检查。
+- 说明：R8 后执行，作为 P5.7 文档与合同最终收口。
+
 ## 派单顺序与依赖关系（冻结）
 
 ```text
@@ -140,6 +152,9 @@ P5.7-R3（file 域）
 ├── file read（加 --force 边界检查）
 ├── file write（加 --force + --append）
 └── file move/rename/delete/copy/zip（状态变更，需要回归锁）
+
+P5.7-R3a（技术债插单）
+└── runSkill/runAutoSkill/skill-orchestrator 残留硬清理
 
 P5.7-R4（memory/thread 域）
 ├── memory search/add/stats（依赖现有记忆系统）
@@ -159,16 +174,21 @@ P5.7-R7（browser 域）
 
 P5.7-R8（agent 域）
 └── agent run/status（最重，依赖其他域成熟后收尾）
+
+P5.7-R8b（收尾单）
+└── SKILL.md 示例命令与真实 CLI 合同一致性对齐
 ```
 
 ## 任务单文件映射（可直接派发）
 
-1. `p5-7-r3-file-system-domain.md`
-2. `p5-7-r4-memory-thread-domain.md`
-3. `p5-7-r5-todo-schedule-domain.md`
-4. `p5-7-r6-media-gen-domain.md`
-5. `p5-7-r7-browser-domain.md`
-6. `p5-7-r8-agent-domain.md`
+1. `p5-7-r3a-runskill-residue-hard-cut.md`（技术债插单，R4 前执行）
+2. `p5-7-r3-file-system-domain.md`
+3. `p5-7-r4-memory-thread-domain.md`
+4. `p5-7-r5-todo-schedule-domain.md`
+5. `p5-7-r6-media-gen-domain.md`
+6. `p5-7-r7-browser-domain.md`
+7. `p5-7-r8-agent-domain.md`
+8. `p5-7-r8b-skill-doc-contract-alignment.md`（收尾单，R8 后执行）
 
 ## 每个子任务统一验收（硬门）
 

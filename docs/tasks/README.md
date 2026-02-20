@@ -26,6 +26,8 @@
 16. `P5.7-R6`：多模态域（`media *` + `gen *`）
 17. `P5.7-R7`：浏览器域（`browser *`）
 18. `P5.7-R8`：代理域（`agent run/status`）
+19. `P5.7-R3a`：runSkill 残留硬清理（技术债插单，R4 前）
+20. `P5.7-R8b`：SKILL.md 与真实能力合同对齐（收尾单）
 
 ## P5 当前唯一执行主线（冻结）
 
@@ -89,15 +91,18 @@
 8. `P5.7-R6`：多模态域（`media screen` + `gen image/selfie/tts/music`）
 9. `P5.7-R7`：浏览器域（`browser open/click/type`）
 10. `P5.7-R8`：代理域（`agent run/status`）
+11. `P5.7-R8b`：SKILL.md 与真实能力合同对齐（收尾）
 
 ### 派单顺序（冻结）
 
 1. `P5.7-R3`（file 域）
-2. `P5.7-R4`（memory/thread 域）
-3. `P5.7-R5`（todo/schedule 域）
-4. `P5.7-R6`（media/gen 域）
-5. `P5.7-R7`（browser 域）
-6. `P5.7-R8`（agent 域）
+2. `P5.7-R3a`（runSkill 残留清理技术债插单）
+3. `P5.7-R4`（memory/thread 域）
+4. `P5.7-R5`（todo/schedule 域）
+5. `P5.7-R6`（media/gen 域）
+6. `P5.7-R7`（browser 域）
+7. `P5.7-R8`（agent 域）
+8. `P5.7-R8b`（SKILL.md 与真实能力合同对齐收尾）
 
 ## 当前任务单
 
@@ -147,12 +152,14 @@
 - `p5-7-r1b-file-send-real-delivery.md`：P5.7-R1b（文件发送真实交付闭环，禁止合同壳验收）
 - `p5-7-r1c-cli-substrate-capability-baseline.md`：P5.7-R1c（CLI 基座能力硬门任务单）
 - `p5-7-r3-r8-mainline-dispatch-pack.md`：P5.7-R3~R8 总整理与派单包
+- `p5-7-r3a-runskill-residue-hard-cut.md`：P5.7-R3a（runSkill 残留硬清理技术债插单）
 - `p5-7-r3-file-system-domain.md`：P5.7-R3（文件与环境域任务单）
 - `p5-7-r4-memory-thread-domain.md`：P5.7-R4（记忆与线程域任务单）
 - `p5-7-r5-todo-schedule-domain.md`：P5.7-R5（编排与调度域任务单）
 - `p5-7-r6-media-gen-domain.md`：P5.7-R6（多模态域任务单）
 - `p5-7-r7-browser-domain.md`：P5.7-R7（浏览器域任务单）
 - `p5-7-r8-agent-domain.md`：P5.7-R8（代理域任务单）
+- `p5-7-r8b-skill-doc-contract-alignment.md`：P5.7-R8b（SKILL.md 与真实能力合同对齐收尾单）
 
 ## 规则
 
