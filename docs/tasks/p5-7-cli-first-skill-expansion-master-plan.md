@@ -4,9 +4,10 @@
 
 ## 目标（冻结）
 
-1. 采用 Alma 风格的 **CLI-First** 能力扩展路径：模型先读能力清单，再调用命令。
+1. 采用 Unix 风格的 **CLI-First** 能力扩展路径：模型先读能力清单，再调用命令。
 2. 将 msgcode 的能力扩展统一为 `domain/action` 命令合同，避免隐式链路漂移。
 3. 以 Skill 作为“使用指引层”，以 CLI 作为“执行合同层”，实现可测、可回归、可派单。
+4. Alma 仅作能力清单设计参考样例，不是协议来源，也不是实现约束。
 
 ## 基座边界（新增冻结）
 
@@ -57,7 +58,7 @@
   1. `msgcode web search --q <query>`
   2. `msgcode web fetch --url <url>`
   3. `msgcode system info [--json]`
-- 对标 Alma skills：`web-search`、`web-fetch`、`system-info`
+- 参考样例映射（Alma）：`web-search`、`web-fetch`、`system-info`
 
 ### R3（P1）：文件管理能力
 
@@ -66,40 +67,40 @@
   2. `msgcode file move ...`
   3. `msgcode file rename ...`
   4. `msgcode file zip ...`
-- 对标 Alma skill：`file-manager`
+- 参考样例映射（Alma）：`file-manager`
 
 ### R4（P1）：记忆与线程检索
 
 - 建议能力：
   1. `msgcode memory add|search|stats ...`
   2. `msgcode thread list|info|switch ...`
-- 对标 Alma skills：`memory-management`、`thread-management`
+- 参考样例映射（Alma）：`memory-management`、`thread-management`
 
 ### R5（P1）：任务编排
 
 - 建议能力：
   1. `msgcode todo add|list|done ...`
   2. `msgcode schedule add|list|run ...`
-- 对标 Alma skills：`todo`、`scheduler`
+- 参考样例映射（Alma）：`todo`、`scheduler`
 
 ### R6（P1）：可视化取证与媒体辅助
 
 - 建议能力：
   1. `msgcode screen shot --out <path>`
   2. `msgcode voice tts ...`（若已有命令则做合同化）
-- 对标 Alma skills：`screenshot`、`voice`
+- 参考样例映射（Alma）：`screenshot`、`voice`
 
 ### R7（P2）：浏览器自动化
 
 - 建议能力：
   1. `msgcode browser open|click|type|snapshot ...`
-- 对标 Alma skills：`agent-browser`、`browser`
+- 参考样例映射（Alma）：`agent-browser`、`browser`
 
 ### R8（P2）：编码子代理委派
 
 - 建议能力：
   1. `msgcode agent code run --dir <path> "<task>"`
-- 对标 Alma skill：`coding-agent`
+- 参考样例映射（Alma）：`coding-agent`
 
 ## 每个子任务统一验收（硬门）
 

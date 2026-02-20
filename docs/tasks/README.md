@@ -15,7 +15,7 @@
 5. `P5.6.13-R1A`：Tool Calling 架构调研（openclaw / pi-mono / msgcode 对照）
 6. `P5.6.13-R2`：Workspace 对话落盘（`.msgcode/threads`）
 7. `P5.6.14`：运行臂二分（agent/tmux）+ provider 下沉（专项）
-8. `P5.7-PLAN`：CLI-First Skill 能力扩充总纲（对齐 Alma 使用模式）
+8. `P5.7-PLAN`：CLI-First Skill 能力扩充总纲（Unix 风格 CLI，Alma 仅作参考样例）
 9. `P5.7-R1`：CLI-First 文件发送先跑通（`help --json` + `file send`，合同层）
 10. `P5.7-R2`：实时信息三件套（`web search` / `web fetch` / `system info`）
 11. `P5.7-R1b`：文件发送真实交付闭环（禁止“合同壳即通过”）
