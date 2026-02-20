@@ -228,9 +228,21 @@ async function loadSkillCommands() {
   program.addCommand(createSkillCommand());
 }
 
+// File 命令组（P5.7-R1）
+async function loadFileCommands() {
+  const { createFileCommand } = await import("./cli/file.js");
+  program.addCommand(createFileCommand());
+}
+
+// Help 命令（P5.7-R1：机器可读帮助）
+async function loadHelpCommand() {
+  const { createHelpCommand } = await import("./cli/help.js");
+  program.addCommand(createHelpCommand());
+}
+
 // 主入口（异步）
 async function main() {
-  // P0: 仅按需加载子命令，避免在“未初始化配置”时也强制 import 导致 CLI 直接崩溃。
+  // P0: 仅按需加载子命令，避免在"未初始化配置"时也强制 import 导致 CLI 直接崩溃。
   // 例：用户首次使用时需要能运行 `msgcode init` 来生成 ~/.config/msgcode/.env。
   const argv = process.argv.slice(2);
   const top = (argv[0] ?? "").toLowerCase();
@@ -250,6 +262,12 @@ async function main() {
   if (top === "skill" || top === "skills") {
     await loadSkillCommands();
   }
+  if (top === "file") {
+    await loadFileCommands();
+  }
+  if (top === "help") {
+    await loadHelpCommand();
+  }
 
   // 对于 help（无参数或 --help），也加载一遍子命令，让帮助信息完整
   if (!top || top === "-h" || top === "--help" || top === "help") {
@@ -257,6 +275,8 @@ async function main() {
     await loadJobCommands();
     await loadPreflightCommands();
     await loadRunCommands();
+    await loadFileCommands();
+    await loadHelpCommand();
   }
   program.parse();
 }
