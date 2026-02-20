@@ -8,8 +8,8 @@
    - `msgcode web search --q <query>`
    - `msgcode web fetch --url <url>`
    - `msgcode system info [--json]`
-2. 三项能力必须进入 `msgcode help --json` 机器可读合同。
-3. 模型调用路径固定：`help --json -> bash 调用 -> 读取结构化结果`。
+2. 三项能力必须进入 `msgcode help-docs --json` 机器可读合同。
+3. 模型调用路径固定：`help-docs --json -> bash 调用 -> 读取结构化结果`。
 
 ## 背景（问题本质）
 
@@ -76,7 +76,7 @@
 
 提交建议：`help-json-triad-contract`
 
-1. `msgcode help --json` 增加三项能力与参数定义。
+1. `msgcode help-docs --json` 增加三项能力与参数定义。
 2. 补示例调用与错误码说明。
 
 ### R3：异常与超时收口
@@ -93,7 +93,7 @@
 1. 三命令存在性测试。
 2. 参数校验测试。
 3. 成功/失败路径测试。
-4. `help --json` 合同测试。
+4. `help-docs --json` 合同测试。
 
 ## 硬验收（必须全过）
 
@@ -131,7 +131,7 @@
 - web search:
 - web fetch:
 - system info:
-- help --json 合同:
+- help-docs --json 合同:
 
 ## 风险与遗留
 - 风险:
