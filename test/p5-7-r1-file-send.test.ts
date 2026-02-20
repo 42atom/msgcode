@@ -3,7 +3,7 @@
  *
  * 验证：
  * 1. file send 命令合同
- * 2. help --json 包含 file send
+ * 2. help-docs --json 包含 file send
  * 3. 大小限制检查
  */
 
