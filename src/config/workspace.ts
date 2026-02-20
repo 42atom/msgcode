@@ -115,6 +115,14 @@ export interface WorkspaceConfig {
    * - 默认：[]
    */
   "tooling.require_confirm"?: ToolName[];
+
+  // ==================== P5.7-R3i: 文件工具权限策略 ====================
+  /**
+   * 文件工具作用域策略：workspace（默认）| unrestricted
+   * - workspace: 仅允许访问工作区内的文件（安全模式）
+   * - unrestricted: 允许访问全盘文件（agent 场景）
+   */
+  "tooling.fs_scope"?: FsScope;
 }
 
 /**
@@ -125,6 +133,13 @@ export type ToolingMode = "explicit" | "autonomous" | "tool-calls";
 export type ToolName =
   | "tts" | "asr" | "vision" | "mem" | "bash" | "browser" | "desktop"
   | "read_file" | "write_file" | "edit_file";
+
+/**
+ * P5.7-R3i: 文件工具作用域策略
+ * - workspace: 仅允许访问工作区内的文件（默认安全）
+ * - unrestricted: 允许访问全盘文件（agent 场景）
+ */
+export type FsScope = "workspace" | "unrestricted";
 
 /**
  * P5.6.14-R1b: Agent Provider 类型（agent 模式下有效）
@@ -158,6 +173,7 @@ export const DEFAULT_WORKSPACE_CONFIG: Required<WorkspaceConfig> = {
   "tooling.mode": "autonomous", // P5.5: 测试期统一 autonomous（LLM 自主决策 tool_calls）
   "tooling.allow": ["tts", "asr", "vision", "mem", "bash", "browser", "desktop", "read_file", "write_file", "edit_file"], // P5.6.8-R4g: PI 四工具直达
   "tooling.require_confirm": [], // 默认不要求确认
+  "tooling.fs_scope": "workspace", // P5.7-R3i: 默认工作区内安全模式
 };
 
 /**
@@ -560,6 +576,32 @@ export async function setToolingRequireConfirm(
   requireConfirm: ToolName[]
 ): Promise<void> {
   await saveWorkspaceConfig(projectDir, { "tooling.require_confirm": requireConfirm });
+}
+
+/**
+ * P5.7-R3i: 获取文件工具作用域策略
+ *
+ * @param projectDir 工作区路径
+ * @returns 文件工具作用域（workspace | unrestricted）
+ */
+export async function getFsScope(
+  projectDir: string
+): Promise<"workspace" | "unrestricted"> {
+  const workspaceConfig = await loadWorkspaceConfig(projectDir);
+  return workspaceConfig["tooling.fs_scope"] ?? DEFAULT_WORKSPACE_CONFIG["tooling.fs_scope"];
+}
+
+/**
+ * P5.7-R3i: 设置文件工具作用域策略
+ *
+ * @param projectDir 工作区路径
+ * @param scope 文件工具作用域
+ */
+export async function setFsScope(
+  projectDir: string,
+  scope: "workspace" | "unrestricted"
+): Promise<void> {
+  await saveWorkspaceConfig(projectDir, { "tooling.fs_scope": scope });
 }
 
 // ============================================

@@ -14,7 +14,7 @@
 import type {
   ToolName, ToolSource, ToolPolicy, ToolContext, ToolResult, SideEffectLevel
 } from "./types.js";
-import { loadWorkspaceConfig } from "../config/workspace.js";
+import { loadWorkspaceConfig, getFsScope } from "../config/workspace.js";
 import { runTts } from "../runners/tts.js";
 import { runAsr } from "../runners/asr.js";
 import { runVisionOcr } from "../runners/vision_ocr.js";
@@ -567,12 +567,43 @@ export async function executeTool(
       // P5.6.13-R1A-EXEC: run_skill 已退役
       case "read_file": {
         // P5.6.8-R3: 读取文件内容
-        const { resolve } = await import("node:path");
-        const filePath = resolve(ctx.workspacePath, String(args.path || ""));
+        // P5.7-R3i: 应用 fs_scope 策略
+        const { resolve, isAbsolute } = await import("node:path");
+        const inputPath = String(args.path || "");
 
-        // 安全检查：文件必须在 workspace 内
-        if (!filePath.startsWith(ctx.workspacePath)) {
-          throw new Error("path must be under workspace");
+        // 获取 fs_scope 策略
+        const fsScope = await getFsScope(ctx.workspacePath);
+
+        let filePath: string;
+        if (fsScope === "unrestricted" && isAbsolute(inputPath)) {
+          // unrestricted 模式：允许绝对路径
+          filePath = inputPath;
+        } else {
+          // workspace 模式（默认）：解析为 workspace 内路径
+          filePath = resolve(ctx.workspacePath, inputPath);
+        }
+
+        // P5.7-R3i: workspace 模式下的边界校验
+        if (fsScope === "workspace" && !filePath.startsWith(ctx.workspacePath)) {
+          // P5.7-R3i: 日志包含 fsScope/path
+          logger.warn("File tool path denied by fs_scope policy", {
+            module: "tools-bus",
+            tool,
+            fsScope,
+            inputPath,
+            resolvedPath: filePath,
+            workspacePath: ctx.workspacePath,
+          });
+          result = {
+            ok: false,
+            tool,
+            error: {
+              code: "TOOL_NOT_ALLOWED",
+              message: `path must be under workspace (fsScope: ${fsScope}, path: ${inputPath})`,
+            },
+            durationMs: Date.now() - started,
+          };
+          break;
         }
 
         const content = await withTimeout(
@@ -590,13 +621,44 @@ export async function executeTool(
       }
       case "write_file": {
         // P5.6.8-R3: 整文件写入
-        const { resolve, dirname } = await import("node:path");
-        const filePath = resolve(ctx.workspacePath, String(args.path || ""));
+        // P5.7-R3i: 应用 fs_scope 策略
+        const { resolve, dirname, isAbsolute } = await import("node:path");
+        const inputPath = String(args.path || "");
         const content = String(args.content ?? "");
 
-        // 安全检查
-        if (!filePath.startsWith(ctx.workspacePath)) {
-          throw new Error("path must be under workspace");
+        // 获取 fs_scope 策略
+        const fsScope = await getFsScope(ctx.workspacePath);
+
+        let filePath: string;
+        if (fsScope === "unrestricted" && isAbsolute(inputPath)) {
+          // unrestricted 模式：允许绝对路径
+          filePath = inputPath;
+        } else {
+          // workspace 模式（默认）：解析为 workspace 内路径
+          filePath = resolve(ctx.workspacePath, inputPath);
+        }
+
+        // P5.7-R3i: workspace 模式下的边界校验
+        if (fsScope === "workspace" && !filePath.startsWith(ctx.workspacePath)) {
+          // P5.7-R3i: 日志包含 fsScope/path
+          logger.warn("File tool path denied by fs_scope policy", {
+            module: "tools-bus",
+            tool,
+            fsScope,
+            inputPath,
+            resolvedPath: filePath,
+            workspacePath: ctx.workspacePath,
+          });
+          result = {
+            ok: false,
+            tool,
+            error: {
+              code: "TOOL_NOT_ALLOWED",
+              message: `path must be under workspace (fsScope: ${fsScope}, path: ${inputPath})`,
+            },
+            durationMs: Date.now() - started,
+          };
+          break;
         }
 
         // 确保目录存在
@@ -618,13 +680,44 @@ export async function executeTool(
       }
       case "edit_file": {
         // P5.6.8-R3: 补丁式编辑（禁止整文件覆盖）
-        const { resolve } = await import("node:path");
-        const filePath = resolve(ctx.workspacePath, String(args.path || ""));
+        // P5.7-R3i: 应用 fs_scope 策略
+        const { resolve, isAbsolute } = await import("node:path");
+        const inputPath = String(args.path || "");
         const edits = args.edits as Array<{ oldText: string; newText: string }> | undefined;
 
-        // 安全检查
-        if (!filePath.startsWith(ctx.workspacePath)) {
-          throw new Error("path must be under workspace");
+        // 获取 fs_scope 策略
+        const fsScope = await getFsScope(ctx.workspacePath);
+
+        let filePath: string;
+        if (fsScope === "unrestricted" && isAbsolute(inputPath)) {
+          // unrestricted 模式：允许绝对路径
+          filePath = inputPath;
+        } else {
+          // workspace 模式（默认）：解析为 workspace 内路径
+          filePath = resolve(ctx.workspacePath, inputPath);
+        }
+
+        // P5.7-R3i: workspace 模式下的边界校验
+        if (fsScope === "workspace" && !filePath.startsWith(ctx.workspacePath)) {
+          // P5.7-R3i: 日志包含 fsScope/path
+          logger.warn("File tool path denied by fs_scope policy", {
+            module: "tools-bus",
+            tool,
+            fsScope,
+            inputPath,
+            resolvedPath: filePath,
+            workspacePath: ctx.workspacePath,
+          });
+          result = {
+            ok: false,
+            tool,
+            error: {
+              code: "TOOL_NOT_ALLOWED",
+              message: `path must be under workspace (fsScope: ${fsScope}, path: ${inputPath})`,
+            },
+            durationMs: Date.now() - started,
+          };
+          break;
         }
 
         if (!edits || !Array.isArray(edits) || edits.length === 0) {
