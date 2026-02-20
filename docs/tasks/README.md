@@ -19,7 +19,6 @@
 9. `P5.7-R1`：CLI-First 文件发送先跑通（`help --json` + `file send`，合同层）
 10. `P5.7-R2`：实时信息三件套（`web search` / `web fetch` / `system info`）
 11. `P5.7-R1b`：文件发送真实交付闭环（禁止“合同壳即通过”）
-10. `P5.7-R2`：实时信息三件套（`web search` / `web fetch` / `system info`）
 
 ## P5 当前唯一执行主线（冻结）
 
@@ -113,7 +112,6 @@
 - `p5-7-r1-cli-first-file-send.md`：P5.7-R1（CLI-First 文件发送先跑通，含后续能力扩充模板）
 - `p5-7-r2-realtime-info-triad.md`：P5.7-R2（实时信息三件套任务单）
 - `p5-7-r1b-file-send-real-delivery.md`：P5.7-R1b（文件发送真实交付闭环，禁止合同壳验收）
-- `p5-7-r2-realtime-info-triad.md`：P5.7-R2（实时信息三件套任务单）
 
 ## 规则
 
