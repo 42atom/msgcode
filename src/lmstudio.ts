@@ -21,7 +21,11 @@ import { logger } from "./logger/index.js";
 import { normalizeBaseUrl as normalizeBaseUrlAdapter, fetchWithTimeout } from "./providers/openai-compat-adapter.js";
 import { sanitizeLmStudioOutput as sanitizeCore, dropBeforeLastClosingTag } from "./providers/output-normalizer.js";
 // P5.6.13-R1A-EXEC R3: Provider adapter 契约
-import { buildChatCompletionRequest, parseChatCompletionResponse } from "./providers/openai-compat-adapter.js";
+import {
+    buildChatCompletionRequest,
+    parseChatCompletionResponse,
+    type ParsedChatCompletionWithMeta,
+} from "./providers/openai-compat-adapter.js";
 
 export interface LmStudioChatOptions {
     prompt: string;
@@ -1437,7 +1441,28 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
         timeoutMs,
     });
 
-    const answer = r2.choices[0]?.message?.content ?? "";
+    // P5.7-R3b: 检测二轮格式漂移
+    const parsedMeta = (r2 as typeof r2 & { parsed?: ParsedChatCompletionWithMeta }).parsed;
+    const isMalformedSecondRound = parsedMeta?.secondRoundMalformedToolCall ?? false;
+
+    let answer = r2.choices[0]?.message?.content ?? "";
+
+    // P5.7-R3b: 二轮格式漂移兜底处理
+    // 若命中漂移，返回"工具已执行 + 结构化结果摘要"的可展示文本
+    if (isMalformedSecondRound) {
+        logger.info("Second round malformed tool call detected", {
+            module: "lmstudio",
+            secondRoundMalformedToolCall: true,
+            rawAnswerLength: answer.length,
+        });
+
+        // 从工具执行结果生成结构化摘要
+        const toolResultSummary = typeof toolResult === "string"
+            ? toolResult
+            : JSON.stringify(toolResult, null, 2).slice(0, 1000);
+
+        answer = `工具已执行成功，结果如下：\n\n${toolResultSummary}`;
+    }
 
     // P5.6.8-R4h: 补全观测字段（toolErrorCode/toolErrorMessage/exitCode）
     const toolCallCount = tc ? 1 : 0;
@@ -1479,6 +1504,7 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
 /**
  * 调用 OpenAI 兼容 /v1/chat/completions（返回原始 JSON）
  * P5.6.13-R1A-EXEC R3: 使用 provider adapter 契约
+ * P5.7-R3b: 返回含漂移标记的完整解析结果
  */
 async function callChatCompletionsRaw(params: {
     baseUrl: string;
@@ -1489,7 +1515,7 @@ async function callChatCompletionsRaw(params: {
     temperature: number;
     maxTokens: number;
     timeoutMs: number;
-}): Promise<ChatResponse> {
+}): Promise<ChatResponse & { parsed?: ParsedChatCompletionWithMeta }> {
     const url = `${params.baseUrl}/v1/chat/completions`;
 
     // 添加 stop 参数，防止工具调用标签后继续输出
@@ -1541,6 +1567,9 @@ async function callChatCompletionsRaw(params: {
             },
         }],
     };
+
+    // P5.7-R3b: 附加解析元数据（含漂移标记）
+    (json as ChatResponse & { parsed?: ParsedChatCompletionWithMeta }).parsed = parsed;
 
     return json;
 }
