@@ -17,6 +17,7 @@
 7. `P5.6.14`：运行臂二分（agent/tmux）+ provider 下沉（专项）
 8. `P5.7-PLAN`：CLI-First Skill 能力扩充总纲（对齐 Alma 使用模式）
 9. `P5.7-R1`：CLI-First 文件发送先跑通（`help --json` + `file send`）
+10. `P5.7-R2`：实时信息三件套（`web search` / `web fetch` / `system info`）
 
 ## P5 当前唯一执行主线（冻结）
 
@@ -107,6 +108,7 @@
 - `p5-6-archive-closure-note.md`：P5.6 归档说明（主线完成，转入 P5.7）
 - `p5-7-cli-first-skill-expansion-master-plan.md`：P5.7-PLAN（CLI-First Skill 能力扩充总纲）
 - `p5-7-r1-cli-first-file-send.md`：P5.7-R1（CLI-First 文件发送先跑通，含后续能力扩充模板）
+- `p5-7-r2-realtime-info-triad.md`：P5.7-R2（实时信息三件套任务单）
 
 ## 规则
 
