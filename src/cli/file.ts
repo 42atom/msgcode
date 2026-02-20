@@ -13,9 +13,9 @@
 import { Command } from "commander";
 import { randomUUID } from "node:crypto";
 import type { Envelope, Diagnostic } from "../memory/types.js";
-import { existsSync, statSync, readdirSync, readFileSync, writeFileSync, appendFileSync, mkdirSync } from "node:fs";
+import { existsSync, statSync, readdirSync, readFileSync, writeFileSync, appendFileSync, mkdirSync, renameSync, copyFileSync, unlinkSync } from "node:fs";
 import { readFile, writeFile, appendFile } from "node:fs/promises";
-import { join, relative, isAbsolute, dirname } from "node:path";
+import { join, relative, isAbsolute, dirname, basename } from "node:path";
 import { config } from "../config.js";
 import { homedir } from "node:os";
 
@@ -63,6 +63,32 @@ interface FileWriteData {
   writeResult: "OK" | "ACCESS_DENIED" | "WRITE_FAILED";
   path?: string;
   bytesWritten?: number;
+  errorMessage?: string;
+  errorCode?: string;
+}
+
+interface FileDeleteData {
+  ok: boolean;
+  deleteResult: "OK" | "NOT_FOUND" | "ACCESS_DENIED" | "DELETE_FAILED";
+  path?: string;
+  errorMessage?: string;
+  errorCode?: string;
+}
+
+interface FileMoveData {
+  ok: boolean;
+  moveResult: "OK" | "NOT_FOUND" | "ACCESS_DENIED" | "MOVE_FAILED";
+  from?: string;
+  to?: string;
+  errorMessage?: string;
+  errorCode?: string;
+}
+
+interface FileCopyData {
+  ok: boolean;
+  copyResult: "OK" | "NOT_FOUND" | "ACCESS_DENIED" | "COPY_FAILED";
+  from?: string;
+  to?: string;
   errorMessage?: string;
   errorCode?: string;
 }
@@ -814,20 +840,428 @@ function createFileWriteCommand(): Command {
 }
 
 // ============================================
+// File Delete 命令实现（P5.7-R3-3）
+// ============================================
+
+/**
+ * 创建 file delete 子命令（P5.7-R3-3：删除文件，越界需 --force）
+ */
+function createFileDeleteCommand(): Command {
+  const cmd = new Command("delete");
+
+  cmd
+    .description("删除文件（P5.7-R3-3，越界需 --force）")
+    .argument("<path>", "文件路径")
+    .option("--force", "允许越界删除（默认只允许 workspace 内）")
+    .option("--json", "JSON 格式输出")
+    .action(async (pathArg, options) => {
+      const startTime = Date.now();
+      const command = `msgcode file delete ${pathArg}`;
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      try {
+        // P5.7-R3: 越界检查
+        if (!options.force && isPathOutOfBounds(pathArg)) {
+          errors.push({
+            code: "FILE_DELETE_ACCESS_DENIED",
+            message: `越界删除被拒绝：${pathArg}（需添加 --force）`,
+          });
+          const envelope = createEnvelope<FileDeleteData>(
+            command,
+            startTime,
+            "error",
+            {
+              ok: false,
+              deleteResult: "ACCESS_DENIED",
+              errorCode: "OUT_OF_BOUNDS",
+              errorMessage: `越界删除被拒绝：${pathArg}`,
+            },
+            warnings,
+            errors
+          );
+          if (options.json) {
+            console.log(JSON.stringify(envelope, null, 2));
+          } else {
+            console.error(`错误：${errors[0].message}`);
+          }
+          process.exit(1);
+        }
+
+        // 验证文件存在
+        if (!existsSync(pathArg)) {
+          errors.push({
+            code: "FILE_DELETE_NOT_FOUND",
+            message: `文件不存在：${pathArg}`,
+          });
+          const envelope = createEnvelope<FileDeleteData>(
+            command,
+            startTime,
+            "error",
+            {
+              ok: false,
+              deleteResult: "NOT_FOUND",
+              errorCode: "FILE_NOT_FOUND",
+              errorMessage: `文件不存在：${pathArg}`,
+            },
+            warnings,
+            errors
+          );
+          if (options.json) {
+            console.log(JSON.stringify(envelope, null, 2));
+          } else {
+            console.error(`错误：${errors[0].message}`);
+          }
+          process.exit(1);
+        }
+
+        // 删除文件
+        unlinkSync(pathArg);
+
+        // 成功
+        const envelope = createEnvelope<FileDeleteData>(
+          command,
+          startTime,
+          "pass",
+          {
+            ok: true,
+            deleteResult: "OK",
+            path: pathArg,
+          },
+          warnings,
+          errors
+        );
+
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.log(`文件已删除：${pathArg}`);
+        }
+
+        process.exit(0);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        errors.push({
+          code: "FILE_DELETE_UNEXPECTED_ERROR",
+          message: `删除失败：${message}`,
+        });
+
+        const envelope = createEnvelope<FileDeleteData>(
+          command,
+          startTime,
+          "error",
+          {
+            ok: false,
+            deleteResult: "DELETE_FAILED",
+            errorCode: "DELETE_ERROR",
+            errorMessage: message,
+          },
+          warnings,
+          errors
+        );
+
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.error(`错误：${message}`);
+        }
+        process.exit(1);
+      }
+    });
+
+  return cmd;
+}
+
+// ============================================
+// File Move 命令实现（P5.7-R3-3）
+// ============================================
+
+/**
+ * 创建 file move 子命令（P5.7-R3-3：移动/重命名文件）
+ */
+function createFileMoveCommand(): Command {
+  const cmd = new Command("move");
+
+  cmd
+    .description("移动/重命名文件（P5.7-R3-3，越界需 --force）")
+    .argument("<from>", "源文件路径")
+    .argument("<to>", "目标文件路径")
+    .option("--force", "允许越界操作（默认只允许 workspace 内）")
+    .option("--json", "JSON 格式输出")
+    .action(async (fromArg, toArg, options) => {
+      const startTime = Date.now();
+      const command = `msgcode file move ${fromArg} ${toArg}`;
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      try {
+        // P5.7-R3: 越界检查
+        if ((!options.force && isPathOutOfBounds(fromArg)) ||
+            (!options.force && isPathOutOfBounds(toArg))) {
+          errors.push({
+            code: "FILE_MOVE_ACCESS_DENIED",
+            message: `越界移动被拒绝（需添加 --force）`,
+          });
+          const envelope = createEnvelope<FileMoveData>(
+            command,
+            startTime,
+            "error",
+            {
+              ok: false,
+              moveResult: "ACCESS_DENIED",
+              errorCode: "OUT_OF_BOUNDS",
+              errorMessage: `越界移动被拒绝`,
+            },
+            warnings,
+            errors
+          );
+          if (options.json) {
+            console.log(JSON.stringify(envelope, null, 2));
+          } else {
+            console.error(`错误：${errors[0].message}`);
+          }
+          process.exit(1);
+        }
+
+        // 验证源文件存在
+        if (!existsSync(fromArg)) {
+          errors.push({
+            code: "FILE_MOVE_NOT_FOUND",
+            message: `源文件不存在：${fromArg}`,
+          });
+          const envelope = createEnvelope<FileMoveData>(
+            command,
+            startTime,
+            "error",
+            {
+              ok: false,
+              moveResult: "NOT_FOUND",
+              errorCode: "SOURCE_NOT_FOUND",
+              errorMessage: `源文件不存在：${fromArg}`,
+            },
+            warnings,
+            errors
+          );
+          if (options.json) {
+            console.log(JSON.stringify(envelope, null, 2));
+          } else {
+            console.error(`错误：${errors[0].message}`);
+          }
+          process.exit(1);
+        }
+
+        // 移动文件
+        renameSync(fromArg, toArg);
+
+        // 成功
+        const envelope = createEnvelope<FileMoveData>(
+          command,
+          startTime,
+          "pass",
+          {
+            ok: true,
+            moveResult: "OK",
+            from: fromArg,
+            to: toArg,
+          },
+          warnings,
+          errors
+        );
+
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.log(`文件已移动：${fromArg} -> ${toArg}`);
+        }
+
+        process.exit(0);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        errors.push({
+          code: "FILE_MOVE_UNEXPECTED_ERROR",
+          message: `移动失败：${message}`,
+        });
+
+        const envelope = createEnvelope<FileMoveData>(
+          command,
+          startTime,
+          "error",
+          {
+            ok: false,
+            moveResult: "MOVE_FAILED",
+            errorCode: "MOVE_ERROR",
+            errorMessage: message,
+          },
+          warnings,
+          errors
+        );
+
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.error(`错误：${message}`);
+        }
+        process.exit(1);
+      }
+    });
+
+  return cmd;
+}
+
+// ============================================
+// File Copy 命令实现（P5.7-R3-3）
+// ============================================
+
+/**
+ * 创建 file copy 子命令（P5.7-R3-3：复制文件）
+ */
+function createFileCopyCommand(): Command {
+  const cmd = new Command("copy");
+
+  cmd
+    .description("复制文件（P5.7-R3-3，越界需 --force）")
+    .argument("<from>", "源文件路径")
+    .argument("<to>", "目标文件路径")
+    .option("--force", "允许越界操作（默认只允许 workspace 内）")
+    .option("--json", "JSON 格式输出")
+    .action(async (fromArg, toArg, options) => {
+      const startTime = Date.now();
+      const command = `msgcode file copy ${fromArg} ${toArg}`;
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      try {
+        // P5.7-R3: 越界检查
+        if ((!options.force && isPathOutOfBounds(fromArg)) ||
+            (!options.force && isPathOutOfBounds(toArg))) {
+          errors.push({
+            code: "FILE_COPY_ACCESS_DENIED",
+            message: `越界复制被拒绝（需添加 --force）`,
+          });
+          const envelope = createEnvelope<FileCopyData>(
+            command,
+            startTime,
+            "error",
+            {
+              ok: false,
+              copyResult: "ACCESS_DENIED",
+              errorCode: "OUT_OF_BOUNDS",
+              errorMessage: `越界复制被拒绝`,
+            },
+            warnings,
+            errors
+          );
+          if (options.json) {
+            console.log(JSON.stringify(envelope, null, 2));
+          } else {
+            console.error(`错误：${errors[0].message}`);
+          }
+          process.exit(1);
+        }
+
+        // 验证源文件存在
+        if (!existsSync(fromArg)) {
+          errors.push({
+            code: "FILE_COPY_NOT_FOUND",
+            message: `源文件不存在：${fromArg}`,
+          });
+          const envelope = createEnvelope<FileCopyData>(
+            command,
+            startTime,
+            "error",
+            {
+              ok: false,
+              copyResult: "NOT_FOUND",
+              errorCode: "SOURCE_NOT_FOUND",
+              errorMessage: `源文件不存在：${fromArg}`,
+            },
+            warnings,
+            errors
+          );
+          if (options.json) {
+            console.log(JSON.stringify(envelope, null, 2));
+          } else {
+            console.error(`错误：${errors[0].message}`);
+          }
+          process.exit(1);
+        }
+
+        // 复制文件
+        copyFileSync(fromArg, toArg);
+
+        // 成功
+        const envelope = createEnvelope<FileCopyData>(
+          command,
+          startTime,
+          "pass",
+          {
+            ok: true,
+            copyResult: "OK",
+            from: fromArg,
+            to: toArg,
+          },
+          warnings,
+          errors
+        );
+
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.log(`文件已复制：${fromArg} -> ${toArg}`);
+        }
+
+        process.exit(0);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        errors.push({
+          code: "FILE_COPY_UNEXPECTED_ERROR",
+          message: `复制失败：${message}`,
+        });
+
+        const envelope = createEnvelope<FileCopyData>(
+          command,
+          startTime,
+          "error",
+          {
+            ok: false,
+            copyResult: "COPY_FAILED",
+            errorCode: "COPY_ERROR",
+            errorMessage: message,
+          },
+          warnings,
+          errors
+        );
+
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.error(`错误：${message}`);
+        }
+        process.exit(1);
+      }
+    });
+
+  return cmd;
+}
+
+// ============================================
 // 导出
 // ============================================
 
 /**
- * 创建 file 命令组（P5.7-R1b + R3-1/R3-2）
+ * 创建 file 命令组（P5.7-R1b + R3-1/R3-2/R3-3）
  */
 export function createFileCommand(): Command {
   const fileCmd = new Command("file");
 
-  fileCmd.description("文件操作（发送/查找/读取/写入等）");
+  fileCmd.description("文件操作（发送/查找/读取/写入/删除/移动/复制等）");
   fileCmd.addCommand(createFileSendCommand());
   fileCmd.addCommand(createFileFindCommand());
   fileCmd.addCommand(createFileReadCommand());
   fileCmd.addCommand(createFileWriteCommand());
+  fileCmd.addCommand(createFileDeleteCommand());
+  fileCmd.addCommand(createFileMoveCommand());
+  fileCmd.addCommand(createFileCopyCommand());
 
   return fileCmd;
 }
@@ -1024,6 +1458,157 @@ export function getFileWriteContract() {
       workspaceDefault: true,
       forceRequiredForOutOfBounds: true,
       createParentDirs: true,
+    },
+  };
+}
+
+/**
+ * 导出 file delete 合同（供 help-docs --json 使用）
+ */
+export function getFileDeleteContract() {
+  return {
+    name: "file delete",
+    description: "删除文件（P5.7-R3-3，越界需 --force）",
+    options: {
+      required: {
+        "<path>": "文件路径",
+      },
+      optional: {
+        "--force": "允许越界删除（默认只允许 workspace 内）",
+        "--json": "JSON 格式输出",
+      },
+    },
+    output: {
+      success: {
+        ok: true,
+        deleteResult: "OK",
+        path: "<文件路径>",
+      },
+      notFound: {
+        ok: false,
+        deleteResult: "NOT_FOUND",
+        errorCode: "FILE_NOT_FOUND",
+        errorMessage: "<错误信息>",
+      },
+      accessDenied: {
+        ok: false,
+        deleteResult: "ACCESS_DENIED",
+        errorCode: "OUT_OF_BOUNDS",
+        errorMessage: "越界删除被拒绝（需 --force）",
+      },
+      deleteFailed: {
+        ok: false,
+        deleteResult: "DELETE_FAILED",
+        errorCode: "DELETE_ERROR",
+        errorMessage: "<错误信息>",
+      },
+    },
+    errorCodes: ["OK", "NOT_FOUND", "ACCESS_DENIED", "DELETE_FAILED"],
+    constraints: {
+      workspaceDefault: true,
+      forceRequiredForOutOfBounds: true,
+    },
+  };
+}
+
+/**
+ * 导出 file move 合同（供 help-docs --json 使用）
+ */
+export function getFileMoveContract() {
+  return {
+    name: "file move",
+    description: "移动/重命名文件（P5.7-R3-3，越界需 --force）",
+    options: {
+      required: {
+        "<from>": "源文件路径",
+        "<to>": "目标文件路径",
+      },
+      optional: {
+        "--force": "允许越界操作（默认只允许 workspace 内）",
+        "--json": "JSON 格式输出",
+      },
+    },
+    output: {
+      success: {
+        ok: true,
+        moveResult: "OK",
+        from: "<源路径>",
+        to: "<目标路径>",
+      },
+      notFound: {
+        ok: false,
+        moveResult: "NOT_FOUND",
+        errorCode: "SOURCE_NOT_FOUND",
+        errorMessage: "<错误信息>",
+      },
+      accessDenied: {
+        ok: false,
+        moveResult: "ACCESS_DENIED",
+        errorCode: "OUT_OF_BOUNDS",
+        errorMessage: "越界移动被拒绝（需 --force）",
+      },
+      moveFailed: {
+        ok: false,
+        moveResult: "MOVE_FAILED",
+        errorCode: "MOVE_ERROR",
+        errorMessage: "<错误信息>",
+      },
+    },
+    errorCodes: ["OK", "NOT_FOUND", "ACCESS_DENIED", "MOVE_FAILED"],
+    constraints: {
+      workspaceDefault: true,
+      forceRequiredForOutOfBounds: true,
+    },
+  };
+}
+
+/**
+ * 导出 file copy 合同（供 help-docs --json 使用）
+ */
+export function getFileCopyContract() {
+  return {
+    name: "file copy",
+    description: "复制文件（P5.7-R3-3，越界需 --force）",
+    options: {
+      required: {
+        "<from>": "源文件路径",
+        "<to>": "目标文件路径",
+      },
+      optional: {
+        "--force": "允许越界操作（默认只允许 workspace 内）",
+        "--json": "JSON 格式输出",
+      },
+    },
+    output: {
+      success: {
+        ok: true,
+        copyResult: "OK",
+        from: "<源路径>",
+        to: "<目标路径>",
+      },
+      notFound: {
+        ok: false,
+        copyResult: "NOT_FOUND",
+        errorCode: "SOURCE_NOT_FOUND",
+        errorMessage: "<错误信息>",
+      },
+      accessDenied: {
+        ok: false,
+        copyResult: "ACCESS_DENIED",
+        errorCode: "OUT_OF_BOUNDS",
+        errorMessage: "越界复制被拒绝（需 --force）",
+      },
+      copyFailed: {
+        ok: false,
+        copyResult: "COPY_FAILED",
+        errorCode: "COPY_ERROR",
+        errorMessage: "<错误信息>",
+      },
+    },
+    errorCodes: ["OK", "NOT_FOUND", "ACCESS_DENIED", "COPY_FAILED"],
+    constraints: {
+      workspaceDefault: true,
+      forceRequiredForOutOfBounds: true,
     },
   };
 }
