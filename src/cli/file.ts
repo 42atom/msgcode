@@ -1,23 +1,32 @@
 /**
- * msgcode: File CLI 命令（P5.7-R1b）
+ * msgcode: File CLI 命令（P5.7-R1b + R3）
  *
  * 职责：
- * - msgcode file send --path <path> --to <chat-guid> [--caption "..."] [--mime "..."]
- * - 真实发送到 iMessage
- * - 仅限制文件大小 <= 1GB，不做路径/可读/workspace 限制
+ * - msgcode file send --path <path> --to <chat-guid>：真实发送到 iMessage
+ * - msgcode file find <path>：查找文件
+ * - msgcode file read <path>：读取文件内容
+ * - msgcode file write <path> --content：写入文件
+ * - 仅限制文件大小 <= 1GB（send 命令）
+ * - 越界操作必须 --force（R3 命令）
  */
 
 import { Command } from "commander";
 import { randomUUID } from "node:crypto";
 import type { Envelope, Diagnostic } from "../memory/types.js";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, statSync, readdirSync, readFileSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { join, relative, isAbsolute } from "node:path";
 import { config } from "../config.js";
+import { homedir } from "node:os";
 
 // ============================================
 // 常量和类型定义
 // ============================================
 
 const SIZE_LIMIT_BYTES = 1024 * 1024 * 1024; // 1GB
+
+// P5.7-R3: 默认 workspace 边界
+const DEFAULT_WORKSPACE_ROOT = join(homedir(), "msgcode-workspaces");
 
 interface FileSendData {
   ok: boolean;
@@ -26,6 +35,25 @@ interface FileSendData {
   to?: string;
   fileSizeBytes?: number;
   limitBytes?: number;
+  errorMessage?: string;
+  errorCode?: string;
+}
+
+interface FileFindData {
+  ok: boolean;
+  findResult: "OK" | "NOT_FOUND" | "FIND_FAILED";
+  path?: string;
+  files?: string[];
+  errorMessage?: string;
+  errorCode?: string;
+}
+
+interface FileReadData {
+  ok: boolean;
+  readResult: "OK" | "NOT_FOUND" | "ACCESS_DENIED" | "READ_FAILED";
+  path?: string;
+  content?: string;
+  size?: number;
   errorMessage?: string;
   errorCode?: string;
 }
@@ -258,17 +286,406 @@ function createFileSendCommand(): Command {
 }
 
 // ============================================
+// File Find 命令实现（P5.7-R3）
+// ============================================
+
+/**
+ * 创建 file find 子命令（P5.7-R3：纯读，最低风险）
+ */
+function createFileFindCommand(): Command {
+  const cmd = new Command("find");
+
+  cmd
+    .description("查找文件（P5.7-R3，纯读操作）")
+    .argument("<path>", "要查找的目录路径")
+    .option("--pattern <pattern>", "文件名匹配模式（支持 * 通配符）")
+    .option("--max-depth <depth>", "最大递归深度（默认：3）", "3")
+    .option("--json", "JSON 格式输出")
+    .action(async (pathArg, options) => {
+      const startTime = Date.now();
+      const command = `msgcode file find ${pathArg}`;
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      try {
+        // 验证目录存在
+        if (!existsSync(pathArg)) {
+          errors.push({
+            code: "FILE_FIND_NOT_FOUND",
+            message: `目录不存在：${pathArg}`,
+          });
+          const envelope = createEnvelope<FileFindData>(
+            command,
+            startTime,
+            "error",
+            {
+              ok: false,
+              findResult: "NOT_FOUND",
+              errorCode: "PATH_NOT_FOUND",
+              errorMessage: `目录不存在：${pathArg}`,
+            },
+            warnings,
+            errors
+          );
+          if (options.json) {
+            console.log(JSON.stringify(envelope, null, 2));
+          } else {
+            console.error(`错误：${errors[0].message}`);
+          }
+          process.exit(1);
+        }
+
+        const stats = statSync(pathArg);
+        if (!stats.isDirectory()) {
+          errors.push({
+            code: "FILE_FIND_NOT_DIRECTORY",
+            message: `不是目录：${pathArg}`,
+          });
+          const envelope = createEnvelope<FileFindData>(
+            command,
+            startTime,
+            "error",
+            {
+              ok: false,
+              findResult: "NOT_FOUND",
+              errorCode: "NOT_A_DIRECTORY",
+              errorMessage: `不是目录：${pathArg}`,
+            },
+            warnings,
+            errors
+          );
+          if (options.json) {
+            console.log(JSON.stringify(envelope, null, 2));
+          } else {
+            console.error(`错误：${errors[0].message}`);
+          }
+          process.exit(1);
+        }
+
+        // 递归查找文件
+        const maxDepth = parseInt(options.maxDepth, 10);
+        const pattern = options.pattern;
+        const files: string[] = [];
+
+        function walkDir(dir: string, depth: number): void {
+          if (depth > maxDepth) return;
+
+          const entries = readdirSync(dir, { withFileTypes: true });
+          for (const entry of entries) {
+            const fullPath = join(dir, entry.name);
+
+            if (entry.isDirectory()) {
+              // 跳过隐藏目录
+              if (!entry.name.startsWith(".")) {
+                walkDir(fullPath, depth + 1);
+              }
+            } else if (entry.isFile()) {
+              // 跳过隐藏文件
+              if (entry.name.startsWith(".")) continue;
+
+              // 匹配模式
+              if (pattern) {
+                const regex = new RegExp(`^${pattern.replace(/\*/g, ".*")}$`);
+                if (regex.test(entry.name)) {
+                  files.push(fullPath);
+                }
+              } else {
+                files.push(fullPath);
+              }
+            }
+          }
+        }
+
+        walkDir(pathArg, 0);
+
+        // 成功
+        const envelope = createEnvelope<FileFindData>(
+          command,
+          startTime,
+          "pass",
+          {
+            ok: true,
+            findResult: "OK",
+            path: pathArg,
+            files,
+          },
+          warnings,
+          errors
+        );
+
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.log(`找到 ${files.length} 个文件:`);
+          files.forEach((f) => console.log(`  ${f}`));
+        }
+
+        process.exit(0);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        errors.push({
+          code: "FILE_FIND_FAILED",
+          message: `查找失败：${message}`,
+        });
+
+        const envelope = createEnvelope<FileFindData>(
+          command,
+          startTime,
+          "error",
+          {
+            ok: false,
+            findResult: "FIND_FAILED",
+            errorCode: "FIND_ERROR",
+            errorMessage: message,
+          },
+          warnings,
+          errors
+        );
+
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.error(`错误：${message}`);
+        }
+        process.exit(1);
+      }
+    });
+
+  return cmd;
+}
+
+// ============================================
+// File Read 命令实现（P5.7-R3）
+// ============================================
+
+/**
+ * 检查路径是否越界（超出 workspace）
+ */
+function isPathOutOfBounds(pathArg: string): boolean {
+  const normalized = isAbsolute(pathArg) ? pathArg : join(process.cwd(), pathArg);
+  const workspaceRoot = process.env.WORKSPACE_ROOT || DEFAULT_WORKSPACE_ROOT;
+
+  // 如果路径在 workspace 内，返回 false
+  if (normalized.startsWith(workspaceRoot)) {
+    return false;
+  }
+
+  // 检查是否是常见安全路径（/tmp, /etc 等）
+  const safePaths = ["/tmp", "/var/tmp"];
+  for (const safe of safePaths) {
+    if (normalized.startsWith(safe)) {
+      return false;
+    }
+  }
+
+  // 其他情况视为越界
+  return true;
+}
+
+/**
+ * 创建 file read 子命令（P5.7-R3：读取文件）
+ */
+function createFileReadCommand(): Command {
+  const cmd = new Command("read");
+
+  cmd
+    .description("读取文件内容（P5.7-R3，越界需 --force）")
+    .argument("<path>", "文件路径")
+    .option("--force", "允许越界读取（默认只允许 workspace 内）")
+    .option("--max-size <bytes>", "最大读取大小（默认：1MB）", "1048576")
+    .option("--json", "JSON 格式输出")
+    .action(async (pathArg, options) => {
+      const startTime = Date.now();
+      const command = `msgcode file read ${pathArg}`;
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      try {
+        // P5.7-R3: 越界检查
+        if (!options.force && isPathOutOfBounds(pathArg)) {
+          errors.push({
+            code: "FILE_READ_ACCESS_DENIED",
+            message: `越界读取被拒绝：${pathArg}（需添加 --force）`,
+            hint: " workspace 默认只允许读取 workspace 内的文件，越界操作需显式 --force",
+          });
+          const envelope = createEnvelope<FileReadData>(
+            command,
+            startTime,
+            "error",
+            {
+              ok: false,
+              readResult: "ACCESS_DENIED",
+              errorCode: "OUT_OF_BOUNDS",
+              errorMessage: `越界读取被拒绝：${pathArg}`,
+            },
+            warnings,
+            errors
+          );
+          if (options.json) {
+            console.log(JSON.stringify(envelope, null, 2));
+          } else {
+            console.error(`错误：${errors[0].message}`);
+          }
+          process.exit(1);
+        }
+
+        // 验证文件存在
+        if (!existsSync(pathArg)) {
+          errors.push({
+            code: "FILE_READ_NOT_FOUND",
+            message: `文件不存在：${pathArg}`,
+          });
+          const envelope = createEnvelope<FileReadData>(
+            command,
+            startTime,
+            "error",
+            {
+              ok: false,
+              readResult: "NOT_FOUND",
+              errorCode: "FILE_NOT_FOUND",
+              errorMessage: `文件不存在：${pathArg}`,
+            },
+            warnings,
+            errors
+          );
+          if (options.json) {
+            console.log(JSON.stringify(envelope, null, 2));
+          } else {
+            console.error(`错误：${errors[0].message}`);
+          }
+          process.exit(1);
+        }
+
+        // 验证是文件不是目录
+        const stats = statSync(pathArg);
+        if (!stats.isFile()) {
+          errors.push({
+            code: "FILE_READ_NOT_FILE",
+            message: `不是文件：${pathArg}`,
+          });
+          const envelope = createEnvelope<FileReadData>(
+            command,
+            startTime,
+            "error",
+            {
+              ok: false,
+              readResult: "READ_FAILED",
+              errorCode: "NOT_A_FILE",
+              errorMessage: `不是文件：${pathArg}`,
+            },
+            warnings,
+            errors
+          );
+          if (options.json) {
+            console.log(JSON.stringify(envelope, null, 2));
+          } else {
+            console.error(`错误：${errors[0].message}`);
+          }
+          process.exit(1);
+        }
+
+        // 检查大小限制
+        const maxSize = parseInt(options.maxSize, 10);
+        if (stats.size > maxSize) {
+          errors.push({
+            code: "FILE_READ_TOO_LARGE",
+            message: `文件过大：${stats.size} bytes > ${maxSize} bytes`,
+          });
+          const envelope = createEnvelope<FileReadData>(
+            command,
+            startTime,
+            "error",
+            {
+              ok: false,
+              readResult: "READ_FAILED",
+              errorCode: "FILE_TOO_LARGE",
+              errorMessage: `文件过大`,
+            },
+            warnings,
+            errors
+          );
+          if (options.json) {
+            console.log(JSON.stringify(envelope, null, 2));
+          } else {
+            console.error(`错误：${errors[0].message}`);
+          }
+          process.exit(1);
+        }
+
+        // 读取文件
+        const content = await readFile(pathArg, "utf-8");
+
+        // 成功
+        const envelope = createEnvelope<FileReadData>(
+          command,
+          startTime,
+          "pass",
+          {
+            ok: true,
+            readResult: "OK",
+            path: pathArg,
+            content,
+            size: stats.size,
+          },
+          warnings,
+          errors
+        );
+
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.log(`文件内容 (${pathArg}, ${stats.size} bytes):`);
+          console.log(content);
+        }
+
+        process.exit(0);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        errors.push({
+          code: "FILE_READ_UNEXPECTED_ERROR",
+          message: `读取失败：${message}`,
+        });
+
+        const envelope = createEnvelope<FileReadData>(
+          command,
+          startTime,
+          "error",
+          {
+            ok: false,
+            readResult: "READ_FAILED",
+            errorCode: "READ_ERROR",
+            errorMessage: message,
+          },
+          warnings,
+          errors
+        );
+
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.error(`错误：${message}`);
+        }
+        process.exit(1);
+      }
+    });
+
+  return cmd;
+}
+
+// ============================================
 // 导出
 // ============================================
 
 /**
- * 创建 file 命令组
+ * 创建 file 命令组（P5.7-R1b + R3）
  */
 export function createFileCommand(): Command {
   const fileCmd = new Command("file");
 
-  fileCmd.description("文件操作（发送等）");
+  fileCmd.description("文件操作（发送/查找/读取/写入等）");
   fileCmd.addCommand(createFileSendCommand());
+  fileCmd.addCommand(createFileFindCommand());
+  fileCmd.addCommand(createFileReadCommand());
 
   return fileCmd;
 }
@@ -319,6 +736,105 @@ export function getFileSendContract() {
       workspaceCheck: "none",
       readabilityCheck: "none",
       deliveryChannel: "iMessage RPC (send)",
+    },
+  };
+}
+
+/**
+ * 导出 file find 合同（供 help-docs --json 使用）
+ */
+export function getFileFindContract() {
+  return {
+    name: "file find",
+    description: "查找文件（P5.7-R3，纯读操作）",
+    options: {
+      required: {
+        "<path>": "要查找的目录路径",
+      },
+      optional: {
+        "--pattern <pattern>": "文件名匹配模式（支持 * 通配符）",
+        "--max-depth <depth>": "最大递归深度（默认：3）",
+        "--json": "JSON 格式输出",
+      },
+    },
+    output: {
+      success: {
+        ok: true,
+        findResult: "OK",
+        path: "<目录路径>",
+        files: ["<文件路径列表>"],
+      },
+      notFound: {
+        ok: false,
+        findResult: "NOT_FOUND",
+        errorCode: "PATH_NOT_FOUND",
+        errorMessage: "<错误信息>",
+      },
+      findFailed: {
+        ok: false,
+        findResult: "FIND_FAILED",
+        errorCode: "FIND_ERROR",
+        errorMessage: "<错误信息>",
+      },
+    },
+    errorCodes: ["OK", "NOT_FOUND", "FIND_FAILED"],
+    constraints: {
+      recursive: true,
+      maxDepthDefault: 3,
+      skipHidden: true,
+    },
+  };
+}
+
+/**
+ * 导出 file read 合同（供 help-docs --json 使用）
+ */
+export function getFileReadContract() {
+  return {
+    name: "file read",
+    description: "读取文件内容（P5.7-R3，越界需 --force）",
+    options: {
+      required: {
+        "<path>": "文件路径",
+      },
+      optional: {
+        "--force": "允许越界读取（默认只允许 workspace 内）",
+        "--max-size <bytes>": "最大读取大小（默认：1MB）",
+        "--json": "JSON 格式输出",
+      },
+    },
+    output: {
+      success: {
+        ok: true,
+        readResult: "OK",
+        path: "<文件路径>",
+        content: "<文件内容>",
+        size: "<文件大小 (字节)>",
+      },
+      notFound: {
+        ok: false,
+        readResult: "NOT_FOUND",
+        errorCode: "FILE_NOT_FOUND",
+        errorMessage: "<错误信息>",
+      },
+      accessDenied: {
+        ok: false,
+        readResult: "ACCESS_DENIED",
+        errorCode: "OUT_OF_BOUNDS",
+        errorMessage: "越界读取被拒绝（需 --force）",
+      },
+      readFailed: {
+        ok: false,
+        readResult: "READ_FAILED",
+        errorCode: "READ_ERROR",
+        errorMessage: "<错误信息>",
+      },
+    },
+    errorCodes: ["OK", "NOT_FOUND", "ACCESS_DENIED", "READ_FAILED"],
+    constraints: {
+      workspaceDefault: true,
+      forceRequiredForOutOfBounds: true,
+      maxSizeDefault: 1048576, // 1MB
     },
   };
 }

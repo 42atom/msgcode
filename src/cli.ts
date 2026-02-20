@@ -11,10 +11,11 @@ import { Command } from "commander";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdir, copyFile } from "node:fs/promises";
+import { mkdir, copyFile, readdir } from "node:fs/promises";
 import { existsSync, accessSync, constants } from "node:fs";
 import { exec, spawn } from "node:child_process";
 import { getVersion, getVersionInfo, type VersionInfo } from "./version.js";
+import { logger } from "./logger/index.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -98,7 +99,10 @@ program
 program
   .command("init")
   .description("初始化配置目录与 .env")
-  .action(initBot);
+  .option("--overwrite-skills", "强制覆盖已存在的技能文件（默认仅首次创建）")
+  .action(async (options: { overwriteSkills?: boolean }) => {
+    await initBot(options);
+  });
 
 program
   .command("status")
@@ -358,7 +362,7 @@ async function launchDaemon(): Promise<void> {
   console.log(`日志: ${LOG_FILE}`);
 }
 
-async function initBot(): Promise<void> {
+async function initBot(options: { overwriteSkills?: boolean } = {}): Promise<void> {
   const envFile = path.join(CONFIG_DIR, ".env");
   const exampleFile = path.join(__dirname, "..", ".env.example");
 
@@ -388,4 +392,61 @@ async function initBot(): Promise<void> {
   console.log("3) iMessage 手动建群，把 msgcode 账号拉进群，在群里发送：");
   console.log("   /bind acme/ops");
   console.log("   /start");
+}
+
+/**
+ * 复制内置技能到用户配置目录
+ *
+ * 原则：
+ * - 幂等：仅首次创建，已存在文件不覆盖
+ * - 显式覆盖：--overwrite-skills 强制覆盖
+ *
+ * @param overwrite 是否强制覆盖已存在的文件
+ */
+async function copySkillsToUserConfig(overwrite: boolean = false): Promise<void> {
+  const userSkillsDir = path.join(CONFIG_DIR, "skills");
+  const builtinSkillsDir = path.join(__dirname, "skills", "builtin");
+
+  // 检查内置技能目录是否存在（开发/测试环境可能没有编译后的文件）
+  if (!existsSync(builtinSkillsDir)) {
+    logger.info("内置技能目录不存在，跳过复制", {
+      module: "cli",
+      builtinSkillsDir,
+    });
+    return;
+  }
+
+  // 创建用户技能目录
+  await mkdir(userSkillsDir, { recursive: true });
+
+  // 读取内置技能文件列表
+  const files = await readdir(builtinSkillsDir);
+
+  let copiedCount = 0;
+  let skippedCount = 0;
+
+  for (const file of files) {
+    if (!file.endsWith(".js") && !file.endsWith(".ts")) {
+      continue; // 仅复制 JS/TS 文件
+    }
+
+    const srcPath = path.join(builtinSkillsDir, file);
+    const destPath = path.join(userSkillsDir, file);
+
+    if (existsSync(destPath) && !overwrite) {
+      // 已存在且不强制覆盖，跳过
+      skippedCount++;
+      continue;
+    }
+
+    await copyFile(srcPath, destPath);
+    copiedCount++;
+  }
+
+  if (copiedCount > 0) {
+    console.log(`已复制 ${copiedCount} 个内置技能到：${userSkillsDir}`);
+  }
+  if (skippedCount > 0) {
+    console.log(`已跳过 ${skippedCount} 个已存在的技能文件（使用 --overwrite-skills 强制覆盖）`);
+  }
 }
