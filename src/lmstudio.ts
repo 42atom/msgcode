@@ -1353,7 +1353,7 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
     const msg1 = r1.choices[0]?.message;
     const toolCalls = msg1?.tool_calls ?? [];
 
-    // 2) 优先读标准 tool_calls 结构
+    // 2) 只认标准 tool_calls - 防御性编程：不合规矩直接判死刑
     let tc: ToolCall | null = toolCalls.length > 0 ? toolCalls[0] : null;
     let args: Record<string, unknown> = {};
     let assistantRole = msg1?.role || "assistant";
@@ -1367,34 +1367,7 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
         }
     }
 
-    // P5.7-R3b-R1: 标准结构失败了？去 content 里"捡垃圾"（Best Effort 兜底）
-    // 背景：LM Studio 无法解析模型的非标准 tool call 时，会把脏文本塞进 content 字段
-    // 此时 tool_calls 为空，但 assistantContent 可能包含 XML/JSON 格式的工具调用
-    if (!tc && assistantContent && assistantContent.trim()) {
-        const allowedToolNames = tools.length > 0
-            ? tools.map(t => (t as any).function?.name).filter(Boolean)
-            : DEFAULT_ALLOWED_TOOL_NAMES;
-        const fallbackCall = parseToolCallBestEffortFromText({
-            text: assistantContent,
-            allowedToolNames,
-        });
-        if (fallbackCall) {
-            tc = {
-                id: `call_fallback_${Date.now()}`,
-                type: "function",
-                function: { name: fallbackCall.name, arguments: JSON.stringify(fallbackCall.args) },
-            };
-            args = fallbackCall.args;
-            logger.info("Rescued malformed tool call from content", {
-                module: "lmstudio",
-                toolName: fallbackCall.name,
-                source: "r1-best-effort",
-            });
-        }
-    }
-
-    // 3) 无工具调用（含兜底解析失败）：直接清洗返回
-    // P5.7-R3b-R1: 已完成 r1 best-effort 兜底解析，此处为真正的无工具调用场景
+    // 3) 无工具调用：直接清洗返回
     if (!tc) {
         const cleanedAnswer = sanitizeLmStudioOutput(assistantContent ?? "");
         if (tools.length > 0 && isLikelyFakeToolExecutionText(cleanedAnswer)) {
