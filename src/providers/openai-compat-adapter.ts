@@ -272,7 +272,7 @@ export function parseChatCompletionResponse(raw: string): ParsedChatCompletionWi
         content !== null &&
         content !== "" &&
         finishReason === "stop" &&
-        (content.includes("tool_call") || content.includes(" tool_call") || content.includes("tool_call"));
+        (content.includes("") || content.includes("<tool_call ") || content.includes("tool_call"));
 
     return {
         content,
