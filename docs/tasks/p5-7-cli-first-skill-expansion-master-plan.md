@@ -15,6 +15,9 @@
 3. 每个能力必须有明确错误码，不允许“文本猜测成功”。
 4. 每个能力必须有回归锁：命令存在、参数校验、成功路径、失败路径。
 5. 禁止回流 `run_skill`、禁止新增第二执行链。
+6. 禁止“合同壳验收”：命令名与行为必须一致，不能只校验参数/大小就宣告成功。
+7. 每个能力必须提供至少 1 条真实执行成功证据（非 mock、非静态断言）。
+8. 每个能力必须提供至少 1 条真实失败证据（真实错误码与错误消息）。
 
 ## 系列拆分（P5.7-R1 ~ R8）
 
@@ -24,6 +27,13 @@
 - 目标：`msgcode file send` + `msgcode help --json` 首次打通。
 - 产物合同：
   - `msgcode file send --path <path> [--caption] [--mime]`
+
+### R1b（P0）：文件发送真实交付闭环
+
+- 任务单：`p5-7-r1b-file-send-real-delivery.md`
+- 目标：`msgcode file send` 从“合同层”升级为“真发送”，必须可指定目标并通过现有 iMessage 通道送达。
+- 产物合同：
+  - `msgcode file send --path <path> --to <chat-guid> [--caption] [--mime] [--json]`
 
 ### R2（P0）：实时信息三件套
 
@@ -81,7 +91,9 @@
 2. `npm test`（0 fail）
 3. `npm run docs:check`
 4. `msgcode help --json` 含新增能力合同
-5. 无新增 `.only/.skip`
+5. 至少 1 条真实成功冒烟（必须可复现）
+6. 至少 1 条真实失败冒烟（错误码可验证）
+7. 无新增 `.only/.skip`
 
 ## 派单模板（P5.7 子任务复用）
 
@@ -123,6 +135,7 @@
 2. npm test（0 fail）
 3. npm run docs:check
 4. msgcode help --json 包含能力合同
-5. 无新增 .only/.skip
+5. 至少 1 条真实成功冒烟（非 mock）
+6. 至少 1 条真实失败冒烟（非 mock）
+7. 无新增 .only/.skip
 ```
-
