@@ -84,36 +84,22 @@
 3. `P5.7-R1b`：文件发送真实交付闭环（`--to` + 真发送 + 真失败）✅
 4. `P5.7-R1c`：CLI 基座能力硬门（真执行 + 可观测 + 安全底线）✅
 5. `P5.7-R3`：文件与环境域（`file find/read/write/move/rename/delete/copy/zip` + `system env`）
-6. `P5.7-R4`：记忆与线程域（`memory search/add/stats` + `thread list/messages/active/switch`）
-7. `P5.7-R5`：编排与调度域（`todo add/list/done` + `schedule add/list/remove`）
-8. `P5.7-R6`：多模态域（`media screen` + `gen image/selfie/tts/music`）
-9. `P5.7-R7`：浏览器域（`browser open/click/type`）
-10. `P5.7-R8`：代理域（`agent run/status`）
-<<<<<<< Updated upstream
-=======
-11. `P5.7-R8b`：SKILL.md 与真实能力合同对齐（收尾）
-12. `P5.7-R3d`：LM Studio GLM ToolCall 温度锁定（`temperature=0`）
->>>>>>> Stashed changes
+6. `P5.7-R3d`：LM Studio GLM ToolCall 温度锁定（`temperature=0`）
+7. `P5.7-R4`：记忆与线程域（`memory search/add/stats` + `thread list/messages/active/switch`）
+8. `P5.7-R5`：编排与调度域（`todo add/list/done` + `schedule add/list/remove`）
+9. `P5.7-R6`：多模态域（`media screen` + `gen image/selfie/tts/music`）
+10. `P5.7-R7`：浏览器域（`browser open/click/type`）
+11. `P5.7-R8`：代理域（`agent run/status`）
 
 ### 派单顺序（冻结）
 
 1. `P5.7-R3`（file 域）
-<<<<<<< Updated upstream
-2. `P5.7-R4`（memory/thread 域）
-3. `P5.7-R5`（todo/schedule 域）
-4. `P5.7-R6`（media/gen 域）
-5. `P5.7-R7`（browser 域）
-6. `P5.7-R8`（agent 域）
-=======
-2. `P5.7-R3a`（runSkill 残留清理技术债插单）
+2. `P5.7-R3d`（LM Studio GLM ToolCall 温度锁定，稳定性插单）
 3. `P5.7-R4`（memory/thread 域）
 4. `P5.7-R5`（todo/schedule 域）
 5. `P5.7-R6`（media/gen 域）
 6. `P5.7-R7`（browser 域）
 7. `P5.7-R8`（agent 域）
-8. `P5.7-R8b`（SKILL.md 与真实能力合同对齐收尾）
-9. `P5.7-R3d`（LM Studio GLM ToolCall 温度锁定，R1 命中率回归锁）
->>>>>>> Stashed changes
 
 ## 当前任务单
 
@@ -169,11 +155,14 @@
 - `p5-7-r6-media-gen-domain.md`：P5.7-R6（多模态域任务单）
 - `p5-7-r7-browser-domain.md`：P5.7-R7（浏览器域任务单）
 - `p5-7-r8-agent-domain.md`：P5.7-R8（代理域任务单）
-<<<<<<< Updated upstream
-=======
-- `p5-7-r8b-skill-doc-contract-alignment.md`：P5.7-R8b（SKILL.md 与真实能力合同对齐收尾单）
 - `p5-7-r3d-lmstudio-glm-toolcall-temperature-lock.md`：P5.7-R3d（LM Studio GLM ToolCall 温度锁定）
->>>>>>> Stashed changes
+- `p5-7-r3f-r3k-tool-loop-best-practice-pack.md`：P5.7-R3f~R3k（Tool Loop 最佳实践改造派单包）
+- `p5-7-r3f-bash-runner-engineering.md`：P5.7-R3f（Bash Runner 工程化）
+- `p5-7-r3g-tool-loop-multi-call-closure.md`：P5.7-R3g（Tool Loop 多工具闭环）
+- `p5-7-r3h-tool-failure-contract-diagnostics.md`：P5.7-R3h（工具失败合同与诊断增强）
+- `p5-7-r3i-fs-scope-policy-layering.md`：P5.7-R3i（文件权限策略分层）
+- `p5-7-r3j-dual-model-routing-stabilization.md`：P5.7-R3j（双模型路由稳定化）
+- `p5-7-r3k-tool-loop-slo-gate.md`：P5.7-R3k（Tool Loop SLO 门禁落地）
 
 ## 规则
 

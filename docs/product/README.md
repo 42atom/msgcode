@@ -7,4 +7,5 @@
 ```
 docs/product/
   msgcode-app-product-design_v0.1.md  # Mac App 产品设计文档（普通用户版）
+  msgcode-tool-loop-slo-v1.md         # Tool Loop 运行指标与降级标准（长期口径）
 ```
