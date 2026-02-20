@@ -22,6 +22,8 @@ import { normalizeBaseUrl as normalizeBaseUrlAdapter, fetchWithTimeout } from ".
 import { sanitizeLmStudioOutput as sanitizeCore, dropBeforeLastClosingTag } from "./providers/output-normalizer.js";
 // P5.6.13-R1A-EXEC R3: Provider adapter 契约
 import { buildChatCompletionRequest, parseChatCompletionResponse } from "./providers/openai-compat-adapter.js";
+// P5.7-R3e: 路由分类器
+import { classifyRoute, getTemperatureForRoute } from "./routing/classifier.js";
 
 export interface LmStudioChatOptions {
     prompt: string;
@@ -1546,3 +1548,106 @@ async function callChatCompletionsRaw(params: {
 }
 
 // ============================================
+// P5.7-R3e: 双模型路由分发
+// ============================================
+
+/**
+ * P5.7-R3e: 路由聊天选项
+ */
+export interface LmStudioRoutedChatOptions {
+    prompt: string;
+    system?: string;
+    workspacePath?: string;
+    windowMessages?: Array<{ role: string; content?: string }>;
+    summaryContext?: string;
+    soulContext?: { content: string; source: string; path: string; chars: number };
+    hasToolsAvailable?: boolean;
+    temperature?: number; // 可选覆盖温度
+}
+
+/**
+ * P5.7-R3e: 路由聊天结果
+ */
+export interface RoutedChatResult {
+    answer: string;
+    route: "no-tool" | "tool" | "complex-tool";
+    temperature: number;
+    toolCall?: { name: string; args: Record<string, unknown>; result: unknown };
+}
+
+/**
+ * P5.7-R3e: 路由分发聊天
+ *
+ * 根据请求类型选择不同的处理路径：
+ * - no-tool: 直接聊天（temperature=0.2，允许更多创造性）
+ * - tool: 工具循环（temperature=0，稳定触发）
+ * - complex-tool: 工具循环（temperature=0，稳定触发）
+ *
+ * @param options 聊天选项
+ * @returns 聊天结果（包含路由信息和温度）
+ */
+export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions): Promise<RoutedChatResult> {
+    // 1. 分类请求路由
+    const classification = classifyRoute(options.prompt, options.hasToolsAvailable ?? true);
+    const route = classification.route;
+
+    // 2. 获取温度（允许覆盖）
+    const temperature = options.temperature ?? getTemperatureForRoute(route);
+
+    logger.info("routed chat started", {
+        module: "lmstudio",
+        route,
+        confidence: classification.confidence,
+        reason: classification.reason,
+        temperature,
+    });
+
+    // 3. 根据路由分发
+    if (route === "no-tool") {
+        // no-tool: 简单聊天（不触发工具循环）
+        const answer = await runLmStudioChat({
+            prompt: options.prompt,
+            system: options.system,
+            workspace: options.workspacePath,
+        });
+
+        logger.info("routed chat completed (no-tool)", {
+            module: "lmstudio",
+            route,
+            temperature,
+            responseLength: answer.length,
+        });
+
+        return {
+            answer,
+            route,
+            temperature,
+        };
+    }
+
+    // tool / complex-tool: 走工具循环
+    const toolLoopResult = await runLmStudioToolLoop({
+        prompt: options.prompt,
+        system: options.system,
+        workspacePath: options.workspacePath,
+        windowMessages: options.windowMessages,
+        summaryContext: options.summaryContext,
+        soulContext: options.soulContext,
+    });
+
+    logger.info("routed chat completed (tool)", {
+        module: "lmstudio",
+        route,
+        temperature,
+        responseLength: toolLoopResult.answer.length,
+        toolCallCount: toolLoopResult.toolCall ? 1 : 0,
+        toolName: toolLoopResult.toolCall?.name,
+    });
+
+    return {
+        answer: toolLoopResult.answer,
+        route,
+        temperature,
+        toolCall: toolLoopResult.toolCall,
+    };
+}

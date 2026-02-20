@@ -1,7 +1,8 @@
 /**
  * msgcode: P5.6.8-R4b window/summary 注入回归锁测试
  *
- * 目标：确保 handlers 读取的 window/summary 必须进入 runLmStudioToolLoop 请求构造
+ * 目标：确保 handlers 读取的 window/summary 必须进入 runLmStudioRoutedChat 请求构造
+ * P5.7-R3e: 更新测试以匹配新的路由分发函数
  */
 
 import { describe, it, expect } from "bun:test";
@@ -51,19 +52,19 @@ describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
             expect(code).toContain('formatSummaryAsContext(summary)');
         });
 
-        it("handlers.ts 必须传递 windowMessages 和 summaryContext 给 runLmStudioToolLoop", () => {
+        it("handlers.ts 必须传递 windowMessages 和 summaryContext 给 runLmStudioRoutedChat", () => {
             const code = fs.readFileSync(
                 path.join(process.cwd(), "src/handlers.ts"),
                 "utf-8"
             );
 
-            // 查找 runLmStudioToolLoop 调用
-            const toolLoopMatch = code.match(/runLmStudioToolLoop\([\s\S]{0,500}/);
-            expect(toolLoopMatch).not.toBeNull();
+            // P5.7-R3e: 查找 runLmStudioRoutedChat 调用（替代原来的 runLmStudioToolLoop）
+            const routedChatMatch = code.match(/runLmStudioRoutedChat\([\s\S]{0,500}/);
+            expect(routedChatMatch).not.toBeNull();
 
             // 验证传递了 windowMessages 和 summaryContext
-            expect(toolLoopMatch![0]).toContain('windowMessages');
-            expect(toolLoopMatch![0]).toContain('summaryContext');
+            expect(routedChatMatch![0]).toContain('windowMessages');
+            expect(routedChatMatch![0]).toContain('summaryContext');
         });
     });
 

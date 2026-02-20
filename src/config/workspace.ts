@@ -12,6 +12,9 @@
  * P5.6.14-R1: 配置域拆分
  * - 新增：runtime.kind、agent.provider、tmux.client
  * - 保留：runner.default（只读兼容映射）
+ *
+ * P5.7-R3e: 双模型路由
+ * - 新增：model.executor、model.responder
  */
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
@@ -21,6 +24,7 @@ import { join } from "node:path";
 /**
  * Workspace 配置（存储在 .msgcode/config.json）
  * P5.6.14-R1: 配置域拆分 - 新增 runtime.kind/agent.provider/tmux.client
+ * P5.7-R3e: 双模型路由 - 新增 model.executor/model.responder
  */
 export interface WorkspaceConfig {
   // ==================== 记忆注入配置 ====================
@@ -30,6 +34,19 @@ export interface WorkspaceConfig {
   "memory.inject.topK"?: number;
   /** 记忆注入最大字符数（默认 2000） */
   "memory.inject.maxChars"?: number;
+
+  // ==================== P5.7-R3e: 双模型路由配置 ====================
+  /**
+   * 执行模型：用于工具调用（temperature=0）
+   * 默认：继承 agent.provider（通常为 lmstudio）
+   */
+  "model.executor"?: string;
+
+  /**
+   * 响应模型：用于非工具回复（temperature=0.2）
+   * 默认：继承 agent.provider（通常为 lmstudio）
+   */
+  "model.responder"?: string;
 
   // ==================== P5.6.14-R1: 运行形态配置 ====================
   /**
@@ -124,11 +141,14 @@ export type TmuxClient = "codex" | "claude-code";
  * P5.6.8-R4g: 导出供测试使用
  * P5.6.14-R1: 新增 runtime.kind 默认值为 agent
  * P5.6.14-R1b: 使用 AgentProvider/TmuxClient 类型
+ * P5.7-R3e: 新增 model.executor/model.responder 默认值
  */
 export const DEFAULT_WORKSPACE_CONFIG: Required<WorkspaceConfig> = {
   "memory.inject.enabled": true, // 测试期默认开启记忆注入
   "memory.inject.topK": 5,
   "memory.inject.maxChars": 2000,
+  "model.executor": "", // P5.7-R3e: 空=继承 agent.provider
+  "model.responder": "", // P5.7-R3e: 空=继承 agent.provider
   "policy.mode": "egress-allowed", // 默认允许外联（远程场景避免被门禁卡住；高敏 workspace 可手动切回 local-only）
   "runtime.kind": "agent", // P5.6.14-R1: 默认 agent 形态
   "agent.provider": "lmstudio", // P5.6.14-R1: 默认 lmstudio provider
@@ -540,4 +560,82 @@ export async function setToolingRequireConfirm(
   requireConfirm: ToolName[]
 ): Promise<void> {
   await saveWorkspaceConfig(projectDir, { "tooling.require_confirm": requireConfirm });
+}
+
+// ============================================
+// P5.7-R3e: 双模型路由配置
+// ============================================
+
+/**
+ * 获取执行模型配置（用于工具调用）
+ * P5.7-R3e: 返回 executor 模型，如果未配置则继承 agent.provider
+ *
+ * @param projectDir 工作区路径
+ * @returns 执行模型名称
+ */
+export async function getExecutorModel(
+  projectDir: string
+): Promise<string> {
+  const workspaceConfig = await loadWorkspaceConfig(projectDir);
+
+  // 优先使用显式配置
+  const executor = workspaceConfig["model.executor"];
+  if (executor && executor.trim()) {
+    return executor.trim();
+  }
+
+  // Fallback: 继承 agent.provider
+  const provider = await getAgentProvider(projectDir);
+  return provider === "none" ? "lmstudio" : provider;
+}
+
+/**
+ * 获取响应模型配置（用于非工具回复）
+ * P5.7-R3e: 返回 responder 模型，如果未配置则继承 agent.provider
+ *
+ * @param projectDir 工作区路径
+ * @returns 响应模型名称
+ */
+export async function getResponderModel(
+  projectDir: string
+): Promise<string> {
+  const workspaceConfig = await loadWorkspaceConfig(projectDir);
+
+  // 优先使用显式配置
+  const responder = workspaceConfig["model.responder"];
+  if (responder && responder.trim()) {
+    return responder.trim();
+  }
+
+  // Fallback: 继承 agent.provider
+  const provider = await getAgentProvider(projectDir);
+  return provider === "none" ? "lmstudio" : provider;
+}
+
+/**
+ * 设置执行模型
+ * P5.7-R3e: 设置工具调用使用的模型
+ *
+ * @param projectDir 工作区路径
+ * @param model 模型名称（空字符串表示继承 agent.provider）
+ */
+export async function setExecutorModel(
+  projectDir: string,
+  model: string
+): Promise<void> {
+  await saveWorkspaceConfig(projectDir, { "model.executor": model });
+}
+
+/**
+ * 设置响应模型
+ * P5.7-R3e: 设置非工具回复使用的模型
+ *
+ * @param projectDir 工作区路径
+ * @param model 模型名称（空字符串表示继承 agent.provider）
+ */
+export async function setResponderModel(
+  projectDir: string,
+  model: string
+): Promise<void> {
+  await saveWorkspaceConfig(projectDir, { "model.responder": model });
 }

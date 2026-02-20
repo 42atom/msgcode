@@ -98,6 +98,21 @@
   5. `msgcode system env [--key]`
 - 参考样例映射（Alma）：`file-manager`
 
+<<<<<<< Updated upstream
+=======
+### R3a（P0，技术债插单）：runSkill 残留硬清理
+
+- 任务单：`p5-7-r3a-runskill-residue-hard-cut.md`
+- 目标：清理 `runSkill/runAutoSkill/skill-orchestrator` 运行时残留，锁死单一 CLI 主链。
+- 说明：R4 前必须完成，防止历史执行链回流。
+
+### R3d（P0，稳定性插单）：LM Studio GLM ToolCall 温度锁定
+
+- 任务单：`p5-7-r3d-lmstudio-glm-toolcall-temperature-lock.md`
+- 目标：基于 R3c 调研结论，固化工具调用默认参数 `temperature=0`，并用回归锁防止回退。
+- 说明：该插单只做稳定性口径收敛，不改变能力面。
+
+>>>>>>> Stashed changes
 ### R4（P1）：记忆与线程检索
 
 - 建议能力：
@@ -141,6 +156,15 @@ P5.7-R3（file 域）
 ├── file write（加 --force + --append）
 └── file move/rename/delete/copy/zip（状态变更，需要回归锁）
 
+<<<<<<< Updated upstream
+=======
+P5.7-R3a（技术债插单）
+└── runSkill/runAutoSkill/skill-orchestrator 残留硬清理
+
+P5.7-R3d（稳定性插单）
+└── LM Studio GLM ToolCall 温度锁定（temperature=0 + 回归锁）
+
+>>>>>>> Stashed changes
 P5.7-R4（memory/thread 域）
 ├── memory search/add/stats（依赖现有记忆系统）
 └── thread list/messages/switch/active（依赖 thread 管理）
@@ -163,12 +187,24 @@ P5.7-R8（agent 域）
 
 ## 任务单文件映射（可直接派发）
 
+<<<<<<< Updated upstream
 1. `p5-7-r3-file-system-domain.md`
 2. `p5-7-r4-memory-thread-domain.md`
 3. `p5-7-r5-todo-schedule-domain.md`
 4. `p5-7-r6-media-gen-domain.md`
 5. `p5-7-r7-browser-domain.md`
 6. `p5-7-r8-agent-domain.md`
+=======
+1. `p5-7-r3a-runskill-residue-hard-cut.md`（技术债插单，R4 前执行）
+2. `p5-7-r3d-lmstudio-glm-toolcall-temperature-lock.md`（稳定性插单，尽快执行）
+3. `p5-7-r3-file-system-domain.md`
+4. `p5-7-r4-memory-thread-domain.md`
+5. `p5-7-r5-todo-schedule-domain.md`
+6. `p5-7-r6-media-gen-domain.md`
+7. `p5-7-r7-browser-domain.md`
+8. `p5-7-r8-agent-domain.md`
+9. `p5-7-r8b-skill-doc-contract-alignment.md`（收尾单，R8 后执行）
+>>>>>>> Stashed changes
 
 ## 每个子任务统一验收（硬门）
 

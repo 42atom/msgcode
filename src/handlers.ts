@@ -10,7 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { BotType } from "./router.js";
-import { runLmStudioChat, runLmStudioToolLoop } from "./lmstudio.js";
+import { runLmStudioChat, runLmStudioToolLoop, runLmStudioRoutedChat } from "./lmstudio.js";
 import type { InboundMessage } from "./imsg/types.js";
 import { clearTtsPrefs, getTtsPrefs, getVoiceReplyMode, setTtsPrefs, setVoiceReplyMode } from "./state/store.js";
 import { logger } from "./logger/index.js";
@@ -586,8 +586,8 @@ export class RuntimeRouterHandler implements CommandHandler {
 
             // P5.6.1-R2: Persona 全量退役，不再注入 personaContent
             const personaContent = undefined;
-            // P5.6.2-R1: 主链统一走 ToolLoop
-            const toolLoopResult = await runLmStudioToolLoop({
+            // P5.7-R3e: 主链走路由分发（no-tool / tool / complex-tool）
+            const routedResult = await runLmStudioRoutedChat({
                 prompt: trimmed,
                 system: personaContent,
                 ...(context.projectDir ? { workspacePath: context.projectDir } : {}),
@@ -597,7 +597,7 @@ export class RuntimeRouterHandler implements CommandHandler {
                 // P5.6.8-R4e: 注入 SOUL 上下文（direct only）
                 soulContext,
             });
-            const clean = (toolLoopResult.answer || "").trim();
+            const clean = (routedResult.answer || "").trim();
             if (!clean) {
                 return {
                     success: false,
@@ -615,9 +615,12 @@ export class RuntimeRouterHandler implements CommandHandler {
                 runtimeKind: "agent",
                 agentProvider: provider,
                 injectionEnabled,
+                // P5.7-R3e: 路由观测字段
+                route: routedResult.route,
+                temperature: routedResult.temperature,
                 // P5.6.2-R1: ToolLoop 观测字段
-                toolCallCount: toolLoopResult.toolCall ? 1 : 0,
-                toolName: toolLoopResult.toolCall?.name,
+                toolCallCount: routedResult.toolCall ? 1 : 0,
+                toolName: routedResult.toolCall?.name,
                 // P5.6.8-R4e: SOUL 注入观测字段
                 soulInjected: !!soulContext?.content,
                 soulSource: soulContext?.source || "none",

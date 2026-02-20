@@ -89,15 +89,31 @@
 8. `P5.7-R6`：多模态域（`media screen` + `gen image/selfie/tts/music`）
 9. `P5.7-R7`：浏览器域（`browser open/click/type`）
 10. `P5.7-R8`：代理域（`agent run/status`）
+<<<<<<< Updated upstream
+=======
+11. `P5.7-R8b`：SKILL.md 与真实能力合同对齐（收尾）
+12. `P5.7-R3d`：LM Studio GLM ToolCall 温度锁定（`temperature=0`）
+>>>>>>> Stashed changes
 
 ### 派单顺序（冻结）
 
 1. `P5.7-R3`（file 域）
+<<<<<<< Updated upstream
 2. `P5.7-R4`（memory/thread 域）
 3. `P5.7-R5`（todo/schedule 域）
 4. `P5.7-R6`（media/gen 域）
 5. `P5.7-R7`（browser 域）
 6. `P5.7-R8`（agent 域）
+=======
+2. `P5.7-R3a`（runSkill 残留清理技术债插单）
+3. `P5.7-R4`（memory/thread 域）
+4. `P5.7-R5`（todo/schedule 域）
+5. `P5.7-R6`（media/gen 域）
+6. `P5.7-R7`（browser 域）
+7. `P5.7-R8`（agent 域）
+8. `P5.7-R8b`（SKILL.md 与真实能力合同对齐收尾）
+9. `P5.7-R3d`（LM Studio GLM ToolCall 温度锁定，R1 命中率回归锁）
+>>>>>>> Stashed changes
 
 ## 当前任务单
 
@@ -153,6 +169,11 @@
 - `p5-7-r6-media-gen-domain.md`：P5.7-R6（多模态域任务单）
 - `p5-7-r7-browser-domain.md`：P5.7-R7（浏览器域任务单）
 - `p5-7-r8-agent-domain.md`：P5.7-R8（代理域任务单）
+<<<<<<< Updated upstream
+=======
+- `p5-7-r8b-skill-doc-contract-alignment.md`：P5.7-R8b（SKILL.md 与真实能力合同对齐收尾单）
+- `p5-7-r3d-lmstudio-glm-toolcall-temperature-lock.md`：P5.7-R3d（LM Studio GLM ToolCall 温度锁定）
+>>>>>>> Stashed changes
 
 ## 规则
 
