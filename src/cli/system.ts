@@ -1,8 +1,9 @@
 /**
- * msgcode: System CLI 命令（P5.7-R2）
+ * msgcode: System CLI 命令（P5.7-R2 + R3-4）
  *
  * 职责：
  * - msgcode system info [--json]：系统信息
+ * - msgcode system env [--name] [--json]：环境变量查询
  */
 
 import { Command } from "commander";
@@ -187,6 +188,141 @@ export function createSystemInfoCommand(): Command {
   return cmd;
 }
 
+// ============================================
+// System Env 命令实现（P5.7-R3-4）
+// ============================================
+
+/**
+ * 创建 system env 子命令（P5.7-R3-4：环境变量查询）
+ */
+export function createSystemEnvCommand(): Command {
+  const cmd = new Command("env");
+
+  cmd
+    .description("查询环境变量（P5.7-R3-4）")
+    .option("--name <name>", "指定变量名（默认返回所有）")
+    .option("--json", "JSON 格式输出")
+    .action((options) => {
+      const startTime = Date.now();
+      const command = options.name
+        ? `msgcode system env --name ${options.name}`
+        : "msgcode system env";
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      try {
+        if (options.name) {
+          // 查询单个变量
+          const value = process.env[options.name];
+
+          if (value === undefined) {
+            errors.push({
+              code: "SYSTEM_ENV_NOT_FOUND",
+              message: `环境变量不存在：${options.name}`,
+            });
+            const envelope = createEnvelope(
+              command,
+              startTime,
+              "error",
+              {
+                ok: false,
+                envResult: "NOT_FOUND" as const,
+                errorCode: "VARIABLE_NOT_FOUND",
+                errorMessage: `环境变量不存在：${options.name}`,
+              },
+              warnings,
+              errors
+            );
+            if (options.json) {
+              console.log(JSON.stringify(envelope, null, 2));
+            } else {
+              console.error(`错误：${errors[0].message}`);
+            }
+            process.exit(1);
+          }
+
+          // 成功
+          const envelope = createEnvelope(
+            command,
+            startTime,
+            "pass",
+            {
+              ok: true,
+              envResult: "OK" as const,
+              name: options.name,
+              value,
+            },
+            warnings,
+            errors
+          );
+
+          if (options.json) {
+            console.log(JSON.stringify(envelope, null, 2));
+          } else {
+            console.log(`${options.name}=${value}`);
+          }
+        } else {
+          // 返回所有环境变量
+          const env = { ...process.env };
+
+          const envelope = createEnvelope(
+            command,
+            startTime,
+            "pass",
+            {
+              ok: true,
+              envResult: "OK" as const,
+              count: Object.keys(env).length,
+              variables: env,
+            },
+            warnings,
+            errors
+          );
+
+          if (options.json) {
+            console.log(JSON.stringify(envelope, null, 2));
+          } else {
+            console.log(`环境变量 (${Object.keys(env).length} 个):`);
+            Object.entries(env).forEach(([key, value]) => {
+              console.log(`  ${key}=${value || ''}`);
+            });
+          }
+        }
+
+        process.exit(0);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        errors.push({
+          code: "SYSTEM_ENV_UNEXPECTED_ERROR",
+          message: `查询失败：${message}`,
+        });
+
+        const envelope = createEnvelope(
+          command,
+          startTime,
+          "error",
+          {
+            ok: false,
+            envResult: "FAILED" as const,
+            errorCode: "QUERY_ERROR",
+            errorMessage: message,
+          },
+          warnings,
+          errors
+        );
+
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.error(`错误：${message}`);
+        }
+        process.exit(1);
+      }
+    });
+
+  return cmd;
+}
+
 /**
  * 创建 system 命令组
  */
@@ -195,6 +331,7 @@ export function createSystemCommand(): Command {
 
   sysCmd.description("系统操作");
   sysCmd.addCommand(createSystemInfoCommand());
+  sysCmd.addCommand(createSystemEnvCommand());
 
   return sysCmd;
 }
@@ -236,6 +373,37 @@ export function getSystemCommandContract() {
         },
       },
       errorCodes: ["OK", "INFO_FAILED"],
+    },
+    {
+      name: "system env",
+      description: "查询环境变量（P5.7-R3-4）",
+      options: {
+        optional: {
+          "--name <name>": "指定变量名（默认返回所有）",
+          "--json": "JSON 格式输出",
+        },
+      },
+      output: {
+        success: {
+          ok: true,
+          envResult: "OK",
+          name: "<变量名>",
+          value: "<变量值>",
+        },
+        notFound: {
+          ok: false,
+          envResult: "NOT_FOUND",
+          errorCode: "VARIABLE_NOT_FOUND",
+          errorMessage: "<错误信息>",
+        },
+        failed: {
+          ok: false,
+          envResult: "FAILED",
+          errorCode: "QUERY_ERROR",
+          errorMessage: "<错误信息>",
+        },
+      },
+      errorCodes: ["OK", "NOT_FOUND", "FAILED"],
     },
   ];
 }
