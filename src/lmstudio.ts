@@ -29,12 +29,18 @@ export interface LmStudioChatOptions {
     prompt: string;
     system?: string;
     workspace?: string;  // 可选：工作目录（启用 MCP integrations）
+    model?: string;      // P5.7-R3e: 可选覆盖模型（用于 responder/executor 分流）
+    temperature?: number; // P5.7-R3e: 可选覆盖温度（默认 0.7）
 }
 
 export async function runLmStudioChat(options: LmStudioChatOptions): Promise<string> {
     const baseUrl = normalizeBaseUrl(config.lmstudioBaseUrl || "http://127.0.0.1:1234");
 
-    const model = await resolveLmStudioModelId({ baseUrl });
+    // P5.7-R3e: 支持传入 model，否则从配置解析
+    const model = options.model ?? await resolveLmStudioModelId({ baseUrl });
+
+    // P5.7-R3e: 支持传入 temperature，否则默认 0.7（创造性回复）
+    const temperature = options.temperature ?? 0.7;
 
     // 构建 system prompt：基础（用户配置）+ 快速回答规则 +（可选）MCP 防循环规则
     // 注意：当 options.system 未提供时，必须回退到 LMSTUDIO_SYSTEM_PROMPT（用户配置）。
@@ -80,6 +86,7 @@ export async function runLmStudioChat(options: LmStudioChatOptions): Promise<str
             system: systemPrompt,  // 传递 system_prompt
             maxOutputTokens,
             timeoutMs,
+            temperature, // P5.7-R3e: 传递温度参数
         });
         return sanitizeLmStudioOutput(native);
     }
@@ -92,6 +99,7 @@ export async function runLmStudioChat(options: LmStudioChatOptions): Promise<str
             system: compatSystemPrompt && compatSystemPrompt.trim() ? compatSystemPrompt.trim() : undefined,
             maxTokens: maxOutputTokens,
             timeoutMs,
+            temperature, // P5.7-R3e: 传递温度参数
         });
         return sanitizeLmStudioOutput(text);
     }
@@ -297,6 +305,7 @@ type LmStudioNativeChatParams = {
     system?: string;
     maxOutputTokens: number;
     timeoutMs: number;
+    temperature?: number; // P5.7-R3e: 可选温度参数
 };
 
 /**
@@ -415,7 +424,7 @@ async function runLmStudioChatNative(params: LmStudioNativeChatParams): Promise<
         input: params.prompt,
         stream: false,
         max_output_tokens: params.maxOutputTokens,
-        temperature: 0, // 稳定优先：避免发散/乱码/循环
+        temperature: params.temperature ?? 0, // P5.7-R3e: 支持传入温度，默认 0（稳定优先）
     };
 
     // 添加 system_prompt（如果提供）
@@ -471,6 +480,7 @@ type LmStudioOpenAIChatParams = {
     system?: string;
     maxTokens: number;
     timeoutMs: number;
+    temperature?: number; // P5.7-R3e: 可选温度参数
 };
 
 async function runLmStudioChatOpenAICompat(params: LmStudioOpenAIChatParams): Promise<string> {
@@ -493,6 +503,7 @@ async function runLmStudioChatOpenAICompat(params: LmStudioOpenAIChatParams): Pr
             messages,
             stream: false,
             max_tokens: params.maxTokens,
+            temperature: params.temperature ?? 0.7, // P5.7-R3e: 支持传入温度，默认 0.7
         }),
     });
 
@@ -1579,9 +1590,9 @@ export interface RoutedChatResult {
  * P5.7-R3e: 路由分发聊天
  *
  * 根据请求类型选择不同的处理路径：
- * - no-tool: 直接聊天（temperature=0.2，允许更多创造性）
- * - tool: 工具循环（temperature=0，稳定触发）
- * - complex-tool: 工具循环（temperature=0，稳定触发）
+ * - no-tool: 直接聊天（temperature=0.2，允许更多创造性，使用 responder 模型）
+ * - tool: 工具循环（temperature=0，稳定触发，使用 executor 模型）
+ * - complex-tool: 先计划再执行再收口（串行，使用 executor 模型）
  *
  * @param options 聊天选项
  * @returns 聊天结果（包含路由信息和温度）
@@ -1594,21 +1605,40 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
     // 2. 获取温度（允许覆盖）
     const temperature = options.temperature ?? getTemperatureForRoute(route);
 
+    // P5.7-R3e-hotfix: 读取 workspace 配置获取模型
+    const workspacePath = options.workspacePath;
+    let executorModel: string | undefined;
+    let responderModel: string | undefined;
+
+    if (workspacePath) {
+        try {
+            const { getExecutorModel, getResponderModel } = await import("./config/workspace.js");
+            executorModel = await getExecutorModel(workspacePath);
+            responderModel = await getResponderModel(workspacePath);
+        } catch {
+            // 读取失败，使用 undefined（会 fallback 到默认模型）
+        }
+    }
+
     logger.info("routed chat started", {
         module: "lmstudio",
         route,
         confidence: classification.confidence,
         reason: classification.reason,
         temperature,
+        executorModel,
+        responderModel,
     });
 
     // 3. 根据路由分发
     if (route === "no-tool") {
-        // no-tool: 简单聊天（不触发工具循环）
+        // no-tool: 简单聊天（不触发工具循环，使用 responder 模型 + temperature=0.2）
         const answer = await runLmStudioChat({
             prompt: options.prompt,
             system: options.system,
             workspace: options.workspacePath,
+            model: responderModel, // P5.7-R3e-hotfix: 使用 responder 模型
+            temperature, // P5.7-R3e-hotfix: 传递温度参数（默认 0.2）
         });
 
         logger.info("routed chat completed (no-tool)", {
@@ -1616,6 +1646,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             route,
             temperature,
             responseLength: answer.length,
+            model: responderModel,
         });
 
         return {
@@ -1625,7 +1656,62 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
         };
     }
 
-    // tool / complex-tool: 走工具循环
+    // P5.7-R3e-hotfix: complex-tool 先计划再执行再收口
+    if (route === "complex-tool") {
+        // 第一阶段：计划（使用 executor 模型，temperature=0）
+        const planPrompt = `请先分析这个任务并制定执行计划，不需要执行具体操作：${options.prompt}`;
+        const planResult = await runLmStudioChat({
+            prompt: planPrompt,
+            system: options.system,
+            workspace: options.workspacePath,
+            model: executorModel,
+            temperature: 0, // 计划阶段需要稳定性
+        });
+
+        logger.info("complex-tool plan phase completed", {
+            module: "lmstudio",
+            route,
+            planLength: planResult.length,
+        });
+
+        // 第二阶段：执行（走工具循环，使用 executor 模型 + 计划上下文）
+        const execPrompt = `${options.prompt}\n\n执行计划：${planResult}`;
+        const toolLoopResult = await runLmStudioToolLoop({
+            prompt: execPrompt,
+            system: options.system,
+            workspacePath: options.workspacePath,
+            windowMessages: options.windowMessages,
+            summaryContext: options.summaryContext,
+            soulContext: options.soulContext,
+        });
+
+        // 第三阶段：收口（使用 executor 模型总结结果）
+        const summaryPrompt = `任务已完成。请总结执行结果：${toolLoopResult.answer}`;
+        const summaryResult = await runLmStudioChat({
+            prompt: summaryPrompt,
+            system: options.system,
+            workspace: options.workspacePath,
+            model: executorModel,
+            temperature: 0, // 收口阶段需要准确性
+        });
+
+        logger.info("complex-tool completed (plan->execute->summarize)", {
+            module: "lmstudio",
+            route,
+            temperature: 0,
+            responseLength: summaryResult.length,
+            toolCallCount: toolLoopResult.toolCall ? 1 : 0,
+        });
+
+        return {
+            answer: summaryResult,
+            route: "complex-tool",
+            temperature: 0,
+            toolCall: toolLoopResult.toolCall,
+        };
+    }
+
+    // tool: 走工具循环（temperature=0，稳定触发）
     const toolLoopResult = await runLmStudioToolLoop({
         prompt: options.prompt,
         system: options.system,
@@ -1647,7 +1733,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
     return {
         answer: toolLoopResult.answer,
         route,
-        temperature,
+        temperature: 0, // tool 永远使用 temperature=0
         toolCall: toolLoopResult.toolCall,
     };
 }
