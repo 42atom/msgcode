@@ -212,10 +212,19 @@ export interface ParsedChatCompletion {
 }
 
 /**
+ * P5.7-R3b: 带元数据的解析结果（含二轮格式漂移检测）
+ */
+export interface ParsedChatCompletionWithMeta extends ParsedChatCompletion {
+    /** R3b: 二轮格式漂移标记：content 含工具调用标记但 tool_calls 为空 */
+    secondRoundMalformedToolCall?: boolean;
+}
+
+/**
  * 解析 Chat Completions 响应
  * P5.6.13-R1A-EXEC R3: 统一响应解析入口
+ * P5.7-R3b: 增加二轮格式漂移检测
  */
-export function parseChatCompletionResponse(raw: string): ParsedChatCompletion {
+export function parseChatCompletionResponse(raw: string): ParsedChatCompletionWithMeta {
     let data: unknown;
     try {
         data = JSON.parse(raw);
@@ -252,13 +261,26 @@ export function parseChatCompletionResponse(raw: string): ParsedChatCompletion {
     const choice = data.choices[0];
     const message = choice?.message;
 
+    const content = message?.content ?? null;
+    const toolCalls = normalizeToolCalls(message?.tool_calls);
+    const finishReason = choice?.finish_reason ?? null;
+
+    // P5.7-R3b: 检测二轮格式漂移
+    // 条件：tool_calls 为空 + content 含工具调用标记 + finish_reason 为 stop
+    const secondRoundMalformedToolCall =
+        toolCalls.length === 0 &&
+        content !== null &&
+        content !== "" &&
+        finishReason === "stop" &&
+        (content.includes("tool_call") || content.includes(" tool_call") || content.includes("tool_call"));
+
     return {
-        content: message?.content ?? null,
-        toolCalls: normalizeToolCalls(message?.tool_calls),
-        finishReason: choice?.finish_reason ?? null,
+        content,
+        toolCalls,
+        finishReason,
+        secondRoundMalformedToolCall,
     };
 }
-
 /**
  * 归一化工具调用
  * P5.6.13-R1A-EXEC R3: 统一工具调用格式
