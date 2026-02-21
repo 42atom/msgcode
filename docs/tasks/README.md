@@ -153,7 +153,11 @@
 - `p5-7-r1c-cli-substrate-capability-baseline.md`：P5.7-R1c（CLI 基座能力硬门任务单）
 - `p5-7-r3-r8-mainline-dispatch-pack.md`：P5.7-R3~R8 总整理与派单包
 - `p5-7-r3-file-system-domain.md`：P5.7-R3（文件与环境域任务单）
+- `p5-7-r4-mainline-dispatch-pack.md`：P5.7-R4 总整理与派单包（memory/thread 分步执行）
 - `p5-7-r4-memory-thread-domain.md`：P5.7-R4（记忆与线程域任务单）
+- `p5-7-r4-1-memory-contract.md`：P5.7-R4-1（memory 命令合同收口）
+- `p5-7-r4-2-thread-contract.md`：P5.7-R4-2（thread 命令与 active 强确认）
+- `p5-7-r4-3-help-regression-lock.md`：P5.7-R4-3（help-docs 同步与回归锁）
 - `p5-7-r5-todo-schedule-domain.md`：P5.7-R5（编排与调度域任务单）
 - `p5-7-r6-media-gen-domain.md`：P5.7-R6（多模态域任务单）
 - `p5-7-r7-browser-domain.md`：P5.7-R7（浏览器域任务单）
