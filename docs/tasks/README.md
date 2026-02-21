@@ -158,6 +158,7 @@
 - `p5-7-r4-1-memory-contract.md`：P5.7-R4-1（memory 命令合同收口）
 - `p5-7-r4-2-thread-contract.md`：P5.7-R4-2（thread 命令与 active 强确认）
 - `p5-7-r4-3-help-regression-lock.md`：P5.7-R4-3（help-docs 同步与回归锁）
+- `p5-7-r4-t1-smoke-verification-gate.md`：P5.7-R4-T1（Memory/Thread 真机冒烟门禁）
 - `p5-7-r5-todo-schedule-domain.md`：P5.7-R5（编排与调度域任务单）
 - `p5-7-r6-media-gen-domain.md`：P5.7-R6（多模态域任务单）
 - `p5-7-r7-browser-domain.md`：P5.7-R7（浏览器域任务单）

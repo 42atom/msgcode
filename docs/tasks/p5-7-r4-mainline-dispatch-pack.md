@@ -13,12 +13,16 @@
 
 1. `P5.7-R4-1`：memory 命令合同与失败码收口
 2. `P5.7-R4-2`：thread 命令与 active snapshot 强确认
-3. `P5.7-R4-3`：help-docs 同步 + 回归锁 + 冒烟证据
+3. `P5.7-R4-3`：help-docs 同步 + 回归锁
+4. `P5.7-R4-T1`：Memory/Thread 真机冒烟门禁（R5 前置）
 
 ## 依赖关系（冻结）
 
 ```text
 R4-1 -> R4-2 -> R4-3
+            \-> R4-T1
+
+R4-3 + R4-T1 -> R5
 ```
 
 ## 子任务索引（可直接派发）
@@ -26,6 +30,7 @@ R4-1 -> R4-2 -> R4-3
 1. `/Users/admin/GitProjects/msgcode/docs/tasks/p5-7-r4-1-memory-contract.md`
 2. `/Users/admin/GitProjects/msgcode/docs/tasks/p5-7-r4-2-thread-contract.md`
 3. `/Users/admin/GitProjects/msgcode/docs/tasks/p5-7-r4-3-help-regression-lock.md`
+4. `/Users/admin/GitProjects/msgcode/docs/tasks/p5-7-r4-t1-smoke-verification-gate.md`
 
 ## 统一硬验收（所有子任务必须满足）
 
