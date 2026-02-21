@@ -12,6 +12,7 @@ import type { Envelope, Diagnostic } from "../memory/types.js";
 import { getFileSendContract, getFileFindContract, getFileReadContract, getFileWriteContract, getFileDeleteContract, getFileMoveContract, getFileCopyContract } from "./file.js";
 import { getWebCommandContract } from "./web.js";
 import { getSystemCommandContract } from "./system.js";
+import { getMemoryAddContract, getMemorySearchContract, getMemoryStatsContract } from "./memory.js";
 
 // ============================================
 // 类型定义
@@ -107,6 +108,10 @@ export function createHelpDocsCommand(): Command {
           ...(getWebCommandContract() as Record<string, unknown>[]),
           // System 命令组（P5.7-R2 + R3-4）
           ...(getSystemCommandContract() as Record<string, unknown>[]),
+          // Memory 命令组（P5.7-R4-1）
+          getMemoryAddContract() as Record<string, unknown>,
+          getMemorySearchContract() as Record<string, unknown>,
+          getMemoryStatsContract() as Record<string, unknown>,
         ];
 
         const data: HelpData = {
