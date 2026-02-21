@@ -901,11 +901,12 @@ export async function getToolsForLlm(workspacePath?: string): Promise<readonly A
     }
 
     try {
-        const { loadWorkspaceConfig } = await import("./config/workspace.js");
+        const { loadWorkspaceConfig, DEFAULT_WORKSPACE_CONFIG } = await import("./config/workspace.js");
         const cfg = await loadWorkspaceConfig(workspacePath);
 
         // P5.6.8-R3b: PI 模式分叉
-        const piEnabled = cfg["pi.enabled"] ?? false;
+        // 口径修复：缺省时必须与 workspace 默认配置一致，避免 tools 被意外清空
+        const piEnabled = cfg["pi.enabled"] ?? DEFAULT_WORKSPACE_CONFIG["pi.enabled"];
 
         if (piEnabled) {
             // pi.on: 四基础工具

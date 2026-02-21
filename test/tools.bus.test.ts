@@ -153,9 +153,12 @@ describe("Tool Bus", () => {
       expect(policy.allow).toContain("tts");
       expect(policy.allow).toContain("asr");
       expect(policy.allow).toContain("vision");
-      // 默认不应该包含高风险工具
-      expect(policy.allow).not.toContain("bash");
-      expect(policy.allow).not.toContain("browser");
+      // P5.7-R6 HOTFIX: 默认工具策略与 workspace 默认配置保持一致（PI 四工具可用）
+      expect(policy.allow).toContain("bash");
+      expect(policy.allow).toContain("browser");
+      expect(policy.allow).toContain("read_file");
+      expect(policy.allow).toContain("write_file");
+      expect(policy.allow).toContain("edit_file");
     });
 
     test("应该从 workspace config.json 读取配置", () => {
@@ -524,13 +527,15 @@ describe("Tool Bus", () => {
       // P5.5: 测试期默认 autonomous（LLM 自主决策 tool_calls）
       expect(policy.mode).toBe("autonomous");
 
-      // 默认 allowlist 应该只包含基础工具
+      // 默认 allowlist 与 workspace 默认配置对齐
       expect(policy.allow).toContain("tts");
       expect(policy.allow).toContain("asr");
       expect(policy.allow).toContain("vision");
-      // 默认不应该包含高风险工具
-      expect(policy.allow).not.toContain("bash");
-      expect(policy.allow).not.toContain("browser");
+      expect(policy.allow).toContain("bash");
+      expect(policy.allow).toContain("browser");
+      expect(policy.allow).toContain("read_file");
+      expect(policy.allow).toContain("write_file");
+      expect(policy.allow).toContain("edit_file");
     });
 
     test("autonomous 模式下应该允许 llm-tool-call 来源", async () => {

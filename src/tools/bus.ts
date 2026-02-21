@@ -14,7 +14,7 @@
 import type {
   ToolName, ToolSource, ToolPolicy, ToolContext, ToolResult, SideEffectLevel
 } from "./types.js";
-import { loadWorkspaceConfig, getFsScope } from "../config/workspace.js";
+import { loadWorkspaceConfig, getFsScope, DEFAULT_WORKSPACE_CONFIG } from "../config/workspace.js";
 import { runTts } from "../runners/tts.js";
 import { runAsr } from "../runners/asr.js";
 import { runVisionOcr } from "../runners/vision_ocr.js";
@@ -39,15 +39,15 @@ const TOOL_META: Record<ToolName, { sideEffect: SideEffectLevel }> = {
 const MEDIA_PIPELINE_ALLOWED: ToolName[] = ["asr", "vision"];
 
 function normalizePolicy(raw: Partial<ToolPolicy> | null | undefined): ToolPolicy {
-  // P5.5: 测试期统一 autonomous（让 LLM 自主决策 tool_calls）
+  // 与 workspace 默认配置保持单一真相源，避免默认值分叉
   const mode = raw?.mode === "explicit" || raw?.mode === "autonomous" || raw?.mode === "tool-calls"
     ? raw.mode
-    : "autonomous"; // P5.5: 测试期默认 autonomous
+    : DEFAULT_WORKSPACE_CONFIG["tooling.mode"];
 
   return {
     mode,
-    allow: (raw?.allow ?? ["tts", "asr", "vision"]) as ToolName[],
-    requireConfirm: (raw?.requireConfirm ?? []) as ToolName[],
+    allow: (raw?.allow ?? DEFAULT_WORKSPACE_CONFIG["tooling.allow"]) as ToolName[],
+    requireConfirm: (raw?.requireConfirm ?? DEFAULT_WORKSPACE_CONFIG["tooling.require_confirm"]) as ToolName[],
   };
 }
 

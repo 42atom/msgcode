@@ -292,6 +292,21 @@ async function loadGenAudioCommands() {
   program.addCommand(createGenAudioCommandGroup());
 }
 
+// Gen 命令组（P5.7-R6 命令入口统一）
+async function loadGenCommands() {
+  const { createGenImageCommand, createGenSelfieCommand } = await import("./cli/gen-image.js");
+  const { createGenTtsCommand, createGenMusicCommand } = await import("./cli/gen-audio.js");
+
+  const cmd = new Command("gen");
+  cmd.description("AI 生成能力（image/selfie/tts/music）");
+  cmd.addCommand(createGenImageCommand());
+  cmd.addCommand(createGenSelfieCommand());
+  cmd.addCommand(createGenTtsCommand());
+  cmd.addCommand(createGenMusicCommand());
+
+  program.addCommand(cmd);
+}
+
 // 主入口（异步）
 async function main() {
   // P0: 仅按需加载子命令，避免在"未初始化配置"时也强制 import 导致 CLI 直接崩溃。
@@ -335,6 +350,9 @@ async function main() {
   if (top === "media") {
     await loadMediaCommands();
   }
+  if (top === "gen") {
+    await loadGenCommands();
+  }
   if (top === "gen-image") {
     await loadGenImageCommands();
   }
@@ -358,6 +376,7 @@ async function main() {
     await loadTodoCommands();
     await loadScheduleCommands();
     await loadMediaCommands();
+    await loadGenCommands();
     await loadGenImageCommands();
     await loadGenAudioCommands();
     await loadHelpDocsCommand();
