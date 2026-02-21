@@ -13,6 +13,7 @@ import { getFileSendContract, getFileFindContract, getFileReadContract, getFileW
 import { getWebCommandContract } from "./web.js";
 import { getSystemCommandContract } from "./system.js";
 import { getMemoryAddContract, getMemorySearchContract, getMemoryStatsContract } from "./memory.js";
+import { getThreadListContract, getThreadMessagesContract, getThreadActiveContract, getThreadSwitchContract } from "./thread.js";
 
 // ============================================
 // 类型定义
@@ -112,6 +113,11 @@ export function createHelpDocsCommand(): Command {
           getMemoryAddContract() as Record<string, unknown>,
           getMemorySearchContract() as Record<string, unknown>,
           getMemoryStatsContract() as Record<string, unknown>,
+          // Thread 命令组（P5.7-R4-2）
+          getThreadListContract() as Record<string, unknown>,
+          getThreadMessagesContract() as Record<string, unknown>,
+          getThreadActiveContract() as Record<string, unknown>,
+          getThreadSwitchContract() as Record<string, unknown>,
         ];
 
         const data: HelpData = {
