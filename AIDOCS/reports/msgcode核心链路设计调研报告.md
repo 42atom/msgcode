@@ -14,7 +14,14 @@
 
 ### 2.1 最重要结论
 
-“对话核带 SOUL、执行核不带 SOUL”的双核思路是合理且推荐的，尤其适用于当前本地模型 tool-call 稳定性仍在爬坡阶段的 msgcode。
+“对话核带 SOUL、执行核不带 SOUL”的三核思路是合理且推荐的，尤其适用于当前本地模型 tool-call 稳定性仍在爬坡阶段的 msgcode。
+
+但该方案不是“零代价完美解”，落地必须同步补齐四个工程短板：
+
+1. Exec -> Dialog 的状态回写机制（否则 report 丢细节）。
+2. 三段串行导致的 TTFT 变慢（否则用户体感变差）。
+3. 路由分类健壮性（否则误判导致链路抖动）。
+4. 三核排障可观测性（否则问题难定位）。
 
 ### 2.2 与 OpenClaw / pi-mono 的关系
 
@@ -127,6 +134,21 @@
    - `act`（exec, soul=false）
    - `report`（dialog, soul=true）
 
+## 5.3 状态回写契约（Exec -> Dialog）
+
+不建议把“思考日志”硬塞进每个工具 schema；推荐由编排核维护统一 `action_journal`，作为 report 阶段唯一事实源：
+
+1. `traceId`
+2. `stepId`
+3. `intent`（本步目标）
+4. `tool`
+5. `argsDigest`（参数摘要，避免泄漏大文本）
+6. `ok/exitCode/errorCode`
+7. `stdoutTail/stderrTail/fullOutputPath`
+8. `durationMs`
+
+report 阶段只消费 `action_journal` + 用户原始问题，禁止直接“猜测执行过程”。
+
 ---
 
 ## 6. 与 OpenClaw 的可借鉴点
@@ -142,13 +164,24 @@
 
 ## 7.1 建议任务序列
 
-1. `R1`: 抽离 prompt builder（dialog / exec 两套 builder）
-2. `R2`: 路由层改造（no-tool/tool/complex-tool 显式 phase）
-3. `R3`: tool loop 去人格化（移除 SOUL 注入）
-4. `R4`: 收口层统一（report 始终回 dialog kernel）
-5. `R5`: 回归锁与观测字段固化
+1. `R0`: 先补防幻觉硬门（tool 路由下 `toolCallCount=0` 不允许伪执行文案通过）
+2. `R1`: 抽离 prompt builder（dialog / exec 两套 builder）
+3. `R2`: 路由层改造（no-tool/tool/complex-tool 显式 phase）
+4. `R3`: tool loop 去人格化（移除 SOUL 注入）
+5. `R4`: 状态回写落地（`action_journal` + report 消费契约）
+6. `R5`: TTFT 补偿（进入 plan/act 立刻发送固定“处理中”短回执）
+7. `R6`: 回归锁与观测字段固化
 
-## 7.2 强制观测字段
+## 7.2 路由健壮策略（避免 Orchestrator 误判）
+
+建议采用“规则 + 不确定性降级”：
+
+1. 先做轻量规则判定（关键词/命令形态/上下文长度）。
+2. 若置信度低，优先走 `no-tool` 并反问澄清，而非盲目进入 complex-tool。
+3. 对高风险执行（写文件/删除/长命令）要求显式确认或二次判定。
+4. 保留人工降级开关：连续协议失败时强制 `LEVEL_2`（纯文本模式）。
+
+## 7.3 强制观测字段
 
 每轮至少记录：
 
@@ -167,12 +200,27 @@
 3. `complex-tool` 三阶段日志顺序必须为 `plan -> act -> report`
 4. 二轮收口必须可展示（防止“工具成功但无最终文本”）
 5. 全量 `tsc/test/docs:check` 通过
+6. tool 路由出现 `toolCallCount=0` 时必须返回协议失败提示，不得冒充已执行
+7. report 内容必须可由 `action_journal` 字段反向核验（可追溯）
 
 ---
 
-## 9. 参考资料
+## 9. 评审意见吸收后的落地补丁
 
-## 9.1 OpenClaw
+本章节对应“工程落地四大痛点”补救：
+
+1. 记忆同步复杂：通过 `action_journal` 契约回写，report 只读事实，不读猜测。
+2. TTFT 变慢：进入 plan/act 立即发短回执，后台继续执行三阶段。
+3. Orchestrator 智商压力：加置信度策略和不确定性降级，避免误判放大。
+4. 运维复杂度上升：强制 `traceId + route + phase + kernel + soulInjected` 日志锚点。
+
+这意味着三核方案是“有成本但可控”的演进路径，而非一次性完美重构。
+
+---
+
+## 10. 参考资料
+
+## 10.1 OpenClaw
 
 1. 文档：[https://docs.openclaw.ai/concepts/system-prompt](https://docs.openclaw.ai/concepts/system-prompt)
 2. 本地证据仓库：`/Users/admin/GitProjects/GithubDown/openclaw`
@@ -183,7 +231,7 @@
    - `/Users/admin/GitProjects/GithubDown/openclaw/src/agents/workspace.ts`
    - `/Users/admin/GitProjects/GithubDown/openclaw/src/agents/skills/workspace.ts`
 
-## 9.2 pi-mono
+## 10.2 pi-mono
 
 1. 本地证据仓库：`/Users/admin/GitProjects/GithubDown/pi-mono`
 2. 关键源码证据（本地绝对路径）：
@@ -191,7 +239,7 @@
    - `/Users/admin/GitProjects/GithubDown/pi-mono/packages/coding-agent/src/core/system-prompt.ts`
    - `/Users/admin/GitProjects/GithubDown/pi-mono/packages/agent/src/agent-loop.ts`
 
-## 9.3 msgcode（当前）
+## 10.3 msgcode（当前）
 
 1. `/Users/admin/GitProjects/msgcode/src/lmstudio.ts`
 2. `/Users/admin/GitProjects/msgcode/src/handlers.ts`
