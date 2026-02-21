@@ -27,6 +27,107 @@ import { classifyRoute, getTemperatureForRoute } from "./routing/classifier.js";
 // P5.7-R3k: SLO 降级策略
 import { selectModelByDegrade, isToolCallAllowed, getDegradeState } from "./slo-degrade.js";
 
+// ============================================
+// P5.7-R3l-2: System Prompt 构建函数拆分
+// ============================================
+
+/**
+ * MCP 防循环规则（硬约束）
+ */
+const MCP_ANTI_LOOP_RULES = `
+你是一个会使用工具的助手。你可以通过 MCP 插件 filesystem 访问被授权的目录与文件。
+
+核心规则：
+1. 涉及目录内容、文件读写时，必须调用 filesystem 工具获取真实结果，禁止猜测。
+2. 工具返回已经包含所需信息时，立刻生成最终回答，不要重复调用同一个工具获取相同信息。
+3. 同一路径的目录 listing 最多调用 1 次；整个问题最多调用工具 3 次。超过则停止并说明原因。
+4. 最终输出只给用户需要的结果与结论，避免输出工具调用的中间文本或代码块。
+
+输出格式要求：
+- 列出文件时：每行一个文件名，用简单列表格式
+- 不要添加额外的计数说明（如"共 X 个文件"）
+- 不要重复相同的条目
+- 区分文件和目录时用简洁标记（如 文件：/ 目录：）
+`.trim();
+
+/**
+ * 快速回答规则（E17：默认启用，避免模型思考太长时间）
+ */
+const QUICK_ANSWER_CONSTRAINT = `
+直接回答用户的问题，用中文纯文本输出。
+不要解释你在做什么，也不要复述用户消息或任何方括号块（如 [attachment]/[图片文字]/[语音转写]）。
+如需引用证据，只摘录最关键的 1-3 句。
+`.trim();
+
+/**
+ * P5.7-R3l-2: Dialog Kernel 专用 system prompt 构建函数
+ *
+ * 用于对话链路（kernel=dialog），允许注入 SOUL 上下文。
+ *
+ * @param base 基础 system prompt（用户配置）
+ * @param useMcp 是否启用 MCP
+ * @param soulContext SOUL 上下文（可选）
+ * @returns 完整的 system prompt
+ */
+function buildDialogSystemPrompt(
+    base: string,
+    useMcp: boolean,
+    soulContext?: { content: string; source: string }
+): string {
+    const parts: string[] = [];
+
+    // 1. 基础 prompt
+    if (base.trim()) {
+        parts.push(base.trim());
+    }
+
+    // 2. 快速回答规则
+    parts.push(QUICK_ANSWER_CONSTRAINT);
+
+    // 3. MCP 规则（可选）
+    if (useMcp) {
+        parts.push(MCP_ANTI_LOOP_RULES);
+    }
+
+    // 4. SOUL 上下文（仅 dialog 链路允许注入）
+    if (soulContext && soulContext.source !== "none") {
+        parts.push(`\n\n[灵魂身份]\n${soulContext.content}\n[/灵魂身份]`);
+        parts.push(`（SOUL 已内置到系统提示中，你不需要也不应该尝试读取"灵魂文件"或"灵魂脚本"）`);
+    }
+
+    return parts.join("\n\n");
+}
+
+/**
+ * P5.7-R3l-2: Exec Kernel 专用 system prompt 构建函数
+ *
+ * 用于执行链路（kernel=exec），禁止注入 SOUL 上下文。
+ *
+ * @param base 基础 system prompt（用户配置）
+ * @param useMcp 是否启用 MCP
+ * @returns 完整的 system prompt（不含 SOUL）
+ */
+function buildExecSystemPrompt(base: string, useMcp: boolean): string {
+    const parts: string[] = [];
+
+    // 1. 基础 prompt
+    if (base.trim()) {
+        parts.push(base.trim());
+    }
+
+    // 2. 快速回答规则
+    parts.push(QUICK_ANSWER_CONSTRAINT);
+
+    // 3. MCP 规则（可选）
+    if (useMcp) {
+        parts.push(MCP_ANTI_LOOP_RULES);
+    }
+
+    // 注意：exec 链路禁止注入 SOUL，保持最小化提示词
+
+    return parts.join("\n\n");
+}
+
 export interface LmStudioChatOptions {
     prompt: string;
     system?: string;
@@ -64,8 +165,9 @@ export async function runLmStudioChat(options: LmStudioChatOptions): Promise<str
     const mcpMaxTokens = Math.max(maxTokens, 1024);
 
     // 构造 system prompt（包含快速回答规则）
-    const systemPrompt = buildSystemPrompt(baseSystem, useMcp);
-    const compatSystemPrompt = buildSystemPrompt(baseSystem, false);
+    // P5.7-R3l-2: 使用 buildDialogSystemPrompt（dialog 链路允许 SOUL 注入）
+    const systemPrompt = buildDialogSystemPrompt(baseSystem, useMcp);
+    const compatSystemPrompt = buildDialogSystemPrompt(baseSystem, false);
 
     async function runNativeMcpOnce(maxOutputTokens: number): Promise<string> {
         const native = await runLmStudioChatNativeMcp({
@@ -145,61 +247,6 @@ export async function runLmStudioChat(options: LmStudioChatOptions): Promise<str
         throw error instanceof Error ? error : new Error("LM Studio 调用失败");
     }
 }
-
-// ============================================
-// System Prompt 构建（含 MCP 防循环规则）
-// ============================================
-
-/**
- * 构建完整的 system prompt
- * - 基础 prompt（用户配置）
- * - E17: 快速回答规则（默认启用，避免模型思考太长时间）
- * - MCP 防循环规则（当启用 workspace 时）
- */
-function buildSystemPrompt(base: string, useMcp?: boolean): string {
-    const parts: string[] = [];
-    if (base.trim()) {
-        parts.push(base.trim());
-    }
-
-    // E17: 快速回答约束（保持极短，避免触发“复述说明书/元叙事”）
-    // 注意：这里不要写“规则/约束/分析/计划/两段式/第1段...”等说明书式语句，
-    // 否则部分模型会把它当作需要复述的内容。
-    const quickAnswerConstraint = `
-直接回答用户的问题，用中文纯文本输出。
-不要解释你在做什么，也不要复述用户消息或任何方括号块（如 [attachment]/[图片文字]/[语音转写]）。
-如需引用证据，只摘录最关键的1-3句。
-`.trim();
-    parts.push(quickAnswerConstraint);
-
-    // 只在 MCP 真正启用时才追加 MCP 规则（避免 4.7 误以为自己有工具）
-    if (useMcp) {
-        parts.push(MCP_ANTI_LOOP_RULES);
-    }
-
-    return parts.join("\n\n");
-}
-
-/**
- * MCP 防循环规则（硬约束）
- */
-const MCP_ANTI_LOOP_RULES = `
-你是一个会使用工具的助手。你可以通过 MCP 插件 filesystem 访问被授权的目录与文件。
-
-核心规则：
-1. 涉及目录内容、文件读写时，必须调用 filesystem 工具获取真实结果，禁止猜测。
-2. 工具返回已经包含所需信息时，立刻生成最终回答，不要重复调用同一个工具获取相同信息。
-3. 同一路径的目录 listing 最多调用 1 次；整个问题最多调用工具 3 次。超过则停止并说明原因。
-4. 最终输出只给用户需要的结果与结论，避免输出工具调用的中间文本或代码块。
-
-输出格式要求：
-- 列出文件时：每行一个文件名，用简单列表格式
-- 不要添加额外的计数说明（如"共X个文件"）
-- 不要重复相同的条目
-- 区分文件和目录时用简洁标记（如 文件: / 目录:）
-`.trim();
-
-// ============================================
 
 type ResolveModelParams = {
     baseUrl: string;
@@ -1263,9 +1310,11 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
         : 120_000);
     const root = options.allowRoot || config.workspaceRoot || AIDOCS_ROOT;
 
-    // P5.6.8-R3c: 注入 skill 索引到 system prompt
-    let system = options.system ?? config.lmstudioSystemPrompt ?? "";
+    // P5.7-R3l-2: 使用 buildExecSystemPrompt（exec 链路禁止 SOUL 注入）
+    const baseSystem = options.system ?? config.lmstudioSystemPrompt ?? "";
     const workspacePath = options.workspacePath || root;
+    const useMcp = process.env.LMSTUDIO_ENABLE_MCP === "1" && !!workspacePath;
+    let system = buildExecSystemPrompt(baseSystem, useMcp);
 
     try {
         const { existsSync } = await import("node:fs");
@@ -1308,11 +1357,7 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
         // 忽略 skill 索引注入错误
     }
 
-    // P5.6.8-R4e: 注入 SOUL 上下文（direct only）
-    if (options.soulContext && options.soulContext.source !== "none") {
-        system += `\n\n[灵魂身份]\n${options.soulContext.content}\n[/灵魂身份]`;
-        system += `\n\n（SOUL 已内置到系统提示中，你不需要也不应该尝试读取"灵魂文件"或"灵魂脚本"）`;
-    }
+    // P5.7-R3l-2: exec 链路禁止注入 SOUL（已移除 SOUL 注入逻辑）
 
     const messages: Array<{ role: string; content?: string; tool_call_id?: string; tool_calls?: ToolCall[] }> = [];
 
