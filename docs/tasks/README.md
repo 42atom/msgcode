@@ -21,11 +21,12 @@
 11. `P5.7-R1b`：文件发送真实交付闭环（禁止“合同壳即通过”）
 12. `P5.7-R1c`：CLI 基座能力硬门（真执行 + 可观测 + 安全底线）
 13. `P5.7-R3`：文件与环境域（`file *` + `system env`）
-14. `P5.7-R4`：记忆与线程域（`memory *` + `thread *`）
-15. `P5.7-R5`：编排与调度域（`todo *` + `schedule *`）
-16. `P5.7-R6`：多模态域（`media *` + `gen *`）
-17. `P5.7-R7`：浏览器域（`browser *`）
-18. `P5.7-R8`：代理域（`agent run/status`）
+14. `P5.7-R3l`：核心链路硬化改造包（三核最小实现 + 协议硬门 + 状态回写）
+15. `P5.7-R4`：记忆与线程域（`memory *` + `thread *`）
+16. `P5.7-R5`：编排与调度域（`todo *` + `schedule *`）
+17. `P5.7-R6`：多模态域（`media *` + `gen *`）
+18. `P5.7-R7`：浏览器域（`browser *`）
+19. `P5.7-R8`：代理域（`agent run/status`）
 
 ## P5 当前唯一执行主线（冻结）
 
@@ -85,21 +86,23 @@
 4. `P5.7-R1c`：CLI 基座能力硬门（真执行 + 可观测 + 安全底线）✅
 5. `P5.7-R3`：文件与环境域（`file find/read/write/move/rename/delete/copy/zip` + `system env`）
 6. `P5.7-R3d`：LM Studio GLM ToolCall 温度锁定（`temperature=0`）
-7. `P5.7-R4`：记忆与线程域（`memory search/add/stats` + `thread list/messages/active/switch`）
-8. `P5.7-R5`：编排与调度域（`todo add/list/done` + `schedule add/list/remove`）
-9. `P5.7-R6`：多模态域（`media screen` + `gen image/selfie/tts/music`）
-10. `P5.7-R7`：浏览器域（`browser open/click/type`）
-11. `P5.7-R8`：代理域（`agent run/status`）
+7. `P5.7-R3l`：核心链路硬化改造包（先稳主链：协议硬门/三核管道/action_journal/观测锁）
+8. `P5.7-R4`：记忆与线程域（`memory search/add/stats` + `thread list/messages/active/switch`）
+9. `P5.7-R5`：编排与调度域（`todo add/list/done` + `schedule add/list/remove`）
+10. `P5.7-R6`：多模态域（`media screen` + `gen image/selfie/tts/music`）
+11. `P5.7-R7`：浏览器域（`browser open/click/type`）
+12. `P5.7-R8`：代理域（`agent run/status`）
 
 ### 派单顺序（冻结）
 
 1. `P5.7-R3`（file 域）
 2. `P5.7-R3d`（LM Studio GLM ToolCall 温度锁定，稳定性插单）
-3. `P5.7-R4`（memory/thread 域）
-4. `P5.7-R5`（todo/schedule 域）
-5. `P5.7-R6`（media/gen 域）
-6. `P5.7-R7`（browser 域）
-7. `P5.7-R8`（agent 域）
+3. `P5.7-R3l`（核心链路硬化：协议硬门 + 三核最小管道）
+4. `P5.7-R4`（memory/thread 域）
+5. `P5.7-R5`（todo/schedule 域）
+6. `P5.7-R6`（media/gen 域）
+7. `P5.7-R7`（browser 域）
+8. `P5.7-R8`（agent 域）
 
 ## 当前任务单
 
@@ -163,6 +166,12 @@
 - `p5-7-r3i-fs-scope-policy-layering.md`：P5.7-R3i（文件权限策略分层）
 - `p5-7-r3j-dual-model-routing-stabilization.md`：P5.7-R3j（双模型路由稳定化）
 - `p5-7-r3k-tool-loop-slo-gate.md`：P5.7-R3k（Tool Loop SLO 门禁落地）
+- `p5-7-r3l-core-chain-hardening-pack.md`：P5.7-R3l（核心链路硬化改造包）
+- `p5-7-r3l-1-tool-protocol-hard-gate.md`：P5.7-R3l-1（tool 协议硬门：无 tool_calls 禁伪执行）
+- `p5-7-r3l-2-dialog-exec-prompt-split.md`：P5.7-R3l-2（Dialog/Exec 提示词边界拆分）
+- `p5-7-r3l-3-plan-act-report-pipeline.md`：P5.7-R3l-3（Plan->Act->Report 三阶段管道）
+- `p5-7-r3l-4-action-journal-state-sync.md`：P5.7-R3l-4（action_journal 状态回写契约）
+- `p5-7-r3l-5-ttft-observability-lock.md`：P5.7-R3l-5（TTFT 补偿与观测字段锁）
 
 ## 规则
 
