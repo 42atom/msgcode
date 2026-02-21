@@ -1830,13 +1830,18 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
         responderModel || "default-responder"
     );
 
+    // P5.7-R3l-5: 计算 soulInjected 状态
+    const soulInjected = !!(options.soulContext && options.soulContext.content);
+
     // P5.7-R3l-3: 入口日志（phase=init，kernel=router）
+    // P5.7-R3l-5: 观测字段锁 - 包含 soulInjected
     logger.info("routed chat started", {
         module: "lmstudio",
         traceId,
         route,
         phase: "init",
         kernel: "router",
+        soulInjected,  // P5.7-R3l-5: 观测字段硬锁
         confidence: classification.confidence,
         reason: classification.reason,
         temperature,
@@ -1871,12 +1876,14 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
         });
 
         // P5.7-R3l-3: no-tool 完成日志（phase=complete，kernel=dialog）
+        // P5.7-R3l-5: 观测字段锁 - 包含 soulInjected
         logger.info("routed chat completed", {
             module: "lmstudio",
             traceId,
             route: selectedLevel === "LEVEL_2" ? "no-tool(degraded)" : route,
             phase: "complete",
             kernel: "dialog",
+            soulInjected,  // P5.7-R3l-5: 观测字段硬锁
             temperature: usedTemperature,
             responseLength: answer.length,
             model: usedModel,
@@ -1904,6 +1911,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
                 route,
                 phase: "degrade",
                 kernel: "router",
+                soulInjected,  // P5.7-R3l-5: 观测字段硬锁
                 degradeLevel: selectedLevel,
             });
 
@@ -1929,6 +1937,17 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
         const usedTemperature = 0;  // P5.7-R3j-2: 硬锁温度
 
         // P5.7-R3l-3: 第一阶段 - plan（使用 executor 模型，temperature=0，kernel=dialog）
+        // P5.7-R3l-5: TTFT 短回执 - plan 阶段入口立即发送处理中回执
+        logger.info("pipeline phase started", {
+            module: "lmstudio",
+            traceId,
+            route: "complex-tool",
+            phase: "plan",
+            kernel: "dialog",
+            soulInjected,  // P5.7-R3l-5: 观测字段硬锁
+            status: "processing",
+        });
+
         const planPrompt = `请先分析这个任务并制定执行计划，不需要执行具体操作：${options.prompt}`;
         const planResult = await runLmStudioChat({
             prompt: planPrompt,
@@ -1944,12 +1963,24 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             route: "complex-tool",
             phase: "plan",
             kernel: "dialog",
+            soulInjected,  // P5.7-R3l-5: 观测字段硬锁
             temperature: usedTemperature,
             model: usedModel,
             planLength: planResult.length,
         });
 
         // P5.7-R3l-3: 第二阶段 - act（走工具循环，使用 executor 模型 + 计划上下文，kernel=exec）
+        // P5.7-R3l-5: TTFT 短回执 - act 阶段入口立即发送处理中回执
+        logger.info("pipeline phase started", {
+            module: "lmstudio",
+            traceId,
+            route: "complex-tool",
+            phase: "act",
+            kernel: "exec",
+            soulInjected,  // P5.7-R3l-5: 观测字段硬锁
+            status: "processing",
+        });
+
         const execPrompt = `${options.prompt}\n\n执行计划：${planResult}`;
         // P5.7-R3l-4: 传入 traceId 和 route 用于 journal 追踪
         const toolLoopResult = await runLmStudioToolLoop({
@@ -1970,6 +2001,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             route: "complex-tool",
             phase: "act",
             kernel: "exec",
+            soulInjected,  // P5.7-R3l-5: 观测字段硬锁
             temperature: usedTemperature,
             model: usedModel,
             toolCallCount: toolLoopResult.toolCall ? 1 : 0,
@@ -1992,6 +2024,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             route: "complex-tool",
             phase: "report",
             kernel: "dialog",
+            soulInjected,  // P5.7-R3l-5: 观测字段硬锁
             temperature: usedTemperature,
             model: usedModel,
             responseLength: summaryResult.length,
@@ -2019,6 +2052,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             route,
             phase: "degrade",
             kernel: "router",
+            soulInjected,  // P5.7-R3l-5: 观测字段硬锁
             degradeLevel: selectedLevel,
         });
 
@@ -2043,17 +2077,30 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
     const usedTemperature = 0;
 
     // P5.7-R3l-3: plan 预备日志（tool 路由不新增 LLM 轮次，只加日志）
+    // P5.7-R3l-5: TTFT 短回执 - plan 阶段入口立即发送处理中回执
     logger.info("pipeline phase started", {
         module: "lmstudio",
         traceId,
         route: "tool",
         phase: "plan",
         kernel: "router",
+        soulInjected,  // P5.7-R3l-5: 观测字段硬锁
         temperature: usedTemperature,
         model: usedModel,
+        status: "processing",
     });
 
     // P5.7-R3l-3: act 执行（走工具循环，kernel=exec）
+    // P5.7-R3l-5: TTFT 短回执 - act 阶段入口立即发送处理中回执
+    logger.info("pipeline phase started", {
+        module: "lmstudio",
+        traceId,
+        route: "tool",
+        phase: "act",
+        kernel: "exec",
+        soulInjected,  // P5.7-R3l-5: 观测字段硬锁
+        status: "processing",
+    });
     // P5.7-R3l-4: 传入 traceId 和 route 用于 journal 追踪
     const toolLoopResult = await runLmStudioToolLoop({
         prompt: options.prompt,
@@ -2068,12 +2115,14 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
     });
 
     // P5.7-R3l-3: act 完成日志（kernel=exec）
+    // P5.7-R3l-5: 观测字段锁 - 包含 soulInjected
     logger.info("pipeline phase completed", {
         module: "lmstudio",
         traceId,
         route: "tool",
         phase: "act",
         kernel: "exec",
+        soulInjected,  // P5.7-R3l-5: 观测字段硬锁
         temperature: usedTemperature,
         model: usedModel,
         toolCallCount: toolLoopResult.toolCall ? 1 : 0,
@@ -2081,12 +2130,14 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
     });
 
     // P5.7-R3l-3: report 收口日志（kernel=dialog，tool 路由不新增 LLM 轮次）
+    // P5.7-R3l-5: 观测字段锁 - 包含 soulInjected
     logger.info("pipeline phase completed", {
         module: "lmstudio",
         traceId,
         route: "tool",
         phase: "report",
         kernel: "dialog",
+        soulInjected,  // P5.7-R3l-5: 观测字段硬锁
         temperature: usedTemperature,
         model: usedModel,
         responseLength: toolLoopResult.answer.length,
