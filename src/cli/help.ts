@@ -16,6 +16,7 @@ import { getMemoryAddContract, getMemorySearchContract, getMemoryStatsContract }
 import { getThreadListContract, getThreadMessagesContract, getThreadActiveContract, getThreadSwitchContract } from "./thread.js";
 import { getTodoAddContract, getTodoListContract, getTodoDoneContract } from "./todo.js";
 import { getScheduleAddContract, getScheduleListContract, getScheduleRemoveContract } from "./schedule.js";
+import { getMediaScreenContract } from "./media.js";
 
 // ============================================
 // 类型定义
@@ -128,6 +129,8 @@ export function createHelpDocsCommand(): Command {
           getScheduleAddContract() as Record<string, unknown>,
           getScheduleListContract() as Record<string, unknown>,
           getScheduleRemoveContract() as Record<string, unknown>,
+          // Media 命令组（P5.7-R6-1）
+          getMediaScreenContract() as Record<string, unknown>,
         ];
 
         const data: HelpData = {

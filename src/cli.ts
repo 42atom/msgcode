@@ -274,6 +274,12 @@ async function loadScheduleCommands() {
   program.addCommand(createScheduleCommand());
 }
 
+// Media 命令组（P5.7-R6-1）
+async function loadMediaCommands() {
+  const { createMediaCommand } = await import("./cli/media.js");
+  program.addCommand(createMediaCommand());
+}
+
 // 主入口（异步）
 async function main() {
   // P0: 仅按需加载子命令，避免在"未初始化配置"时也强制 import 导致 CLI 直接崩溃。
@@ -314,6 +320,9 @@ async function main() {
   if (top === "schedule") {
     await loadScheduleCommands();
   }
+  if (top === "media") {
+    await loadMediaCommands();
+  }
   if (top === "help-docs") {
     await loadHelpDocsCommand();
   }
@@ -330,6 +339,7 @@ async function main() {
     await loadThreadCommands();
     await loadTodoCommands();
     await loadScheduleCommands();
+    await loadMediaCommands();
     await loadHelpDocsCommand();
   }
   program.parse();
