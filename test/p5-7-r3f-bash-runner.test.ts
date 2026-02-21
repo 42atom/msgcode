@@ -237,6 +237,24 @@ echo finished
     });
 
     describe("killProcessTree", () => {
+        it("killProcessTree 遇到 signalCode 应视为已终止（不等待 5s fallback）", async () => {
+            const fakeProc = {
+                pid: 999999, // 不存在 PID，避免误伤真实进程
+                exitCode: null,
+                signalCode: null as NodeJS.Signals | null,
+                kill: (_signal?: NodeJS.Signals) => {
+                    fakeProc.signalCode = "SIGTERM";
+                    return true;
+                },
+            } as unknown as Parameters<typeof killProcessTree>[0];
+
+            const started = Date.now();
+            await killProcessTree(fakeProc, "SIGTERM");
+            const elapsed = Date.now() - started;
+
+            expect(elapsed).toBeLessThan(1000);
+        });
+
         it("runBashCommand 超时后应该清理进程", async () => {
             // 使用短时间的 sleep 命令，测试超时清理
             const started = Date.now();

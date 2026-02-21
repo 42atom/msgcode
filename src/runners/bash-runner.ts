@@ -136,7 +136,7 @@ export async function killProcessTree(
     // 等待进程完全退出
     await new Promise<void>((resolve) => {
       const checkExit = setInterval(() => {
-        if (proc.exitCode !== null) {
+        if (proc.exitCode !== null || proc.signalCode !== null) {
           clearInterval(checkExit);
           resolve();
         }
@@ -285,7 +285,7 @@ export async function runBashCommand(
 
         // 设置超时定时器
         timeoutTimer = setTimeout(async () => {
-          if (proc && proc.exitCode === null) {
+          if (proc && proc.exitCode === null && proc.signalCode === null) {
             isAborted = true;
             await killProcessTree(proc, "SIGTERM");
             resolve({ exitCode: -1, stdout, stderr });
@@ -295,7 +295,7 @@ export async function runBashCommand(
         // 监听 abort 信号
         if (signal) {
           const abortHandler = async () => {
-            if (proc && proc.exitCode === null) {
+            if (proc && proc.exitCode === null && proc.signalCode === null) {
               isAborted = true;
               await killProcessTree(proc, "SIGTERM");
               resolve({ exitCode: -1, stdout, stderr });

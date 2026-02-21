@@ -1304,7 +1304,18 @@ function resolveUnderRoot(inputPath: string, root: string): string {
  * P5.6.8-R4h: 返回完整错误信息（包含 errorCode）
  * P5.7-R3h: 透传诊断字段（exitCode/stderrTail/fullOutputPath）
  */
-async function runTool(name: string, args: Record<string, unknown>, root: string): Promise<unknown> {
+type ToolRunResult = {
+    data?: unknown;
+    error?: string;
+    errorCode?: string;
+    exitCode?: number | null;
+    stderrTail?: string;
+    stdoutTail?: string;
+    fullOutputPath?: string;
+    durationMs: number;
+};
+
+async function runTool(name: string, args: Record<string, unknown>, root: string): Promise<ToolRunResult> {
     const { executeTool } = await import("./tools/bus.js");
     const { randomUUID } = await import("node:crypto");
 
@@ -1323,11 +1334,14 @@ async function runTool(name: string, args: Record<string, unknown>, root: string
             stderrTail: result.stderrTail ?? "",
             stdoutTail: result.stdoutTail ?? "",
             fullOutputPath: result.fullOutputPath,
+            durationMs: result.durationMs,
         };
     }
 
-    // 返回 data 字段（兼容旧格式）
-    return result.data || { success: true };
+    return {
+        data: result.data || { success: true },
+        durationMs: result.durationMs,
+    };
 }
 
 /**
@@ -1514,26 +1528,22 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
             args = {};
         }
 
-        let toolResult: unknown;
+        let toolResult: ToolRunResult;
         try {
             toolResult = await runTool(tc.function.name, args, workspacePath);
         } catch (e) {
-            toolResult = { error: e instanceof Error ? e.message : String(e) };
+            toolResult = {
+                error: e instanceof Error ? e.message : String(e),
+                errorCode: "TOOL_EXEC_FAILED",
+                durationMs: 0,
+            };
         }
 
         // 失败短路
-        if (toolResult && typeof toolResult === "object" && "error" in toolResult) {
+        if (toolResult.error) {
             // P5.7-R3h: 提取诊断字段
-            const err = toolResult as {
-                error: string;
-                errorCode?: string;
-                exitCode?: number | null;
-                stderrTail?: string;
-                stdoutTail?: string;
-                fullOutputPath?: string;
-            };
-            const toolErrorCode = err.errorCode || "TOOL_EXEC_FAILED";
-            const toolErrorMessage = err.error || "工具执行失败";
+            const toolErrorCode = toolResult.errorCode || "TOOL_EXEC_FAILED";
+            const toolErrorMessage = toolResult.error || "工具执行失败";
 
             // P5.7-R3h: 日志增加诊断字段
             logger.info("Tool loop failed (short-circuit)", {
@@ -1542,23 +1552,41 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
                 toolName: tc.function.name,
                 toolErrorCode: toolErrorCode,  // R4h-4: 显式写法满足测试
                 toolErrorMessage: toolErrorMessage,  // R4h-4: 显式写法满足测试
-                toolExitCode: err.exitCode ?? null,
-                toolHasStderr: !!err.stderrTail,
-                toolFullOutputPath: err.fullOutputPath,
+                toolExitCode: toolResult.exitCode ?? null,
+                toolHasStderr: !!toolResult.stderrTail,
+                toolFullOutputPath: toolResult.fullOutputPath,
             });
 
             // P5.7-R3h: 错误信息包含诊断字段
             let answerText = `工具执行失败\n- 工具: ${tc.function.name}\n- 错误码: ${toolErrorCode}\n- 错误: ${toolErrorMessage}`;
-            if (err.exitCode !== undefined && err.exitCode !== null) {
-                answerText += `\n- 退出码: ${err.exitCode}`;
+            if (toolResult.exitCode !== undefined && toolResult.exitCode !== null) {
+                answerText += `\n- 退出码: ${toolResult.exitCode}`;
             }
-            if (err.stderrTail) {
-                const stderrPreview = err.stderrTail.length > 200 ? err.stderrTail.slice(-200) : err.stderrTail;
+            if (toolResult.stderrTail) {
+                const stderrPreview = toolResult.stderrTail.length > 200 ? toolResult.stderrTail.slice(-200) : toolResult.stderrTail;
                 answerText += `\n- stderr 尾部: ${stderrPreview}`;
             }
-            if (err.fullOutputPath) {
-                answerText += `\n- 完整日志: ${err.fullOutputPath}`;
+            if (toolResult.fullOutputPath) {
+                answerText += `\n- 完整日志: ${toolResult.fullOutputPath}`;
             }
+
+            // P5.7-R3l-4: 失败步骤也必须进入 actionJournal
+            stepId++;
+            actionJournal.push({
+                traceId,
+                stepId,
+                phase: "act",
+                timestamp: Date.now(),
+                route,
+                model,
+                tool: tc.function.name,
+                ok: false,
+                exitCode: toolResult.exitCode ?? undefined,
+                errorCode: toolErrorCode,
+                stdoutTail: toolResult.stdoutTail ?? undefined,
+                fullOutputPath: toolResult.fullOutputPath ?? undefined,
+                durationMs: toolResult.durationMs,
+            });
 
             return {
                 answer: answerText,
@@ -1567,19 +1595,11 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
             };
         }
 
-        executedToolCalls.push({ tc, args, result: toolResult });
+        const successResult = toolResult.data;
+        executedToolCalls.push({ tc, args, result: successResult });
 
         // P5.7-R3l-4: 收集 actionJournal
         stepId++;
-        const isFailure = toolResult && typeof toolResult === "object" && "error" in toolResult;
-        const err = isFailure ? (toolResult as {
-            errorCode?: string;
-            exitCode?: number | null;
-            stderrTail?: string;
-            stdoutTail?: string;
-            fullOutputPath?: string;
-        }) : undefined;
-
         actionJournal.push({
             traceId,
             stepId,
@@ -1588,14 +1608,12 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
             route,
             model,
             tool: tc.function.name,
-            ok: !isFailure,
-            exitCode: err?.exitCode ?? undefined,
-            errorCode: err?.errorCode ?? undefined,
-            stdoutTail: err?.stdoutTail ?? undefined,
-            fullOutputPath: err?.fullOutputPath ?? undefined,
-            durationMs: toolResult && typeof toolResult === "object" && "durationMs" in toolResult
-                ? (toolResult as { durationMs: number }).durationMs
-                : 0,
+            ok: true,
+            exitCode: undefined,
+            errorCode: undefined,
+            stdoutTail: undefined,
+            fullOutputPath: undefined,
+            durationMs: toolResult.durationMs,
         });
     }
 
