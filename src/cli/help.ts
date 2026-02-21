@@ -17,6 +17,7 @@ import { getThreadListContract, getThreadMessagesContract, getThreadActiveContra
 import { getTodoAddContract, getTodoListContract, getTodoDoneContract } from "./todo.js";
 import { getScheduleAddContract, getScheduleListContract, getScheduleRemoveContract } from "./schedule.js";
 import { getMediaScreenContract } from "./media.js";
+import { getGenImageContract, getGenSelfieContract } from "./gen-image.js";
 
 // ============================================
 // 类型定义
@@ -131,6 +132,9 @@ export function createHelpDocsCommand(): Command {
           getScheduleRemoveContract() as Record<string, unknown>,
           // Media 命令组（P5.7-R6-1）
           getMediaScreenContract() as Record<string, unknown>,
+          // Gen Image 命令组（P5.7-R6-2）
+          getGenImageContract() as Record<string, unknown>,
+          getGenSelfieContract() as Record<string, unknown>,
         ];
 
         const data: HelpData = {

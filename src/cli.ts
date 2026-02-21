@@ -280,6 +280,12 @@ async function loadMediaCommands() {
   program.addCommand(createMediaCommand());
 }
 
+// Gen Image 命令组（P5.7-R6-2）
+async function loadGenImageCommands() {
+  const { createGenImageCommandGroup } = await import("./cli/gen-image.js");
+  program.addCommand(createGenImageCommandGroup());
+}
+
 // 主入口（异步）
 async function main() {
   // P0: 仅按需加载子命令，避免在"未初始化配置"时也强制 import 导致 CLI 直接崩溃。
@@ -323,6 +329,9 @@ async function main() {
   if (top === "media") {
     await loadMediaCommands();
   }
+  if (top === "gen-image") {
+    await loadGenImageCommands();
+  }
   if (top === "help-docs") {
     await loadHelpDocsCommand();
   }
@@ -340,6 +349,7 @@ async function main() {
     await loadTodoCommands();
     await loadScheduleCommands();
     await loadMediaCommands();
+    await loadGenImageCommands();
     await loadHelpDocsCommand();
   }
   program.parse();
