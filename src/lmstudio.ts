@@ -24,6 +24,8 @@ import { sanitizeLmStudioOutput as sanitizeCore, dropBeforeLastClosingTag } from
 import { buildChatCompletionRequest, parseChatCompletionResponse } from "./providers/openai-compat-adapter.js";
 // P5.7-R3e: 路由分类器
 import { classifyRoute, getTemperatureForRoute } from "./routing/classifier.js";
+// P5.7-R3k: SLO 降级策略
+import { selectModelByDegrade, isToolCallAllowed, getDegradeState } from "./slo-degrade.js";
 
 export interface LmStudioChatOptions {
     prompt: string;
@@ -1671,8 +1673,14 @@ export interface RoutedChatResult {
  * @returns 聊天结果（包含路由信息和温度）
  */
 export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions): Promise<RoutedChatResult> {
+    // P5.7-R3k: 检查降级状态
+    const degradeState = getDegradeState();
+    const isDegrading = degradeState.level !== "LEVEL_0";
+
     // 1. 分类请求路由
-    const classification = classifyRoute(options.prompt, options.hasToolsAvailable ?? true);
+    const hasTools = options.hasToolsAvailable ?? true;
+    const toolsAllowed = hasTools && isToolCallAllowed();
+    const classification = classifyRoute(options.prompt, toolsAllowed);
     const route = classification.route;
 
     // 2. 获取温度（允许覆盖）
@@ -1693,6 +1701,12 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
         }
     }
 
+    // P5.7-R3k: 根据降级状态选择模型
+    const { model: selectedModel, level: selectedLevel } = selectModelByDegrade(
+        executorModel || "default-executor",
+        responderModel || "default-responder"
+    );
+
     logger.info("routed chat started", {
         module: "lmstudio",
         route,
@@ -1701,15 +1715,25 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
         temperature,
         executorModel,
         responderModel,
+        selectedModel,
+        degradeLevel: selectedLevel,
+        isDegrading,
     });
 
     // 3. 根据路由分发
     // P5.7-R3j-1: 路由约束固化 - no-tool 只走 responder，tool/complex-tool 只走 executor
-    if (route === "no-tool") {
+    // P5.7-R3k: 降级策略 - LEVEL_2 时强制降级为 no-tool
+
+    if (route === "no-tool" || selectedLevel === "LEVEL_2") {
         // no-tool: 简单聊天（不触发工具循环，使用 responder 模型 + temperature=0.2）
         // P5.7-R3j-1: 显式绑定 responder 模型
-        const usedModel = responderModel;
-        const usedTemperature = 0.2;  // P5.7-R3j-2: 硬锁温度
+        // P5.7-R3k: LEVEL_2 降级时，所有请求都走这里（纯文本模式）
+        const usedModel = selectedLevel === "LEVEL_2"
+            ? selectedModel  // 降级时使用选中的模型
+            : responderModel;
+        const usedTemperature = selectedLevel === "LEVEL_2"
+            ? 0.2  // 纯文本模式使用创造性温度
+            : 0.2;  // P5.7-R3j-2: 硬锁温度
 
         const answer = await runLmStudioChat({
             prompt: options.prompt,
@@ -1719,24 +1743,49 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             temperature: usedTemperature,
         });
 
-        logger.info("routed chat completed (no-tool)", {
+        logger.info("routed chat completed", {
             module: "lmstudio",
-            route,
+            route: selectedLevel === "LEVEL_2" ? "no-tool(degraded)" : route,
             temperature: usedTemperature,
             responseLength: answer.length,
             model: usedModel,
+            degradeLevel: selectedLevel,
         });
 
         return {
             answer,
-            route,
+            route: selectedLevel === "LEVEL_2" ? "no-tool" : route,
             temperature: usedTemperature,
         };
     }
 
     // P5.7-R3e-hotfix: complex-tool 先计划再执行再收口
     // P5.7-R3j-1: 显式绑定 executor 模型
+    // P5.7-R3k: 降级时，跳过工具执行，直接返回
     if (route === "complex-tool") {
+        // P5.7-R3k: 降级时跳过工具执行
+        if (selectedLevel !== "LEVEL_0") {
+            logger.warn("complex-tool request but in degrade mode, skipping tool execution", {
+                module: "lmstudio",
+                degradeLevel: selectedLevel,
+            });
+
+            const fallbackPrompt = `请直接用自然语言回答这个问题（当前处于安全模式，无法执行工具）：${options.prompt}`;
+            const answer = await runLmStudioChat({
+                prompt: fallbackPrompt,
+                system: options.system,
+                workspace: options.workspacePath,
+                model: selectedModel,
+                temperature: 0.2,
+            });
+
+            return {
+                answer,
+                route: "no-tool",
+                temperature: 0.2,
+            };
+        }
+
         // P5.7-R3j-1: 显式绑定 executor 模型
         const usedModel = executorModel;
         const usedTemperature = 0;  // P5.7-R3j-2: 硬锁温度
@@ -1803,6 +1852,31 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
     // tool: 走工具循环（temperature=0，稳定触发，使用 executor 模型）
     // P5.7-R3j-1: 显式绑定 executor 模型
     // P5.7-R3j-2: 硬锁温度为 0
+    // P5.7-R3k: 降级策略 - 降级时跳过工具执行
+
+    if (selectedLevel !== "LEVEL_0") {
+        logger.warn("tool request but in degrade mode, skipping tool execution", {
+            module: "lmstudio",
+            degradeLevel: selectedLevel,
+            route,
+        });
+
+        const fallbackPrompt = `请直接用自然语言回答这个问题（当前处于安全模式，无法执行工具）：${options.prompt}`;
+        const answer = await runLmStudioChat({
+            prompt: fallbackPrompt,
+            system: options.system,
+            workspace: options.workspacePath,
+            model: selectedModel,
+            temperature: 0.2,
+        });
+
+        return {
+            answer,
+            route: "no-tool",
+            temperature: 0.2,
+        };
+    }
+
     const usedModel = executorModel;
     const usedTemperature = 0;
 
