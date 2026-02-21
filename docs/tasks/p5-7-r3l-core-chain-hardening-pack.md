@@ -15,7 +15,7 @@
 2. `P5.7-R3l-2`：Prompt 双核拆分（Dialog/Exec）
 3. `P5.7-R3l-3`：Plan->Act->Report 管道落地
 4. `P5.7-R3l-4`：action_journal 状态回写契约
-5. `P5.7-R3l-5`：TTFT 补偿 + 可观测锁
+5. `P5.7-R3l-5`：TTFT 补偿 + 可观测锁 + 测试坏味道治理
 
 ## 依赖关系（冻结）
 
