@@ -88,8 +88,9 @@
 6. `P5.7-R3d`：LM Studio GLM ToolCall 温度锁定（`temperature=0`）
 7. `P5.7-R3l`：核心链路硬化改造包（先稳主链：协议硬门/三核管道/action_journal/观测锁）
 8. `P5.7-R4`：记忆与线程域（`memory search/add/stats` + `thread list/messages/active/switch`）
-9. `P5.7-R5`：编排与调度域（`todo add/list/done` + `schedule add/list/remove`）
-10. `P5.7-R6`：多模态域（`media screen` + `gen image/selfie/tts/music`）
+9. `P5.7-R5`：编排与调度域（`todo add/list/done` + `schedule add/list/remove`）✅
+10. `P5.7-R5b`：Job/Schedule 读模型统一（schedule 写入后同步 jobs.json，写隔离读统一）
+11. `P5.7-R6`：多模态域（`media screen` + `gen image/selfie/tts/music`）
 11. `P5.7-R7`：浏览器域（`browser open/click/type`）
 12. `P5.7-R8`：代理域（`agent run/status`）
 
@@ -161,9 +162,10 @@
 - `p5-7-r4-t1-smoke-verification-gate.md`：P5.7-R4-T1（Memory/Thread 真机冒烟门禁）
 - `p5-7-r5-mainline-dispatch-pack.md`：P5.7-R5 总整理与派单包（todo/schedule 分步执行）
 - `p5-7-r5-todo-schedule-domain.md`：P5.7-R5（编排与调度域任务单）
-- `p5-7-r5-1-todo-contract.md`：P5.7-R5-1（todo 命令合同收口）
-- `p5-7-r5-2-schedule-contract.md`：P5.7-R5-2（schedule 命令合同收口）
-- `p5-7-r5-3-help-regression-lock.md`：P5.7-R5-3（help-docs 同步与回归锁）
+- `p5-7-r5-1-todo-contract.md`：P5.7-R5-1（todo 命令合同收口）✅
+- `p5-7-r5-2-schedule-contract.md`：P5.7-R5-2（schedule 命令合同收口）✅
+- `p5-7-r5-3-help-regression-lock.md`：P5.7-R5-3（help-docs 同步与回归锁）✅
+- `p5-7-r5b-job-schedule-read-model-unification.md`：P5.7-R5b（Job/Schedule 读模型统一，待创建）
 - `p5-7-r6-media-gen-domain.md`：P5.7-R6（多模态域任务单）
 - `p5-7-r7-browser-domain.md`：P5.7-R7（浏览器域任务单）
 - `p5-7-r8-agent-domain.md`：P5.7-R8（代理域任务单）
