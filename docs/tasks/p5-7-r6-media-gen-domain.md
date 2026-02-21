@@ -9,10 +9,17 @@
 3. 落地 `gen tts` / `gen music`（语音与音乐拆分）。
 4. 统一 Envelope + 错误码口径 + `help-docs --json` 合同可发现。
 
+## Provider 冻结（本单临时口径）
+
+1. `gen image` / `gen selfie`：固定使用 **Banana Pro**，鉴权使用 `GEMINI_API_KEY`。
+2. 本单不做图片 provider 自动切换，不走 MiniMax 图片链路。
+3. 若缺少 `GEMINI_API_KEY`，必须返回固定错误码（建议：`GEN_API_KEY_MISSING`）。
+4. `gen tts` / `gen music` 维持既有音频后端口径（不受本冻结影响）。
+
 ## 依赖
 
 1. 依赖本地截图执行路径。
-2. 依赖现有图像/音频生成后端（MiniMax 或已接 provider）。
+2. 图片侧依赖 Banana Pro（`GEMINI_API_KEY`）；音频侧依赖现有后端。
 3. 不在本单扩展 provider 体系，只接现有能力。
 
 ## 范围
