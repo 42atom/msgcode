@@ -262,6 +262,12 @@ async function loadThreadCommands() {
   program.addCommand(createThreadCommand());
 }
 
+// Todo 命令组（P5.7-R5-1）
+async function loadTodoCommands() {
+  const { createTodoCommand } = await import("./cli/todo.js");
+  program.addCommand(createTodoCommand());
+}
+
 // 主入口（异步）
 async function main() {
   // P0: 仅按需加载子命令，避免在"未初始化配置"时也强制 import 导致 CLI 直接崩溃。
@@ -296,6 +302,9 @@ async function main() {
   if (top === "thread") {
     await loadThreadCommands();
   }
+  if (top === "todo") {
+    await loadTodoCommands();
+  }
   if (top === "help-docs") {
     await loadHelpDocsCommand();
   }
@@ -310,6 +319,7 @@ async function main() {
     await loadWebCommands();
     await loadSystemCommands();
     await loadThreadCommands();
+    await loadTodoCommands();
     await loadHelpDocsCommand();
   }
   program.parse();

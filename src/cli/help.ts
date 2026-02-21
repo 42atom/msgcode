@@ -14,6 +14,7 @@ import { getWebCommandContract } from "./web.js";
 import { getSystemCommandContract } from "./system.js";
 import { getMemoryAddContract, getMemorySearchContract, getMemoryStatsContract } from "./memory.js";
 import { getThreadListContract, getThreadMessagesContract, getThreadActiveContract, getThreadSwitchContract } from "./thread.js";
+import { getTodoAddContract, getTodoListContract, getTodoDoneContract } from "./todo.js";
 
 // ============================================
 // 类型定义
@@ -118,6 +119,10 @@ export function createHelpDocsCommand(): Command {
           getThreadMessagesContract() as Record<string, unknown>,
           getThreadActiveContract() as Record<string, unknown>,
           getThreadSwitchContract() as Record<string, unknown>,
+          // Todo 命令组（P5.7-R5-1）
+          getTodoAddContract() as Record<string, unknown>,
+          getTodoListContract() as Record<string, unknown>,
+          getTodoDoneContract() as Record<string, unknown>,
         ];
 
         const data: HelpData = {
