@@ -15,6 +15,7 @@ import { getSystemCommandContract } from "./system.js";
 import { getMemoryAddContract, getMemorySearchContract, getMemoryStatsContract } from "./memory.js";
 import { getThreadListContract, getThreadMessagesContract, getThreadActiveContract, getThreadSwitchContract } from "./thread.js";
 import { getTodoAddContract, getTodoListContract, getTodoDoneContract } from "./todo.js";
+import { getScheduleAddContract, getScheduleListContract, getScheduleRemoveContract } from "./schedule.js";
 
 // ============================================
 // 类型定义
@@ -123,6 +124,10 @@ export function createHelpDocsCommand(): Command {
           getTodoAddContract() as Record<string, unknown>,
           getTodoListContract() as Record<string, unknown>,
           getTodoDoneContract() as Record<string, unknown>,
+          // Schedule 命令组（P5.7-R5-2）
+          getScheduleAddContract() as Record<string, unknown>,
+          getScheduleListContract() as Record<string, unknown>,
+          getScheduleRemoveContract() as Record<string, unknown>,
         ];
 
         const data: HelpData = {
