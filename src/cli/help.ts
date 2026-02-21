@@ -18,6 +18,7 @@ import { getTodoAddContract, getTodoListContract, getTodoDoneContract } from "./
 import { getScheduleAddContract, getScheduleListContract, getScheduleRemoveContract } from "./schedule.js";
 import { getMediaScreenContract } from "./media.js";
 import { getGenImageContract, getGenSelfieContract } from "./gen-image.js";
+import { getGenTtsContract, getGenMusicContract } from "./gen-audio.js";
 
 // ============================================
 // 类型定义
@@ -135,6 +136,9 @@ export function createHelpDocsCommand(): Command {
           // Gen Image 命令组（P5.7-R6-2）
           getGenImageContract() as Record<string, unknown>,
           getGenSelfieContract() as Record<string, unknown>,
+          // Gen Audio 命令组（P5.7-R6-3）
+          getGenTtsContract() as Record<string, unknown>,
+          getGenMusicContract() as Record<string, unknown>,
         ];
 
         const data: HelpData = {

@@ -286,6 +286,12 @@ async function loadGenImageCommands() {
   program.addCommand(createGenImageCommandGroup());
 }
 
+// Gen Audio 命令组（P5.7-R6-3）
+async function loadGenAudioCommands() {
+  const { createGenAudioCommandGroup } = await import("./cli/gen-audio.js");
+  program.addCommand(createGenAudioCommandGroup());
+}
+
 // 主入口（异步）
 async function main() {
   // P0: 仅按需加载子命令，避免在"未初始化配置"时也强制 import 导致 CLI 直接崩溃。
@@ -332,6 +338,9 @@ async function main() {
   if (top === "gen-image") {
     await loadGenImageCommands();
   }
+  if (top === "gen-audio") {
+    await loadGenAudioCommands();
+  }
   if (top === "help-docs") {
     await loadHelpDocsCommand();
   }
@@ -350,6 +359,7 @@ async function main() {
     await loadScheduleCommands();
     await loadMediaCommands();
     await loadGenImageCommands();
+    await loadGenAudioCommands();
     await loadHelpDocsCommand();
   }
   program.parse();
