@@ -1379,29 +1379,21 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
     let assistantRole = msg1?.role || "assistant";
     const assistantContent = msg1?.content;
 
-    // 无工具调用：直接清洗返回
+    // 无工具调用：硬失败（P5.7-R3l-1: tool 协议硬门）
     // P5.7-R3h: 区分模型协议失败（无 tool_calls）与工具执行失败
     if (toolCalls.length === 0) {
-        // P5.7-R3h: 记录 MODEL_PROTOCOL_FAILED 诊断信息
-        logger.info("Model returned no tool calls (MODEL_PROTOCOL_FAILED scenario)", {
+        // P5.7-R3l-1: tool 路由下 toolCallCount=0 一律硬失败，禁止 cleanedAnswer 透传
+        logger.info("Tool protocol hard-gate triggered (MODEL_PROTOCOL_FAILED)", {
             module: "lmstudio",
             toolCallCount: 0,
             errorCode: "MODEL_PROTOCOL_FAILED",  // 协议层未返回工具调用
             assistantContentLength: assistantContent?.length ?? 0,
         });
 
-        const cleanedAnswer = sanitizeLmStudioOutput(assistantContent ?? "");
-        if (tools.length > 0 && isLikelyFakeToolExecutionText(cleanedAnswer)) {
-            logger.warn("Detected fake tool execution without tool_calls", {
-                module: "lmstudio",
-                toolCallCount: 0,
-                errorCode: "MODEL_PROTOCOL_FAILED",
-            });
-            return {
-                answer: "未检测到真实工具调用；为避免返回伪造执行结果，本次不输出命令结果。请重试并明确让我调用工具。"
-            };
-        }
-        return { answer: cleanedAnswer };
+        // P5.7-R3l-1: 硬失败回执（详细版，含错误码和解释）
+        return {
+            answer: `协议失败：未收到工具调用指令\n- 错误码：MODEL_PROTOCOL_FAILED\n\n这通常意味着模型无法调用工具。请重试或切换到对话模式。`
+        };
     }
 
     // P5.7-R3g: 上限保护 - 超过步数限制直接返回错误
