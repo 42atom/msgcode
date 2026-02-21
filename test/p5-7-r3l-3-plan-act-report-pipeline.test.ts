@@ -197,8 +197,8 @@ describe("P5.7-R3l-3: Plan -> Act -> Report 管道", () => {
                 // 验证没有额外的 runLmStudioChat 调用用于 plan
                 // plan 阶段只有日志，没有 LLM 调用
                 expect(toolSection).toContain("phase: \"plan\"");
-                // plan 日志后直接是 toolLoopResult，不是 runLmStudioChat
-                expect(toolSection).toMatch(/phase:\s*"plan"[\s\S]{0,200}toolLoopResult/);
+                // P5.7-R3l-4: plan 日志后有 runLmStudioToolLoop（现在包含更多参数）
+                expect(toolSection).toMatch(/phase:\s*"plan"[\s\S]{0,500}runLmStudioToolLoop/);
             }
         });
     });

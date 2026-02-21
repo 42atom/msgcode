@@ -197,7 +197,8 @@ npm install
             );
 
             // 提取失败回执文案
-            const answerMatch = code.match(/return\s*\{\s*answer:\s*`([\s\S]*?)`\s*\}/);
+            // P5.7-R3l-4: 返回格式现在包含 actionJournal 字段
+            const answerMatch = code.match(/return\s*\{\s*answer:\s*`([\s\S]*?)`,\s*actionJournal/);
             expect(answerMatch).not.toBeNull();
 
             if (answerMatch) {

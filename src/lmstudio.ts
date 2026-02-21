@@ -1196,14 +1196,53 @@ export interface LmStudioToolLoopOptions {
     summaryContext?: string; // summary 格式化后的上下文
     // P5.6.8-R4e: SOUL 上下文（direct only）
     soulContext?: { content: string; source: string; path: string; chars: number };
+    // P5.7-R3l-4: 追踪字段
+    traceId?: string;  // 用于 journal 追踪
+    route?: "tool" | "complex-tool";  // 用于 journal 路由标记
+}
+
+// ============================================
+// P5.7-R3l-4: Action Journal 契约
+// ============================================
+
+/**
+ * P5.7-R3l-4: Action Journal 条目类型
+ *
+ * 作为 report 阶段事实源，记录工具执行的完整诊断信息。
+ */
+export interface ActionJournalEntry {
+    // 追踪字段
+    traceId: string;           // 请求追踪 ID
+    stepId: number;            // 步骤序号（单调递增）
+
+    // 阶段字段
+    phase: "plan" | "act" | "report";  // 所属阶段
+    timestamp: number;         // 时间戳（Date.now()）
+
+    // 路由字段
+    route: "tool" | "complex-tool";  // 所属路由
+    model?: string;            // 使用的模型
+
+    // 工具字段
+    tool: string;              // 工具名称
+    ok: boolean;               // 成功与否
+    exitCode?: number | null;  // 退出码（bash 工具）
+    errorCode?: string;        // 错误码
+    stdoutTail?: string;       // stdout 尾部
+    fullOutputPath?: string;   // 完整输出文件路径
+
+    // 诊断字段
+    durationMs: number;        // 执行耗时
 }
 
 /**
  * Tool Loop 结果
+ * P5.7-R3l-4: 必有 actionJournal（无工具时为空数组）
  */
 export interface ToolLoopResult {
     answer: string;
     toolCall?: { name: string; args: Record<string, unknown>; result: unknown };
+    actionJournal: ActionJournalEntry[];  // 必有，无工具时为空数组
 }
 
 /**
@@ -1310,6 +1349,12 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
         ? config.lmstudioTimeoutMs
         : 120_000);
     const root = options.allowRoot || config.workspaceRoot || AIDOCS_ROOT;
+
+    // P5.7-R3l-4: 初始化 actionJournal
+    const actionJournal: ActionJournalEntry[] = [];
+    let stepId = 0;
+    const traceId = options.traceId || crypto.randomUUID().slice(0, 8);
+    const route = options.route || "tool";
 
     // P5.7-R3l-2: 使用 buildExecSystemPrompt（exec 链路禁止 SOUL 注入）
     const baseSystem = options.system ?? config.lmstudioSystemPrompt ?? "";
@@ -1438,7 +1483,8 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
 
         // P5.7-R3l-1: 硬失败回执（详细版，含错误码和解释）
         return {
-            answer: `协议失败：未收到工具调用指令\n- 错误码：MODEL_PROTOCOL_FAILED\n\n这通常意味着模型无法调用工具。请重试或切换到对话模式。`
+            answer: `协议失败：未收到工具调用指令\n- 错误码：MODEL_PROTOCOL_FAILED\n\n这通常意味着模型无法调用工具。请重试或切换到对话模式。`,
+            actionJournal: [],  // P5.7-R3l-4: 硬失败场景返回空数组
         };
     }
 
@@ -1454,7 +1500,8 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
         });
 
         return {
-            answer: `工具调用次数超过上限\n- 请求数：${toolCalls.length}\n- 上限：${MAX_TOOL_CALLS_PER_TURN}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n请简化任务或分步执行。`
+            answer: `工具调用次数超过上限\n- 请求数：${toolCalls.length}\n- 上限：${MAX_TOOL_CALLS_PER_TURN}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n请简化任务或分步执行。`,
+            actionJournal: [],  // P5.7-R3l-4: 超限场景返回空数组
         };
     }
 
@@ -1515,11 +1562,41 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
 
             return {
                 answer: answerText,
-                toolCall: { name: tc.function.name, args, result: toolResult }
+                toolCall: { name: tc.function.name, args, result: toolResult },
+                actionJournal,  // P5.7-R3l-4: 失败短路场景返回已有 journal
             };
         }
 
         executedToolCalls.push({ tc, args, result: toolResult });
+
+        // P5.7-R3l-4: 收集 actionJournal
+        stepId++;
+        const isFailure = toolResult && typeof toolResult === "object" && "error" in toolResult;
+        const err = isFailure ? (toolResult as {
+            errorCode?: string;
+            exitCode?: number | null;
+            stderrTail?: string;
+            stdoutTail?: string;
+            fullOutputPath?: string;
+        }) : undefined;
+
+        actionJournal.push({
+            traceId,
+            stepId,
+            phase: "act",
+            timestamp: Date.now(),
+            route,
+            model,
+            tool: tc.function.name,
+            ok: !isFailure,
+            exitCode: err?.exitCode ?? undefined,
+            errorCode: err?.errorCode ?? undefined,
+            stdoutTail: err?.stdoutTail ?? undefined,
+            fullOutputPath: err?.fullOutputPath ?? undefined,
+            durationMs: toolResult && typeof toolResult === "object" && "durationMs" in toolResult
+                ? (toolResult as { durationMs: number }).durationMs
+                : 0,
+        });
     }
 
     // 构造第二轮消息（将所有工具调用回灌给模型）
@@ -1593,12 +1670,14 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
     });
 
     // P5.7-R3g: 返回第一个工具调用信息（兼容旧接口）
+    // P5.7-R3l-4: 返回 actionJournal
     const firstCall = executedToolCalls[0];
     return {
         answer: sanitizeLmStudioOutput(answer),
         toolCall: firstCall
             ? { name: firstCall.tc.function.name, args: firstCall.args, result: firstCall.result }
-            : undefined
+            : undefined,
+        actionJournal,  // P5.7-R3l-4: 必有，无工具时为空数组
     };
 }
 
@@ -1691,12 +1770,14 @@ export interface LmStudioRoutedChatOptions {
 
 /**
  * P5.7-R3e: 路由聊天结果
+ * P5.7-R3l-4: 必有 actionJournal（结构一致锁）
  */
 export interface RoutedChatResult {
     answer: string;
     route: "no-tool" | "tool" | "complex-tool";
     temperature: number;
     toolCall?: { name: string; args: Record<string, unknown>; result: unknown };
+    actionJournal: ActionJournalEntry[];  // P5.7-R3l-4: 必有，无工具时为空数组
 }
 
 /**
@@ -1806,6 +1887,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             answer,
             route: selectedLevel === "LEVEL_2" ? "no-tool" : route,
             temperature: usedTemperature,
+            actionJournal: [],  // P5.7-R3l-4: no-tool 路由返回空数组
         };
     }
 
@@ -1838,6 +1920,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
                 answer,
                 route: "no-tool",
                 temperature: 0.2,
+                actionJournal: [],  // P5.7-R3l-4: 降级场景返回空数组
             };
         }
 
@@ -1868,6 +1951,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
 
         // P5.7-R3l-3: 第二阶段 - act（走工具循环，使用 executor 模型 + 计划上下文，kernel=exec）
         const execPrompt = `${options.prompt}\n\n执行计划：${planResult}`;
+        // P5.7-R3l-4: 传入 traceId 和 route 用于 journal 追踪
         const toolLoopResult = await runLmStudioToolLoop({
             prompt: execPrompt,
             system: options.system,
@@ -1876,6 +1960,8 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             summaryContext: options.summaryContext,
             soulContext: options.soulContext,
             model: usedModel,
+            traceId,  // P5.7-R3l-4: 追踪 ID
+            route: "complex-tool",  // P5.7-R3l-4: 路由标记
         });
 
         logger.info("pipeline phase completed", {
@@ -1916,6 +2002,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             route: "complex-tool",
             temperature: usedTemperature,
             toolCall: toolLoopResult.toolCall,
+            actionJournal: toolLoopResult.actionJournal,  // P5.7-R3l-4: 从 toolLoop 传递
         };
     }
 
@@ -1948,6 +2035,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             answer,
             route: "no-tool",
             temperature: 0.2,
+            actionJournal: [],  // P5.7-R3l-4: 降级场景返回空数组
         };
     }
 
@@ -1966,6 +2054,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
     });
 
     // P5.7-R3l-3: act 执行（走工具循环，kernel=exec）
+    // P5.7-R3l-4: 传入 traceId 和 route 用于 journal 追踪
     const toolLoopResult = await runLmStudioToolLoop({
         prompt: options.prompt,
         system: options.system,
@@ -1974,6 +2063,8 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
         summaryContext: options.summaryContext,
         soulContext: options.soulContext,
         model: usedModel,
+        traceId,  // P5.7-R3l-4: 追踪 ID
+        route: "tool",  // P5.7-R3l-4: 路由标记
     });
 
     // P5.7-R3l-3: act 完成日志（kernel=exec）
@@ -2006,5 +2097,6 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
         route,
         temperature: usedTemperature,
         toolCall: toolLoopResult.toolCall,
+        actionJournal: toolLoopResult.actionJournal,  // P5.7-R3l-4: 从 toolLoop 传递
     };
 }
