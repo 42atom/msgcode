@@ -15,6 +15,7 @@
 import { config } from "./config.js";
 import * as path from "node:path";
 import * as fsPromises from "node:fs/promises";
+import * as crypto from "node:crypto";
 import { logger } from "./logger/index.js";
 
 // P5.6.2: 导入提取的 provider 层
@@ -1700,6 +1701,7 @@ export interface RoutedChatResult {
 
 /**
  * P5.7-R3e: 路由分发聊天
+ * P5.7-R3l-3: 显式 plan -> act -> report 管道与阶段顺序日志锁
  *
  * 根据请求类型选择不同的处理路径：
  * - no-tool: 直接聊天（temperature=0.2，允许更多创造性，使用 responder 模型）
@@ -1710,6 +1712,9 @@ export interface RoutedChatResult {
  * @returns 聊天结果（包含路由信息和温度）
  */
 export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions): Promise<RoutedChatResult> {
+    // P5.7-R3l-3: 生成 traceId 用于阶段顺序追踪
+    const traceId = crypto.randomUUID().slice(0, 8);
+
     // P5.7-R3k: 检查降级状态
     const degradeState = getDegradeState();
     const isDegrading = degradeState.level !== "LEVEL_0";
@@ -1744,9 +1749,13 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
         responderModel || "default-responder"
     );
 
+    // P5.7-R3l-3: 入口日志（phase=init，kernel=router）
     logger.info("routed chat started", {
         module: "lmstudio",
+        traceId,
         route,
+        phase: "init",
+        kernel: "router",
         confidence: classification.confidence,
         reason: classification.reason,
         temperature,
@@ -1780,9 +1789,13 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             temperature: usedTemperature,
         });
 
+        // P5.7-R3l-3: no-tool 完成日志（phase=complete，kernel=dialog）
         logger.info("routed chat completed", {
             module: "lmstudio",
+            traceId,
             route: selectedLevel === "LEVEL_2" ? "no-tool(degraded)" : route,
+            phase: "complete",
+            kernel: "dialog",
             temperature: usedTemperature,
             responseLength: answer.length,
             model: usedModel,
@@ -1797,6 +1810,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
     }
 
     // P5.7-R3e-hotfix: complex-tool 先计划再执行再收口
+    // P5.7-R3l-3: 显式 plan -> act -> report 管道
     // P5.7-R3j-1: 显式绑定 executor 模型
     // P5.7-R3k: 降级时，跳过工具执行，直接返回
     if (route === "complex-tool") {
@@ -1804,6 +1818,10 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
         if (selectedLevel !== "LEVEL_0") {
             logger.warn("complex-tool request but in degrade mode, skipping tool execution", {
                 module: "lmstudio",
+                traceId,
+                route,
+                phase: "degrade",
+                kernel: "router",
                 degradeLevel: selectedLevel,
             });
 
@@ -1827,7 +1845,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
         const usedModel = executorModel;
         const usedTemperature = 0;  // P5.7-R3j-2: 硬锁温度
 
-        // 第一阶段：计划（使用 executor 模型，temperature=0）
+        // P5.7-R3l-3: 第一阶段 - plan（使用 executor 模型，temperature=0，kernel=dialog）
         const planPrompt = `请先分析这个任务并制定执行计划，不需要执行具体操作：${options.prompt}`;
         const planResult = await runLmStudioChat({
             prompt: planPrompt,
@@ -1837,16 +1855,18 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             temperature: usedTemperature,
         });
 
-        logger.info("complex-tool plan phase completed", {
+        logger.info("pipeline phase completed", {
             module: "lmstudio",
-            route,
+            traceId,
+            route: "complex-tool",
+            phase: "plan",
+            kernel: "dialog",
             temperature: usedTemperature,
             model: usedModel,
             planLength: planResult.length,
-            phase: "plan",
         });
 
-        // 第二阶段：执行（走工具循环，使用 executor 模型 + 计划上下文）
+        // P5.7-R3l-3: 第二阶段 - act（走工具循环，使用 executor 模型 + 计划上下文，kernel=exec）
         const execPrompt = `${options.prompt}\n\n执行计划：${planResult}`;
         const toolLoopResult = await runLmStudioToolLoop({
             prompt: execPrompt,
@@ -1858,7 +1878,19 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             model: usedModel,
         });
 
-        // 第三阶段：收口（使用 executor 模型总结结果）
+        logger.info("pipeline phase completed", {
+            module: "lmstudio",
+            traceId,
+            route: "complex-tool",
+            phase: "act",
+            kernel: "exec",
+            temperature: usedTemperature,
+            model: usedModel,
+            toolCallCount: toolLoopResult.toolCall ? 1 : 0,
+            toolName: toolLoopResult.toolCall?.name,
+        });
+
+        // P5.7-R3l-3: 第三阶段 - report（使用 executor 模型总结结果，kernel=dialog）
         const summaryPrompt = `任务已完成。请总结执行结果：${toolLoopResult.answer}`;
         const summaryResult = await runLmStudioChat({
             prompt: summaryPrompt,
@@ -1868,14 +1900,15 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             temperature: usedTemperature,
         });
 
-        logger.info("complex-tool completed (plan->execute->summarize)", {
+        logger.info("pipeline phase completed", {
             module: "lmstudio",
-            route,
+            traceId,
+            route: "complex-tool",
+            phase: "report",
+            kernel: "dialog",
             temperature: usedTemperature,
             model: usedModel,
             responseLength: summaryResult.length,
-            toolCallCount: toolLoopResult.toolCall ? 1 : 0,
-            phase: "summarize",
         });
 
         return {
@@ -1887,6 +1920,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
     }
 
     // tool: 走工具循环（temperature=0，稳定触发，使用 executor 模型）
+    // P5.7-R3l-3: 显式 plan -> act -> report 日志（不新增 LLM 轮次）
     // P5.7-R3j-1: 显式绑定 executor 模型
     // P5.7-R3j-2: 硬锁温度为 0
     // P5.7-R3k: 降级策略 - 降级时跳过工具执行
@@ -1894,8 +1928,11 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
     if (selectedLevel !== "LEVEL_0") {
         logger.warn("tool request but in degrade mode, skipping tool execution", {
             module: "lmstudio",
-            degradeLevel: selectedLevel,
+            traceId,
             route,
+            phase: "degrade",
+            kernel: "router",
+            degradeLevel: selectedLevel,
         });
 
         const fallbackPrompt = `请直接用自然语言回答这个问题（当前处于安全模式，无法执行工具）：${options.prompt}`;
@@ -1917,6 +1954,18 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
     const usedModel = executorModel;
     const usedTemperature = 0;
 
+    // P5.7-R3l-3: plan 预备日志（tool 路由不新增 LLM 轮次，只加日志）
+    logger.info("pipeline phase started", {
+        module: "lmstudio",
+        traceId,
+        route: "tool",
+        phase: "plan",
+        kernel: "router",
+        temperature: usedTemperature,
+        model: usedModel,
+    });
+
+    // P5.7-R3l-3: act 执行（走工具循环，kernel=exec）
     const toolLoopResult = await runLmStudioToolLoop({
         prompt: options.prompt,
         system: options.system,
@@ -1927,14 +1976,29 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
         model: usedModel,
     });
 
-    logger.info("routed chat completed (tool)", {
+    // P5.7-R3l-3: act 完成日志（kernel=exec）
+    logger.info("pipeline phase completed", {
         module: "lmstudio",
-        route,
+        traceId,
+        route: "tool",
+        phase: "act",
+        kernel: "exec",
+        temperature: usedTemperature,
+        model: usedModel,
+        toolCallCount: toolLoopResult.toolCall ? 1 : 0,
+        toolName: toolLoopResult.toolCall?.name,
+    });
+
+    // P5.7-R3l-3: report 收口日志（kernel=dialog，tool 路由不新增 LLM 轮次）
+    logger.info("pipeline phase completed", {
+        module: "lmstudio",
+        traceId,
+        route: "tool",
+        phase: "report",
+        kernel: "dialog",
         temperature: usedTemperature,
         model: usedModel,
         responseLength: toolLoopResult.answer.length,
-        toolCallCount: toolLoopResult.toolCall ? 1 : 0,
-        toolName: toolLoopResult.toolCall?.name,
     });
 
     return {

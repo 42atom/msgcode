@@ -80,7 +80,9 @@ describe("P5.7-R3j: Dual Model Routing Stabilization", () => {
             const fs = require("node:fs");
             const code = fs.readFileSync("src/lmstudio.ts", "utf-8");
 
-            expect(code).toContain('routed chat completed (tool)');
+            // P5.7-R3l-3: tool 日志更新为 pipeline phase 格式
+            expect(code).toContain("phase: \"act\"");
+            expect(code).toContain("phase: \"report\"");
             expect(code).toContain("temperature: usedTemperature");
             expect(code).toContain("model: usedModel");
             expect(code).toContain("toolCallCount");
@@ -90,12 +92,10 @@ describe("P5.7-R3j: Dual Model Routing Stabilization", () => {
             const fs = require("node:fs");
             const code = fs.readFileSync("src/lmstudio.ts", "utf-8");
 
-            // 计划阶段
-            expect(code).toContain('complex-tool plan phase completed');
+            // P5.7-R3l-3: complex-tool 阶段统一为 plan -> act -> report
             expect(code).toContain('phase: "plan"');
-
-            // 收口阶段
-            expect(code).toContain('phase: "summarize"');
+            expect(code).toContain('phase: "act"');
+            expect(code).toContain('phase: "report"');
         });
     });
 
