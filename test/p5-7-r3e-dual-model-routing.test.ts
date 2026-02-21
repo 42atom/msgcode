@@ -224,8 +224,8 @@ describe("P5.7-R3e-hotfix: 双模型分流验证", () => {
         const code = await import("node:fs").then(fs =>
             fs.readFileSync(require.resolve("../src/lmstudio.ts"), "utf-8")
         );
-        // 验证 no-tool 分支使用 responderModel
-        const noToolSection = code.match(/if \(route === "no-tool"\)[\s\S]{0,800}/);
+        // 验证 no-tool 分支使用 responderModel（R3k: 条件包含 LEVEL_2 降级）
+        const noToolSection = code.match(/if \(route === "no-tool"[^)]*\)[\s\S]{0,800}/);
         expect(noToolSection).not.toBeNull();
         expect(noToolSection![0]).toContain("responderModel");
     });
