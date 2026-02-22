@@ -17,6 +17,9 @@ import { logger } from "./logger/index.js";
 import { loadWorkspaceConfig, getRuntimeKind, getTmuxClient, getPolicyMode } from "./config/workspace.js";
 // P5.5: 关键词主触发已禁用，不再 import detectAutoSkill/runAutoSkill
 // import { detectAutoSkill, normalizeSkillId, runAutoSkill, runSkill } from "./skills/auto.js";
+// P5.7-R9-T2: 导入预算感知模块
+import { estimateTotalTokens } from "./budget.js";
+import { getInputBudget, getCapabilities } from "./capabilities.js";
 
 // 导入 tmux 模块
 import { type RunnerType } from "./tmux/session.js";
@@ -570,6 +573,25 @@ export class RuntimeRouterHandler implements CommandHandler {
                 // P5.6.8-R4e: 读取 SOUL 上下文
                 soulContext = await resolveSoulContext(context.projectDir);
             }
+
+            // P5.7-R9-T2 Step 1: 上下文预算感知（请求前观测）
+            const contextWindowTokens = getCapabilities("lmstudio").contextWindowTokens;
+            const contextBudget = getInputBudget("lmstudio");
+            const contextUsedTokens = estimateTotalTokens(windowMessages);
+            const contextUsagePct = Math.round((contextUsedTokens / contextBudget) * 100);
+            const budgetRemaining = contextBudget - contextUsedTokens;
+            const isApproachingBudget = contextUsagePct >= 70;
+
+            logger.info("context budget observation", {
+                module: "handlers",
+                chatId: context.chatId,
+                contextWindowTokens,
+                contextBudget,
+                contextUsedTokens,
+                contextUsagePct,
+                budgetRemaining,
+                isApproachingBudget,
+            });
 
             // P5.6.14-R3: 注入观测字段
             const injectionEnabled = !!(windowMessages.length > 0 || summaryContext || soulContext?.content);
