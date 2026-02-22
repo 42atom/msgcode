@@ -212,10 +212,15 @@ export async function clearSession(ctx: SessionContext): Promise<SessionResult> 
     return { success: false, error: artifactsResult.error };
   }
 
+  // P5.7-R9-T3 Step 2: 显式日志字段 - clearScope=short-term
+  // 明确只清短期会话（window + summary），不清长期 memory
   logger.info("Session artifacts cleared", {
     module: "session-orchestrator",
     chatId: ctx.chatId,
     runner: r.runner,
+    clearScope: "short-term",
+    clearedItems: ["window", "summary"],
+    preservedItems: ["memory"],  // 长期记忆不清
   });
 
   // P5.6.13-R2: 重置线程（/clear 后创建新线程）
