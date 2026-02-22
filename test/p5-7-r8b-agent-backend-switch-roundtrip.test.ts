@@ -122,7 +122,8 @@ describe("P5.7-R8b: agent backend minimax/lmstudio 往返切换", () => {
     expect(toLocal.success).toBe(true);
     expect(toLocal.message).toContain("agent-backend");
     expect(await getRuntimeKind(workspacePath)).toBe("agent");
-    expect(process.env.AGENT_BACKEND).toBe("lmstudio");
+    // R9-T6+ 后统一回写中性主语，lmstudio 仅作为输入别名
+    expect(process.env.AGENT_BACKEND).toBe("agent-backend");
     // P5.7-R9-T6: 默认值改为 agent-backend
     expect(await getAgentProvider(workspacePath)).toBe("agent-backend");
 

@@ -757,8 +757,8 @@ export async function handleMessage(
     // 声明 result 变量（在 if/else 外部，以便后续代码访问）
     let result: Awaited<ReturnType<typeof handler.handle>>;
 
-    // botType=lmstudio（喂 4.7）：只进核心内容，禁止 [attachment] 元信息
-    if (botType === "lmstudio") {
+    // botType=agent-backend/lmstudio（本地模型）：只进核心内容，禁止 [attachment] 元信息
+    if (botType === "lmstudio" || botType === "agent-backend") {
       // M5-3: 使用记忆注入后的内容（baseContent 已包含可能的记忆证据块）
       let contentToHandle = (baseContent || "").trim();
 

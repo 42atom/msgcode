@@ -973,6 +973,7 @@ export function getHandler(botType: BotType): CommandHandler {
         case "file":
             return new FileHandler();
         case "lmstudio":
+        case "agent-backend":
             return new RuntimeRouterHandler();
         default:
             return new DefaultHandler();

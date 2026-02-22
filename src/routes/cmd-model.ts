@@ -72,7 +72,7 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
     const v = input.trim().toLowerCase();
     if (!v) return null;
     if (v === "lmstudio" || v === "agent-backend" || v === "agent" || v === "local-openai") {
-      return "lmstudio";
+      return "agent-backend";
     }
     if (v === "openai") return "openai";
     if (v === "minimax") return "minimax";
@@ -82,7 +82,7 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
   }
 
   function formatProviderLabel(provider: AgentProvider | "none"): string {
-    if (provider === "lmstudio") {
+    if (provider === "agent-backend" || provider === "lmstudio") {
       return "agent-backend(local-openai/lmstudio)";
     }
     return provider;
@@ -90,10 +90,14 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
 
   function getGlobalAgentProvider(): AgentProvider {
     const normalized = normalizeRequestedProvider(process.env.AGENT_BACKEND || "");
-    if (normalized === "lmstudio" || normalized === "openai" || normalized === "minimax") {
+    if (
+      normalized === "agent-backend" ||
+      normalized === "openai" ||
+      normalized === "minimax"
+    ) {
       return normalized;
     }
-    return "lmstudio";
+    return "agent-backend";
   }
 
   function setGlobalAgentProvider(provider: AgentProvider): void {
@@ -190,7 +194,7 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
         message: `当前策略模式为 local-only，不允许使用 ${requestedRunner}（需要外网访问）。\n\n` +
           `请先执行以下命令之一：\n` +
           `1. /policy on             （允许外网访问；等同 /policy egress-allowed）\n` +
-          `2. /model lmstudio        （使用本地模型）`,
+          `2. /model agent-backend   （使用本地模型）`,
       };
     }
 
@@ -257,7 +261,7 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
 
     const effectiveProvider = getGlobalAgentProvider();
     const effectiveLabel = formatProviderLabel(effectiveProvider);
-    const aliasHint = normalizedProvider === "lmstudio" && requestedRunner !== "lmstudio"
+    const aliasHint = normalizedProvider === "agent-backend" && requestedRunner !== "agent-backend"
       ? `（已按兼容别名映射为本地 backend）`
       : "";
     return {

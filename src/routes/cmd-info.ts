@@ -85,7 +85,7 @@ export async function handleHelpCommand(_options: CommandHandlerOptions): Promis
   /bind <dir>          绑定工作目录
   /where               查看当前绑定
   /unbind              解除绑定
-  /model [runner]      切换执行臂（lmstudio/codex/claude-code）
+  /model [runner]      切换执行臂（agent-backend/codex/claude-code）
   /policy [mode]       策略模式（local-only/egress-allowed）
 
 编排层

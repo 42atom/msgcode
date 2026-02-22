@@ -12,7 +12,7 @@ import {
 import type { CommandHandlerOptions, CommandResult } from "./cmd-types.js";
 
 const VALID_MODEL_CLIENTS: ModelClient[] = ["claude", "codex", "opencode"];
-const DEFAULT_BOT_TYPE: BotType = "lmstudio";
+const DEFAULT_BOT_TYPE: BotType = "agent-backend";
 
 function isValidModelClient(type: string): type is ModelClient {
   return VALID_MODEL_CLIENTS.includes(type as ModelClient);
