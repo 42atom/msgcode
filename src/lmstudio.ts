@@ -1929,7 +1929,6 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
         const os = await import("node:os");
 
         const globalSkillIndexPath = join(os.homedir(), ".config", "msgcode", "skills", "index.json");
-        const workspaceSkillIndexPath = join(workspacePath, ".msgcode", "skills", "index.json");
 
         let skillHint = "\n\n[技能系统]\n";
 
@@ -1938,26 +1937,26 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
                 const indexContent = await fsPromises.readFile(globalSkillIndexPath, "utf-8");
                 const index = JSON.parse(indexContent);
                 if (index.skills && Array.isArray(index.skills) && index.skills.length > 0) {
-                    skillHint += `全局技能：${index.skills.map((s: any) => s.id).join(", ")}\n`;
+                    const skillIds: string[] = [];
+                    const rawSkills = index.skills as unknown[];
+                    for (const skill of rawSkills) {
+                        if (!skill || typeof skill !== "object") continue;
+                        const id = (skill as { id?: unknown }).id;
+                        if (typeof id === "string" && id.trim()) {
+                            skillIds.push(id);
+                        }
+                    }
+
+                    if (skillIds.length > 0) {
+                        skillHint += `全局技能：${skillIds.join(", ")}\n`;
+                    }
                 }
             } catch {
                 // 忽略读取错误
             }
         }
 
-        if (existsSync(workspaceSkillIndexPath)) {
-            try {
-                const indexContent = await fsPromises.readFile(workspaceSkillIndexPath, "utf-8");
-                const index = JSON.parse(indexContent);
-                if (index.skills && Array.isArray(index.skills) && index.skills.length > 0) {
-                    skillHint += `工作区技能：${index.skills.map((s: any) => s.id).join(", ")}\n`;
-                }
-            } catch {
-                // 忽略读取错误
-            }
-        }
-
-        skillHint += "调用方式：read_file 读取技能文件（~/.config/msgcode/skills/<id>/main.sh 或 <workspace>/.msgcode/skills/<id>/main.sh），bash 执行";
+        skillHint += "调用方式：read_file 读取技能文件（~/.config/msgcode/skills/<id>/main.sh），bash 执行";
 
         system += skillHint;
     } catch {
