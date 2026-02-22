@@ -31,6 +31,9 @@
 21. `P5.7-R8d`：模型切换全链路同步（后端模型单源绑定）
 22. `P5.7-R9`：模型真实能力验收门（文件查看/自拍编排/定时提醒/记忆/任务管理）
 23. `P5.7-R9-T1`：真实能力验收执行单（Opus 主执行 + Codex 复核）
+24. `P5.7-R9-T2`：上下文余量感知与 70% 自动 Compact 主链（长会话持续能力硬门）
+25. `P5.7-R9-T3`：记忆默认开启 + PI 基线对齐 + 分支收敛（防回退）
+26. `P5.7-R9-T4`：`lmstudio` 命名去耦到 `agent-backend`（高风险重命名专单）
 
 ## P5 当前唯一执行主线（冻结）
 
@@ -102,6 +105,9 @@
 16. `P5.7-R8d`：模型切换全链路同步（切换即全链路同模）
 17. `P5.7-R9`：真实能力验收门（8 项真实场景 + 三重点指标）
 18. `P5.7-R9-T1`：真实能力验收执行单（真机跑测 + 证据回填 + 阻断修复）
+19. `P5.7-R9-T2`：上下文余量感知与自动 Compact（70% 触发 + 重启/换模续聊）
+20. `P5.7-R9-T3`：记忆默认开启与 /clear 边界锁（PI 基线 + 收敛分支）
+21. `P5.7-R9-T4`：后端中性命名重构（文件/函数/文案从 lmstudio 收敛为 agent-backend）
 
 ### 派单顺序（冻结）
 
@@ -185,6 +191,9 @@
 - `p5-7-r8d-model-switch-chain-sync.md`：P5.7-R8d（后端模型切换全链路同步，单源绑定）
 - `p5-7-r9-real-capability-gate.md`：P5.7-R9（模型真实能力验收门，能力扩展前置硬门）
 - `p5-7-r9-t1-real-capability-execution-dispatch.md`：P5.7-R9-T1（Opus 并行执行单：真机跑测 + 证据 + 最小修复）
+- `p5-7-r9-t2-context-budget-auto-compact.md`：P5.7-R9-T2（上下文预算感知 + 70% 自动 Compact + 持续对话）
+- `p5-7-r9-t3-memory-default-on-pi-baseline-and-branch-convergence.md`：P5.7-R9-T3（记忆默认开启 + /clear 边界 + PI 基线 + 分支收敛）
+- `p5-7-r9-t4-agent-backend-neutral-naming-refactor.md`：P5.7-R9-T4（`lmstudio` 命名去耦，统一 `agent-backend` 主语）
 - `p5-7-r3d-lmstudio-glm-toolcall-temperature-lock.md`：P5.7-R3d（LM Studio GLM ToolCall 温度锁定）
 - `p5-7-r3f-r3k-tool-loop-best-practice-pack.md`：P5.7-R3f~R3k（Tool Loop 最佳实践改造派单包）
 - `p5-7-r3f-bash-runner-engineering.md`：P5.7-R3f（Bash Runner 工程化）
