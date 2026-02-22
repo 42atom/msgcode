@@ -2,7 +2,7 @@
 id: 0002
 title: R9-T7 agent-backend 核心拆分与 lmstudio 兼容壳化
 status: doing
-owner: agent
+owner: opus
 labels: [refactor, backend, architecture]
 risk: high
 scope: agent-backend 主链拆分与 lmstudio 兼容层降级（不改变外部行为合同）
@@ -39,6 +39,7 @@ links:
 
 - 执行分支：`codex/p5-7-r3e-hotfix-2`（后续按主线收敛策略执行）。
 - 强约束：禁止跨单叠改，发现 tool loop 回归立即停线修复。
+- 派单：已指派 Opus 执行（R9-T7-1 开始）。
 
 ## Links
 

@@ -26,7 +26,7 @@
    - 文档：`docs/tasks/p5-7-r9-t5-codex-policy-dedup.md`
 5. `R9-T6`：`lmstudio` 硬编码语义清理（✅）  
    - 文档：`docs/tasks/p5-7-r9-t6-lmstudio-hardcode-purge.md`
-6. `R9-T7`：`lmstudio.ts` 兼容壳化 + agent-backend 核心拆分（🚧 执行中）  
+6. `R9-T7`：`lmstudio.ts` 兼容壳化 + agent-backend 核心拆分（🚧 执行中，Owner: Opus）  
    - 文档：`docs/tasks/p5-7-r9-t7-agent-backend-core-extraction.md`
    - Issue：`issues/0002-r9-t7-agent-backend-core-extraction.md`
    - Plan：`docs/design/plan-260223-r9-t7-agent-backend-core-extraction.md`
