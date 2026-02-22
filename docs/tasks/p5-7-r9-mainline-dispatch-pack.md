@@ -1,4 +1,4 @@
-# 任务单：P5.7-R9 主线派单包（T2 → T6 已完成，T7 排队）
+# 任务单：P5.7-R9 主线派单包（T2 → T6/T8 已完成，T7 排队）
 
 优先级：P0（连续会话能力 + 架构语义收敛）
 
@@ -28,6 +28,8 @@
    - 文档：`docs/tasks/p5-7-r9-t6-lmstudio-hardcode-purge.md`
 6. `R9-T7`：`lmstudio.ts` 兼容壳化 + agent-backend 核心拆分（⏳ 下一单）  
    - 文档：`docs/tasks/p5-7-r9-t7-agent-backend-core-extraction.md`
+7. `R9-T8`：CLAUDE 文档协议目录对齐（✅ 插单完成）  
+   - 文档：`docs/tasks/p5-7-r9-t8-repo-protocol-alignment.md`
 
 禁止并行跨单改动：必须前一单全绿签收后再开下一单。
 

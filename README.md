@@ -5,10 +5,13 @@
 ## 仓库导航（文档结构）
 
 1. `docs/tasks/README.md`：任务单唯一时间线（主线执行口径）。
-2. `docs/README.md`：文档目录总览（product/desktop/testing/release/archive）。
-3. `src/README.md`：代码分层与职责边界（agent/tmux/tool/memory）。
-4. `test/README.md`：测试结构与回归锁约束。
-5. `scripts/README.md`：冒烟/统计脚本目录规范。
+2. `issues/README.md`：issue 协议与执行态追踪规范。
+3. `docs/design/README.md`：Plan 文档规范（重要工作必备）。
+4. `docs/CHANGELOG.md`：外部可见变更日志主路径。
+5. `docs/README.md`：文档目录总览（product/desktop/testing/release/archive）。
+6. `src/README.md`：代码分层与职责边界（agent/tmux/tool/memory）。
+7. `test/README.md`：测试结构与回归锁约束。
+8. `scripts/README.md`：冒烟/统计脚本目录规范。
 
 ---
 

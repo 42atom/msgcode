@@ -37,6 +37,7 @@
 27. `P5.7-R9-T5`：CodexHandler 策略守卫去重（主链反复 if/else 收敛）
 28. `P5.7-R9-T6`：`lmstudio` 硬编码语义清理（配置/路由/类型主语收敛）
 29. `P5.7-R9-T7`：`lmstudio.ts` 兼容壳化与 agent-backend 核心拆分
+30. `P5.7-R9-T8`：仓库文档协议目录对齐（issues/design/notes/adr/changelog）
 
 ## P5 当前唯一执行主线（冻结）
 
@@ -114,6 +115,7 @@
 22. `P5.7-R9-T5`：CodexHandler 策略守卫去重（消除重复块 + 单一守卫函数）
 23. `P5.7-R9-T6`：lmstudio 硬编码语义清理（配置/路由/类型主语收敛）
 24. `P5.7-R9-T7`：agent-backend 核心拆分（`lmstudio.ts` 降级为兼容壳）
+25. `P5.7-R9-T8`：CLAUDE 文档协议目录对齐（目录 + 模板 + docs:check）
 
 ### 派单顺序（冻结）
 
@@ -203,6 +205,7 @@
 - `p5-7-r9-t5-codex-policy-dedup.md`：P5.7-R9-T5（CodexHandler 策略守卫去重与回归锁）
 - `p5-7-r9-t6-lmstudio-hardcode-purge.md`：P5.7-R9-T6（`lmstudio` 硬编码语义清理专项）
 - `p5-7-r9-t7-agent-backend-core-extraction.md`：P5.7-R9-T7（`lmstudio.ts` 兼容壳化 + agent-backend 核心拆分）
+- `p5-7-r9-t8-repo-protocol-alignment.md`：P5.7-R9-T8（CLAUDE 协议目录落地与兼容迁移）
 - `p5-7-r3d-lmstudio-glm-toolcall-temperature-lock.md`：P5.7-R3d（LM Studio GLM ToolCall 温度锁定）
 - `p5-7-r3f-r3k-tool-loop-best-practice-pack.md`：P5.7-R3f~R3k（Tool Loop 最佳实践改造派单包）
 - `p5-7-r3f-bash-runner-engineering.md`：P5.7-R3f（Bash Runner 工程化）

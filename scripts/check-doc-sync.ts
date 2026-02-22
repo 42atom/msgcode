@@ -35,6 +35,14 @@ export interface DocSyncReport {
   aidosBrokenLinks: string[];
   /** AIDOCS 承诺逐字返回文案的违规 */
   aidosVerbosePromises: string[];
+  /** 协议缺失的必需路径（CLAUDE.md） */
+  protocolMissingPaths: string[];
+  /** issues 目录中不符合命名规则的文件 */
+  protocolInvalidIssueFiles: string[];
+  /** docs/design 中不符合命名规则的 Plan 文件 */
+  protocolInvalidPlanFiles: string[];
+  /** 根 CHANGELOG 兼容提示缺失 */
+  protocolRootChangelogCompatibility: string[];
   /** 是否通过检查 */
   passed: boolean;
 }
@@ -87,6 +95,21 @@ const AIDOS_REQUIRED_SECTIONS = [
   "快速导航",
   "边界声明",
   "人工检查清单",
+];
+
+/**
+ * CLAUDE 文档协议必需路径
+ */
+const REQUIRED_PROTOCOL_PATHS = [
+  "issues",
+  "issues/_template.md",
+  "docs/design",
+  "docs/design/plan-template.md",
+  "docs/notes",
+  "docs/notes/research-template.md",
+  "docs/adr",
+  "docs/adr/ADR-template.md",
+  "docs/CHANGELOG.md",
 ];
 
 // ============================================
@@ -307,6 +330,80 @@ function checkAidosVerbosePromises(): string[] {
 }
 
 /**
+ * 检查 CLAUDE 文档协议必需路径
+ */
+function checkProtocolRequiredPaths(): string[] {
+  const missing: string[] = [];
+  for (const relativePath of REQUIRED_PROTOCOL_PATHS) {
+    const absolutePath = path.join(process.cwd(), relativePath);
+    if (!fs.existsSync(absolutePath)) {
+      missing.push(relativePath);
+    }
+  }
+  return missing;
+}
+
+/**
+ * 检查 issues 文件命名规则：NNNN-<slug>.md
+ */
+function checkIssueFilenameProtocol(): string[] {
+  const issuesDir = path.join(process.cwd(), "issues");
+  if (!fs.existsSync(issuesDir)) return [];
+
+  const invalid: string[] = [];
+  const entries = fs.readdirSync(issuesDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    if (!entry.name.endsWith(".md")) continue;
+    if (entry.name === "README.md" || entry.name === "_template.md") continue;
+    if (!/^\d{4}-[a-z0-9][a-z0-9-]*\.md$/.test(entry.name)) {
+      invalid.push(`issues/${entry.name}`);
+    }
+  }
+
+  return invalid;
+}
+
+/**
+ * 检查 Plan 文件命名规则：plan-YYMMDD-<topic>.md
+ */
+function checkPlanFilenameProtocol(): string[] {
+  const designDir = path.join(process.cwd(), "docs", "design");
+  if (!fs.existsSync(designDir)) return [];
+
+  const invalid: string[] = [];
+  const entries = fs.readdirSync(designDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    if (!entry.name.endsWith(".md")) continue;
+    if (entry.name === "README.md" || entry.name === "plan-template.md") continue;
+    if (!/^plan-\d{6}-[a-z0-9][a-z0-9-]*\.md$/.test(entry.name)) {
+      invalid.push(`docs/design/${entry.name}`);
+    }
+  }
+
+  return invalid;
+}
+
+/**
+ * 根 CHANGELOG 兼容提示检查
+ *
+ * 目的：路径迁移后，旧索引仍可定位 docs/CHANGELOG.md
+ */
+function checkRootChangelogCompatibility(): string[] {
+  const rootChangelogPath = path.join(process.cwd(), "CHANGELOG.md");
+  if (!fs.existsSync(rootChangelogPath)) return ["CHANGELOG.md（根）缺失"];
+
+  const content = fs.readFileSync(rootChangelogPath, "utf-8");
+  if (!content.includes("docs/CHANGELOG.md")) {
+    return ["CHANGELOG.md（根）未包含 docs/CHANGELOG.md 指向"];
+  }
+  return [];
+}
+
+/**
  * 检查文档同步状态
  */
 export async function checkDocSync(): Promise<DocSyncReport> {
@@ -332,6 +429,10 @@ export async function checkDocSync(): Promise<DocSyncReport> {
   const aidosMissingSections = checkAidosRequiredSections();
   const aidosBrokenLinks = checkAidosLinksExist();
   const aidosVerbosePromises = checkAidosVerbosePromises();
+  const protocolMissingPaths = checkProtocolRequiredPaths();
+  const protocolInvalidIssueFiles = checkIssueFilenameProtocol();
+  const protocolInvalidPlanFiles = checkPlanFilenameProtocol();
+  const protocolRootChangelogCompatibility = checkRootChangelogCompatibility();
 
   const passed =
     violations.length === 0 &&
@@ -339,7 +440,11 @@ export async function checkDocSync(): Promise<DocSyncReport> {
     missing.length === 0 &&
     aidosMissingSections.length === 0 &&
     aidosBrokenLinks.length === 0 &&
-    aidosVerbosePromises.length === 0;
+    aidosVerbosePromises.length === 0 &&
+    protocolMissingPaths.length === 0 &&
+    protocolInvalidIssueFiles.length === 0 &&
+    protocolInvalidPlanFiles.length === 0 &&
+    protocolRootChangelogCompatibility.length === 0;
 
   return {
     missing,
@@ -348,6 +453,10 @@ export async function checkDocSync(): Promise<DocSyncReport> {
     aidosMissingSections,
     aidosBrokenLinks,
     aidosVerbosePromises,
+    protocolMissingPaths,
+    protocolInvalidIssueFiles,
+    protocolInvalidPlanFiles,
+    protocolRootChangelogCompatibility,
     passed,
   };
 }
@@ -419,6 +528,38 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       console.error("");
       console.error("提示：命令节应只做分类导览，不承诺逐字返回文案");
       console.error("      行为真相源：运行时 /help");
+      console.error("");
+    }
+
+    if (report.protocolMissingPaths.length > 0) {
+      console.error("CLAUDE 协议缺失的必需路径：");
+      for (const p of report.protocolMissingPaths) {
+        console.error(`  - ${p}`);
+      }
+      console.error("");
+    }
+
+    if (report.protocolInvalidIssueFiles.length > 0) {
+      console.error("issues 文件命名不合规（应为 NNNN-<slug>.md）：");
+      for (const p of report.protocolInvalidIssueFiles) {
+        console.error(`  - ${p}`);
+      }
+      console.error("");
+    }
+
+    if (report.protocolInvalidPlanFiles.length > 0) {
+      console.error("Plan 文件命名不合规（应为 plan-YYMMDD-<topic>.md）：");
+      for (const p of report.protocolInvalidPlanFiles) {
+        console.error(`  - ${p}`);
+      }
+      console.error("");
+    }
+
+    if (report.protocolRootChangelogCompatibility.length > 0) {
+      console.error("根 CHANGELOG 兼容提示缺失：");
+      for (const p of report.protocolRootChangelogCompatibility) {
+        console.error(`  - ${p}`);
+      }
       console.error("");
     }
 
