@@ -13,13 +13,16 @@ import { getRouteByChatId as getRouteFromStore } from "./routes/store.js";
 
 /**
  * Bot 类型
+ * P5.7-R9-T6: 新增 agent-backend 中性语义
  */
-export type BotType = "code" | "image" | "file" | "lmstudio" | "default";
+export type BotType = "code" | "image" | "file" | "lmstudio" | "agent-backend" | "default";
 
 /**
  * E13: 模型客户端类型（本机可执行）
+ * P5.7-R9-T6: 新增 agent-backend 中性语义
  */
 export type ModelClient =
+    | "agent-backend"
     | "lmstudio"
     | "minimax"
     | "llama"

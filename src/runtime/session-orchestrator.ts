@@ -22,7 +22,8 @@ import { resetThread } from "./thread-store.js";
 
 export interface RunnerInfo {
   runner: RunnerType;
-  runnerConfig?: "lmstudio" | "minimax" | "llama" | "claude" | "openai" | "codex" | "claude-code";
+  // P5.7-R9-T6: 新增 agent-backend 中性语义
+  runnerConfig?: "agent-backend" | "lmstudio" | "minimax" | "llama" | "claude" | "openai" | "codex" | "claude-code";
   blockedReason?: string;
 }
 

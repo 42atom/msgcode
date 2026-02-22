@@ -58,9 +58,10 @@ export interface WorkspaceConfig {
 
   /**
    * Agent Provider（仅 runtime.kind=agent 时有效）
-   * - lmstudio: 本地 LM Studio 模型（默认）
+   * - agent-backend / local-openai: 本地后端（默认）
    * - minimax: MiniMax 模型
    * - openai: OpenAI API
+   * - lmstudio: 历史别名（兼容）
    * - ...
    */
   "agent.provider"?: AgentProvider;
@@ -82,12 +83,13 @@ export interface WorkspaceConfig {
 
   /**
    * 默认执行臂（只读兼容，v2.3.x 保留映射，v2.4.0 移除）
+   * P5.7-R9-T6: 新增 agent-backend 中性语义
    * 映射规则：
    * - codex|claude-code -> runtime.kind=tmux + tmux.client=<runner>
-   * - lmstudio|openai|minimax -> runtime.kind=agent + agent.provider=<runner>
+   * - agent-backend|lmstudio|openai|minimax -> runtime.kind=agent + agent.provider=<runner>
    * - llama|claude -> runtime.kind=agent + agent.provider=lmstudio（兼容降级）
    */
-  "runner.default"?: "lmstudio" | "minimax" | "llama" | "claude" | "openai" | "codex" | "claude-code";
+  "runner.default"?: "agent-backend" | "lmstudio" | "minimax" | "llama" | "claude" | "openai" | "codex" | "claude-code";
 
   // ==================== PI 配置 ====================
   /**
@@ -143,8 +145,9 @@ export type FsScope = "workspace" | "unrestricted";
 
 /**
  * P5.6.14-R1b: Agent Provider 类型（agent 模式下有效）
+ * P5.7-R9-T6: 新增 agent-backend 中性语义
  */
-export type AgentProvider = "lmstudio" | "minimax" | "openai" | "llama" | "claude";
+export type AgentProvider = "agent-backend" | "lmstudio" | "minimax" | "openai" | "llama" | "claude";
 
 /**
  * P5.6.14-R1b: Tmux Client 类型（tmux 模式下有效）
@@ -166,9 +169,9 @@ export const DEFAULT_WORKSPACE_CONFIG: Required<WorkspaceConfig> = {
   "model.responder": "", // P5.7-R3e: 空=继承 agent.provider
   "policy.mode": "egress-allowed", // 默认允许外联（远程场景避免被门禁卡住；高敏 workspace 可手动切回 local-only）
   "runtime.kind": "agent", // P5.6.14-R1: 默认 agent 形态
-  "agent.provider": "lmstudio", // P5.6.14-R1: 默认 lmstudio provider
+  "agent.provider": "agent-backend", // P5.7-R9-T6: 默认 agent-backend（中性语义）
   "tmux.client": "codex", // P5.6.14-R1: 默认 codex client
-  "runner.default": "lmstudio", // 兼容字段，默认 lmstudio
+  "runner.default": "agent-backend", // P5.7-R9-T6: 兼容字段，默认 agent-backend
   "pi.enabled": true, // 测试期默认开启 PI
   "tooling.mode": "autonomous", // P5.5: 测试期统一 autonomous（LLM 自主决策 tool_calls）
   "tooling.allow": ["tts", "asr", "vision", "mem", "bash", "browser", "desktop", "read_file", "write_file", "edit_file"], // P5.6.8-R4g: PI 四工具直达
@@ -276,12 +279,13 @@ export async function getMemoryInjectConfig(
  * 从 runner.default 映射到 runtime.kind/provider/client
  * P5.6.14-R1: 兼容映射层（只读）
  * P5.6.14-R1b: 使用 AgentProvider/TmuxClient 类型
+ * P5.7-R9-T6: 新增 agent-backend 支持，默认回退到 agent-backend
  */
 function mapRunnerToKindProviderClient(
-  runner: "lmstudio" | "minimax" | "llama" | "claude" | "openai" | "codex" | "claude-code" | undefined
+  runner: "agent-backend" | "lmstudio" | "minimax" | "llama" | "claude" | "openai" | "codex" | "claude-code" | undefined
 ): { kind: "agent" | "tmux"; provider?: AgentProvider; client?: TmuxClient } {
   if (!runner) {
-    return { kind: "agent", provider: "lmstudio" };
+    return { kind: "agent", provider: "agent-backend" };
   }
 
   // codex|claude-code -> tmux + client
@@ -289,13 +293,13 @@ function mapRunnerToKindProviderClient(
     return { kind: "tmux", client: runner };
   }
 
-  // lmstudio|openai|minimax -> agent + provider
-  if (runner === "lmstudio" || runner === "openai" || runner === "minimax") {
+  // agent-backend|lmstudio|openai|minimax -> agent + provider
+  if (runner === "agent-backend" || runner === "lmstudio" || runner === "openai" || runner === "minimax") {
     return { kind: "agent", provider: runner };
   }
 
-  // llama|claude -> agent + provider=lmstudio（兼容降级）
-  return { kind: "agent", provider: "lmstudio" };
+  // llama|claude -> agent + provider=agent-backend（兼容降级）
+  return { kind: "agent", provider: "agent-backend" };
 }
 
 /**
@@ -326,7 +330,7 @@ export async function getRuntimeKind(
  * P5.6.14-R1b: 使用 AgentProvider 类型
  *
  * @param projectDir 工作区路径
- * @returns Agent Provider（lmstudio | minimax | openai | none）
+ * @returns Agent Provider（agent-backend | minimax | openai | lmstudio | none）
  */
 export async function getAgentProvider(
   projectDir: string
@@ -442,13 +446,14 @@ export async function setPolicyMode(
 /**
  * 获取默认执行臂（兼容层，只读）
  * P5.6.14-R1: 从新字段反向映射（只读兼容）
+ * P5.7-R9-T6: 新增 agent-backend 中性语义
  *
  * @param projectDir 工作区路径
- * @returns 默认执行臂（lmstudio | llama | claude | openai | codex | claude-code）
+ * @returns 默认执行臂（agent-backend | lmstudio | llama | claude | openai | codex | claude-code）
  */
 export async function getDefaultRunner(
   projectDir: string
-): Promise<"lmstudio" | "minimax" | "llama" | "claude" | "openai" | "codex" | "claude-code"> {
+): Promise<"agent-backend" | "lmstudio" | "minimax" | "llama" | "claude" | "openai" | "codex" | "claude-code"> {
   const workspaceConfig = await loadWorkspaceConfig(projectDir);
 
   // 优先从新字段反向映射
@@ -459,11 +464,11 @@ export async function getDefaultRunner(
   if (workspaceConfig["runtime.kind"] === "agent") {
     const provider = workspaceConfig["agent.provider"];
     if (provider) {
-      // llama/claude 映射回 lmstudio（兼容返回）
+      // llama/claude 映射回 agent-backend（兼容返回）
       if (provider === "llama" || provider === "claude") {
-        return "lmstudio";
+        return "agent-backend";
       }
-      return provider as "lmstudio" | "minimax" | "openai";
+      return provider as "agent-backend" | "lmstudio" | "minimax" | "openai";
     }
   }
 
@@ -474,6 +479,7 @@ export async function getDefaultRunner(
 /**
  * 设置默认执行臂（兼容层，写新字段）
  * P5.6.14-R1: 根据 runner 映射到新字段
+ * P5.7-R9-T6: 新增 agent-backend 中性语义
  *
  * @param projectDir 工作区路径
  * @param runner 默认执行臂
@@ -482,7 +488,7 @@ export async function getDefaultRunner(
  */
 export async function setDefaultRunner(
   projectDir: string,
-  runner: "lmstudio" | "minimax" | "llama" | "claude" | "openai" | "codex" | "claude-code",
+  runner: "agent-backend" | "lmstudio" | "minimax" | "llama" | "claude" | "openai" | "codex" | "claude-code",
   currentMode?: "local-only" | "egress-allowed"
 ): Promise<{ success: boolean; error?: string }> {
   // 如果没有提供 currentMode，读取当前配置
@@ -497,7 +503,7 @@ export async function setDefaultRunner(
       error: `当前策略模式为 local-only，不允许使用 ${runner}（需要外网访问）。\n\n` +
         `请先执行以下命令之一：\n` +
         `1. /policy on             （允许外网访问；等同 /policy egress-allowed）\n` +
-        `2. /model lmstudio        （使用本地模型）`,
+        `2. /model agent-backend   （使用本地后端）`,
     };
   }
 

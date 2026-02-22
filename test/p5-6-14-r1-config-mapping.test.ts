@@ -99,25 +99,27 @@ describe("P5.6.14-R1: 配置映射回归锁", () => {
             expect(await getDefaultRunner(workspacePath)).toBe("minimax");
         });
 
-        it("llama -> runtime.kind=agent + agent.provider=lmstudio（兼容降级）", async () => {
+        it("llama -> runtime.kind=agent + agent.provider=agent-backend（兼容降级）", async () => {
             const { getRuntimeKind, getAgentProvider, getTmuxClient, getDefaultRunner } = await import("../src/config/workspace.js");
 
             await writeConfig(workspacePath, { "runner.default": "llama" });
 
             expect(await getRuntimeKind(workspacePath)).toBe("agent");
-            expect(await getAgentProvider(workspacePath)).toBe("lmstudio"); // 兼容降级
+            // P5.7-R9-T6: 兼容降级映射到 agent-backend
+            expect(await getAgentProvider(workspacePath)).toBe("agent-backend");
             expect(await getTmuxClient(workspacePath)).toBe("none");
             // getDefaultRunner 返回原始值（保持向后兼容）
             expect(await getDefaultRunner(workspacePath)).toBe("llama");
         });
 
-        it("claude -> runtime.kind=agent + agent.provider=lmstudio（兼容降级）", async () => {
+        it("claude -> runtime.kind=agent + agent.provider=agent-backend（兼容降级）", async () => {
             const { getRuntimeKind, getAgentProvider, getTmuxClient, getDefaultRunner } = await import("../src/config/workspace.js");
 
             await writeConfig(workspacePath, { "runner.default": "claude" });
 
             expect(await getRuntimeKind(workspacePath)).toBe("agent");
-            expect(await getAgentProvider(workspacePath)).toBe("lmstudio"); // 兼容降级
+            // P5.7-R9-T6: 兼容降级映射到 agent-backend
+            expect(await getAgentProvider(workspacePath)).toBe("agent-backend");
             expect(await getTmuxClient(workspacePath)).toBe("none");
             // getDefaultRunner 返回原始值（保持向后兼容）
             expect(await getDefaultRunner(workspacePath)).toBe("claude");
@@ -197,9 +199,10 @@ describe("P5.6.14-R1: 配置映射回归锁", () => {
 
             // 不写配置文件
             expect(await getRuntimeKind(workspacePath)).toBe("agent");
-            expect(await getAgentProvider(workspacePath)).toBe("lmstudio");
+            // P5.7-R9-T6: 默认值改为 agent-backend
+            expect(await getAgentProvider(workspacePath)).toBe("agent-backend");
             expect(await getTmuxClient(workspacePath)).toBe("none");
-            expect(await getDefaultRunner(workspacePath)).toBe("lmstudio");
+            expect(await getDefaultRunner(workspacePath)).toBe("agent-backend");
         });
     });
 

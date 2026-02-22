@@ -112,7 +112,8 @@ describe("P5.7-R8b: agent backend minimax/lmstudio 往返切换", () => {
     expect(await getRuntimeKind(workspacePath)).toBe("agent");
     // R8c 单源化口径：provider 由全局 AGENT_BACKEND 决定，workspace provider 不写入
     expect(process.env.AGENT_BACKEND).toBe("minimax");
-    expect(await getAgentProvider(workspacePath)).toBe("lmstudio");
+    // P5.7-R9-T6: 默认值改为 agent-backend
+    expect(await getAgentProvider(workspacePath)).toBe("agent-backend");
 
     const toLocal = await handleModelCommand({
       chatId: CHAT_ID,
@@ -122,7 +123,8 @@ describe("P5.7-R8b: agent backend minimax/lmstudio 往返切换", () => {
     expect(toLocal.message).toContain("agent-backend");
     expect(await getRuntimeKind(workspacePath)).toBe("agent");
     expect(process.env.AGENT_BACKEND).toBe("lmstudio");
-    expect(await getAgentProvider(workspacePath)).toBe("lmstudio");
+    // P5.7-R9-T6: 默认值改为 agent-backend
+    expect(await getAgentProvider(workspacePath)).toBe("agent-backend");
 
     const toMinimaxAgain = await handleModelCommand({
       chatId: CHAT_ID,
@@ -131,7 +133,8 @@ describe("P5.7-R8b: agent backend minimax/lmstudio 往返切换", () => {
     expect(toMinimaxAgain.success).toBe(true);
     expect(await getRuntimeKind(workspacePath)).toBe("agent");
     expect(process.env.AGENT_BACKEND).toBe("minimax");
-    expect(await getAgentProvider(workspacePath)).toBe("lmstudio");
+    // P5.7-R9-T6: 默认值改为 agent-backend
+    expect(await getAgentProvider(workspacePath)).toBe("agent-backend");
   });
 
   it("切换后 routed chat 命中对应后端端点，不发生串线", async () => {
