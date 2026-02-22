@@ -108,6 +108,8 @@
 19. `P5.7-R9-T2`：上下文余量感知与自动 Compact（70% 触发 + 重启/换模续聊）
 20. `P5.7-R9-T3`：记忆默认开启与 /clear 边界锁（PI 基线 + 收敛分支）
 21. `P5.7-R9-T4`：后端中性命名重构（文件/函数/文案从 lmstudio 收敛为 agent-backend）
+22. `P5.7-R9-T5`：CodexHandler 策略守卫去重（消除重复块 + 单一守卫函数）
+23. `P5.7-R9-T6`：lmstudio 硬编码语义清理（配置/路由/类型主语收敛）
 
 ### 派单顺序（冻结）
 
@@ -181,7 +183,7 @@
 - `p5-7-r5-1-todo-contract.md`：P5.7-R5-1（todo 命令合同收口）✅
 - `p5-7-r5-2-schedule-contract.md`：P5.7-R5-2（schedule 命令合同收口）✅
 - `p5-7-r5-3-help-regression-lock.md`：P5.7-R5-3（help-docs 同步与回归锁）✅
-- `p5-7-r5b-job-schedule-read-model-unification.md`：P5.7-R5b（Job/Schedule 读模型统一，待创建）
+- `p5-7-r5b-job-schedule-read-model-unification.md`：P5.7-R5b（Job/Schedule 读模型统一）
 - `p5-7-r5c-file-first-state-refactor.md`：P5.7-R5c（回头优化：File-First 状态收敛，DB 仅记忆索引）
 - `p5-7-r6-media-gen-domain.md`：P5.7-R6（多模态域任务单）
 - `p5-7-r6b-image-read-lmstudio-lifecycle.md`：P5.7-R6b（`image read` + LM Studio 按需加载/1h 自动卸载）
@@ -194,6 +196,8 @@
 - `p5-7-r9-t2-context-budget-auto-compact.md`：P5.7-R9-T2（上下文预算感知 + 70% 自动 Compact + 持续对话）
 - `p5-7-r9-t3-memory-default-on-pi-baseline-and-branch-convergence.md`：P5.7-R9-T3（记忆默认开启 + /clear 边界 + PI 基线 + 分支收敛）
 - `p5-7-r9-t4-agent-backend-neutral-naming-refactor.md`：P5.7-R9-T4（`lmstudio` 命名去耦，统一 `agent-backend` 主语）
+- `p5-7-r9-t5-codex-policy-dedup.md`：P5.7-R9-T5（CodexHandler 策略守卫去重与回归锁）
+- `p5-7-r9-t6-lmstudio-hardcode-purge.md`：P5.7-R9-T6（`lmstudio` 硬编码语义清理专项）
 - `p5-7-r3d-lmstudio-glm-toolcall-temperature-lock.md`：P5.7-R3d（LM Studio GLM ToolCall 温度锁定）
 - `p5-7-r3f-r3k-tool-loop-best-practice-pack.md`：P5.7-R3f~R3k（Tool Loop 最佳实践改造派单包）
 - `p5-7-r3f-bash-runner-engineering.md`：P5.7-R3f（Bash Runner 工程化）
