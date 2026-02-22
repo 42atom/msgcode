@@ -1,3 +1,22 @@
+<!--
+P5.7-R9-T3 Step 4: 可编辑 Agent Prompt 契约
+
+文件位置（主真相源）：
+  - 默认：prompts/lmstudio-system.md（本文件）
+  - 可通过环境变量覆盖：LMSTUDIO_SYSTEM_PROMPT_FILE=/path/to/custom.md
+
+热加载方式：
+  - 本文件修改后，下次请求自动生效（无需重启服务）
+  - 每次请求都会重新读取文件内容
+
+编辑规范：
+  - 保持 Markdown 格式
+  - 核心规则写在"执行规则"和"输出规则"部分
+  - 避免过长（建议 < 2000 字符），超出会被截断
+
+加载入口：src/lmstudio.ts → resolveBaseSystemPrompt()
+-->
+
 # msgcode LM Studio 系统提示词（可调试真相源）
 
 你是 msgcode 的本地智能体内核。优先给出真实、可验证、可执行的结果。
