@@ -3197,3 +3197,57 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
         actionJournal: toolLoopResult.actionJournal,  // P5.7-R3l-4: 从 toolLoop 传递
     };
 }
+
+// ============================================
+// P5.7-R9-T4 Step 2: 中性命名导出别名（过渡期保留）
+// ============================================
+
+/**
+ * @deprecated 请使用 AgentChatOptions
+ */
+export type AgentChatOptions = LmStudioChatOptions;
+
+/**
+ * @deprecated 请使用 AgentToolLoopOptions
+ */
+export type AgentToolLoopOptions = LmStudioToolLoopOptions;
+
+/**
+ * @deprecated 请使用 AgentRoutedChatOptions
+ */
+export type AgentRoutedChatOptions = LmStudioRoutedChatOptions;
+
+/**
+ * @deprecated 请使用 AgentRoutedChatResult
+ */
+export type AgentRoutedChatResult = RoutedChatResult;
+
+/**
+ * @deprecated 请使用 AgentToolLoopResult
+ */
+export type AgentToolLoopResult = ToolLoopResult;
+
+/**
+ * @deprecated 请使用 runAgentChat
+ */
+export const runAgentChat = runLmStudioChat;
+
+/**
+ * @deprecated 请使用 runAgentToolLoop
+ */
+export const runAgentToolLoop = runLmStudioToolLoop;
+
+/**
+ * @deprecated 请使用 runAgentRoutedChat
+ */
+export const runAgentRoutedChat = runLmStudioRoutedChat;
+
+/**
+ * @deprecated 请使用 getToolsForAgent
+ */
+export const getToolsForAgent = getToolsForLlm;
+
+/**
+ * @deprecated 请使用 sanitizeAgentOutput
+ */
+export const sanitizeAgentOutput = sanitizeLmStudioOutput;
