@@ -125,13 +125,13 @@ describe("P5.7-R9-T2: 预算感知模块导入", () => {
         expect(code).toContain("estimateTotalTokens");
     });
 
-    it("handlers.ts 应导入 getInputBudget", () => {
+    it("handlers.ts 应导入 getInputBudgetFromCapabilities", () => {
         const code = readFileSync(resolve(process.cwd(), "src/handlers.ts"), "utf-8");
-        expect(code).toContain("getInputBudget");
+        expect(code).toContain("getInputBudgetFromCapabilities");
     });
 
-    it("handlers.ts 应导入 getCapabilities", () => {
+    it("handlers.ts 应导入 resolveRuntimeCapabilities", () => {
         const code = readFileSync(resolve(process.cwd(), "src/handlers.ts"), "utf-8");
-        expect(code).toContain("getCapabilities");
+        expect(code).toContain("resolveRuntimeCapabilities");
     });
 });

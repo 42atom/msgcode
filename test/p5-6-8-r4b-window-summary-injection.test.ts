@@ -39,7 +39,8 @@ describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
                 "utf-8"
             );
 
-            expect(code).toContain('import { loadSummary, formatSummaryAsContext }');
+            expect(code).toMatch(/import\s*\{[\s\S]*loadSummary[\s\S]*\}\s*from\s*["']\.\/summary\.js["']/);
+            expect(code).toMatch(/import\s*\{[\s\S]*formatSummaryAsContext[\s\S]*\}\s*from\s*["']\.\/summary\.js["']/);
         });
 
         it("handlers.ts 必须读取 summary", () => {

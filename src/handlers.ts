@@ -19,7 +19,7 @@ import { loadWorkspaceConfig, getRuntimeKind, getTmuxClient, getPolicyMode } fro
 // import { detectAutoSkill, normalizeSkillId, runAutoSkill, runSkill } from "./skills/auto.js";
 // P5.7-R9-T2: 导入预算感知模块
 import { estimateTotalTokens } from "./budget.js";
-import { getInputBudget, getCapabilities } from "./capabilities.js";
+import { getInputBudgetFromCapabilities, resolveRuntimeCapabilities } from "./capabilities.js";
 
 // 导入 tmux 模块
 import { type RunnerType } from "./tmux/session.js";
@@ -575,10 +575,14 @@ export class RuntimeRouterHandler implements CommandHandler {
             }
 
             // P5.7-R9-T2 Step 1: 上下文预算感知（请求前观测）
-            const contextWindowTokens = getCapabilities("lmstudio").contextWindowTokens;
-            const contextBudget = getInputBudget("lmstudio");
-            const contextUsedTokens = estimateTotalTokens(windowMessages);
-            const contextUsagePct = Math.round((contextUsedTokens / contextBudget) * 100);
+            const runtimeCaps = await resolveRuntimeCapabilities({
+                agentProvider: provider,
+            });
+            const contextWindowTokens = runtimeCaps.contextWindowTokens;
+            const contextBudget = getInputBudgetFromCapabilities(runtimeCaps);
+            const safeContextBudget = contextBudget > 0 ? contextBudget : 1;
+            const contextUsedTokens = estimateTotalTokens(windowMessages, runtimeCaps.charsPerToken);
+            const contextUsagePct = Math.round((contextUsedTokens / safeContextBudget) * 100);
             const budgetRemaining = contextBudget - contextUsedTokens;
             const isApproachingBudget = contextUsagePct >= 70;
 
@@ -591,6 +595,10 @@ export class RuntimeRouterHandler implements CommandHandler {
                 contextUsagePct,
                 budgetRemaining,
                 isApproachingBudget,
+                contextCapsSource: runtimeCaps.source,
+                contextCapsProvider: runtimeCaps.provider,
+                contextCapsModel: runtimeCaps.model || "",
+                charsPerToken: runtimeCaps.charsPerToken,
             });
 
             // P5.7-R9-T2 Step 2: 70% 自动 Compact
