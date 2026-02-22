@@ -34,6 +34,9 @@
 24. `P5.7-R9-T2`：上下文余量感知与 70% 自动 Compact 主链（长会话持续能力硬门）
 25. `P5.7-R9-T3`：记忆默认开启 + PI 基线对齐 + 分支收敛（防回退）
 26. `P5.7-R9-T4`：`lmstudio` 命名去耦到 `agent-backend`（高风险重命名专单）
+27. `P5.7-R9-T5`：CodexHandler 策略守卫去重（主链反复 if/else 收敛）
+28. `P5.7-R9-T6`：`lmstudio` 硬编码语义清理（配置/路由/类型主语收敛）
+29. `P5.7-R9-T7`：`lmstudio.ts` 兼容壳化与 agent-backend 核心拆分
 
 ## P5 当前唯一执行主线（冻结）
 
@@ -110,6 +113,7 @@
 21. `P5.7-R9-T4`：后端中性命名重构（文件/函数/文案从 lmstudio 收敛为 agent-backend）
 22. `P5.7-R9-T5`：CodexHandler 策略守卫去重（消除重复块 + 单一守卫函数）
 23. `P5.7-R9-T6`：lmstudio 硬编码语义清理（配置/路由/类型主语收敛）
+24. `P5.7-R9-T7`：agent-backend 核心拆分（`lmstudio.ts` 降级为兼容壳）
 
 ### 派单顺序（冻结）
 
@@ -198,6 +202,7 @@
 - `p5-7-r9-t4-agent-backend-neutral-naming-refactor.md`：P5.7-R9-T4（`lmstudio` 命名去耦，统一 `agent-backend` 主语）
 - `p5-7-r9-t5-codex-policy-dedup.md`：P5.7-R9-T5（CodexHandler 策略守卫去重与回归锁）
 - `p5-7-r9-t6-lmstudio-hardcode-purge.md`：P5.7-R9-T6（`lmstudio` 硬编码语义清理专项）
+- `p5-7-r9-t7-agent-backend-core-extraction.md`：P5.7-R9-T7（`lmstudio.ts` 兼容壳化 + agent-backend 核心拆分）
 - `p5-7-r3d-lmstudio-glm-toolcall-temperature-lock.md`：P5.7-R3d（LM Studio GLM ToolCall 温度锁定）
 - `p5-7-r3f-r3k-tool-loop-best-practice-pack.md`：P5.7-R3f~R3k（Tool Loop 最佳实践改造派单包）
 - `p5-7-r3f-bash-runner-engineering.md`：P5.7-R3f（Bash Runner 工程化）
