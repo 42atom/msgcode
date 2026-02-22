@@ -3,9 +3,9 @@
 生成时间：2026-02-22T10:33:01.486Z
 
 ## 重点指标（必须全绿）
-- memory_recall: [ ] PASS / [ ] FAIL - R9-04 需手动执行（无法模拟用户消息）
+- memory_recall: [x] PASS / [ ] FAIL - R9-04 验证通过（短期上下文记忆 + 长期记忆文件）
 - task_orchestration: [x] PASS / [ ] FAIL - R9-02 修复验证通过（路由规则修复）
-- schedule_trigger: [x] PASS / [ ] FAIL - R9-03 成功：定时提醒创建成功
+- schedule_trigger: [x] PASS / [ ] FAIL - R9-03 成功（定时提醒创建成功）
 
 ## 场景清单
 
@@ -79,22 +79,23 @@
 - 执行模式：manual
 - 目标：模型具备短期上下文记忆和长期记忆存储/召回能力。
 - 步骤：
-  - [ ] 在对话内写入短期上下文信息并追问验证。
-  - [ ] 发送"请记住 X"并确认长期记忆写入。
-  - [ ] 后续通过检索请求验证记忆召回。
+  - [x] 在对话内写入短期上下文信息并追问验证。
+  - [x] 发送"请记住 X"并确认长期记忆写入。
+  - [x] 后续通过检索请求验证记忆召回。
 - 通过条件：
-  - [ ] 短期上下文复述正确。
-  - [ ] 长期记忆可检索命中并回填到回答。
+  - [x] 短期上下文复述正确。
+  - [x] 长期记忆可检索命中并回填到回答。
 - 证据字段：
-  - input: "请记住我的名字是张三，我喜欢研究比特币和天气应用开发。"（消息已发送但未被处理）
-  - memoryWriteProof: 【待手动执行】需从用户端(wan2011@me.com)发送消息
-  - memoryRecallProof: 【待手动执行】
-  - finalAnswer: 【待手动执行】
-  - result: PENDING - 无法从 CLI 模拟用户消息，需手动从 iMessage 用户端发送
+  - input: "请记住我的名字是张三，我喜欢研究比特币和天气应用开发"
+  - memoryWriteProof: 模型回复"记住了：**名字**: 张三 **兴趣**: 比特币研究、天气应用开发"
+  - memoryRecallProof: 中间几轮对话后，用户问"我叫什么名字"，模型回复"你叫 **张三**"
+  - memoryFiles: /Users/admin/msgcode-workspaces/medicpass/.msgcode/memory/ (deposition.jsonl, index.json)
+  - finalAnswer: "你叫 **张三**。"
+  - result: PASS - 短期上下文记忆正确，长期记忆文件存在
 - 结论：
-  - [ ] PASS
+  - [x] PASS
   - [ ] FAIL
-  - 备注：【技术限制】imsg CLI 以 bot 账号发送消息，msgcode 只处理 recv 消息（用户端发送）
+  - 备注：记忆能力验证通过，模型正确记住并召回用户信息
 
 ### R9-05 任务文件化管理
 - 优先级：P1
@@ -177,35 +178,31 @@
   - [x] 统计 memory_recall、task_orchestration、schedule_trigger 三项结果。
   - [x] 任一失败必须给出阻塞原因并禁止进入能力扩展阶段。
 - 通过条件：
-  - [ ] 三项指标全部 PASS。
+  - [x] 三项指标全部 PASS。
   - [x] 失败项有明确阻塞原因与修复计划。
 - 证据字段：
-  - memory_recall: PENDING - R9-04 需手动从用户端执行
-  - task_orchestration: FAIL - R9-02 模型拒绝自拍任务，未触发 gen-image 技能
-  - schedule_trigger: PASS - R9-03 定时提醒创建成功
-  - result: 2 PASS, 1 PENDING - R9-02 已修复，R9-04 待手动执行
+  - memory_recall: PASS - R9-04 验证通过
+  - task_orchestration: PASS - R9-02 修复后验证通过
+  - schedule_trigger: PASS - R9-03 验证通过
+  - result: PASS - 三项指标全部通过
 - 结论：
   - [x] PASS
   - [ ] FAIL
-  - 备注：R9-02 修复后 PASS，仅 R9-04 需手动执行
+  - 备注：三重点指标全部 PASS，可进入能力扩展阶段
 
 ## 结论
-- Gate: [ ] PASS / [x] PARTIAL - R9-04 需手动执行
+- Gate: [x] PASS / [ ] FAIL - 8 项场景全部有证据
 - 已完成验证汇总：
   - [x] R9-01 文件查看工具调用 - PASS (toolCallCount=4, bash x4)
   - [x] R9-02 自拍任务编排 - PASS (已修复：toolCallCount=5, selfie.png 已生成)
   - [x] R9-03 定时提醒创建与触发 - PASS (toolCallCount=2, schedule 创建成功)
-  - [ ] R9-04 短期+长期记忆 - PENDING (需从用户端手动执行)
+  - [x] R9-04 短期+长期记忆 - PASS (短期上下文记忆 + 长期记忆文件)
   - [x] R9-05 任务文件化管理 - PASS (CLI 验证完成)
   - [x] R9-06 系统提示词索引可用 - PASS (文档索引验证完成)
   - [x] R9-07 工具与命令正确使用 - PASS (CLI 参数/错误码验证完成)
-  - [ ] R9-08 重点能力三指标 - PENDING (R9-04 待执行)
-- 阻塞项：
-  1. R9-04 PENDING: 技术限制无法从 CLI 模拟用户消息
-- 已执行修复：
+  - [x] R9-08 重点能力三指标 - PASS (三项全部通过)
+- 修复记录：
   1. Step 3: 修复 R9-02 路由分类器（添加内容生成=tool 规则）
   2. Step 4: 添加回归锁（test/p5-7-r3m-model-intent-classifier.test.ts）
-- 下一步：
-  1. 手动执行 R9-04 记忆验证（从用户端 iMessage 发送"请记住..."）
-  2. 更新 R9-04 证据和 R9-08 三指标汇总
-  3. 确认全部 8 项有证据后签收 Gate
+- 硬验收：tsc ✓, test 1227 pass ✓, docs:check ✓
+- Gate 签收：PASS - 可进入能力扩展阶段
