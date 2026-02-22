@@ -2,7 +2,9 @@
 
 优先级：P0（主链稳定性与可维护性）
 
-状态：⏳ 待执行
+状态：🚧 执行中（已派单）
+Issue: `issues/0002-r9-t7-agent-backend-core-extraction.md`  
+Plan: `docs/design/plan-260223-r9-t7-agent-backend-core-extraction.md`
 
 ## 背景
 
@@ -76,4 +78,3 @@ src/agent-backend/
    - 变更文件清单
    - 关键行为证据（至少 3 条）
    - 风险与未完成项
-
