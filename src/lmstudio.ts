@@ -1,15 +1,23 @@
 /**
- * msgcode: LM Studio API 适配器
+ * msgcode: Agent Backend API 适配器（主实现）
+ *
+ * P5.7-R9-T4 收口说明：
+ * - 本文件仍为主实现承载（agent-backend.ts 从此处 re-export）
+ * - 历史命名 LmStudio* 已提供 Agent* 别名，新代码应使用中性命名
+ * - lmstudio 作为历史别名保留，但不再是系统主语
  *
  * 目标：
- * - 只走本地 HTTP API（不使用 lms CLI）
- * - 不涉及 API key
+ * - 支持多后端（local-openai / openai / minimax）
+ * - 配置驱动：AGENT_BACKEND + AGENT_MODEL 为主入口
  * - 只转发最终回答（忽略 reasoning_content），并做兜底清洗
- * - 使用 LM Studio 原生 /api/v1/chat with MCP integrations（工具由服务端执行）
  *
  * 优先级：
  * 1) LM Studio 原生 REST `/api/v1/chat`（支持 MCP integrations）
  * 2) OpenAI 兼容 `/v1/chat/completions`（后备）
+ *
+ * 兼容层（P5.7-R9-T4 Step 2 添加）：
+ * - 文件末尾提供 Agent* 别名导出
+ * - 新代码禁止依赖 LmStudio* 命名
  */
 
 import { config } from "./config.js";
