@@ -29,8 +29,8 @@ import { handleTmuxSend } from "./tmux/responder.js";
 import * as session from "./runtime/session-orchestrator.js";
 
 // P5.6.2-R1: 导入会话窗口
-import { loadWindow, appendWindow, type WindowMessage } from "./session-window.js";
-import { loadSummary, formatSummaryAsContext } from "./summary.js";
+import { loadWindow, appendWindow, type WindowMessage, trimWindowWithResult, rewriteWindow } from "./session-window.js";
+import { loadSummary, formatSummaryAsContext, extractSummary, saveSummary, type ChatSummary } from "./summary.js";
 import { resolveSoulContext } from "./config/souls.js";
 // P5.6.13-R2: 导入线程存储
 import { ensureThread, appendTurn, getThreadInfo } from "./runtime/thread-store.js";
@@ -593,6 +593,96 @@ export class RuntimeRouterHandler implements CommandHandler {
                 isApproachingBudget,
             });
 
+            // P5.7-R9-T2 Step 2: 70% 自动 Compact
+            let compactionTriggered = false;
+            let compactionReason: string | undefined;
+            let postCompactUsagePct: number | undefined;
+
+            // 阈值常量（冻结）
+            const COMPACT_SOFT_THRESHOLD = 70;  // 70% 触发 compact
+            const COMPACT_HARD_THRESHOLD = 85;  // 85% 硬保护
+            const COMPACT_KEEP_RECENT = 10;     // 保留最近 10 条消息
+
+            if (isApproachingBudget && context.projectDir) {
+                compactionTriggered = true;
+                compactionReason = `context usage ${contextUsagePct}% >= ${COMPACT_SOFT_THRESHOLD}% threshold`;
+
+                logger.info("context compaction triggered", {
+                    module: "handlers",
+                    chatId: context.chatId,
+                    reason: compactionReason,
+                    preCompactUsage: contextUsagePct,
+                    preCompactMessages: windowMessages.length,
+                });
+
+                try {
+                    // 1. 裁剪窗口：保留最近 N 条
+                    const trimResult = trimWindowWithResult(windowMessages, COMPACT_KEEP_RECENT);
+
+                    if (trimResult.wasTrimmed && trimResult.trimmed.length > 0) {
+                        // 2. 提取被裁剪消息的摘要
+                        const newSummary = extractSummary(trimResult.trimmed, windowMessages);
+
+                        // 3. 合并到现有 summary
+                        const existingSummary = await loadSummary(context.projectDir, context.chatId);
+                        const mergedSummary: ChatSummary = {
+                            goal: [...existingSummary.goal, ...newSummary.goal].slice(-5),
+                            constraints: [...existingSummary.constraints, ...newSummary.constraints].slice(-10),
+                            decisions: [...existingSummary.decisions, ...newSummary.decisions].slice(-10),
+                            openItems: [...existingSummary.openItems, ...newSummary.openItems].slice(-5),
+                            toolFacts: [...existingSummary.toolFacts, ...newSummary.toolFacts].slice(-10),
+                        };
+
+                        // 4. 保存合并后的 summary
+                        await saveSummary(context.projectDir, context.chatId, mergedSummary);
+
+                        // 5. 重写窗口文件
+                        await rewriteWindow(context.projectDir, context.chatId, trimResult.messages);
+
+                        // 6. 更新内存中的窗口和摘要上下文
+                        windowMessages = trimResult.messages;
+                        summaryContext = formatSummaryAsContext(mergedSummary);
+
+                        // 7. 重新评估使用率
+                        const postCompactUsed = estimateTotalTokens(windowMessages);
+                        postCompactUsagePct = Math.round((postCompactUsed / contextBudget) * 100);
+
+                        logger.info("context compaction completed", {
+                            module: "handlers",
+                            chatId: context.chatId,
+                            preCompactMessages: trimResult.trimmed.length + trimResult.messages.length,
+                            postCompactMessages: trimResult.messages.length,
+                            preCompactUsage: contextUsagePct,
+                            postCompactUsage: postCompactUsagePct,
+                            summaryEntries: {
+                                goals: mergedSummary.goal.length,
+                                constraints: mergedSummary.constraints.length,
+                                decisions: mergedSummary.decisions.length,
+                                openItems: mergedSummary.openItems.length,
+                                toolFacts: mergedSummary.toolFacts.length,
+                            },
+                        });
+
+                        // 8. 硬保护检查：compact 后仍超过 85% 则警告
+                        if (postCompactUsagePct >= COMPACT_HARD_THRESHOLD) {
+                            logger.warn("context overflow protected", {
+                                module: "handlers",
+                                chatId: context.chatId,
+                                postCompactUsage: postCompactUsagePct,
+                                hardThreshold: COMPACT_HARD_THRESHOLD,
+                            });
+                        }
+                    }
+                } catch (compactError) {
+                    logger.error("context compaction failed", {
+                        module: "handlers",
+                        chatId: context.chatId,
+                        error: compactError instanceof Error ? compactError.message : String(compactError),
+                    });
+                    // compact 失败不阻塞请求，继续使用原始窗口
+                }
+            }
+
             // P5.6.14-R3: 注入观测字段
             const injectionEnabled = !!(windowMessages.length > 0 || summaryContext || soulContext?.content);
 
@@ -612,6 +702,13 @@ export class RuntimeRouterHandler implements CommandHandler {
                 soulSource: soulContext?.source || "none",
                 soulPath: soulContext?.path || "",
                 soulChars: soulContext?.chars || 0,
+                // P5.7-R9-T2: 上下文预算与 compact 观测字段（冻结）
+                contextWindowTokens,
+                contextUsedTokens,
+                contextUsagePct,
+                compactionTriggered,
+                compactionReason,
+                postCompactUsagePct,
             });
 
             // P5.6.1-R2: Persona 全量退役，不再注入 personaContent

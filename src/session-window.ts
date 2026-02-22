@@ -246,6 +246,38 @@ export async function clearWindow(
 }
 
 // ============================================
+// Utility: Rewrite Window (P5.7-R9-T2)
+// ============================================
+
+/**
+ * Rewrite entire window with new messages (for compaction)
+ *
+ * P5.7-R9-T2 Step 2: 用于 compact 后落盘
+ *
+ * @param workspacePath - Workspace directory path
+ * @param chatId - Chat identifier
+ * @param messages - New message array to write
+ */
+export async function rewriteWindow(
+    workspacePath: string,
+    chatId: string,
+    messages: WindowMessage[]
+): Promise<void> {
+    await ensureSessionDir(workspacePath);
+
+    const sessionPath = getSessionPath(workspacePath, chatId);
+
+    // Write all messages as JSONL
+    const lines = messages.map((msg) => {
+        const msgWithTs = msg.timestamp ? msg : { ...msg, timestamp: Date.now() };
+        return JSON.stringify(msgWithTs);
+    }).join("\n");
+
+    // Add trailing newline
+    await writeFile(sessionPath, lines + (lines ? "\n" : ""));
+}
+
+// ============================================
 // Utility: Get Window Stats
 // ============================================
 
