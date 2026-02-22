@@ -3207,41 +3207,51 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
 }
 
 // ============================================
-// P5.7-R9-T4 Step 2: 中性命名导出别名（过渡期保留）
+// P5.7-R9-T6 Step 3: 兼容层隔离（禁止新依赖）
+// ============================================
+//
+// 以下为兼容层导出，仅用于向后兼容。
+// 新代码禁止依赖 LmStudio* 命名，必须使用 Agent* 命名。
+//
+// 兼容层清单（冻结）：
+// - 类型别名：AgentChatOptions, AgentToolLoopOptions, AgentRoutedChatOptions, AgentRoutedChatResult, AgentToolLoopResult
+// - 函数别名：runAgentChat, runAgentToolLoop, runAgentRoutedChat, getToolsForAgent, sanitizeAgentOutput
+//
+// 新增兼容口需单独评审，不得随意扩展。
 // ============================================
 
 /**
- * @deprecated 请使用 AgentChatOptions
+ * @deprecated 请使用 AgentChatOptions（新代码禁止依赖）
  */
 export type AgentChatOptions = LmStudioChatOptions;
 
 /**
- * @deprecated 请使用 AgentToolLoopOptions
+ * @deprecated 请使用 AgentToolLoopOptions（新代码禁止依赖）
  */
 export type AgentToolLoopOptions = LmStudioToolLoopOptions;
 
 /**
- * @deprecated 请使用 AgentRoutedChatOptions
+ * @deprecated 请使用 AgentRoutedChatOptions（新代码禁止依赖）
  */
 export type AgentRoutedChatOptions = LmStudioRoutedChatOptions;
 
 /**
- * @deprecated 请使用 AgentRoutedChatResult
+ * @deprecated 请使用 AgentRoutedChatResult（新代码禁止依赖）
  */
 export type AgentRoutedChatResult = RoutedChatResult;
 
 /**
- * @deprecated 请使用 AgentToolLoopResult
+ * @deprecated 请使用 AgentToolLoopResult（新代码禁止依赖）
  */
 export type AgentToolLoopResult = ToolLoopResult;
 
 /**
- * @deprecated 请使用 runAgentChat
+ * @deprecated 请使用 runAgentChat（新代码禁止依赖）
  */
 export const runAgentChat = runLmStudioChat;
 
 /**
- * @deprecated 请使用 runAgentToolLoop
+ * @deprecated 请使用 runAgentToolLoop（新代码禁止依赖）
  */
 export const runAgentToolLoop = runLmStudioToolLoop;
 
@@ -3251,11 +3261,11 @@ export const runAgentToolLoop = runLmStudioToolLoop;
 export const runAgentRoutedChat = runLmStudioRoutedChat;
 
 /**
- * @deprecated 请使用 getToolsForAgent
+ * @deprecated 请使用 getToolsForAgent（新代码禁止依赖）
  */
 export const getToolsForAgent = getToolsForLlm;
 
 /**
- * @deprecated 请使用 sanitizeAgentOutput
+ * @deprecated 请使用 sanitizeAgentOutput（新代码禁止依赖）
  */
 export const sanitizeAgentOutput = sanitizeLmStudioOutput;
