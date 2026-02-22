@@ -1,8 +1,9 @@
 /**
  * msgcode: P5.6.8-R4b window/summary 注入回归锁测试
  *
- * 目标：确保 handlers 读取的 window/summary 必须进入 runLmStudioRoutedChat 请求构造
+ * 目标：确保 handlers 读取的 window/summary 必须进入 runAgentRoutedChat 请求构造
  * P5.7-R3e: 更新测试以匹配新的路由分发函数
+ * P5.7-R9-T4: 迁移到中性命名（runAgentRoutedChat）
  */
 
 import { describe, it, expect } from "bun:test";
@@ -10,8 +11,8 @@ import fs from "node:fs";
 import path from "node:path";
 
 describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
-    describe("LmStudioToolLoopOptions 接口验证", () => {
-        it("LmStudioToolLoopOptions 必须包含 windowMessages 字段", () => {
+    describe("AgentToolLoopOptions 接口验证", () => {
+        it("AgentToolLoopOptions 必须包含 windowMessages 字段", () => {
             const code = fs.readFileSync(
                 path.join(process.cwd(), "src/lmstudio.ts"),
                 "utf-8"
@@ -21,7 +22,7 @@ describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
             expect(code).toContain("历史窗口消息");
         });
 
-        it("LmStudioToolLoopOptions 必须包含 summaryContext 字段", () => {
+        it("AgentToolLoopOptions 必须包含 summaryContext 字段", () => {
             const code = fs.readFileSync(
                 path.join(process.cwd(), "src/lmstudio.ts"),
                 "utf-8"
@@ -53,14 +54,14 @@ describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
             expect(code).toContain('formatSummaryAsContext(summary)');
         });
 
-        it("handlers.ts 必须传递 windowMessages 和 summaryContext 给 runLmStudioRoutedChat", () => {
+        it("handlers.ts 必须传递 windowMessages 和 summaryContext 给 runAgentRoutedChat", () => {
             const code = fs.readFileSync(
                 path.join(process.cwd(), "src/handlers.ts"),
                 "utf-8"
             );
 
-            // P5.7-R3e: 查找 runLmStudioRoutedChat 调用（替代原来的 runLmStudioToolLoop）
-            const routedChatMatch = code.match(/runLmStudioRoutedChat\([\s\S]{0,500}/);
+            // P5.7-R9-T4: 使用中性命名 runAgentRoutedChat
+            const routedChatMatch = code.match(/runAgentRoutedChat\([\s\S]{0,500}/);
             expect(routedChatMatch).not.toBeNull();
 
             // 验证传递了 windowMessages 和 summaryContext
@@ -69,8 +70,8 @@ describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
         });
     });
 
-    describe("runLmStudioToolLoop 注入逻辑验证", () => {
-        it("runLmStudioToolLoop 必须注入 summaryContext", () => {
+    describe("runAgentToolLoop 注入逻辑验证", () => {
+        it("runAgentToolLoop 必须注入 summaryContext", () => {
             const code = fs.readFileSync(
                 path.join(process.cwd(), "src/lmstudio.ts"),
                 "utf-8"
@@ -81,7 +82,7 @@ describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
             expect(code).toContain('[历史对话摘要]');
         });
 
-        it("runLmStudioToolLoop 必须注入 windowMessages", () => {
+        it("runAgentToolLoop 必须注入 windowMessages", () => {
             const code = fs.readFileSync(
                 path.join(process.cwd(), "src/lmstudio.ts"),
                 "utf-8"
@@ -93,7 +94,7 @@ describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
             expect(code).toContain('MAX_CONTEXT_CHARS');
         });
 
-        it("runLmStudioToolLoop 必须有预算限制", () => {
+        it("runAgentToolLoop 必须有预算限制", () => {
             const code = fs.readFileSync(
                 path.join(process.cwd(), "src/lmstudio.ts"),
                 "utf-8"

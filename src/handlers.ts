@@ -10,7 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { BotType } from "./router.js";
-import { runLmStudioChat, runLmStudioToolLoop, runLmStudioRoutedChat } from "./lmstudio.js";
+import { runAgentChat, runAgentRoutedChat } from "./agent-backend.js";
 import type { InboundMessage } from "./imsg/types.js";
 import { clearTtsPrefs, getTtsPrefs, getVoiceReplyMode, setTtsPrefs, setVoiceReplyMode } from "./state/store.js";
 import { logger } from "./logger/index.js";
@@ -440,16 +440,16 @@ export class RuntimeRouterHandler implements CommandHandler {
                     return { success: false, error: "缺少工作区路径（projectDir），无法写入 TTS 产物" };
                 }
                 try {
-                    const useMcp = process.env.LMSTUDIO_ENABLE_MCP === "1";
+                    const useMcp = process.env.AGENT_ENABLE_MCP === "1";
                     const personaContent = undefined;
-                    const answer = await runLmStudioChat({
+                    const answer = await runAgentChat({
                         prompt: question,
                         system: personaContent,
                         ...(useMcp && context.projectDir ? { workspace: context.projectDir } : {}),
                     });
                     const cleanAnswer = (answer || "").trim();
                     if (!cleanAnswer) {
-                        return { success: false, error: "LM Studio 未返回可展示的文本" };
+                        return { success: false, error: "Agent Backend 未返回可展示的文本" };
                     }
                     const { executeTool } = await import("./tools/bus.js");
                     const { randomUUID } = await import("node:crypto");
@@ -722,7 +722,7 @@ export class RuntimeRouterHandler implements CommandHandler {
             // P5.6.1-R2: Persona 全量退役，不再注入 personaContent
             const personaContent = undefined;
             // P5.7-R3e: 主链走路由分发（no-tool / tool / complex-tool）
-            const routedResult = await runLmStudioRoutedChat({
+            const routedResult = await runAgentRoutedChat({
                 prompt: trimmed,
                 system: personaContent,
                 ...(context.projectDir ? { workspacePath: context.projectDir } : {}),
@@ -737,7 +737,7 @@ export class RuntimeRouterHandler implements CommandHandler {
             if (!clean) {
                 return {
                     success: false,
-                    error: "LM Studio 未返回可展示的文本（可能模型只输出了 reasoning、发生截断，或模型已崩溃）",
+                    error: "Agent Backend 未返回可展示的文本（可能模型只输出了 reasoning、发生截断，或模型已崩溃）",
                 };
             }
 
@@ -770,7 +770,7 @@ export class RuntimeRouterHandler implements CommandHandler {
                 const maxChars = parseInt(process.env.TTS_AUTO_MAX_CHARS || "240", 10);
                 const speakText = clean.length > maxChars ? clean.slice(0, maxChars) : clean;
 
-                logger.info("LM Studio 返回 TTS defer", {
+                logger.info("Agent Backend 返回 TTS defer", {
                     module: "handlers",
                     chatId: context.chatId,
                     traceId,

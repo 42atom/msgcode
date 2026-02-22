@@ -28,12 +28,13 @@ describe("P5.6.7-R6: 集成冒烟静态验证", () => {
     });
 
     describe("关键语义验证", () => {
-        it("handlers.ts: direct 路径调用 runLmStudioToolLoop", () => {
+        it("handlers.ts: direct 路径调用 runAgentRoutedChat（中性命名）", () => {
             const code = fs.readFileSync(
                 path.join(process.cwd(), "src/handlers.ts"),
                 "utf-8"
             );
-            expect(code).toContain("runLmStudioToolLoop");
+            // P5.7-R9-T4: 迁移到中性命名
+            expect(code).toContain("runAgentRoutedChat");
         });
 
         it("session-orchestrator.ts: /clear 调用 clearSessionArtifacts", () => {

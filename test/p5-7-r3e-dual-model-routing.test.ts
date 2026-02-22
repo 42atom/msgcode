@@ -153,18 +153,20 @@ describe("P5.7-R3e: Workspace Config", () => {
 });
 
 describe("P5.7-R3e: Handlers Routing", () => {
-    it("handlers.ts 必须导入 runLmStudioRoutedChat", async () => {
+    it("handlers.ts 必须导入 runAgentRoutedChat（中性命名）", async () => {
         const code = await import("node:fs").then(fs =>
             fs.readFileSync(require.resolve("../src/handlers.ts"), "utf-8")
         );
-        expect(code).toContain("runLmStudioRoutedChat");
+        // P5.7-R9-T4: 迁移到中性命名
+        expect(code).toContain("runAgentRoutedChat");
     });
 
     it("handlers.ts 必须使用路由分发", async () => {
         const code = await import("node:fs").then(fs =>
             fs.readFileSync(require.resolve("../src/handlers.ts"), "utf-8")
         );
-        expect(code).toContain("runLmStudioRoutedChat({");
+        // P5.7-R9-T4: 迁移到中性命名
+        expect(code).toContain("runAgentRoutedChat({");
     });
 
     it("handlers.ts 必须记录路由信息", async () => {
