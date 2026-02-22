@@ -56,7 +56,8 @@ export function resolveTmuxPolicyBlockResult(
 
 function resolveGlobalAgentProvider(): string {
     const raw = (process.env.AGENT_BACKEND || "").trim();
-    if (!raw) return "lmstudio";
+    // P5.7-R9-T6: 默认回退到 agent-backend（中性语义）
+    if (!raw) return "agent-backend";
     return raw;
 }
 
@@ -310,9 +311,9 @@ export class FileHandler extends BaseHandler {
  * 运行时路由处理器
  *
  * 根据 runner 配置动态路由消息：
- * - lmstudio/llama/claude/openai → 直接调用 provider
+ * - agent-backend/local-openai/openai/minimax → 直接调用 provider
  * - codex/claude-code → 通过 tmux session 调用
- * 仍可走 LM Studio（兼容原有行为）
+ * 支持多后端切换（配置驱动）
  */
 
 /**
@@ -808,7 +809,8 @@ export class RuntimeRouterHandler implements CommandHandler {
                         if (!threadInfo) {
                             const runtimeMeta = {
                                 kind: "agent" as const,
-                                provider: provider === "none" ? "lmstudio" : provider,
+                                // P5.7-R9-T6: 使用中性语义 agent-backend
+                                provider: provider === "none" ? "agent-backend" : provider,
                                 tmuxClient: undefined,
                             };
                             await ensureThread(context.chatId, context.projectDir, trimmed, runtimeMeta);
@@ -853,7 +855,8 @@ export class RuntimeRouterHandler implements CommandHandler {
                         // 首次消息，创建新线程
                         const runtimeMeta = {
                             kind: "agent" as const,
-                            provider: provider === "none" ? "lmstudio" : provider,
+                            // P5.7-R9-T6: 使用中性语义 agent-backend
+                            provider: provider === "none" ? "agent-backend" : provider,
                             tmuxClient: undefined,
                         };
                         await ensureThread(context.chatId, context.projectDir, trimmed, runtimeMeta);
