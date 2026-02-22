@@ -777,6 +777,34 @@ export class RuntimeRouterHandler implements CommandHandler {
                     textLength: speakText.length,
                 });
 
+                // P5.7-R9-T3 Step 1: TTS 模式也必须写回会话窗口（禁止漏写回）
+                if (context.projectDir && clean) {
+                    try {
+                        await appendWindow(context.projectDir, context.chatId, { role: "user", content: trimmed });
+                        await appendWindow(context.projectDir, context.chatId, { role: "assistant", content: clean });
+                    } catch {
+                        // 窗口写回失败不影响主流程
+                    }
+                }
+
+                // P5.7-R9-T3 Step 1: TTS 模式也必须写回线程
+                if (context.projectDir && clean) {
+                    try {
+                        let threadInfo = getThreadInfo(context.chatId);
+                        if (!threadInfo) {
+                            const runtimeMeta = {
+                                kind: "agent" as const,
+                                provider: provider === "none" ? "lmstudio" : provider,
+                                tmuxClient: undefined,
+                            };
+                            await ensureThread(context.chatId, context.projectDir, trimmed, runtimeMeta);
+                        }
+                        await appendTurn(context.chatId, trimmed, clean);
+                    } catch {
+                        // 线程写回失败不影响主流程
+                    }
+                }
+
                 return {
                     success: true,
                     response: voiceMode === "audio" ? "正在生成语音..." : clean,
