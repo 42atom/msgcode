@@ -108,6 +108,24 @@ describe("P5.6.14-R4: /model 命令配置层回归锁", () => {
             expect(provider).toBe("lmstudio");
         });
 
+        it("/model minimax 映射到 runtime.kind=agent + agent.provider=minimax", async () => {
+            const { setRuntimeKind, setAgentProvider, getRuntimeKind, getAgentProvider } = await import("../src/config/workspace.js");
+
+            await writeConfig(workspacePath, {
+                "runtime.kind": "tmux",
+                "tmux.client": "codex",
+            });
+
+            await setRuntimeKind(workspacePath, "agent");
+            await setAgentProvider(workspacePath, "minimax");
+
+            const kind = await getRuntimeKind(workspacePath);
+            expect(kind).toBe("agent");
+
+            const provider = await getAgentProvider(workspacePath);
+            expect(provider).toBe("minimax");
+        });
+
         it("agent 模式切换到 codex 时 runtime.kind 从 agent 变为 tmux", async () => {
             const { setRuntimeKind, setTmuxClient, getRuntimeKind } = await import("../src/config/workspace.js");
 

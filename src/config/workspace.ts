@@ -38,13 +38,13 @@ export interface WorkspaceConfig {
   // ==================== P5.7-R3e: 双模型路由配置 ====================
   /**
    * 执行模型：用于工具调用（temperature=0）
-   * 默认：继承 agent.provider（通常为 lmstudio）
+   * 默认：空字符串（由调用层自动解析当前已加载模型）
    */
   "model.executor"?: string;
 
   /**
    * 响应模型：用于非工具回复（temperature=0.2）
-   * 默认：继承 agent.provider（通常为 lmstudio）
+   * 默认：空字符串（由调用层自动解析当前已加载模型）
    */
   "model.responder"?: string;
 
@@ -87,7 +87,7 @@ export interface WorkspaceConfig {
    * - lmstudio|openai|minimax -> runtime.kind=agent + agent.provider=<runner>
    * - llama|claude -> runtime.kind=agent + agent.provider=lmstudio（兼容降级）
    */
-  "runner.default"?: "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code";
+  "runner.default"?: "lmstudio" | "minimax" | "llama" | "claude" | "openai" | "codex" | "claude-code";
 
   // ==================== PI 配置 ====================
   /**
@@ -278,7 +278,7 @@ export async function getMemoryInjectConfig(
  * P5.6.14-R1b: 使用 AgentProvider/TmuxClient 类型
  */
 function mapRunnerToKindProviderClient(
-  runner: "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code" | undefined
+  runner: "lmstudio" | "minimax" | "llama" | "claude" | "openai" | "codex" | "claude-code" | undefined
 ): { kind: "agent" | "tmux"; provider?: AgentProvider; client?: TmuxClient } {
   if (!runner) {
     return { kind: "agent", provider: "lmstudio" };
@@ -290,7 +290,7 @@ function mapRunnerToKindProviderClient(
   }
 
   // lmstudio|openai|minimax -> agent + provider
-  if (runner === "lmstudio" || runner === "openai") {
+  if (runner === "lmstudio" || runner === "openai" || runner === "minimax") {
     return { kind: "agent", provider: runner };
   }
 
@@ -448,7 +448,7 @@ export async function setPolicyMode(
  */
 export async function getDefaultRunner(
   projectDir: string
-): Promise<"lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code"> {
+): Promise<"lmstudio" | "minimax" | "llama" | "claude" | "openai" | "codex" | "claude-code"> {
   const workspaceConfig = await loadWorkspaceConfig(projectDir);
 
   // 优先从新字段反向映射
@@ -459,11 +459,11 @@ export async function getDefaultRunner(
   if (workspaceConfig["runtime.kind"] === "agent") {
     const provider = workspaceConfig["agent.provider"];
     if (provider) {
-      // minimax/llama/claude 映射回 lmstudio（兼容返回）
-      if (provider === "minimax" || provider === "llama" || provider === "claude") {
+      // llama/claude 映射回 lmstudio（兼容返回）
+      if (provider === "llama" || provider === "claude") {
         return "lmstudio";
       }
-      return provider as "lmstudio" | "openai";
+      return provider as "lmstudio" | "minimax" | "openai";
     }
   }
 
@@ -482,7 +482,7 @@ export async function getDefaultRunner(
  */
 export async function setDefaultRunner(
   projectDir: string,
-  runner: "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code",
+  runner: "lmstudio" | "minimax" | "llama" | "claude" | "openai" | "codex" | "claude-code",
   currentMode?: "local-only" | "egress-allowed"
 ): Promise<{ success: boolean; error?: string }> {
   // 如果没有提供 currentMode，读取当前配置
@@ -610,14 +610,14 @@ export async function setFsScope(
 
 /**
  * 获取执行模型配置（用于工具调用）
- * P5.7-R3e: 返回 executor 模型，如果未配置则继承 agent.provider
+ * P5.7-R3e: 返回 executor 模型，如果未配置则返回 undefined（由调用层自动解析）
  *
  * @param projectDir 工作区路径
- * @returns 执行模型名称
+ * @returns 执行模型名称（未配置返回 undefined）
  */
 export async function getExecutorModel(
   projectDir: string
-): Promise<string> {
+): Promise<string | undefined> {
   const workspaceConfig = await loadWorkspaceConfig(projectDir);
 
   // 优先使用显式配置
@@ -626,21 +626,20 @@ export async function getExecutorModel(
     return executor.trim();
   }
 
-  // Fallback: 继承 agent.provider
-  const provider = await getAgentProvider(projectDir);
-  return provider === "none" ? "lmstudio" : provider;
+  // 未配置时由调用层回退到“当前已加载模型”自动解析
+  return undefined;
 }
 
 /**
  * 获取响应模型配置（用于非工具回复）
- * P5.7-R3e: 返回 responder 模型，如果未配置则继承 agent.provider
+ * P5.7-R3e: 返回 responder 模型，如果未配置则返回 undefined（由调用层自动解析）
  *
  * @param projectDir 工作区路径
- * @returns 响应模型名称
+ * @returns 响应模型名称（未配置返回 undefined）
  */
 export async function getResponderModel(
   projectDir: string
-): Promise<string> {
+): Promise<string | undefined> {
   const workspaceConfig = await loadWorkspaceConfig(projectDir);
 
   // 优先使用显式配置
@@ -649,9 +648,8 @@ export async function getResponderModel(
     return responder.trim();
   }
 
-  // Fallback: 继承 agent.provider
-  const provider = await getAgentProvider(projectDir);
-  return provider === "none" ? "lmstudio" : provider;
+  // 未配置时由调用层回退到“当前已加载模型”自动解析
+  return undefined;
 }
 
 /**

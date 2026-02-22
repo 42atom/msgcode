@@ -92,6 +92,18 @@ describe("P5.7-R3l-2: Dialog/Exec Prompt 拆分", () => {
                 expect(funcBody).not.toMatch(/soulContext\s*&&/);
             }
         });
+
+        it("system prompt 应支持文件引用（用于反复调试）", () => {
+            const code = fs.readFileSync(
+                path.join(process.cwd(), "src/lmstudio.ts"),
+                "utf-8"
+            );
+
+            expect(code).toContain("DEFAULT_LMSTUDIO_SYSTEM_PROMPT_FILE");
+            expect(code).toContain("loadLmStudioSystemPromptFromFile");
+            expect(code).toContain("resolveBaseSystemPrompt");
+            expect(code).toContain("await resolveBaseSystemPrompt(options.system)");
+        });
     });
 
     describe("运行时行为验证", () => {
@@ -207,7 +219,8 @@ describe("P5.7-R3l-2: Dialog/Exec Prompt 拆分", () => {
             // 验证 runLmStudioChat 函数内调用 buildDialogSystemPrompt
             // 搜索 "P5.7-R3l-2: 使用 buildDialogSystemPrompt" 注释
             expect(code).toContain("P5.7-R3l-2: 使用 buildDialogSystemPrompt");
-            expect(code).toContain("const systemPrompt = buildDialogSystemPrompt(baseSystem, useMcp)");
+            expect(code).toContain("const systemPrompt = buildDialogSystemPrompt(");
+            expect(code).toContain("options.soulContext");
         });
 
         it("runLmStudioToolLoop 应该使用 buildExecSystemPrompt", () => {

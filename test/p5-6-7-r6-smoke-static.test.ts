@@ -84,9 +84,10 @@ describe("P5.6.7-R6: 集成冒烟静态验证", () => {
                 path.join(process.cwd(), "src/lmstudio.ts"),
                 "utf-8"
             );
-            // P5.6.8-R3a: 验证 lmstudio 统一走 Tool Bus
-            expect(code).toContain("const { executeTool } = await import");
-            expect(code).toContain("await executeTool(name as any, args");
+            // P5.6.8-R3a: 语义锁（避免绑定具体变量名）
+            expect(code).toContain("async function runTool(");
+            expect(code).toContain('await import("./tools/bus.js")');
+            expect(code).toContain("await executeTool(");
         });
 
         // P5.6.13-R1A-EXEC: run_skill 已退役，测试已移除

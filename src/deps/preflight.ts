@@ -8,10 +8,11 @@
  */
 
 import { exec } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import dotenv from "dotenv";
 import type { Dependency, DependencyManifest, PreflightResult, DependencyCheckResult } from "./types.js";
 
 const execAsync = promisify(exec);
@@ -47,6 +48,36 @@ function expandPath(path: string): string {
   return path;
 }
 
+/**
+ * 从配置文件读取环境变量（仅用于 preflight 兜底，不覆盖进程已有值）
+ *
+ * 搜索顺序：
+ * 1. ~/.config/msgcode/.env
+ * 2. <cwd>/.env
+ */
+function readEnvVarFromConfigFiles(key: string): string | undefined {
+  const candidates = [
+    process.env.HOME ? join(process.env.HOME, ".config", "msgcode", ".env") : "",
+    join(process.cwd(), ".env"),
+  ].filter(Boolean);
+
+  for (const file of candidates) {
+    if (!existsSync(file)) continue;
+    try {
+      const parsed = dotenv.parse(readFileSync(file, "utf-8"));
+      const value = parsed[key];
+      if (typeof value === "string" && value.trim()) {
+        return value.trim();
+      }
+    } catch {
+      // 配置文件解析失败时继续尝试下一个候选文件
+      continue;
+    }
+  }
+
+  return undefined;
+}
+
 // ============================================
 // 各类依赖校验
 // ============================================
@@ -66,6 +97,15 @@ async function checkBinDependency(dep: Dependency): Promise<DependencyCheckResul
     // 优先使用 pathEnv
     if (dep.pathEnv) {
       binPath = process.env[dep.pathEnv];
+      if (!binPath) {
+        // preflight 兜底：允许直接从配置文件读取，避免要求用户手工 source
+        const fallbackValue = readEnvVarFromConfigFiles(dep.pathEnv);
+        if (fallbackValue) {
+          binPath = fallbackValue;
+          // 回写到当前进程，供后续依赖检查复用
+          process.env[dep.pathEnv] = fallbackValue;
+        }
+      }
       if (!binPath) {
         if (dep.id === "qwen_tts_python") {
           const root = process.env.QWEN_TTS_ROOT

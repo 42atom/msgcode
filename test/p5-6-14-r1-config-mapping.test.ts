@@ -88,6 +88,17 @@ describe("P5.6.14-R1: 配置映射回归锁", () => {
             expect(await getDefaultRunner(workspacePath)).toBe("openai");
         });
 
+        it("minimax -> runtime.kind=agent + agent.provider=minimax", async () => {
+            const { getRuntimeKind, getAgentProvider, getTmuxClient, getDefaultRunner } = await import("../src/config/workspace.js");
+
+            await writeConfig(workspacePath, { "runner.default": "minimax" });
+
+            expect(await getRuntimeKind(workspacePath)).toBe("agent");
+            expect(await getAgentProvider(workspacePath)).toBe("minimax");
+            expect(await getTmuxClient(workspacePath)).toBe("none");
+            expect(await getDefaultRunner(workspacePath)).toBe("minimax");
+        });
+
         it("llama -> runtime.kind=agent + agent.provider=lmstudio（兼容降级）", async () => {
             const { getRuntimeKind, getAgentProvider, getTmuxClient, getDefaultRunner } = await import("../src/config/workspace.js");
 
@@ -166,6 +177,17 @@ describe("P5.6.14-R1: 配置映射回归锁", () => {
             const config = await loadWorkspaceConfig(workspacePath);
             expect(config["runtime.kind"]).toBe("agent");
             expect(config["agent.provider"]).toBe("openai");
+        });
+
+        it("setDefaultRunner 支持 minimax provider", async () => {
+            const { setDefaultRunner, loadWorkspaceConfig } = await import("../src/config/workspace.js");
+
+            await writeConfig(workspacePath, {});
+            await setDefaultRunner(workspacePath, "minimax");
+
+            const config = await loadWorkspaceConfig(workspacePath);
+            expect(config["runtime.kind"]).toBe("agent");
+            expect(config["agent.provider"]).toBe("minimax");
         });
     });
 

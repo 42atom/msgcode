@@ -200,7 +200,7 @@ msgcode start -d
 ### 需要更多诊断？
 
 - `/info` 查看处理状态
-- `/model` 切换执行臂（支持 lmstudio、codex、claude-code）
+- `/model` 切换执行臂（支持 agent-backend（兼容 lmstudio）、minimax、openai、codex、claude-code）
 
 ---
 
@@ -229,9 +229,9 @@ Tool Bus 详细命令请参考 `/help` 或文档 [docs/toolbus](./docs/toolbus/)
 
 ---
 
-## LM Studio（默认 provider）
+## Agent Backend（默认 local-openai / LM Studio）
 
-默认运行形态为 `agent`，默认 provider 为 `lmstudio`。`mlx` 仅保留兼容别名，会归一化到 `lmstudio`。
+默认运行形态为 `agent`，默认 backend 为 `agent-backend`（兼容别名 `lmstudio`，本地 LM Studio）。
 
 ### 特性
 
@@ -240,10 +240,12 @@ Tool Bus 详细命令请参考 `/help` 或文档 [docs/toolbus](./docs/toolbus/)
 - **配置灵活**: 通过 workspace `providers.json` 配置 baseUrl/model/参数
 - **稳定优先**: 生产默认以 LM Studio 为主
 
-### 切换到 LM Studio
+### 切换后端
 
 ```bash
-/model lmstudio
+/model agent-backend   # 本地 LM Studio（默认）
+/model minimax         # MiniMax
+/model openai          # OpenAI
 ```
 
 ### 默认 Provider 配置
@@ -262,6 +264,12 @@ Tool Bus 详细命令请参考 `/help` 或文档 [docs/toolbus](./docs/toolbus/)
   }
 }
 ```
+
+### 系统提示词（可调试）
+
+- 默认文件：`prompts/lmstudio-system.md`
+- 覆盖方式：`LMSTUDIO_SYSTEM_PROMPT_FILE`
+- 最高优先级：`LMSTUDIO_SYSTEM_PROMPT`（直接内联文本）
 
 ### 工具闭环使用
 

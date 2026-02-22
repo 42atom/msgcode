@@ -27,6 +27,10 @@
 17. `P5.7-R6`：多模态域（`media *` + `gen *`）
 18. `P5.7-R7`：浏览器域（`browser *`）
 19. `P5.7-R8`：代理域（`agent run/status`）
+20. `P5.7-R8b`：Agent Backend 语义收敛与 MiniMax 2.5 切换（`lmstudio` -> `agent-backend`）
+21. `P5.7-R8d`：模型切换全链路同步（后端模型单源绑定）
+22. `P5.7-R9`：模型真实能力验收门（文件查看/自拍编排/定时提醒/记忆/任务管理）
+23. `P5.7-R9-T1`：真实能力验收执行单（Opus 主执行 + Codex 复核）
 
 ## P5 当前唯一执行主线（冻结）
 
@@ -94,6 +98,10 @@
 12. `P5.7-R6`：多模态域（`media screen` + `gen image/selfie/tts/music`）
 13. `P5.7-R7`：浏览器域（`browser open/click/type`）
 14. `P5.7-R8`：代理域（`agent run/status`）
+15. `P5.7-R8b`：Agent Backend 切换（`agent-backend/local-openai/minimax`）
+16. `P5.7-R8d`：模型切换全链路同步（切换即全链路同模）
+17. `P5.7-R9`：真实能力验收门（8 项真实场景 + 三重点指标）
+18. `P5.7-R9-T1`：真实能力验收执行单（真机跑测 + 证据回填 + 阻断修复）
 
 ### 派单顺序（冻结）
 
@@ -105,6 +113,7 @@
 6. `P5.7-R6`（media/gen 域）
 7. `P5.7-R7`（browser 域）
 8. `P5.7-R8`（agent 域）
+9. `P5.7-R8b`（agent backend 切换与语义收敛）
 
 ## 当前任务单
 
@@ -172,6 +181,10 @@
 - `p5-7-r6b-image-read-lmstudio-lifecycle.md`：P5.7-R6b（`image read` + LM Studio 按需加载/1h 自动卸载）
 - `p5-7-r7-browser-domain.md`：P5.7-R7（浏览器域任务单）
 - `p5-7-r8-agent-domain.md`：P5.7-R8（代理域任务单）
+- `p5-7-r8b-agent-backend-switch-minimax-2-5.md`：P5.7-R8b（Agent Backend 切换与 `lmstudio` 语义退场）
+- `p5-7-r8d-model-switch-chain-sync.md`：P5.7-R8d（后端模型切换全链路同步，单源绑定）
+- `p5-7-r9-real-capability-gate.md`：P5.7-R9（模型真实能力验收门，能力扩展前置硬门）
+- `p5-7-r9-t1-real-capability-execution-dispatch.md`：P5.7-R9-T1（Opus 并行执行单：真机跑测 + 证据 + 最小修复）
 - `p5-7-r3d-lmstudio-glm-toolcall-temperature-lock.md`：P5.7-R3d（LM Studio GLM ToolCall 温度锁定）
 - `p5-7-r3f-r3k-tool-loop-best-practice-pack.md`：P5.7-R3f~R3k（Tool Loop 最佳实践改造派单包）
 - `p5-7-r3f-bash-runner-engineering.md`：P5.7-R3f（Bash Runner 工程化）
@@ -186,6 +199,7 @@
 - `p5-7-r3l-3-plan-act-report-pipeline.md`：P5.7-R3l-3（Plan->Act->Report 三阶段管道）
 - `p5-7-r3l-4-action-journal-state-sync.md`：P5.7-R3l-4（action_journal 状态回写契约）
 - `p5-7-r3l-5-ttft-observability-lock.md`：P5.7-R3l-5（TTFT 补偿与观测字段锁）
+- `p5-7-r3l-7-tool-protocol-retry-and-soul-normalize.md`：P5.7-R3l-7（tool_calls 重试 + SOUL 路径纠偏）
 
 ## 规则
 

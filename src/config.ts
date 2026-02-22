@@ -85,6 +85,8 @@ export interface Config {
     lmstudioModel?: string;
     // LM Studio System Prompt（可选）
     lmstudioSystemPrompt?: string;
+    // LM Studio System Prompt 文件路径（可选）
+    lmstudioSystemPromptFile?: string;
     // LM Studio 请求超时（毫秒），默认: 120000
     lmstudioTimeoutMs?: number;
     // LM Studio 最大输出 token（可选，默认: 4000）
@@ -198,6 +200,7 @@ export function loadConfig(): Config {
         lmstudioBaseUrl: process.env.LMSTUDIO_BASE_URL,
         lmstudioModel: process.env.LMSTUDIO_MODEL,
         lmstudioSystemPrompt: process.env.LMSTUDIO_SYSTEM_PROMPT,
+        lmstudioSystemPromptFile: process.env.LMSTUDIO_SYSTEM_PROMPT_FILE,
         lmstudioTimeoutMs: process.env.LMSTUDIO_TIMEOUT_MS ? Number(process.env.LMSTUDIO_TIMEOUT_MS) : undefined,
         lmstudioMaxTokens: process.env.LMSTUDIO_MAX_TOKENS ? Number(process.env.LMSTUDIO_MAX_TOKENS) : undefined,
         lmstudioApiKey: process.env.LMSTUDIO_API_KEY,

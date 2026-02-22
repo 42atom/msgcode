@@ -24,7 +24,11 @@ import { sanitizeLmStudioOutput as sanitizeCore, dropBeforeLastClosingTag } from
 // P5.6.13-R1A-EXEC R3: Provider adapter 契约
 import { buildChatCompletionRequest, parseChatCompletionResponse } from "./providers/openai-compat-adapter.js";
 // P5.7-R3e: 路由分类器
-import { classifyRoute, getTemperatureForRoute } from "./routing/classifier.js";
+import {
+    getTemperatureForRoute,
+    parseModelRouteClassification,
+    type RouteClassification,
+} from "./routing/classifier.js";
 // P5.7-R3k: SLO 降级策略
 import { selectModelByDegrade, isToolCallAllowed, getDegradeState } from "./slo-degrade.js";
 
@@ -59,6 +63,177 @@ const QUICK_ANSWER_CONSTRAINT = `
 不要解释你在做什么，也不要复述用户消息或任何方括号块（如 [attachment]/[图片文字]/[语音转写]）。
 如需引用证据，只摘录最关键的 1-3 句。
 `.trim();
+
+/**
+ * Exec Kernel 工具协议硬约束
+ *
+ * 目标：
+ * - 执行核只负责产出 tool_calls，不输出“我将执行/我可以”等自然语言。
+ * - 降低模型在工具路由里回到闲聊文本的概率。
+ */
+const EXEC_TOOL_PROTOCOL_CONSTRAINT = `
+你是执行核（Exec Kernel），只负责调用工具完成任务。
+必须遵守：
+1. 第一轮必须优先产出 tool_calls，不要输出自然语言解释。
+2. 如果任务涉及读取文件、执行命令、查询状态，必须调用工具获取真实结果。
+3. 没有工具结果前，禁止给出“已执行/已完成/我不能”等结论文本。
+4. 工具返回后，最终总结应简短、基于工具结果，不可编造。
+`.trim();
+
+/**
+ * LM Studio 文本默认模型（缺省配置时优先尝试）
+ */
+const LMSTUDIO_DEFAULT_CHAT_MODEL = "huihui-glm-4.7-flash-abliterated-mlx";
+
+/**
+ * Provider 别名（不是 LM Studio 真实模型 ID）
+ */
+const MODEL_ALIAS_SET = new Set([
+    "lmstudio",
+    "agent-backend",
+    "local-openai",
+    "openai",
+    "minimax",
+    "llama",
+    "claude",
+    "none",
+    "default-executor",
+    "default-responder",
+]);
+
+/**
+ * LM Studio 系统提示词文件默认路径（可热调试）
+ */
+const DEFAULT_LMSTUDIO_SYSTEM_PROMPT_FILE = path.resolve(
+    process.cwd(),
+    "prompts",
+    "lmstudio-system.md"
+);
+
+type AgentBackendId = "local-openai" | "openai" | "minimax";
+
+interface AgentBackendRuntime {
+    id: AgentBackendId;
+    baseUrl: string;
+    apiKey?: string;
+    model?: string;
+    timeoutMs: number;
+    nativeApiEnabled: boolean;
+}
+
+function parseBackendTimeoutMs(raw: string | undefined, fallback: number): number {
+    if (!raw) return fallback;
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+    return Math.floor(parsed);
+}
+
+function normalizeAgentBackendId(raw?: string): AgentBackendId {
+    const normalized = (raw || "").trim().toLowerCase();
+    if (!normalized || normalized === "lmstudio" || normalized === "agent-backend" || normalized === "local-openai") {
+        return "local-openai";
+    }
+    if (normalized === "openai") return "openai";
+    if (normalized === "minimax") return "minimax";
+    // 兼容遗留 provider 名称，先统一回本地后端
+    if (normalized === "llama" || normalized === "claude" || normalized === "none") {
+        return "local-openai";
+    }
+    return "local-openai";
+}
+
+function resolveAgentBackendRuntime(rawBackend?: string): AgentBackendRuntime {
+    const id = normalizeAgentBackendId(rawBackend || process.env.AGENT_BACKEND);
+    const defaultTimeout = typeof config.lmstudioTimeoutMs === "number" && !Number.isNaN(config.lmstudioTimeoutMs)
+        ? config.lmstudioTimeoutMs
+        : 120_000;
+
+    if (id === "minimax") {
+        const baseUrl = (process.env.MINIMAX_BASE_URL || process.env.AGENT_BASE_URL || "").trim();
+        if (!baseUrl) {
+            throw new Error("MiniMax backend 未配置：请设置 MINIMAX_BASE_URL 或 AGENT_BASE_URL");
+        }
+        return {
+            id,
+            baseUrl,
+            apiKey: (process.env.MINIMAX_API_KEY || process.env.AGENT_API_KEY || "").trim() || undefined,
+            model: (process.env.MINIMAX_MODEL || process.env.AGENT_MODEL || "").trim() || undefined,
+            timeoutMs: parseBackendTimeoutMs(process.env.MINIMAX_TIMEOUT_MS || process.env.AGENT_TIMEOUT_MS, defaultTimeout),
+            nativeApiEnabled: false,
+        };
+    }
+
+    if (id === "openai") {
+        return {
+            id,
+            baseUrl: (process.env.OPENAI_BASE_URL || process.env.AGENT_BASE_URL || "https://api.openai.com").trim(),
+            apiKey: (process.env.OPENAI_API_KEY || process.env.AGENT_API_KEY || "").trim() || undefined,
+            model: (process.env.OPENAI_MODEL || process.env.AGENT_MODEL || "").trim() || undefined,
+            timeoutMs: parseBackendTimeoutMs(process.env.OPENAI_TIMEOUT_MS || process.env.AGENT_TIMEOUT_MS, defaultTimeout),
+            nativeApiEnabled: false,
+        };
+    }
+
+    return {
+        id: "local-openai",
+        baseUrl: (process.env.LMSTUDIO_BASE_URL || process.env.AGENT_BASE_URL || config.lmstudioBaseUrl || "http://127.0.0.1:1234").trim(),
+        apiKey: (process.env.LMSTUDIO_API_KEY || process.env.AGENT_API_KEY || config.lmstudioApiKey || "").trim() || undefined,
+        model: (process.env.LMSTUDIO_MODEL || process.env.AGENT_MODEL || config.lmstudioModel || "").trim() || undefined,
+        timeoutMs: parseBackendTimeoutMs(process.env.LMSTUDIO_TIMEOUT_MS || process.env.AGENT_TIMEOUT_MS, defaultTimeout),
+        nativeApiEnabled: true,
+    };
+}
+
+/**
+ * 防止系统提示词文件加载失败日志刷屏
+ */
+const PROMPT_FILE_WARNED = new Set<string>();
+
+/**
+ * 归一化模型覆盖值：
+ * - 空字符串/别名返回 undefined（触发自动模型解析）
+ * - 其他值按真实模型 ID 透传
+ */
+function normalizeModelOverride(model?: string): string | undefined {
+    const normalized = (model || "").trim();
+    if (!normalized) return undefined;
+    if (MODEL_ALIAS_SET.has(normalized.toLowerCase())) return undefined;
+    return normalized;
+}
+
+function resolvePromptFilePath(filePath?: string): string {
+    const normalized = (filePath || "").trim();
+    const candidate = normalized || DEFAULT_LMSTUDIO_SYSTEM_PROMPT_FILE;
+    return path.isAbsolute(candidate) ? candidate : path.resolve(process.cwd(), candidate);
+}
+
+async function loadLmStudioSystemPromptFromFile(filePath?: string): Promise<string> {
+    const resolvedPath = resolvePromptFilePath(filePath);
+    try {
+        const content = await fsPromises.readFile(resolvedPath, "utf-8");
+        return content.trim();
+    } catch (error) {
+        if (!PROMPT_FILE_WARNED.has(resolvedPath)) {
+            logger.warn("LM Studio system prompt file load failed", {
+                module: "lmstudio",
+                promptFilePath: resolvedPath,
+                error: error instanceof Error ? error.message : String(error),
+            });
+            PROMPT_FILE_WARNED.add(resolvedPath);
+        }
+        return "";
+    }
+}
+
+async function resolveBaseSystemPrompt(systemOverride?: string): Promise<string> {
+    const directPrompt = (systemOverride || "").trim();
+    if (directPrompt) return directPrompt;
+
+    const envPrompt = (config.lmstudioSystemPrompt || "").trim();
+    if (envPrompt) return envPrompt;
+
+    return await loadLmStudioSystemPromptFromFile(config.lmstudioSystemPromptFile);
+}
 
 /**
  * P5.7-R3l-2: Dialog Kernel 专用 system prompt 构建函数
@@ -116,15 +291,15 @@ function buildExecSystemPrompt(base: string, useMcp: boolean): string {
         parts.push(base.trim());
     }
 
-    // 2. 快速回答规则
-    parts.push(QUICK_ANSWER_CONSTRAINT);
+    // 2. 执行核协议（禁止自然语言直答）
+    parts.push(EXEC_TOOL_PROTOCOL_CONSTRAINT);
 
     // 3. MCP 规则（可选）
     if (useMcp) {
         parts.push(MCP_ANTI_LOOP_RULES);
     }
 
-    // 注意：exec 链路禁止注入 SOUL，保持最小化提示词
+    // 注意：exec 链路禁止注入 SOUL，保持提示词最小且协议化
 
     return parts.join("\n\n");
 }
@@ -135,50 +310,133 @@ export interface LmStudioChatOptions {
     workspace?: string;  // 可选：工作目录（启用 MCP integrations）
     model?: string;      // P5.7-R3e: 可选覆盖模型（用于 responder/executor 分流）
     temperature?: number; // P5.7-R3e: 可选覆盖温度（默认 0.7）
+    backendRuntime?: AgentBackendRuntime; // P5.7-R8b: 后端运行时配置（baseUrl/apiKey/model）
+    windowMessages?: Array<{ role: string; content?: string }>; // P5.7-R3l: 对话窗口上下文
+    summaryContext?: string; // P5.7-R3l: 历史摘要上下文
+    soulContext?: { content: string; source: string; path: string; chars: number }; // P5.7-R3l: SOUL 上下文
+}
+
+/**
+ * 构造对话链路输入（把历史上下文拼接到当前问题）
+ *
+ * 说明：
+ * - LM Studio 原生 /api/v1/chat 在当前实现里使用 string input，
+ *   因此这里将 summary/window 显式拼接进 prompt，保证 no-tool 链路也能使用记忆。
+ */
+function buildDialogPromptWithContext(params: {
+    prompt: string;
+    summaryContext?: string;
+    windowMessages?: Array<{ role: string; content?: string }>;
+}): string {
+    const sections: string[] = [];
+
+    if (params.summaryContext && params.summaryContext.trim()) {
+        sections.push(`[历史对话摘要]\n${params.summaryContext.trim()}`);
+    }
+
+    if (params.windowMessages && params.windowMessages.length > 0) {
+        const MAX_WINDOW_MESSAGES = 12;
+        const MAX_CONTEXT_CHARS = 6000;
+        const lines: string[] = [];
+        let totalChars = 0;
+
+        const recentMessages = params.windowMessages.slice(-MAX_WINDOW_MESSAGES);
+        for (const msg of recentMessages) {
+            const content = (msg.content || "").trim();
+            if (!content) continue;
+
+            const role = msg.role === "assistant" ? "assistant" : "user";
+            const line = `[${role}] ${content}`;
+            if (totalChars + line.length > MAX_CONTEXT_CHARS) break;
+            lines.push(line);
+            totalChars += line.length;
+        }
+
+        if (lines.length > 0) {
+            sections.push(`[最近对话窗口]\n${lines.join("\n")}`);
+        }
+    }
+
+    sections.push(`[当前用户问题]\n${params.prompt}`);
+    return sections.join("\n\n");
 }
 
 export async function runLmStudioChat(options: LmStudioChatOptions): Promise<string> {
-    const baseUrl = normalizeBaseUrl(config.lmstudioBaseUrl || "http://127.0.0.1:1234");
+    const backendRuntime = options.backendRuntime || resolveAgentBackendRuntime();
+    const baseUrl = normalizeBaseUrl(backendRuntime.baseUrl);
+    const modelOverride = normalizeModelOverride(options.model);
+    const backendDefaultModel = normalizeModelOverride(backendRuntime.model);
 
-    // P5.7-R3e: 支持传入 model，否则从配置解析
-    const model = options.model ?? await resolveLmStudioModelId({ baseUrl });
+    // P5.7-R8b: 非本地后端不探测 /api/v1/models，必须显式模型
+    const model = modelOverride
+        ?? backendDefaultModel
+        ?? (backendRuntime.nativeApiEnabled
+            ? await resolveLmStudioModelId({
+                baseUrl,
+                configuredModel: backendRuntime.model,
+                apiKey: backendRuntime.apiKey,
+                timeoutMs: backendRuntime.timeoutMs,
+            })
+            : undefined);
+
+    if (!model) {
+        throw new Error(`Agent backend(${backendRuntime.id}) 未配置模型。请设置 AGENT_MODEL 或对应后端模型变量。`);
+    }
+    const resolvedModel = model;
 
     // P5.7-R3e: 支持传入 temperature，否则默认 0.7（创造性回复）
     const temperature = options.temperature ?? 0.7;
 
-    // 构建 system prompt：基础（用户配置）+ 快速回答规则 +（可选）MCP 防循环规则
-    // 注意：当 options.system 未提供时，必须回退到 LMSTUDIO_SYSTEM_PROMPT（用户配置）。
-    const baseSystem = options.system ?? config.lmstudioSystemPrompt ?? "";
+    // 构建 system prompt：优先 options.system，其次环境变量，其次提示词文件
+    const baseSystem = await resolveBaseSystemPrompt(options.system);
 
-    const timeoutMs = typeof config.lmstudioTimeoutMs === "number" && !Number.isNaN(config.lmstudioTimeoutMs)
-        ? config.lmstudioTimeoutMs
-        : 120_000;
+    const timeoutMs = backendRuntime.timeoutMs;
 
     const maxTokens = typeof config.lmstudioMaxTokens === "number" && Number.isFinite(config.lmstudioMaxTokens) && config.lmstudioMaxTokens > 0
         ? Math.floor(config.lmstudioMaxTokens)
         : 4000;
 
     // E17: 默认禁用 MCP（避免模型尝试读取文件，需要 LMSTUDIO_ENABLE_MCP=1 显式启用）
-    const useMcp = process.env.LMSTUDIO_ENABLE_MCP === "1" && !!options.workspace;
+    const useMcp = backendRuntime.nativeApiEnabled && process.env.LMSTUDIO_ENABLE_MCP === "1" && !!options.workspace;
 
     // MCP 模式需要更大的 max_tokens，避免工具调用被截断
     // 工具调用块本身可能 100+ token，太小会导致缺少 [END_TOOL_REQUEST]
     const mcpMaxTokens = Math.max(maxTokens, 1024);
 
+    // P5.7-R3l: 对话链路将 summary/window 注入到输入，避免 no-tool 丢失记忆
+    const promptWithContext = buildDialogPromptWithContext({
+        prompt: options.prompt,
+        summaryContext: options.summaryContext,
+        windowMessages: options.windowMessages,
+    });
+
     // 构造 system prompt（包含快速回答规则）
     // P5.7-R3l-2: 使用 buildDialogSystemPrompt（dialog 链路允许 SOUL 注入）
-    const systemPrompt = buildDialogSystemPrompt(baseSystem, useMcp);
-    const compatSystemPrompt = buildDialogSystemPrompt(baseSystem, false);
+    const systemPrompt = buildDialogSystemPrompt(
+        baseSystem,
+        useMcp,
+        options.soulContext
+            ? { content: options.soulContext.content, source: options.soulContext.source }
+            : undefined
+    );
+    const compatSystemPrompt = buildDialogSystemPrompt(
+        baseSystem,
+        false,
+        options.soulContext
+            ? { content: options.soulContext.content, source: options.soulContext.source }
+            : undefined
+    );
 
     async function runNativeMcpOnce(maxOutputTokens: number): Promise<string> {
         const native = await runLmStudioChatNativeMcp({
             baseUrl,
-            model,
-            prompt: options.prompt,
+            model: resolvedModel,
+            prompt: promptWithContext,
             system: systemPrompt,  // 传递 system_prompt
             maxOutputTokens: Math.max(maxOutputTokens, mcpMaxTokens),
             timeoutMs,
             useMcp,
+            apiKey: backendRuntime.apiKey,
             temperature, // P5.7-R3e-hotfix-2: 传递温度参数
         });
         return sanitizeLmStudioOutput(native);
@@ -187,11 +445,12 @@ export async function runLmStudioChat(options: LmStudioChatOptions): Promise<str
     async function runNativeOnce(maxOutputTokens: number): Promise<string> {
         const native = await runLmStudioChatNative({
             baseUrl,
-            model,
-            prompt: options.prompt,
+            model: resolvedModel,
+            prompt: promptWithContext,
             system: systemPrompt,  // 传递 system_prompt
             maxOutputTokens,
             timeoutMs,
+            apiKey: backendRuntime.apiKey,
             temperature, // P5.7-R3e: 传递温度参数
         });
         return sanitizeLmStudioOutput(native);
@@ -200,40 +459,43 @@ export async function runLmStudioChat(options: LmStudioChatOptions): Promise<str
     async function runCompatOnce(maxOutputTokens: number): Promise<string> {
         const text = await runLmStudioChatOpenAICompat({
             baseUrl,
-            model,
-            prompt: options.prompt,
+            model: resolvedModel,
+            prompt: promptWithContext,
             system: compatSystemPrompt && compatSystemPrompt.trim() ? compatSystemPrompt.trim() : undefined,
             maxTokens: maxOutputTokens,
             timeoutMs,
+            apiKey: backendRuntime.apiKey,
             temperature, // P5.7-R3e: 传递温度参数
         });
         return sanitizeLmStudioOutput(text);
     }
 
-    // 1) 优先走原生 REST with MCP（当启用时）或普通原生
-    try {
-        if (useMcp) {
-            return await runNativeMcpOnce(maxTokens);
-        }
-        return await runNativeOnce(maxTokens);
-    } catch (error: unknown) {
-        const msg = error instanceof Error ? error.message : "";
-
-        // 止血：部分模型在长输出/长思考时会直接崩溃（500 model has crashed）
-        // 这里不改变提示词，仅把 max tokens 降档重试一次，避免“无回复”。
-        if (isModelCrashedMessage(msg) && maxTokens > 1600) {
-            try {
-                return await runNativeOnce(1600);
-            } catch {
-                // ignore and proceed to normal fallback/throw
+    // 1) 本地 LM Studio 后端优先走原生 REST；其他后端直接走 OpenAI 兼容
+    if (backendRuntime.nativeApiEnabled) {
+        try {
+            if (useMcp) {
+                return await runNativeMcpOnce(maxTokens);
             }
-        }
+            return await runNativeOnce(maxTokens);
+        } catch (error: unknown) {
+            const msg = error instanceof Error ? error.message : "";
 
-        // /api/v1/chat 不存在时（老版本/未启用），走 OpenAI 兼容模式
-        const shouldFallback = msg.includes("404") || msg.includes("未返回可展示的内容");
-        if (!shouldFallback) {
-            // 其他错误直接抛给上层（含超时/模型错误），避免吞掉根因
-            throw error instanceof Error ? error : new Error("LM Studio 调用失败");
+            // 止血：部分模型在长输出/长思考时会直接崩溃（500 model has crashed）
+            // 这里不改变提示词，仅把 max tokens 降档重试一次，避免“无回复”。
+            if (isModelCrashedMessage(msg) && maxTokens > 1600) {
+                try {
+                    return await runNativeOnce(1600);
+                } catch {
+                    // ignore and proceed to normal fallback/throw
+                }
+            }
+
+            // /api/v1/chat 不存在时（老版本/未启用），走 OpenAI 兼容模式
+            const shouldFallback = msg.includes("404") || msg.includes("未返回可展示的内容");
+            if (!shouldFallback) {
+                // 其他错误直接抛给上层（含超时/模型错误），避免吞掉根因
+                throw error instanceof Error ? error : new Error("LM Studio 调用失败");
+            }
         }
     }
 
@@ -251,6 +513,9 @@ export async function runLmStudioChat(options: LmStudioChatOptions): Promise<str
 
 type ResolveModelParams = {
     baseUrl: string;
+    configuredModel?: string;
+    apiKey?: string;
+    timeoutMs?: number;
 };
 
 let cachedModel: { baseUrl: string; id: string } | undefined;
@@ -268,15 +533,40 @@ function normalizeBaseUrl(raw: string): string {
 }
 
 async function resolveLmStudioModelId(params: ResolveModelParams): Promise<string> {
-    const configured = (config.lmstudioModel || "").trim();
+    const configured = ((params.configuredModel ?? config.lmstudioModel) || "").trim();
 
     // 优先使用配置的模型名（直接使用，LM Studio 会自动处理）
     if (configured && configured !== "auto") {
         return configured;
     }
 
+    // 缺省模式：优先使用稳定基座（只要模型在目录中存在，LM Studio 会按需自动加载）
+    if (!configured) {
+        const preferredAvailable = await isModelPresentInNativeCatalog({
+            baseUrl: params.baseUrl,
+            key: LMSTUDIO_DEFAULT_CHAT_MODEL,
+            apiKey: params.apiKey,
+            timeoutMs: params.timeoutMs,
+        });
+        if (preferredAvailable) {
+            if (
+                cachedModel &&
+                cachedModel.baseUrl === params.baseUrl &&
+                cachedModel.id === LMSTUDIO_DEFAULT_CHAT_MODEL
+            ) {
+                return cachedModel.id;
+            }
+            cachedModel = { baseUrl: params.baseUrl, id: LMSTUDIO_DEFAULT_CHAT_MODEL };
+            return LMSTUDIO_DEFAULT_CHAT_MODEL;
+        }
+    }
+
     // auto 模式：只使用已加载的模型
-    const loadedModel = await fetchFirstLoadedModelKeyNative({ baseUrl: params.baseUrl });
+    const loadedModel = await fetchFirstLoadedModelKeyNative({
+        baseUrl: params.baseUrl,
+        apiKey: params.apiKey,
+        timeoutMs: params.timeoutMs,
+    });
     if (loadedModel) {
         if (cachedModel && cachedModel.baseUrl === params.baseUrl && cachedModel.id === loadedModel) {
             return cachedModel.id;
@@ -292,10 +582,14 @@ async function resolveLmStudioModelId(params: ResolveModelParams): Promise<strin
     );
 }
 
-async function fetchFirstModelId(params: { baseUrl: string }): Promise<string | null> {
+async function fetchFirstModelId(params: { baseUrl: string; apiKey?: string; timeoutMs?: number }): Promise<string | null> {
     // 优先：原生 REST
     try {
-        const id = await fetchFirstLoadedModelKeyNative({ baseUrl: params.baseUrl });
+        const id = await fetchFirstLoadedModelKeyNative({
+            baseUrl: params.baseUrl,
+            apiKey: params.apiKey,
+            timeoutMs: params.timeoutMs,
+        });
         if (id) return id;
     } catch {
         // ignore and fallback
@@ -304,15 +598,16 @@ async function fetchFirstModelId(params: { baseUrl: string }): Promise<string | 
     // 后备：OpenAI 兼容
     const url = `${params.baseUrl}/v1/models`;
 
-    const timeoutMs = typeof config.lmstudioTimeoutMs === "number" && !Number.isNaN(config.lmstudioTimeoutMs)
+    const timeoutMs = params.timeoutMs || (typeof config.lmstudioTimeoutMs === "number" && !Number.isNaN(config.lmstudioTimeoutMs)
         ? config.lmstudioTimeoutMs
-        : 60_000;
+        : 60_000);
 
     // 使用 fetchTextWithTimeout，它会自动添加 API key
     const rawText = await fetchTextWithTimeout({
         url,
         method: "GET",
         timeoutMs,
+        apiKey: params.apiKey,
     });
 
     let json: unknown;
@@ -356,6 +651,7 @@ type LmStudioNativeChatParams = {
     system?: string;
     maxOutputTokens: number;
     timeoutMs: number;
+    apiKey?: string;
     temperature?: number; // P5.7-R3e: 可选温度参数
 };
 
@@ -372,6 +668,7 @@ type LmStudioNativeMcpParams = {
     maxOutputTokens: number;
     timeoutMs: number;
     useMcp: boolean;
+    apiKey?: string;
     temperature?: number; // P5.7-R3e-hotfix-2: 可选温度参数
 };
 
@@ -415,6 +712,7 @@ async function runLmStudioChatNativeMcp(params: LmStudioNativeMcpParams): Promis
                 timeoutMs: params.timeoutMs,
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify(bodyBase),
+                apiKey: params.apiKey,
             });
 
             let json: unknown;
@@ -494,6 +792,7 @@ async function runLmStudioChatNative(params: LmStudioNativeChatParams): Promise<
                 timeoutMs: params.timeoutMs,
                 headers: { "content-type": "application/json" },
                 body: JSON.stringify(bodyBase),
+                apiKey: params.apiKey,
             });
 
             let json: unknown;
@@ -532,6 +831,7 @@ type LmStudioOpenAIChatParams = {
     system?: string;
     maxTokens: number;
     timeoutMs: number;
+    apiKey?: string;
     temperature?: number; // P5.7-R3e: 可选温度参数
 };
 
@@ -557,6 +857,7 @@ async function runLmStudioChatOpenAICompat(params: LmStudioOpenAIChatParams): Pr
             max_tokens: params.maxTokens,
             temperature: params.temperature ?? 0.7, // P5.7-R3e: 支持传入温度，默认 0.7
         }),
+        apiKey: params.apiKey,
     });
 
     let json: unknown;
@@ -577,13 +878,14 @@ async function runLmStudioChatOpenAICompat(params: LmStudioOpenAIChatParams): Pr
 /**
  * 检查指定模型是否已加载
  */
-async function fetchLoadedModelByKey(params: { baseUrl: string; key: string }): Promise<string | null> {
+async function fetchLoadedModelByKey(params: { baseUrl: string; key: string; apiKey?: string; timeoutMs?: number }): Promise<string | null> {
     try {
         const url = `${params.baseUrl}/api/v1/models`;
         const rawText = await fetchTextWithTimeout({
             url,
             method: "GET",
-            timeoutMs: typeof config.lmstudioTimeoutMs === "number" && !Number.isNaN(config.lmstudioTimeoutMs) ? config.lmstudioTimeoutMs : 60_000,
+            timeoutMs: params.timeoutMs || (typeof config.lmstudioTimeoutMs === "number" && !Number.isNaN(config.lmstudioTimeoutMs) ? config.lmstudioTimeoutMs : 60_000),
+            apiKey: params.apiKey,
         });
 
         let json: unknown;
@@ -593,10 +895,12 @@ async function fetchLoadedModelByKey(params: { baseUrl: string; key: string }): 
             return null;
         }
 
-        const models = isNativeModelsList(json) ? json.data : [];
+        // LM Studio /api/v1/models 目前返回 "models"；
+        // 兼容旧形态 "data"，避免模型选择链路失效。
+        const models = extractNativeModels(json);
         for (const m of models) {
             if (m.type !== "llm") continue;
-            if (m.key !== params.key) continue;
+            if (typeof m.key !== "string" || m.key !== params.key) continue;
             if (!Array.isArray(m.loaded_instances) || m.loaded_instances.length === 0) continue;
             return m.key;
         }
@@ -606,12 +910,40 @@ async function fetchLoadedModelByKey(params: { baseUrl: string; key: string }): 
     return null;
 }
 
-async function fetchFirstLoadedModelKeyNative(params: { baseUrl: string }): Promise<string | null> {
+/**
+ * 检查模型是否存在于 LM Studio 目录（已下载即可）
+ */
+async function isModelPresentInNativeCatalog(params: { baseUrl: string; key: string; apiKey?: string; timeoutMs?: number }): Promise<boolean> {
+    try {
+        const url = `${params.baseUrl}/api/v1/models`;
+        const rawText = await fetchTextWithTimeout({
+            url,
+            method: "GET",
+            timeoutMs: params.timeoutMs || (typeof config.lmstudioTimeoutMs === "number" && !Number.isNaN(config.lmstudioTimeoutMs) ? config.lmstudioTimeoutMs : 60_000),
+            apiKey: params.apiKey,
+        });
+
+        let json: unknown;
+        try {
+            json = JSON.parse(rawText);
+        } catch {
+            return false;
+        }
+
+        const models = extractNativeModels(json);
+        return models.some((m) => m.type === "llm" && typeof m.key === "string" && m.key === params.key);
+    } catch {
+        return false;
+    }
+}
+
+async function fetchFirstLoadedModelKeyNative(params: { baseUrl: string; apiKey?: string; timeoutMs?: number }): Promise<string | null> {
     const url = `${params.baseUrl}/api/v1/models`;
     const rawText = await fetchTextWithTimeout({
         url,
         method: "GET",
-        timeoutMs: typeof config.lmstudioTimeoutMs === "number" && !Number.isNaN(config.lmstudioTimeoutMs) ? config.lmstudioTimeoutMs : 60_000,
+        timeoutMs: params.timeoutMs || (typeof config.lmstudioTimeoutMs === "number" && !Number.isNaN(config.lmstudioTimeoutMs) ? config.lmstudioTimeoutMs : 60_000),
+        apiKey: params.apiKey,
     });
 
     let json: unknown;
@@ -641,12 +973,13 @@ async function fetchTextWithTimeout(params: {
     timeoutMs: number;
     headers?: Record<string, string>;
     body?: string;
+    apiKey?: string;
 }): Promise<string> {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), params.timeoutMs);
 
     const headers: Record<string, string> = { ...params.headers };
-    const apiKey = config.lmstudioApiKey?.trim();
+    const apiKey = params.apiKey?.trim() || config.lmstudioApiKey?.trim();
     if (apiKey) {
         headers["authorization"] = `Bearer ${apiKey}`;
     }
@@ -750,6 +1083,19 @@ function isNativeModelsList(value: unknown): value is { data: Array<{ type?: unk
     return Array.isArray((value as { data?: unknown }).data);
 }
 
+function extractNativeModels(value: unknown): Array<{ type?: unknown; key?: unknown; loaded_instances?: unknown }> {
+    if (!value || typeof value !== "object") return [];
+
+    const obj = value as { data?: unknown; models?: unknown };
+    if (Array.isArray(obj.models)) {
+        return obj.models as Array<{ type?: unknown; key?: unknown; loaded_instances?: unknown }>;
+    }
+    if (Array.isArray(obj.data)) {
+        return obj.data as Array<{ type?: unknown; key?: unknown; loaded_instances?: unknown }>;
+    }
+    return [];
+}
+
 function isChatCompletion(value: unknown): value is { choices: Array<{ message?: any }> } {
     if (!value || typeof value !== "object") return false;
     if (!("choices" in value)) return false;
@@ -783,11 +1129,32 @@ export function sanitizeLmStudioOutput(text: string): string {
     out = out.replace(/<think[\s\S]*?<\/think>/gi, "");
     // E17: 过滤 tool_calls 等内部信息
     out = out.replace(/tool_calls[参数:\s\S]*?(?=\n\n|$)/gi, "");
-    // E17: 过滤 XML-ish 工具调用块
-    out = out.replace(/<tool_call>[\s\S]*?<\/tool_call>/gi, "");
+    // E17: 过滤 XML-ish 工具调用块（含 namespaced 标签，如 <minimax:tool_call>）
+    out = out.replace(/<[\w:-]*tool_call[\w:-]*>[\s\S]*?<\/[\w:-]*tool_call>/gi, "");
+    // E17: 过滤 invoke/parameter 协议块
+    out = out.replace(/<invoke\b[\s\S]*?<\/invoke>/gi, "");
+    out = out.replace(/<parameter\b[\s\S]*?<\/parameter>/gi, "");
 
     // 末尾多余空行压缩
     return out.replace(/\n{3,}/g, "\n\n").trim();
+}
+
+/**
+ * 判断文本是否仍包含工具协议片段（不可直接展示给用户）
+ */
+function hasToolProtocolArtifacts(text: string): boolean {
+    const input = (text || "").trim();
+    if (!input) return false;
+
+    return (
+        /<[\w:-]*tool_call[\w:-]*>/i.test(input) ||
+        /<\/[\w:-]*tool_call>/i.test(input) ||
+        /<invoke\b/i.test(input) ||
+        /<\/invoke>/i.test(input) ||
+        /<parameter\b/i.test(input) ||
+        /<\/parameter>/i.test(input) ||
+        /\[\/?TOOL_CALL\]/i.test(input)
+    );
 }
 
 
@@ -1192,6 +1559,7 @@ export interface LmStudioToolLoopOptions {
     baseUrl?: string;
     model?: string;
     timeoutMs?: number;
+    backendRuntime?: AgentBackendRuntime; // P5.7-R8b: 后端运行时配置
     // P5.6.8-R4b: 短期记忆上下文
     windowMessages?: Array<{ role: string; content?: string }>; // 历史窗口消息
     summaryContext?: string; // summary 格式化后的上下文
@@ -1253,13 +1621,20 @@ export function isLikelyFakeToolExecutionText(text: string): boolean {
     const input = (text || "").trim();
     if (!input) return false;
 
+    // 显式工具标记：模型在正文伪造工具调用协议
+    const hasExplicitToolMarker =
+        /\[\/?TOOL_CALL\]/i.test(input) ||
+        /<\/?tool_call>/i.test(input) ||
+        /\btool\s*=>\s*["']?[a-z_][\w-]*/i.test(input) ||
+        /\b(read_file|write_file|edit_file|bash)\s*\(/i.test(input);
+
     const hasShellFence = /```(?:bash|sh|zsh|shell)\b[\s\S]*?```/i.test(input);
     const hasExecutionCue =
         /(执行中|正在执行|命令输出|命令结果|已执行)/i.test(input) ||
         /(?:^|\n)\s*(?:pwd|ls|cat)\b/im.test(input) ||
         /\/home\/[^\s]*/.test(input);
 
-    return hasShellFence && hasExecutionCue;
+    return hasExplicitToolMarker || (hasShellFence && hasExecutionCue);
 }
 
 /**
@@ -1270,6 +1645,116 @@ type ToolCall = {
     type: "function";
     function: { name: string; arguments: string };
 };
+
+type ToolChoice = "auto" | "none" | "required" | {
+    type: "function";
+    function: { name: string };
+};
+
+type ExecutedToolCall = {
+    tc: ToolCall;
+    args: Record<string, unknown>;
+    result: unknown;
+};
+
+function clipText(text: string, maxChars: number): string {
+    if (text.length <= maxChars) return text;
+    return `${text.slice(0, maxChars)}...`;
+}
+
+function buildToolLoopFallbackAnswer(
+    executedToolCalls: ExecutedToolCall[],
+    prompt: string
+): string {
+    if (executedToolCalls.length === 0) return "";
+    const lastCall = executedToolCalls[executedToolCalls.length - 1];
+    const toolName = lastCall.tc.function.name;
+    const result = lastCall.result;
+
+    if (toolName === "read_file") {
+        const content = result
+            && typeof result === "object"
+            && typeof (result as Record<string, unknown>).content === "string"
+            ? String((result as Record<string, unknown>).content)
+            : "";
+
+        if (!content.trim()) {
+            return "文件读取成功，但内容为空。";
+        }
+
+        const wantsTop3 = /前\s*(3|三)\s*行/.test(prompt);
+        const maxLines = wantsTop3 ? 3 : 20;
+        const lines = content.replace(/\r\n/g, "\n").split("\n").slice(0, maxLines);
+        const preview = clipText(lines.join("\n"), 2000).trim();
+
+        if (wantsTop3) {
+            return `读取成功，前3行如下：\n${preview}`;
+        }
+        return `读取成功，内容预览如下：\n${preview}`;
+    }
+
+    if (toolName === "bash") {
+        const obj = (result && typeof result === "object")
+            ? (result as Record<string, unknown>)
+            : {};
+        const stdout = typeof obj.stdout === "string" ? obj.stdout.trim() : "";
+        const stderr = typeof obj.stderr === "string" ? obj.stderr.trim() : "";
+        const exitCode = typeof obj.exitCode === "number" ? obj.exitCode : null;
+
+        if (stdout) return clipText(stdout, 2000);
+        if (stderr) return `命令执行完成（exitCode=${exitCode ?? "unknown"}），stderr：${clipText(stderr, 500)}`;
+        if (exitCode !== null) return `命令执行完成（exitCode=${exitCode}）。`;
+        return "命令执行完成。";
+    }
+
+    if (toolName === "write_file" || toolName === "edit_file") {
+        return `${toolName} 执行成功。`;
+    }
+
+    return `工具执行成功：${toolName}`;
+}
+
+function detectPreferredToolName(
+    prompt: string,
+    tools: readonly unknown[]
+): string | undefined {
+    const input = (prompt || "").toLowerCase();
+    if (!input) return undefined;
+
+    const available = new Set<string>();
+    for (const tool of tools) {
+        if (!tool || typeof tool !== "object") continue;
+        const fn = (tool as { function?: { name?: unknown } }).function;
+        if (!fn || typeof fn.name !== "string") continue;
+        available.add(fn.name);
+    }
+    const candidates = ["read_file", "write_file", "edit_file", "bash"] as const;
+    for (const name of candidates) {
+        if (!available.has(name)) continue;
+
+        // 英文显式指名
+        if (new RegExp(`\\b${name}\\b`, "i").test(input)) {
+            return name;
+        }
+
+        // 中文常见表达：使用/用 xxx 工具
+        if (new RegExp(`(?:使用|用)\\s*${name}\\s*工具`, "i").test(input)) {
+            return name;
+        }
+    }
+    return undefined;
+}
+
+function selectToolsByName(
+    tools: readonly unknown[],
+    toolName: string
+): readonly unknown[] {
+    return tools.filter((tool) => {
+        if (!tool || typeof tool !== "object") return false;
+        const fn = (tool as { function?: { name?: unknown } }).function;
+        return !!fn && typeof fn.name === "string" && fn.name === toolName;
+    });
+}
 
 /**
  * Chat 响应类型
@@ -1316,11 +1801,58 @@ type ToolRunResult = {
     durationMs: number;
 };
 
+/**
+ * read_file 参数纠偏：
+ * - 用户常说“读取 SOUL 文件”，模型可能生成 <workspace>/SOUL.md（缺少 .msgcode）
+ * - 若目标不存在且命中 SOUL.md，则自动改写为 <workspace>/.msgcode/SOUL.md
+ */
+async function normalizeReadFilePathArgs(
+    toolName: string,
+    args: Record<string, unknown>,
+    workspacePath: string
+): Promise<Record<string, unknown>> {
+    if (toolName !== "read_file") return args;
+
+    const rawPath = typeof args.path === "string" ? args.path.trim() : "";
+    if (!rawPath) return args;
+    if (!/(^|\/)soul\.md$/i.test(rawPath)) return args;
+
+    const requestedAbs = path.isAbsolute(rawPath)
+        ? path.resolve(rawPath)
+        : path.resolve(workspacePath, rawPath);
+
+    try {
+        await fsPromises.access(requestedAbs);
+        return args;
+    } catch {
+        // 继续尝试 .msgcode/SOUL.md 兜底
+    }
+
+    const fallbackAbs = path.resolve(workspacePath, ".msgcode", "SOUL.md");
+    try {
+        await fsPromises.access(fallbackAbs);
+    } catch {
+        return args;
+    }
+
+    logger.info("read_file path normalized for SOUL.md", {
+        module: "lmstudio",
+        inputPath: rawPath,
+        normalizedPath: fallbackAbs,
+    });
+
+    return {
+        ...args,
+        path: fallbackAbs,
+    };
+}
+
 async function runTool(name: string, args: Record<string, unknown>, root: string): Promise<ToolRunResult> {
     const { executeTool } = await import("./tools/bus.js");
     const { randomUUID } = await import("node:crypto");
+    const normalizedArgs = await normalizeReadFilePathArgs(name, args, root);
 
-    const result = await executeTool(name as any, args, {
+    const result = await executeTool(name as any, normalizedArgs, {
         workspacePath: root,
         source: "llm-tool-call",
         requestId: `lmstudio-${randomUUID()}`,
@@ -1350,19 +1882,33 @@ async function runTool(name: string, args: Record<string, unknown>, root: string
  *
  * 流程：
  * 1. 第一次请求带 tools + tool_choice:"auto"
- * 2. 若返回 tool_calls：执行第一个，回灌 role:"tool"
- * 3. 第二次请求强制 tool_choice:"none" 生成最终回答
- * 4. 只对最终 answer 走清洗链
+ * 2. 若返回 tool_calls：顺序执行并回灌 role:"tool"
+ * 3. 若模型继续返回 tool_calls：持续进入下一轮（多轮闭环）
+ * 4. 当模型不再返回 tool_calls：输出最终回答并走清洗链
  */
 export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Promise<ToolLoopResult> {
     // P5.7-R3g: 每轮工具步数上限
     const MAX_TOOL_CALLS_PER_TURN = 8;
+    const MAX_TOOL_STEPS_TOTAL = 24;
 
-    const baseUrl = options.baseUrl || normalizeBaseUrl(config.lmstudioBaseUrl || "http://127.0.0.1:1234");
-    const model = options.model || await resolveLmStudioModelId({ baseUrl });
-    const timeoutMs = options.timeoutMs || (typeof config.lmstudioTimeoutMs === "number" && !Number.isNaN(config.lmstudioTimeoutMs)
-        ? config.lmstudioTimeoutMs
-        : 120_000);
+    const backendRuntime = options.backendRuntime || resolveAgentBackendRuntime();
+    const baseUrl = options.baseUrl || normalizeBaseUrl(backendRuntime.baseUrl);
+    const modelOverride = normalizeModelOverride(options.model);
+    const backendDefaultModel = normalizeModelOverride(backendRuntime.model);
+    const model = modelOverride
+        ?? backendDefaultModel
+        ?? (backendRuntime.nativeApiEnabled
+            ? await resolveLmStudioModelId({
+                baseUrl,
+                configuredModel: backendRuntime.model,
+                apiKey: backendRuntime.apiKey,
+                timeoutMs: backendRuntime.timeoutMs,
+            })
+            : undefined);
+    if (!model) {
+        throw new Error(`Agent backend(${backendRuntime.id}) 未配置模型。请设置 AGENT_MODEL 或对应后端模型变量。`);
+    }
+    const timeoutMs = options.timeoutMs || backendRuntime.timeoutMs;
     const root = options.allowRoot || config.workspaceRoot || AIDOCS_ROOT;
 
     // P5.7-R3l-4: 初始化 actionJournal
@@ -1372,9 +1918,9 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
     const route = options.route || "tool";
 
     // P5.7-R3l-2: 使用 buildExecSystemPrompt（exec 链路禁止 SOUL 注入）
-    const baseSystem = options.system ?? config.lmstudioSystemPrompt ?? "";
+    const baseSystem = await resolveBaseSystemPrompt(options.system);
     const workspacePath = options.workspacePath || root;
-    const useMcp = process.env.LMSTUDIO_ENABLE_MCP === "1" && !!workspacePath;
+    const useMcp = backendRuntime.nativeApiEnabled && process.env.LMSTUDIO_ENABLE_MCP === "1" && !!workspacePath;
     let system = buildExecSystemPrompt(baseSystem, useMcp);
 
     try {
@@ -1464,26 +2010,209 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
     // P0: 获取基于 workspace 配置的工具列表（explicit 模式下为空）
     const workspaceRootForTools = options.workspacePath || root;
     const tools = options.tools ?? await getToolsForLlm(workspaceRootForTools);
+    const preferredToolName = detectPreferredToolName(options.prompt, tools);
+    const preferredToolChoice: ToolChoice | undefined = preferredToolName
+        ? { type: "function", function: { name: preferredToolName } }
+        : undefined;
+    const constrainedTools = preferredToolName
+        ? selectToolsByName(tools, preferredToolName)
+        : tools;
+    const activeTools = constrainedTools.length > 0 ? constrainedTools : tools;
+    if (preferredToolName) {
+        logger.info("Tool preference detected from prompt", {
+            module: "lmstudio",
+            preferredToolName,
+            constrainedToolCount: activeTools.length,
+        });
+    }
 
     // 1) 第一次：允许工具调用
     const r1 = await callChatCompletionsRaw({
         baseUrl,
         model,
         messages,
-        tools,
-        toolChoice: "auto",
+        tools: activeTools,
+        toolChoice: preferredToolChoice ?? "auto",
         temperature: 0,
         maxTokens: 800,
         timeoutMs,
+        apiKey: backendRuntime.apiKey,
     });
 
-    const msg1 = r1.choices[0]?.message;
-    const toolCalls = msg1?.tool_calls ?? [];
+    let msg1 = r1.choices[0]?.message;
+    let toolCalls = msg1?.tool_calls ?? [];
+
+    // 首轮无 tool_calls：强制协议重试一次（toolChoice=required）
+    // 目标：降低部分后端/模型在 auto 模式下漏发 tool_calls 的概率。
+    if (toolCalls.length === 0 && activeTools.length > 0) {
+        logger.warn("Tool protocol retry started", {
+            module: "lmstudio",
+            stage: "required-retry",
+            toolCallCount: 0,
+        });
+
+        try {
+            const retryMessages = [
+                ...messages,
+                {
+                    role: "user" as const,
+                    content: "工具调用重试：请严格返回一次 tool_calls；不要输出自然语言。",
+                },
+            ];
+
+            const retry = await callChatCompletionsRaw({
+                baseUrl,
+                model,
+                messages: retryMessages,
+                tools: activeTools,
+                toolChoice: preferredToolChoice ?? "required",
+                temperature: 0,
+                maxTokens: 800,
+                timeoutMs,
+                apiKey: backendRuntime.apiKey,
+            });
+
+            msg1 = retry.choices[0]?.message;
+            toolCalls = msg1?.tool_calls ?? [];
+
+            if (toolCalls.length > 0) {
+                logger.info("Tool protocol retry succeeded", {
+                    module: "lmstudio",
+                    stage: "required-retry",
+                    toolCallCount: toolCalls.length,
+                });
+            } else {
+                logger.warn("Tool protocol retry returned no tool_calls", {
+                    module: "lmstudio",
+                    stage: "required-retry",
+                    toolCallCount: 0,
+                });
+            }
+        } catch (error) {
+            logger.warn("Tool protocol retry failed", {
+                module: "lmstudio",
+                stage: "required-retry",
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+    }
+
+    // 第二次仍无 tool_calls：降上下文做一次严格协议兜底
+    // 目标：减少长上下文/历史对工具调用协议的干扰。
+    if (toolCalls.length === 0 && activeTools.length > 0) {
+        try {
+            const strictSystem = `${system}\n\n[工具协议兜底]\n只返回 tool_calls；禁止自然语言。`;
+            const strictMessages: Array<{ role: string; content?: string }> = [];
+            if (strictSystem.trim()) {
+                strictMessages.push({ role: "system", content: strictSystem.trim() });
+            }
+            strictMessages.push({ role: "user", content: options.prompt });
+
+            const strictRetry = await callChatCompletionsRaw({
+                baseUrl,
+                model,
+                messages: strictMessages,
+                tools: activeTools,
+                toolChoice: preferredToolChoice ?? "required",
+                temperature: 0,
+                maxTokens: 400,
+                timeoutMs,
+                apiKey: backendRuntime.apiKey,
+            });
+
+            msg1 = strictRetry.choices[0]?.message;
+            toolCalls = msg1?.tool_calls ?? [];
+
+            if (toolCalls.length > 0) {
+                logger.info("Tool protocol strict fallback succeeded", {
+                    module: "lmstudio",
+                    stage: "strict-fallback",
+                    toolCallCount: toolCalls.length,
+                });
+            } else {
+                logger.warn("Tool protocol strict fallback returned no tool_calls", {
+                    module: "lmstudio",
+                    stage: "strict-fallback",
+                    toolCallCount: 0,
+                });
+            }
+        } catch (error) {
+            logger.warn("Tool protocol strict fallback failed", {
+                module: "lmstudio",
+                stage: "strict-fallback",
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+    }
 
     // 2) P5.7-R1: 只认标准 tool_calls，移除文本兜底解析
-    const executedToolCalls: Array<{ tc: ToolCall; args: Record<string, unknown>; result: unknown }> = [];
-    let assistantRole = msg1?.role || "assistant";
-    const assistantContent = msg1?.content;
+    const executedToolCalls: ExecutedToolCall[] = [];
+    let currentAssistantRole = msg1?.role || "assistant";
+    let currentAssistantContent = msg1?.content;
+
+    const isPreferredToolMismatch = (
+        preferredToolName
+        && toolCalls.length > 0
+        && toolCalls.some((tc) => tc.function.name !== preferredToolName)
+    );
+
+    // 显式工具名不匹配：先做一次纠偏重试
+    if (isPreferredToolMismatch) {
+        logger.warn("Preferred tool mismatch detected", {
+            module: "lmstudio",
+            preferredToolName,
+            returnedToolNames: toolCalls.map((tc) => tc.function.name),
+        });
+
+        try {
+            const correctionMessages: Array<{ role: string; content?: string }> = [];
+            if (system && system.trim()) {
+                correctionMessages.push({ role: "system", content: system.trim() });
+            }
+            correctionMessages.push({
+                role: "user",
+                content: `你必须且只能调用 ${preferredToolName} 工具。任务：${options.prompt}`,
+            });
+
+            const correction = await callChatCompletionsRaw({
+                baseUrl,
+                model,
+                messages: correctionMessages,
+                tools: activeTools,
+                toolChoice: preferredToolChoice ?? "required",
+                temperature: 0,
+                maxTokens: 400,
+                timeoutMs,
+                apiKey: backendRuntime.apiKey,
+            });
+
+            msg1 = correction.choices[0]?.message;
+            toolCalls = msg1?.tool_calls ?? [];
+        } catch (error) {
+            logger.warn("Preferred tool mismatch correction failed", {
+                module: "lmstudio",
+                preferredToolName,
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
+    }
+
+    // 纠偏后仍不匹配：拒绝执行错误工具，避免“假成功”
+    if (
+        preferredToolName
+        && toolCalls.length > 0
+        && toolCalls.some((tc) => tc.function.name !== preferredToolName)
+    ) {
+        logger.warn("Preferred tool mismatch persisted", {
+            module: "lmstudio",
+            preferredToolName,
+            returnedToolNames: toolCalls.map((tc) => tc.function.name),
+        });
+        return {
+            answer: `工具协议失败：期望调用 ${preferredToolName}，但模型返回了其他工具。请重试。`,
+            actionJournal: [],
+        };
+    }
 
     // 无工具调用：硬失败（P5.7-R3l-1: tool 协议硬门）
     // P5.7-R3h: 区分模型协议失败（无 tool_calls）与工具执行失败
@@ -1493,7 +2222,7 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
             module: "lmstudio",
             toolCallCount: 0,
             errorCode: "MODEL_PROTOCOL_FAILED",  // 协议层未返回工具调用
-            assistantContentLength: assistantContent?.length ?? 0,
+            assistantContentLength: currentAssistantContent?.length ?? 0,
         });
 
         // P5.7-R3l-1: 硬失败回执（详细版，含错误码和解释）
@@ -1503,75 +2232,107 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
         };
     }
 
-    // P5.7-R3g: 上限保护 - 超过步数限制直接返回错误
-    // P5.7-R3h: 添加 TOOL_LOOP_LIMIT_EXCEEDED 错误码
-    if (toolCalls.length > MAX_TOOL_CALLS_PER_TURN) {
-        logger.warn("Tool loop limit exceeded", {
-            module: "lmstudio",
-            requestedToolCalls: toolCalls.length,
-            maxToolCallsPerTurn: MAX_TOOL_CALLS_PER_TURN,
-            toolNames: toolCalls.map(tc => tc.function.name),
-            errorCode: "TOOL_LOOP_LIMIT_EXCEEDED",
-        });
+    let currentToolCalls = toolCalls;
+    let conversationMessages = [...messages];
+    let finalAssistantContent = "";
 
-        return {
-            answer: `工具调用次数超过上限\n- 请求数：${toolCalls.length}\n- 上限：${MAX_TOOL_CALLS_PER_TURN}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n请简化任务或分步执行。`,
-            actionJournal: [],  // P5.7-R3l-4: 超限场景返回空数组
-        };
-    }
+    while (true) {
+        // P5.7-R3g: 上限保护 - 单轮超过步数直接拒绝
+        if (currentToolCalls.length > MAX_TOOL_CALLS_PER_TURN) {
+            logger.warn("Tool loop limit exceeded", {
+                module: "lmstudio",
+                requestedToolCalls: currentToolCalls.length,
+                maxToolCallsPerTurn: MAX_TOOL_CALLS_PER_TURN,
+                toolNames: currentToolCalls.map(tc => tc.function.name),
+                errorCode: "TOOL_LOOP_LIMIT_EXCEEDED",
+            });
 
-    // P5.7-R3g: 顺序执行所有工具调用
-    for (const tc of toolCalls) {
-        let args: Record<string, unknown> = {};
-        try {
-            args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
-        } catch {
-            args = {};
-        }
-
-        let toolResult: ToolRunResult;
-        try {
-            toolResult = await runTool(tc.function.name, args, workspacePath);
-        } catch (e) {
-            toolResult = {
-                error: e instanceof Error ? e.message : String(e),
-                errorCode: "TOOL_EXEC_FAILED",
-                durationMs: 0,
+            return {
+                answer: `工具调用次数超过上限\n- 请求数：${currentToolCalls.length}\n- 上限：${MAX_TOOL_CALLS_PER_TURN}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n请简化任务或分步执行。`,
+                actionJournal: [],
             };
         }
 
-        // 失败短路
-        if (toolResult.error) {
-            // P5.7-R3h: 提取诊断字段
-            const toolErrorCode = toolResult.errorCode || "TOOL_EXEC_FAILED";
-            const toolErrorMessage = toolResult.error || "工具执行失败";
+        const roundExecutedToolCalls: ExecutedToolCall[] = [];
 
-            // P5.7-R3h: 日志增加诊断字段
-            logger.info("Tool loop failed (short-circuit)", {
-                module: "lmstudio",
-                toolCallCount: executedToolCalls.length + 1,
-                toolName: tc.function.name,
-                toolErrorCode: toolErrorCode,  // R4h-4: 显式写法满足测试
-                toolErrorMessage: toolErrorMessage,  // R4h-4: 显式写法满足测试
-                toolExitCode: toolResult.exitCode ?? null,
-                toolHasStderr: !!toolResult.stderrTail,
-                toolFullOutputPath: toolResult.fullOutputPath,
-            });
-
-            // P5.7-R3h: 错误信息包含诊断字段
-            let answerText = `工具执行失败\n- 工具: ${tc.function.name}\n- 错误码: ${toolErrorCode}\n- 错误: ${toolErrorMessage}`;
-            if (toolResult.exitCode !== undefined && toolResult.exitCode !== null) {
-                answerText += `\n- 退出码: ${toolResult.exitCode}`;
-            }
-            if (toolResult.stderrTail) {
-                const stderrPreview = toolResult.stderrTail.length > 200 ? toolResult.stderrTail.slice(-200) : toolResult.stderrTail;
-                answerText += `\n- stderr 尾部: ${stderrPreview}`;
-            }
-            if (toolResult.fullOutputPath) {
-                answerText += `\n- 完整日志: ${toolResult.fullOutputPath}`;
+        // P5.7-R3g: 顺序执行本轮所有工具调用
+        for (const tc of currentToolCalls) {
+            let args: Record<string, unknown> = {};
+            try {
+                args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
+            } catch {
+                args = {};
             }
 
-            // P5.7-R3l-4: 失败步骤也必须进入 actionJournal
+            let toolResult: ToolRunResult;
+            try {
+                toolResult = await runTool(tc.function.name, args, workspacePath);
+            } catch (e) {
+                toolResult = {
+                    error: e instanceof Error ? e.message : String(e),
+                    errorCode: "TOOL_EXEC_FAILED",
+                    durationMs: 0,
+                };
+            }
+
+            // 失败短路
+            if (toolResult.error) {
+                const toolErrorCode = toolResult.errorCode || "TOOL_EXEC_FAILED";
+                const toolErrorMessage = toolResult.error || "工具执行失败";
+
+                logger.info("Tool loop failed (short-circuit)", {
+                    module: "lmstudio",
+                    toolCallCount: executedToolCalls.length + 1,
+                    toolName: tc.function.name,
+                    toolErrorCode: toolErrorCode,
+                    toolErrorMessage: toolErrorMessage,
+                    toolExitCode: toolResult.exitCode ?? null,
+                    toolHasStderr: !!toolResult.stderrTail,
+                    toolFullOutputPath: toolResult.fullOutputPath,
+                });
+
+                let answerText = `工具执行失败\n- 工具: ${tc.function.name}\n- 错误码: ${toolErrorCode}\n- 错误: ${toolErrorMessage}`;
+                if (toolResult.exitCode !== undefined && toolResult.exitCode !== null) {
+                    answerText += `\n- 退出码: ${toolResult.exitCode}`;
+                }
+                if (toolResult.stderrTail) {
+                    const stderrPreview = toolResult.stderrTail.length > 200 ? toolResult.stderrTail.slice(-200) : toolResult.stderrTail;
+                    answerText += `\n- stderr 尾部: ${stderrPreview}`;
+                }
+                if (toolResult.fullOutputPath) {
+                    answerText += `\n- 完整日志: ${toolResult.fullOutputPath}`;
+                }
+
+                stepId++;
+                actionJournal.push({
+                    traceId,
+                    stepId,
+                    phase: "act",
+                    timestamp: Date.now(),
+                    route,
+                    model,
+                    tool: tc.function.name,
+                    ok: false,
+                    exitCode: toolResult.exitCode ?? undefined,
+                    errorCode: toolErrorCode,
+                    stdoutTail: toolResult.stdoutTail ?? undefined,
+                    fullOutputPath: toolResult.fullOutputPath ?? undefined,
+                    durationMs: toolResult.durationMs,
+                });
+
+                return {
+                    answer: answerText,
+                    toolCall: { name: tc.function.name, args, result: toolResult },
+                    actionJournal,
+                };
+            }
+
+            const successResult = toolResult.data;
+            const executed: ExecutedToolCall = { tc, args, result: successResult };
+            executedToolCalls.push(executed);
+            roundExecutedToolCalls.push(executed);
+
+            // P5.7-R3l-4: 收集 actionJournal
             stepId++;
             actionJournal.push({
                 traceId,
@@ -1581,78 +2342,122 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
                 route,
                 model,
                 tool: tc.function.name,
-                ok: false,
-                exitCode: toolResult.exitCode ?? undefined,
-                errorCode: toolErrorCode,
-                stdoutTail: toolResult.stdoutTail ?? undefined,
-                fullOutputPath: toolResult.fullOutputPath ?? undefined,
+                ok: true,
+                exitCode: undefined,
+                errorCode: undefined,
+                stdoutTail: undefined,
+                fullOutputPath: undefined,
                 durationMs: toolResult.durationMs,
             });
 
-            return {
-                answer: answerText,
-                toolCall: { name: tc.function.name, args, result: toolResult },
-                actionJournal,  // P5.7-R3l-4: 失败短路场景返回已有 journal
-            };
+            if (executedToolCalls.length > MAX_TOOL_STEPS_TOTAL) {
+                logger.warn("Tool loop total step limit exceeded", {
+                    module: "lmstudio",
+                    totalToolCalls: executedToolCalls.length,
+                    maxToolCallsTotal: MAX_TOOL_STEPS_TOTAL,
+                    errorCode: "TOOL_LOOP_LIMIT_EXCEEDED",
+                });
+
+                return {
+                    answer: `工具调用总次数超过上限\n- 总请求数：${executedToolCalls.length}\n- 上限：${MAX_TOOL_STEPS_TOTAL}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n请简化任务或分步执行。`,
+                    actionJournal,
+                };
+            }
         }
 
-        const successResult = toolResult.data;
-        executedToolCalls.push({ tc, args, result: successResult });
+        // 构建本轮 assistant + tool_result 回灌消息
+        const assistantMsg: { role: string; content?: string; tool_calls?: ToolCall[] } = {
+            role: currentAssistantRole,
+            tool_calls: currentToolCalls,
+        };
+        if (currentAssistantContent !== undefined) {
+            assistantMsg.content = currentAssistantContent;
+        }
 
-        // P5.7-R3l-4: 收集 actionJournal
-        stepId++;
-        actionJournal.push({
-            traceId,
-            stepId,
-            phase: "act",
-            timestamp: Date.now(),
-            route,
+        const toolResultMessages = roundExecutedToolCalls.map(({ tc, result }) => ({
+            role: "tool" as const,
+            tool_call_id: tc.id,
+            content: typeof result === "string" ? result : JSON.stringify(result)
+        }));
+
+        conversationMessages = [
+            ...conversationMessages,
+            assistantMsg,
+            ...toolResultMessages,
+        ];
+
+        const nextRound = await callChatCompletionsRaw({
+            baseUrl,
             model,
-            tool: tc.function.name,
-            ok: true,
-            exitCode: undefined,
-            errorCode: undefined,
-            stdoutTail: undefined,
-            fullOutputPath: undefined,
-            durationMs: toolResult.durationMs,
+            messages: conversationMessages,
+            tools: activeTools,
+            toolChoice: preferredToolChoice ?? "auto",
+            temperature: 0,
+            maxTokens: 800,
+            timeoutMs,
+            apiKey: backendRuntime.apiKey,
+        });
+
+        const nextMsg = nextRound.choices[0]?.message;
+        currentAssistantRole = nextMsg?.role || "assistant";
+        currentAssistantContent = nextMsg?.content;
+        currentToolCalls = nextMsg?.tool_calls ?? [];
+
+        if (currentToolCalls.length === 0) {
+            finalAssistantContent = currentAssistantContent ?? "";
+            break;
+        }
+
+        logger.info("Tool loop continues with follow-up tool calls", {
+            module: "lmstudio",
+            nextToolCallCount: currentToolCalls.length,
+            nextToolNames: currentToolCalls.map((tc) => tc.function.name),
         });
     }
 
-    // 构造第二轮消息（将所有工具调用回灌给模型）
-    const assistantMsg: { role: string; content?: string; tool_calls?: ToolCall[] } = {
-        role: assistantRole,
-        tool_calls: executedToolCalls.map(({ tc }) => tc),
-    };
-    if (assistantContent !== undefined) {
-        assistantMsg.content = assistantContent;
+    const cleanedAnswer = sanitizeLmStudioOutput(finalAssistantContent);
+    let finalAnswer = cleanedAnswer;
+
+    if (!cleanedAnswer || hasToolProtocolArtifacts(cleanedAnswer)) {
+        const fallbackAnswer = buildToolLoopFallbackAnswer(executedToolCalls, options.prompt);
+        if (fallbackAnswer) {
+            logger.warn("Tool loop summary fallback activated", {
+                module: "lmstudio",
+                reason: !cleanedAnswer ? "empty-summary" : "protocol-artifact",
+                toolCallCount: executedToolCalls.length,
+                toolNames: executedToolCalls.map(({ tc }) => tc.function.name),
+            });
+            finalAnswer = fallbackAnswer;
+        } else {
+            // 兜底：在无可展示摘要且无法通过工具结果构建答案时，强制一次总结收口
+            try {
+                const summaryMessages = [
+                    ...conversationMessages,
+                    { role: currentAssistantRole, content: currentAssistantContent ?? "" },
+                ];
+                const summaryRetry = await callChatCompletionsRaw({
+                    baseUrl,
+                    model,
+                    messages: summaryMessages,
+                    tools: [],
+                    toolChoice: "none",
+                    temperature: 0,
+                    maxTokens: 800,
+                    timeoutMs,
+                    apiKey: backendRuntime.apiKey,
+                });
+                const retryAnswer = sanitizeLmStudioOutput(summaryRetry.choices[0]?.message?.content ?? "");
+                if (retryAnswer && !hasToolProtocolArtifacts(retryAnswer)) {
+                    finalAnswer = retryAnswer;
+                }
+            } catch (error) {
+                logger.warn("Tool loop summary retry failed", {
+                    module: "lmstudio",
+                    error: error instanceof Error ? error.message : String(error),
+                });
+            }
+        }
     }
-
-    // 构建所有工具结果消息
-    const toolResultMessages = executedToolCalls.map(({ tc, result }) => ({
-        role: "tool" as const,
-        tool_call_id: tc.id,
-        content: typeof result === "string" ? result : JSON.stringify(result)
-    }));
-
-    const messages2 = [
-        ...messages,
-        assistantMsg,
-        ...toolResultMessages
-    ];
-
-    // 4) 第二次：强制不再调用工具，只总结
-    const r2 = await callChatCompletionsRaw({
-        baseUrl,
-        model,
-        messages: messages2,
-        tools: [], // 第二次不传 tools，避免干扰
-        toolChoice: "none",
-        temperature: 0,
-        maxTokens: 800,
-        timeoutMs,
-    });
-
-    const answer = r2.choices[0]?.message?.content ?? "";
 
     // P5.7-R3g: 日志增加 toolCallCount 与每个 toolName 列表
     const toolCallCount = executedToolCalls.length;
@@ -1692,7 +2497,7 @@ export async function runLmStudioToolLoop(options: LmStudioToolLoopOptions): Pro
     // P5.7-R3l-4: 返回 actionJournal
     const firstCall = executedToolCalls[0];
     return {
-        answer: sanitizeLmStudioOutput(answer),
+        answer: finalAnswer,
         toolCall: firstCall
             ? { name: firstCall.tc.function.name, args: firstCall.args, result: firstCall.result }
             : undefined,
@@ -1709,10 +2514,11 @@ async function callChatCompletionsRaw(params: {
     model: string;
     messages: Array<{ role: string; content?: string; tool_call_id?: string; tool_calls?: ToolCall[] }>;
     tools: readonly unknown[];
-    toolChoice: "auto" | "none" | "required";
+    toolChoice: ToolChoice;
     temperature: number;
     maxTokens: number;
     timeoutMs: number;
+    apiKey?: string;
 }): Promise<ChatResponse> {
     const url = `${params.baseUrl}/v1/chat/completions`;
 
@@ -1737,6 +2543,7 @@ async function callChatCompletionsRaw(params: {
         timeoutMs: params.timeoutMs,
         headers: { "content-type": "application/json" },
         body,
+        apiKey: params.apiKey,
     });
 
     // P5.6.13-R1A-EXEC R3: 使用 adapter 契约解析响应
@@ -1769,6 +2576,117 @@ async function callChatCompletionsRaw(params: {
     return json;
 }
 
+/**
+ * 路由分类系统提示（Phase-0）
+ *
+ * 约束：只允许输出 JSON，避免分类阶段污染主回答。
+ */
+const ROUTE_CLASSIFIER_SYSTEM_PROMPT = [
+    "你是消息路由分类器，只输出 JSON，不要输出任何额外文本。",
+    "返回格式：{\"route\":\"no-tool|tool|complex-tool\",\"confidence\":\"high|medium|low\",\"reason\":\"简短原因\"}",
+    "判定规则：",
+    "- 纯问答/闲聊/解释 = no-tool",
+    "- 需要读取文件、查看目录、执行命令、统计文件、调用工具 = tool",
+    "- 只要请求涉及真实环境读取/执行（即使是疑问句，如“你能读取xxx吗”）= tool",
+    "- 多步骤且需要工具（先A再B、分析+执行+总结） = complex-tool",
+].join("\n");
+
+function looksLikeShellCommand(prompt: string): boolean {
+    const text = (prompt || "").trim().toLowerCase();
+    if (!text) return false;
+
+    // 常见 shell 管道/连接符
+    if (/[;&|]{1,2}|[<>]/.test(text)) return true;
+
+    // 常见命令前缀（支持“Q 用 bash 执行 ...”这类描述）
+    const commandRegex = /\b(bash|sh|zsh|pwd|ls|cat|echo|grep|find|sed|awk|curl|wget|sleep|cd|mkdir|rm|cp|mv|git|npm|pnpm|yarn|bun|node|python|uv|ps|kill|pkill|chmod|chown|tail|head)\b/;
+    if (commandRegex.test(text)) return true;
+
+    return false;
+}
+
+/**
+ * Phase-0: 模型先做意图分类（失败回退规则分类）
+ */
+async function classifyRouteModelFirst(params: {
+    prompt: string;
+    toolsAllowed: boolean;
+    workspacePath?: string;
+    model?: string;
+    backendRuntime?: AgentBackendRuntime;
+    windowMessages?: Array<{ role: string; content?: string }>;
+    summaryContext?: string;
+}): Promise<{ classification: RouteClassification; source: "model" | "model-fallback" }> {
+    // 无工具可用时直接 no-tool（非规则分类，属于能力边界）
+    if (!params.toolsAllowed) {
+        return {
+            classification: {
+                route: "no-tool",
+                confidence: "high",
+                reason: "无可用工具",
+            },
+            source: "model-fallback",
+        };
+    }
+
+    // 命令形态请求优先走 tool，避免模型分类抖动导致误分流
+    if (looksLikeShellCommand(params.prompt)) {
+        return {
+            classification: {
+                route: "tool",
+                confidence: "high",
+                reason: "命令形态匹配",
+            },
+            source: "model-fallback",
+        };
+    }
+
+    const classifierPrompt = [
+        "请判断以下用户请求应走哪条路由：",
+        params.prompt,
+        "",
+        "只返回 JSON，不要解释。",
+    ].join("\n");
+
+    try {
+        const raw = await runLmStudioChat({
+            prompt: classifierPrompt,
+            system: ROUTE_CLASSIFIER_SYSTEM_PROMPT,
+            workspace: params.workspacePath,
+            model: params.model,
+            temperature: 0,
+            backendRuntime: params.backendRuntime,
+            windowMessages: params.windowMessages,
+            summaryContext: params.summaryContext,
+            // 分类器不注入 SOUL，避免人格影响路由判定
+            soulContext: undefined,
+        });
+
+        const parsed = parseModelRouteClassification(raw);
+        if (!parsed) {
+            return {
+                classification: {
+                    route: "no-tool",
+                    confidence: "low",
+                    reason: "模型分类输出无效",
+                },
+                source: "model-fallback",
+            };
+        }
+
+        return { classification: parsed, source: "model" };
+    } catch {
+        return {
+            classification: {
+                route: "no-tool",
+                confidence: "low",
+                reason: "模型分类调用失败",
+            },
+            source: "model-fallback",
+        };
+    }
+}
+
 // ============================================
 // P5.7-R3e: 双模型路由分发
 // ============================================
@@ -1780,6 +2698,7 @@ export interface LmStudioRoutedChatOptions {
     prompt: string;
     system?: string;
     workspacePath?: string;
+    agentProvider?: string; // P5.7-R8b: 当前工作区后端（lmstudio/openai/minimax/agent-backend）
     windowMessages?: Array<{ role: string; content?: string }>;
     summaryContext?: string;
     soulContext?: { content: string; source: string; path: string; chars: number };
@@ -1814,34 +2733,56 @@ export interface RoutedChatResult {
 export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions): Promise<RoutedChatResult> {
     // P5.7-R3l-3: 生成 traceId 用于阶段顺序追踪
     const traceId = crypto.randomUUID().slice(0, 8);
+    const backendRuntime = resolveAgentBackendRuntime(options.agentProvider);
 
     // P5.7-R3k: 检查降级状态
     const degradeState = getDegradeState();
     const isDegrading = degradeState.level !== "LEVEL_0";
 
-    // 1. 分类请求路由
-    const hasTools = options.hasToolsAvailable ?? true;
-    const toolsAllowed = hasTools && isToolCallAllowed();
-    const classification = classifyRoute(options.prompt, toolsAllowed);
-    const route = classification.route;
-
-    // 2. 获取温度（允许覆盖）
-    const temperature = options.temperature ?? getTemperatureForRoute(route);
-
-    // P5.7-R3e-hotfix: 读取 workspace 配置获取模型
+    // 1. 解析链路模型
+    // 单源化规则：
+    // - 若后端模型已显式配置（AGENT_MODEL/MINIMAX_MODEL/OPENAI_MODEL/LMSTUDIO_MODEL），
+    //   则分类器 + no-tool + tool + complex-tool 全链路统一该模型。
+    // - 否则回退到 workspace 的 executor/responder 配置（双模型模式）。
     const workspacePath = options.workspacePath;
     let executorModel: string | undefined;
     let responderModel: string | undefined;
+    let modelBindingMode: "backend-single-source" | "workspace-dual-model" = "workspace-dual-model";
 
-    if (workspacePath) {
+    const backendPinnedModel = normalizeModelOverride(backendRuntime.model);
+    if (backendPinnedModel) {
+        executorModel = backendPinnedModel;
+        responderModel = backendPinnedModel;
+        modelBindingMode = "backend-single-source";
+    }
+
+    if (!backendPinnedModel && workspacePath) {
         try {
             const { getExecutorModel, getResponderModel } = await import("./config/workspace.js");
-            executorModel = await getExecutorModel(workspacePath);
-            responderModel = await getResponderModel(workspacePath);
+            executorModel = normalizeModelOverride(await getExecutorModel(workspacePath));
+            responderModel = normalizeModelOverride(await getResponderModel(workspacePath));
         } catch {
             // 读取失败，使用 undefined（会 fallback 到默认模型）
         }
     }
+
+    // 2. 分类请求路由（Phase-0: 模型先判定，失败回退规则）
+    const hasTools = options.hasToolsAvailable ?? true;
+    const toolsAllowed = hasTools && isToolCallAllowed();
+    const classifier = await classifyRouteModelFirst({
+        prompt: options.prompt,
+        toolsAllowed,
+        workspacePath,
+        model: responderModel,
+        backendRuntime,
+        windowMessages: options.windowMessages,
+        summaryContext: options.summaryContext,
+    });
+    const classification = classifier.classification;
+    const route = classification.route;
+
+    // 3. 获取温度（允许覆盖）
+    const temperature = options.temperature ?? getTemperatureForRoute(route);
 
     // P5.7-R3k: 根据降级状态选择模型
     const { model: selectedModel, level: selectedLevel } = selectModelByDegrade(
@@ -1849,8 +2790,11 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
         responderModel || "default-responder"
     );
 
-    // P5.7-R3l-5: 计算 soulInjected 状态
-    const soulInjected = !!(options.soulContext && options.soulContext.content);
+    // soul 注入观测：
+    // - dialog 链路允许注入
+    // - exec/tool 链路禁止注入
+    const dialogSoulInjected = !!(options.soulContext && options.soulContext.content);
+    const execSoulInjected = false;
 
     // P5.7-R3l-3: 入口日志（phase=init，kernel=router）
     // P5.7-R3l-5: 观测字段锁 - 包含 soulInjected
@@ -1860,7 +2804,8 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
         route,
         phase: "init",
         kernel: "router",
-        soulInjected,  // P5.7-R3l-5: 观测字段硬锁
+        soulInjected: dialogSoulInjected,
+        classificationSource: classifier.source,
         confidence: classification.confidence,
         reason: classification.reason,
         temperature,
@@ -1869,6 +2814,8 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
         selectedModel,
         degradeLevel: selectedLevel,
         isDegrading,
+        agentBackend: backendRuntime.id,
+        modelBindingMode,
     });
 
     // 3. 根据路由分发
@@ -1892,7 +2839,64 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             workspace: options.workspacePath,
             model: usedModel,
             temperature: usedTemperature,
+            backendRuntime,
+            windowMessages: options.windowMessages,
+            summaryContext: options.summaryContext,
+            soulContext: options.soulContext,
         });
+
+        // no-tool 回答中出现伪工具调用标记时，自动回切真实 tool loop，避免把伪协议文本回给用户
+        const leakedToolIntent =
+            toolsAllowed &&
+            selectedLevel === "LEVEL_0" &&
+            isLikelyFakeToolExecutionText(answer);
+
+        if (leakedToolIntent) {
+            logger.warn("no-tool response contained fake tool-call marker, rerouting to tool loop", {
+                module: "lmstudio",
+                traceId,
+                route: "no-tool",
+                phase: "recover",
+                kernel: "router",
+                soulInjected: execSoulInjected,
+                agentBackend: backendRuntime.id,
+            });
+
+            const recoveredToolLoop = await runLmStudioToolLoop({
+                prompt: options.prompt,
+                system: options.system,
+                workspacePath: options.workspacePath,
+                // 工具链路使用最小上下文，避免历史/人格污染协议
+                windowMessages: undefined,
+                summaryContext: undefined,
+                soulContext: undefined,
+                model: executorModel,
+                backendRuntime,
+                traceId,
+                route: "tool",
+            });
+
+            logger.info("routed chat completed", {
+                module: "lmstudio",
+                traceId,
+                route: "tool(recovered)",
+                phase: "complete",
+                kernel: "exec",
+                soulInjected: execSoulInjected,
+                temperature: 0,
+                responseLength: recoveredToolLoop.answer.length,
+                model: executorModel,
+                degradeLevel: selectedLevel,
+            });
+
+            return {
+                answer: recoveredToolLoop.answer,
+                route: "tool",
+                temperature: 0,
+                toolCall: recoveredToolLoop.toolCall,
+                actionJournal: recoveredToolLoop.actionJournal,
+            };
+        }
 
         // P5.7-R3l-3: no-tool 完成日志（phase=complete，kernel=dialog）
         // P5.7-R3l-5: 观测字段锁 - 包含 soulInjected
@@ -1902,7 +2906,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             route: selectedLevel === "LEVEL_2" ? "no-tool(degraded)" : route,
             phase: "complete",
             kernel: "dialog",
-            soulInjected,  // P5.7-R3l-5: 观测字段硬锁
+            soulInjected: dialogSoulInjected,
             temperature: usedTemperature,
             responseLength: answer.length,
             model: usedModel,
@@ -1930,7 +2934,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
                 route,
                 phase: "degrade",
                 kernel: "router",
-                soulInjected,  // P5.7-R3l-5: 观测字段硬锁
+                soulInjected: dialogSoulInjected,
                 degradeLevel: selectedLevel,
             });
 
@@ -1941,6 +2945,10 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
                 workspace: options.workspacePath,
                 model: selectedModel,
                 temperature: 0.2,
+                backendRuntime,
+                windowMessages: options.windowMessages,
+                summaryContext: options.summaryContext,
+                soulContext: options.soulContext,
             });
 
             return {
@@ -1963,7 +2971,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             route: "complex-tool",
             phase: "plan",
             kernel: "dialog",
-            soulInjected,  // P5.7-R3l-5: 观测字段硬锁
+            soulInjected: dialogSoulInjected,
             status: "processing",
         });
 
@@ -1974,6 +2982,10 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             workspace: options.workspacePath,
             model: usedModel,
             temperature: usedTemperature,
+            backendRuntime,
+            windowMessages: options.windowMessages,
+            summaryContext: options.summaryContext,
+            soulContext: options.soulContext,
         });
 
         logger.info("pipeline phase completed", {
@@ -1982,7 +2994,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             route: "complex-tool",
             phase: "plan",
             kernel: "dialog",
-            soulInjected,  // P5.7-R3l-5: 观测字段硬锁
+            soulInjected: dialogSoulInjected,
             temperature: usedTemperature,
             model: usedModel,
             planLength: planResult.length,
@@ -1996,7 +3008,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             route: "complex-tool",
             phase: "act",
             kernel: "exec",
-            soulInjected,  // P5.7-R3l-5: 观测字段硬锁
+            soulInjected: execSoulInjected,
             status: "processing",
         });
 
@@ -2006,10 +3018,12 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             prompt: execPrompt,
             system: options.system,
             workspacePath: options.workspacePath,
-            windowMessages: options.windowMessages,
-            summaryContext: options.summaryContext,
-            soulContext: options.soulContext,
+            // act 阶段仅消费 plan 结果，不注入历史/人格
+            windowMessages: undefined,
+            summaryContext: undefined,
+            soulContext: undefined,
             model: usedModel,
+            backendRuntime,
             traceId,  // P5.7-R3l-4: 追踪 ID
             route: "complex-tool",  // P5.7-R3l-4: 路由标记
         });
@@ -2020,7 +3034,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             route: "complex-tool",
             phase: "act",
             kernel: "exec",
-            soulInjected,  // P5.7-R3l-5: 观测字段硬锁
+            soulInjected: execSoulInjected,
             temperature: usedTemperature,
             model: usedModel,
             toolCallCount: toolLoopResult.toolCall ? 1 : 0,
@@ -2035,6 +3049,10 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             workspace: options.workspacePath,
             model: usedModel,
             temperature: usedTemperature,
+            backendRuntime,
+            windowMessages: options.windowMessages,
+            summaryContext: options.summaryContext,
+            soulContext: options.soulContext,
         });
 
         logger.info("pipeline phase completed", {
@@ -2043,7 +3061,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             route: "complex-tool",
             phase: "report",
             kernel: "dialog",
-            soulInjected,  // P5.7-R3l-5: 观测字段硬锁
+            soulInjected: dialogSoulInjected,
             temperature: usedTemperature,
             model: usedModel,
             responseLength: summaryResult.length,
@@ -2071,7 +3089,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             route,
             phase: "degrade",
             kernel: "router",
-            soulInjected,  // P5.7-R3l-5: 观测字段硬锁
+            soulInjected: dialogSoulInjected,
             degradeLevel: selectedLevel,
         });
 
@@ -2082,6 +3100,10 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
             workspace: options.workspacePath,
             model: selectedModel,
             temperature: 0.2,
+            backendRuntime,
+            windowMessages: options.windowMessages,
+            summaryContext: options.summaryContext,
+            soulContext: options.soulContext,
         });
 
         return {
@@ -2103,7 +3125,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
         route: "tool",
         phase: "plan",
         kernel: "router",
-        soulInjected,  // P5.7-R3l-5: 观测字段硬锁
+        soulInjected: execSoulInjected,
         temperature: usedTemperature,
         model: usedModel,
         status: "processing",
@@ -2117,7 +3139,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
         route: "tool",
         phase: "act",
         kernel: "exec",
-        soulInjected,  // P5.7-R3l-5: 观测字段硬锁
+        soulInjected: execSoulInjected,
         status: "processing",
     });
     // P5.7-R3l-4: 传入 traceId 和 route 用于 journal 追踪
@@ -2125,10 +3147,12 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
         prompt: options.prompt,
         system: options.system,
         workspacePath: options.workspacePath,
-        windowMessages: options.windowMessages,
-        summaryContext: options.summaryContext,
-        soulContext: options.soulContext,
+        // 工具链路使用最小上下文，避免历史/人格污染协议
+        windowMessages: undefined,
+        summaryContext: undefined,
+        soulContext: undefined,
         model: usedModel,
+        backendRuntime,
         traceId,  // P5.7-R3l-4: 追踪 ID
         route: "tool",  // P5.7-R3l-4: 路由标记
     });
@@ -2141,7 +3165,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
         route: "tool",
         phase: "act",
         kernel: "exec",
-        soulInjected,  // P5.7-R3l-5: 观测字段硬锁
+        soulInjected: execSoulInjected,
         temperature: usedTemperature,
         model: usedModel,
         toolCallCount: toolLoopResult.toolCall ? 1 : 0,
@@ -2156,7 +3180,7 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
         route: "tool",
         phase: "report",
         kernel: "dialog",
-        soulInjected,  // P5.7-R3l-5: 观测字段硬锁
+        soulInjected: dialogSoulInjected,
         temperature: usedTemperature,
         model: usedModel,
         responseLength: toolLoopResult.answer.length,

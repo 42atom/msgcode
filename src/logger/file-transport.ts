@@ -160,6 +160,12 @@ export class FileTransport implements Transport {
             }
             if (meta.toolCallCount !== undefined) parts.push(`toolCallCount=${meta.toolCallCount}`);
             if (meta.toolName !== undefined) parts.push(`toolName=${meta.toolName}`);
+            if (meta.agentBackend !== undefined) parts.push(`agentBackend=${meta.agentBackend}`);
+            if (meta.route !== undefined) parts.push(`route=${meta.route}`);
+            if (meta.phase !== undefined) parts.push(`phase=${meta.phase}`);
+            if (meta.kernel !== undefined) parts.push(`kernel=${meta.kernel}`);
+            if (meta.model !== undefined) parts.push(`model=${meta.model}`);
+            if (meta.temperature !== undefined) parts.push(`temperature=${meta.temperature}`);
             if (meta.soulInjected !== undefined) parts.push(`soulInjected=${meta.soulInjected}`);
             if (meta.soulSource !== undefined) parts.push(`soulSource=${meta.soulSource}`);
             if (meta.soulPath !== undefined && meta.soulPath !== "") parts.push(`soulPath=${meta.soulPath}`);

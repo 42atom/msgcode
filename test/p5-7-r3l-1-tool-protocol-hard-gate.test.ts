@@ -117,6 +117,12 @@ total 128
             expect(isLikelyFakeToolExecutionText(fakeOutput)).toBe(true);
         });
 
+        // 样本 4b：显式 TOOL_CALL 伪协议
+        it("应该检测到 TOOL_CALL 伪协议标记", () => {
+            const fakeOutput = `[TOOL_CALL]{tool => "read_file", args => {"path":"/tmp/a.txt"}}[/TOOL_CALL]`;
+            expect(isLikelyFakeToolExecutionText(fakeOutput)).toBe(true);
+        });
+
         // 样本 5：正常对话（非伪执行）
         it("不应该将正常对话误判为伪执行", () => {
             const normalOutput = `好的，我来帮你查看当前目录下的文件。

@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { mkdir, copyFile, readdir } from "node:fs/promises";
 import { existsSync, accessSync, constants } from "node:fs";
 import { exec, spawn } from "node:child_process";
+import dotenv from "dotenv";
 import { getVersion, getVersionInfo, type VersionInfo } from "./version.js";
 import { logger } from "./logger/index.js";
 
@@ -23,6 +24,32 @@ const CONFIG_DIR = path.join(os.homedir(), ".config/msgcode");
 const LOG_DIR = path.join(CONFIG_DIR, "log");
 const LOG_FILE = path.join(LOG_DIR, "msgcode.log");
 const DAEMON_SCRIPT = path.join(__dirname, "daemon.ts");
+
+/**
+ * CLI 启动时预加载环境变量（不校验）
+ *
+ * 目标：让 preflight/status 等非 config.ts 路径也能自动读取 ~/.config/msgcode/.env
+ * 规则：
+ * - 不覆盖已存在的进程环境变量
+ * - 优先读取用户配置，再回退到当前项目 .env
+ */
+function bootstrapEnvForCli(): void {
+  if (process.env.MSGCODE_ENV_BOOTSTRAPPED === "1") return;
+
+  const userConfig = path.join(os.homedir(), ".config/msgcode/.env");
+  const projectConfig = path.join(process.cwd(), ".env");
+
+  if (existsSync(userConfig)) {
+    dotenv.config({ path: userConfig, override: false });
+  }
+  if (existsSync(projectConfig)) {
+    dotenv.config({ path: projectConfig, override: false });
+  }
+
+  process.env.MSGCODE_ENV_BOOTSTRAPPED = "1";
+}
+
+bootstrapEnvForCli();
 
 function enableDebugProfile(): void {
   process.env.LOG_LEVEL = "debug";

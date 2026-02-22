@@ -27,6 +27,15 @@ export interface RouteClassification {
     reason: string;
 }
 
+/**
+ * 模型路由 JSON 原始载荷
+ */
+interface ModelRoutePayload {
+    route?: unknown;
+    confidence?: unknown;
+    reason?: unknown;
+}
+
 // ============================================
 // 路由分类规则
 // ============================================
@@ -65,6 +74,22 @@ const COMPLEX_KEYWORDS = [
     // 架构任务
     "架构", "设计", "规划", "实现",
     "architecture", "design", "plan", "implement",
+];
+
+/**
+ * 文件系统对象关键词
+ */
+const FILE_OBJECT_KEYWORDS = [
+    "文件", "文件夹", "目录", "路径", "桌面", "下载", "文档", "工作区",
+    "file", "folder", "directory", "path", "workspace", "desktop",
+];
+
+/**
+ * 文件系统操作关键词
+ */
+const FILE_OPERATION_KEYWORDS = [
+    "查看", "列出", "统计", "数一下", "数一数", "读取", "扫描", "查找", "搜",
+    "list", "count", "read", "scan", "find", "search",
 ];
 
 /**
@@ -117,7 +142,40 @@ export function classifyRoute(
         };
     }
 
-    // 1. 检查非工具关键词（高优先级）
+    const hasComplexKeyword = COMPLEX_KEYWORDS.some((k) => text.includes(k.toLowerCase()));
+
+    // 0. 复杂任务 + 工具意图：优先 complex-tool（避免“先读再分析”被降成 tool）
+    const hasFileObjectKeyword = FILE_OBJECT_KEYWORDS.some((k) => text.includes(k.toLowerCase()));
+    const hasFileOperationKeyword = FILE_OPERATION_KEYWORDS.some((k) => text.includes(k.toLowerCase()));
+    const hasGenericToolKeyword = TOOL_KEYWORDS.some((k) => text.includes(k.toLowerCase()));
+    if (hasComplexKeyword && (hasFileObjectKeyword || hasGenericToolKeyword)) {
+        return {
+            route: "complex-tool",
+            confidence: "high",
+            reason: "复杂任务 + 工具意图",
+        };
+    }
+
+    // 1. 文件系统意图优先（避免“查看桌面文件”被误分为 no-tool）
+    if (hasFileObjectKeyword && hasFileOperationKeyword) {
+        return {
+            route: "tool",
+            confidence: "high",
+            reason: "文件系统操作意图",
+        };
+    }
+
+    // 带路径的操作意图（如 /Users/...、~/...、./...）
+    const hasPathLikeToken = /(^|[\s"'`])(?:~\/|\/[A-Za-z0-9._\-\/]+|\.\.?\/[^\s]+)/.test(text);
+    if (hasPathLikeToken && hasFileOperationKeyword) {
+        return {
+            route: "tool",
+            confidence: "high",
+            reason: "路径 + 操作意图",
+        };
+    }
+
+    // 2. 检查非工具关键词（高优先级）
     for (const keyword of NON_TOOL_KEYWORDS) {
         if (text.includes(keyword.toLowerCase())) {
             // 但如果同时包含工具关键词，可能是复杂任务
@@ -138,7 +196,7 @@ export function classifyRoute(
         }
     }
 
-    // 2. 检查复杂任务关键词
+    // 3. 检查复杂任务关键词
     for (const keyword of COMPLEX_KEYWORDS) {
         if (text.includes(keyword.toLowerCase())) {
             return {
@@ -149,7 +207,7 @@ export function classifyRoute(
         }
     }
 
-    // 3. 检查工具关键词
+    // 4. 检查工具关键词
     for (const keyword of TOOL_KEYWORDS) {
         if (text.includes(keyword.toLowerCase())) {
             return {
@@ -160,7 +218,7 @@ export function classifyRoute(
         }
     }
 
-    // 4. 长度启发式
+    // 5. 长度启发式
     // 长消息更可能是需要工具的任务
     if (text.length > 200) {
         return {
@@ -170,7 +228,7 @@ export function classifyRoute(
         };
     }
 
-    // 5. 默认 no-tool（保守策略）
+    // 6. 默认 no-tool（保守策略）
     return {
         route: "no-tool",
         confidence: "low",
@@ -204,4 +262,81 @@ export function getTemperatureForRoute(route: RequestRoute): number {
         default:
             return 0; // 保守默认值
     }
+}
+
+/**
+ * 解析模型返回的路由 JSON
+ *
+ * 支持：
+ * - 纯 JSON
+ * - ```json fenced block
+ * - 包含前后解释文本的 JSON 片段
+ */
+export function parseModelRouteClassification(raw: string): RouteClassification | null {
+    const input = (raw || "").trim();
+    if (!input) return null;
+
+    // 1) 尝试直接解析
+    let obj = tryParseJson(input);
+    if (!obj) {
+        // 2) 去掉代码块后再试
+        const fenced = input
+            .replace(/^```(?:json)?\s*/i, "")
+            .replace(/\s*```$/i, "")
+            .trim();
+        obj = tryParseJson(fenced);
+    }
+    if (!obj) {
+        // 3) 提取首个 JSON 对象片段
+        const start = input.indexOf("{");
+        const end = input.lastIndexOf("}");
+        if (start >= 0 && end > start) {
+            obj = tryParseJson(input.slice(start, end + 1));
+        }
+    }
+    if (!obj) return null;
+
+    const payload = obj as ModelRoutePayload;
+    const route = normalizeRoute(payload.route);
+    if (!route) return null;
+
+    const confidence = normalizeConfidence(payload.confidence);
+    const reason = normalizeReason(payload.reason);
+
+    return { route, confidence, reason };
+}
+
+function tryParseJson(text: string): Record<string, unknown> | null {
+    try {
+        const parsed = JSON.parse(text);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+        return parsed as Record<string, unknown>;
+    } catch {
+        return null;
+    }
+}
+
+function normalizeRoute(value: unknown): RequestRoute | null {
+    if (typeof value !== "string") return null;
+    const v = value.trim().toLowerCase();
+    if (v === "no-tool" || v === "tool" || v === "complex-tool") {
+        return v;
+    }
+    return null;
+}
+
+function normalizeConfidence(value: unknown): "high" | "medium" | "low" {
+    if (typeof value !== "string") return "medium";
+    const v = value.trim().toLowerCase();
+    if (v === "high" || v === "medium" || v === "low") {
+        return v;
+    }
+    return "medium";
+}
+
+function normalizeReason(value: unknown): string {
+    if (typeof value !== "string") return "model-classifier";
+    const v = value.trim();
+    if (!v) return "model-classifier";
+    return v.length > 80 ? v.slice(0, 80) : v;
 }

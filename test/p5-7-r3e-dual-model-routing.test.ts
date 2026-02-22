@@ -69,6 +69,12 @@ describe("P5.7-R3e: Route Classifier", () => {
             expect(result.route).toBe("tool");
         });
 
+        it("应该将文件系统查看统计请求分类为 tool", () => {
+            const result = classifyRoute("查看我桌面的文件并统计数量");
+            expect(result.route).toBe("tool");
+            expect(result.confidence).toBe("high");
+        });
+
         it("长消息（>200字符）倾向 tool", () => {
             const longMessage = "请帮我处理这个任务需求：".repeat(20);
             const result = classifyRoute(longMessage);

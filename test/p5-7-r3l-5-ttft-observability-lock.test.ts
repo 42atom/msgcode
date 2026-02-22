@@ -126,9 +126,10 @@ describe("P5.7-R3l-5: TTFT 补偿 + 可观测锁", () => {
                 "utf-8"
             );
 
-            // 验证 soulInjected 计算逻辑存在
-            expect(code).toContain("const soulInjected =");
+            // 验证 soul 注入计算逻辑存在（dialog/exec 分离）
+            expect(code).toContain("const dialogSoulInjected");
             expect(code).toContain("options.soulContext");
+            expect(code).toContain("const execSoulInjected = false");
         });
     });
 

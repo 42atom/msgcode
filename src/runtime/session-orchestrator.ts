@@ -22,7 +22,7 @@ import { resetThread } from "./thread-store.js";
 
 export interface RunnerInfo {
   runner: RunnerType;
-  runnerConfig?: "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code";
+  runnerConfig?: "lmstudio" | "minimax" | "llama" | "claude" | "openai" | "codex" | "claude-code";
   blockedReason?: string;
 }
 

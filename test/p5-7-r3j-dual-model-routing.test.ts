@@ -1,135 +1,302 @@
 /**
- * msgcode: P5.7-R3j 双模型路由稳定化回归锁测试
+ * msgcode: P5.7-R3j 双模型路由稳定化行为回归锁
  *
  * 目标：
- * - 路由与模型绑定测试（no-tool -> responder, tool/complex-tool -> executor）
- * - 温度透传测试（tool 路径 temperature=0，no-tool temperature=0.2）
- * - complex-tool 阶段化链路测试
+ * - no-tool / tool / complex-tool 行为分流
+ * - 路由温度硬锁（no-tool=0.2, tool/complex-tool=0）
+ * - 分类函数基础语义锁
  */
 
-import { describe, it, expect } from "bun:test";
+import { beforeEach, describe, expect, it } from "bun:test";
+import { runLmStudioRoutedChat } from "../src/lmstudio.js";
+import { classifyRoute, getTemperatureForRoute, routeRequiresTools } from "../src/routing/classifier.js";
+import { recoverDegrade } from "../src/slo-degrade.js";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
-describe("P5.7-R3j: Dual Model Routing Stabilization", () => {
-    describe("路由约束固化", () => {
-        it("no-tool 路由应该只使用 responder 模型", () => {
-            const fs = require("node:fs");
-            const code = fs.readFileSync("src/lmstudio.ts", "utf-8");
+type ChatCompletionPayload = {
+    choices: Array<{
+        message: {
+            role?: string;
+            content?: string;
+            tool_calls?: Array<{
+                id: string;
+                type: "function";
+                function: { name: string; arguments: string };
+            }>;
+        };
+        finish_reason?: string;
+    }>;
+};
 
-            // 验证 no-tool 分支使用 responder 模型（R3k 降级策略可能修改条件）
-            expect(code).toContain('if (route === "no-tool" || selectedLevel === "LEVEL_2")');
-            expect(code).toContain("responderModel");
-        });
+function asJsonResponse(payload: ChatCompletionPayload): Response {
+    return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+    });
+}
 
-        it("tool 路由应该只使用 executor 模型", () => {
-            const fs = require("node:fs");
-            const code = fs.readFileSync("src/lmstudio.ts", "utf-8");
+async function createToolEnabledWorkspace(): Promise<string> {
+    const workspacePath = await mkdtemp(join(tmpdir(), "msgcode-r3j-routing-"));
+    await mkdir(join(workspacePath, ".msgcode"), { recursive: true });
+    await writeFile(
+        join(workspacePath, ".msgcode", "config.json"),
+        JSON.stringify({
+            "pi.enabled": true,
+            "tooling.mode": "autonomous",
+            "tooling.allow": ["bash", "read_file", "write_file", "edit_file"],
+            "tooling.require_confirm": [],
+        }, null, 2),
+        "utf-8"
+    );
+    await writeFile(join(workspacePath, ".msgcode", "route.txt"), "route-file-content", "utf-8");
+    return workspacePath;
+}
 
-            // 验证 tool 分支使用 executorModel（正常状态）
-            expect(code).toContain("const usedModel = executorModel");
-        });
+function withOpenAiBackendEnv(): () => void {
+    const prevBase = process.env.OPENAI_BASE_URL;
+    const prevModel = process.env.OPENAI_MODEL;
+    const prevApiKey = process.env.OPENAI_API_KEY;
 
-        it("complex-tool 路由应该只使用 executor 模型", () => {
-            const fs = require("node:fs");
-            const code = fs.readFileSync("src/lmstudio.ts", "utf-8");
+    process.env.OPENAI_BASE_URL = "http://127.0.0.1:1234";
+    process.env.OPENAI_MODEL = "test-model";
+    process.env.OPENAI_API_KEY = "test-key";
 
-            // 验证 complex-tool 分支（R3k 降级策略可能跳过工具执行）
-            expect(code).toContain('if (route === "complex-tool")');
-        });
+    return () => {
+        if (prevBase === undefined) delete process.env.OPENAI_BASE_URL;
+        else process.env.OPENAI_BASE_URL = prevBase;
+        if (prevModel === undefined) delete process.env.OPENAI_MODEL;
+        else process.env.OPENAI_MODEL = prevModel;
+        if (prevApiKey === undefined) delete process.env.OPENAI_API_KEY;
+        else process.env.OPENAI_API_KEY = prevApiKey;
+    };
+}
+
+describe("P5.7-R3j: Dual Model Routing Stabilization (Behavior Lock)", () => {
+    beforeEach(() => {
+        // 确保不受历史降级状态污染
+        recoverDegrade("LEVEL_0");
     });
 
-    describe("温度透传硬锁", () => {
-        it("tool 路径温度应该固定为 0", () => {
-            const fs = require("node:fs");
-            const code = fs.readFileSync("src/lmstudio.ts", "utf-8");
+    it("no-tool 路由应返回 responder 温度（0.2）且不触发工具循环", async () => {
+        const originalFetch = globalThis.fetch;
+        const restoreEnv = withOpenAiBackendEnv();
+        const workspacePath = await createToolEnabledWorkspace();
+        let callCount = 0;
 
-            // 验证 tool 分支温度硬编码为 0
-            expect(code).toContain("const usedTemperature = 0");
-        });
+        globalThis.fetch = (async () => {
+            callCount += 1;
+            if (callCount === 1) {
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: JSON.stringify({
+                                route: "no-tool",
+                                confidence: "high",
+                                reason: "闲聊",
+                            }),
+                        },
+                        finish_reason: "stop",
+                    }],
+                });
+            }
+            return asJsonResponse({
+                choices: [{
+                    message: { role: "assistant", content: "你好，我在。" },
+                    finish_reason: "stop",
+                }],
+            });
+        }) as typeof fetch;
 
-        it("no-tool 路径温度应该固定为 0.2", () => {
-            const fs = require("node:fs");
-            const code = fs.readFileSync("src/lmstudio.ts", "utf-8");
+        try {
+            const result = await runLmStudioRoutedChat({
+                prompt: "你好，今天怎么样？",
+                workspacePath,
+                agentProvider: "openai",
+            });
 
-            // R3k: 温度可能是三元表达式，检查 0.2 出现即可
-            expect(code).toMatch(/0\.2/);
-        });
-
-        it("getTemperatureForRoute 应该返回正确的温度", () => {
-            const fs = require("node:fs");
-            const code = fs.readFileSync("src/routing/classifier.ts", "utf-8");
-
-            expect(code).toContain('return 0.2');
-            expect(code).toContain('case "tool"');
-            expect(code).toContain('case "complex-tool"');
-            expect(code).toContain('return 0');
-        });
+            expect(callCount).toBe(2);
+            expect(result.route).toBe("no-tool");
+            expect(result.temperature).toBe(0.2);
+            expect(result.answer).toContain("你好，我在。");
+            expect(result.actionJournal).toEqual([]);
+        } finally {
+            globalThis.fetch = originalFetch;
+            restoreEnv();
+            await rm(workspacePath, { recursive: true, force: true });
+        }
     });
 
-    describe("路由日志与追踪", () => {
-        it("no-tool 日志应该包含 route/temperature/model 字段", () => {
-            const fs = require("node:fs");
-            const code = fs.readFileSync("src/lmstudio.ts", "utf-8");
+    it("tool 路由应固定 temperature=0 且返回工具执行结果", async () => {
+        const originalFetch = globalThis.fetch;
+        const restoreEnv = withOpenAiBackendEnv();
+        const workspacePath = await createToolEnabledWorkspace();
+        let callCount = 0;
 
-            // R3k 修改：日志格式从 "routed chat completed (no-tool)" 改为 "routed chat completed"
-            expect(code).toContain('"routed chat completed"');
-            expect(code).toContain("temperature: usedTemperature");
-            expect(code).toContain("model: usedModel");
-        });
+        globalThis.fetch = (async () => {
+            callCount += 1;
 
-        it("tool 日志应该包含 route/temperature/model/toolCallCount 字段", () => {
-            const fs = require("node:fs");
-            const code = fs.readFileSync("src/lmstudio.ts", "utf-8");
+            if (callCount === 1) {
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: "",
+                            tool_calls: [{
+                                id: "call_tool_1",
+                                type: "function",
+                                function: {
+                                    name: "bash",
+                                    arguments: JSON.stringify({ command: "printf 'pwd-ok'" }),
+                                },
+                            }],
+                        },
+                        finish_reason: "tool_calls",
+                    }],
+                });
+            }
 
-            // P5.7-R3l-3: tool 日志更新为 pipeline phase 格式
-            expect(code).toContain("phase: \"act\"");
-            expect(code).toContain("phase: \"report\"");
-            expect(code).toContain("temperature: usedTemperature");
-            expect(code).toContain("model: usedModel");
-            expect(code).toContain("toolCallCount");
-        });
+            return asJsonResponse({
+                choices: [{
+                    message: { role: "assistant", content: "工具执行完成" },
+                    finish_reason: "stop",
+                }],
+            });
+        }) as typeof fetch;
 
-        it("complex-tool 日志应该包含三阶段追踪", () => {
-            const fs = require("node:fs");
-            const code = fs.readFileSync("src/lmstudio.ts", "utf-8");
+        try {
+            const result = await runLmStudioRoutedChat({
+                prompt: "请用 bash 执行 pwd",
+                workspacePath,
+                agentProvider: "openai",
+            });
 
-            // P5.7-R3l-3: complex-tool 阶段统一为 plan -> act -> report
-            expect(code).toContain('phase: "plan"');
-            expect(code).toContain('phase: "act"');
-            expect(code).toContain('phase: "report"');
-        });
+            expect(callCount).toBe(2);
+            expect(result.route).toBe("tool");
+            expect(result.temperature).toBe(0);
+            expect(result.toolCall?.name).toBe("bash");
+            expect(result.actionJournal.length).toBe(1);
+            expect(result.actionJournal[0].tool).toBe("bash");
+            expect(result.actionJournal[0].ok).toBe(true);
+        } finally {
+            globalThis.fetch = originalFetch;
+            restoreEnv();
+            await rm(workspacePath, { recursive: true, force: true });
+        }
     });
 
-    describe("分类器测试", () => {
-        it("classifyRoute 应该能正确分类非工具请求", () => {
-            const fs = require("node:fs");
-            const code = fs.readFileSync("src/routing/classifier.ts", "utf-8");
+    it("complex-tool 路由应走 plan->act->report 并固定 temperature=0", async () => {
+        const originalFetch = globalThis.fetch;
+        const restoreEnv = withOpenAiBackendEnv();
+        const workspacePath = await createToolEnabledWorkspace();
+        let callCount = 0;
 
-            expect(code).toContain("NON_TOOL_KEYWORDS");
-            expect(code).toContain('route: "no-tool"');
-        });
+        globalThis.fetch = (async () => {
+            callCount += 1;
 
-        it("classifyRoute 应该能正确分类工具请求", () => {
-            const fs = require("node:fs");
-            const code = fs.readFileSync("src/routing/classifier.ts", "utf-8");
+            if (callCount === 1) {
+                // classifier
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: JSON.stringify({
+                                route: "complex-tool",
+                                confidence: "high",
+                                reason: "多步骤任务",
+                            }),
+                        },
+                        finish_reason: "stop",
+                    }],
+                });
+            }
 
-            expect(code).toContain("TOOL_KEYWORDS");
-            expect(code).toContain('route: "tool"');
-        });
+            if (callCount === 2) {
+                // plan
+                return asJsonResponse({
+                    choices: [{
+                        message: { role: "assistant", content: "计划：先读取文件，再总结。" },
+                        finish_reason: "stop",
+                    }],
+                });
+            }
 
-        it("classifyRoute 应该能正确分类复杂任务", () => {
-            const fs = require("node:fs");
-            const code = fs.readFileSync("src/routing/classifier.ts", "utf-8");
+            if (callCount === 3) {
+                // act round-1: tool call
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: "",
+                            tool_calls: [{
+                                id: "call_complex_1",
+                                type: "function",
+                                function: {
+                                    name: "read_file",
+                                    arguments: JSON.stringify({ path: ".msgcode/route.txt" }),
+                                },
+                            }],
+                        },
+                        finish_reason: "tool_calls",
+                    }],
+                });
+            }
 
-            expect(code).toContain("COMPLEX_KEYWORDS");
-            expect(code).toContain('route: "complex-tool"');
-        });
+            if (callCount === 4) {
+                // act round-2: no tool call, finish tool loop
+                return asJsonResponse({
+                    choices: [{
+                        message: { role: "assistant", content: "执行阶段完成" },
+                        finish_reason: "stop",
+                    }],
+                });
+            }
 
-        it("routeRequiresTools 应该正确判断是否需要工具", () => {
-            const fs = require("node:fs");
-            const code = fs.readFileSync("src/routing/classifier.ts", "utf-8");
+            // report
+            return asJsonResponse({
+                choices: [{
+                    message: { role: "assistant", content: "最终总结：已完成读取并整理结果。" },
+                    finish_reason: "stop",
+                }],
+            });
+        }) as typeof fetch;
 
-            expect(code).toContain("routeRequiresTools");
-            expect(code).toContain('route === "tool" || route === "complex-tool"');
-        });
+        try {
+            const result = await runLmStudioRoutedChat({
+                prompt: "先读取 .msgcode/route.txt，再总结给我",
+                workspacePath,
+                agentProvider: "openai",
+            });
+
+            expect(callCount).toBe(5);
+            expect(result.route).toBe("complex-tool");
+            expect(result.temperature).toBe(0);
+            expect(result.answer).toContain("最终总结");
+            expect(result.actionJournal.length).toBe(1);
+            expect(result.actionJournal[0].tool).toBe("read_file");
+        } finally {
+            globalThis.fetch = originalFetch;
+            restoreEnv();
+            await rm(workspacePath, { recursive: true, force: true });
+        }
+    });
+
+    it("routeRequiresTools 与 getTemperatureForRoute 应保持契约", () => {
+        expect(routeRequiresTools("no-tool")).toBe(false);
+        expect(routeRequiresTools("tool")).toBe(true);
+        expect(routeRequiresTools("complex-tool")).toBe(true);
+
+        expect(getTemperatureForRoute("no-tool")).toBe(0.2);
+        expect(getTemperatureForRoute("tool")).toBe(0);
+        expect(getTemperatureForRoute("complex-tool")).toBe(0);
+    });
+
+    it("classifyRoute 应对基础语义保持稳定", () => {
+        expect(classifyRoute("你好，今天怎么样").route).toBe("no-tool");
+        expect(classifyRoute("请读取 README.md").route).toBe("tool");
+        expect(classifyRoute("先读取文件再分析并给出方案").route).toBe("complex-tool");
     });
 });
+

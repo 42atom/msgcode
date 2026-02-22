@@ -461,6 +461,60 @@ describe("Tool Bus", () => {
     });
   });
 
+  describe("Scenario E2: read_file soul 别名兜底", () => {
+    beforeEach(() => {
+      const configDir = join(tempWorkspace, ".msgcode");
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, "config.json"), JSON.stringify({
+        "tooling.mode": "explicit",
+        "tooling.allow": ["read_file"],
+        "tooling.require_confirm": [],
+      }));
+    });
+
+    test("path=soul 且主路径不存在时应回退到 .msgcode/SOUL.md", async () => {
+      const soulDir = join(tempWorkspace, ".msgcode");
+      mkdirSync(soulDir, { recursive: true });
+      writeFileSync(join(soulDir, "SOUL.md"), "# SOUL\nworkspace soul content");
+
+      const result = await executeTool(
+        "read_file",
+        { path: "soul" },
+        {
+          workspacePath: tempWorkspace,
+          source: "slash-command",
+          requestId: randomUUID(),
+        }
+      );
+
+      expect(result.ok).toBe(true);
+      const data = result.data as { content: string };
+      expect(data.content).toContain("workspace soul content");
+    });
+
+    test("path=soul 且主路径存在时应优先读取主路径", async () => {
+      writeFileSync(join(tempWorkspace, "soul"), "primary soul file");
+
+      const soulDir = join(tempWorkspace, ".msgcode");
+      mkdirSync(soulDir, { recursive: true });
+      writeFileSync(join(soulDir, "SOUL.md"), "fallback soul file");
+
+      const result = await executeTool(
+        "read_file",
+        { path: "soul" },
+        {
+          workspacePath: tempWorkspace,
+          source: "slash-command",
+          requestId: randomUUID(),
+        }
+      );
+
+      expect(result.ok).toBe(true);
+      const data = result.data as { content: string };
+      expect(data.content).toBe("primary soul file");
+    });
+  });
+
   describe("Scenario F: allowlist 仍生效", () => {
     test("allowlist 中没有的工具应该被拒绝", () => {
       const policy: ToolPolicy = {

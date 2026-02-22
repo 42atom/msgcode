@@ -14,7 +14,7 @@ import { runLmStudioChat, runLmStudioToolLoop, runLmStudioRoutedChat } from "./l
 import type { InboundMessage } from "./imsg/types.js";
 import { clearTtsPrefs, getTtsPrefs, getVoiceReplyMode, setTtsPrefs, setVoiceReplyMode } from "./state/store.js";
 import { logger } from "./logger/index.js";
-import { loadWorkspaceConfig, getRuntimeKind, getAgentProvider, getTmuxClient, getPolicyMode } from "./config/workspace.js";
+import { loadWorkspaceConfig, getRuntimeKind, getTmuxClient, getPolicyMode } from "./config/workspace.js";
 // P5.5: 关键词主触发已禁用，不再 import detectAutoSkill/runAutoSkill
 // import { detectAutoSkill, normalizeSkillId, runAutoSkill, runSkill } from "./skills/auto.js";
 
@@ -33,6 +33,12 @@ import { resolveSoulContext } from "./config/souls.js";
 import { ensureThread, appendTurn, getThreadInfo } from "./runtime/thread-store.js";
 
 const TMUX_STYLE_MAX_CHARS = 800;
+
+function resolveGlobalAgentProvider(): string {
+    const raw = (process.env.AGENT_BACKEND || "").trim();
+    if (!raw) return "lmstudio";
+    return raw;
+}
 
 function normalizeWhitespace(input: string): string {
     return input.replace(/\s+/g, " ").trim();
@@ -539,8 +545,9 @@ export class RuntimeRouterHandler implements CommandHandler {
         const voiceMode = getVoiceReplyMode(context.chatId);
         const ttsPrefs = getTtsPrefs(context.chatId);
 
-        // 获取 provider 信息（用于日志）
-        const provider = context.projectDir ? await getAgentProvider(context.projectDir) : "none";
+        // 单源化：Agent Backend 仅从全局 AGENT_BACKEND 读取
+        const provider = resolveGlobalAgentProvider();
+        const providerSource = process.env.AGENT_BACKEND ? "env" : "default";
 
         try {
             const { randomUUID } = await import("node:crypto");
@@ -574,6 +581,7 @@ export class RuntimeRouterHandler implements CommandHandler {
                 // P5.6.14-R3: 日志字段锁
                 runtimeKind: "agent",
                 agentProvider: provider,
+                agentProviderSource: providerSource,
                 injectionEnabled,
                 // 注入详情
                 memoryInjected: windowMessages.length > 0 || !!summaryContext,
@@ -591,6 +599,7 @@ export class RuntimeRouterHandler implements CommandHandler {
                 prompt: trimmed,
                 system: personaContent,
                 ...(context.projectDir ? { workspacePath: context.projectDir } : {}),
+                agentProvider: provider,
                 // P5.6.8-R4b: 注入短期记忆上下文
                 windowMessages,
                 summaryContext,
@@ -614,6 +623,7 @@ export class RuntimeRouterHandler implements CommandHandler {
                 // P5.6.14-R3: 日志字段锁
                 runtimeKind: "agent",
                 agentProvider: provider,
+                agentProviderSource: providerSource,
                 injectionEnabled,
                 // P5.7-R3e: 路由观测字段
                 route: routedResult.route,
@@ -674,7 +684,7 @@ export class RuntimeRouterHandler implements CommandHandler {
                         // 首次消息，创建新线程
                         const runtimeMeta = {
                             kind: "agent" as const,
-                            provider: "lmstudio",
+                            provider: provider === "none" ? "lmstudio" : provider,
                             tmuxClient: undefined,
                         };
                         await ensureThread(context.chatId, context.projectDir, trimmed, runtimeMeta);

@@ -1,99 +1,290 @@
 /**
- * msgcode: P5.7-R3g Tool Loop 多工具闭环回归锁测试
+ * msgcode: P5.7-R3g Tool Loop 多工具闭环行为回归锁
  *
  * 目标：
- * - 单轮多工具顺序执行验证（代码审查方式）
- * - 回灌后收口验证
- * - maxToolCallsPerTurn 上限保护测试
+ * - 单轮多工具 FIFO 执行
+ * - 多轮 tool_calls 连续执行
+ * - 步数上限保护
+ * - 工具失败短路诊断
  */
 
 import { describe, it, expect } from "bun:test";
+import { runLmStudioToolLoop } from "../src/lmstudio.js";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
-describe("P5.7-R3g: Tool Loop Multi-Tool (Regression Lock)", () => {
-    describe("上限保护", () => {
-        it("应该拒绝超过 8 个工具调用的请求", () => {
-            const fs = require("node:fs");
-            const code = fs.readFileSync("src/lmstudio.ts", "utf-8");
+type ChatCompletionPayload = {
+    choices: Array<{
+        message: {
+            role?: string;
+            content?: string;
+            tool_calls?: Array<{
+                id: string;
+                type: "function";
+                function: { name: string; arguments: string };
+            }>;
+        };
+        finish_reason?: string;
+    }>;
+};
 
-            expect(code).toContain("MAX_TOOL_CALLS_PER_TURN");
-            expect(code).toContain("8");
-            expect(code).toContain("TOOL_LOOP_LIMIT_EXCEEDED");
-        });
+function asJsonResponse(payload: ChatCompletionPayload): Response {
+    return new Response(JSON.stringify(payload), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+    });
+}
 
-        it("应该在超限时返回结构化错误", () => {
-            const fs = require("node:fs");
-            const code = fs.readFileSync("src/lmstudio.ts", "utf-8");
+async function createToolEnabledWorkspace(): Promise<string> {
+    const workspacePath = await mkdtemp(join(tmpdir(), "msgcode-r3g-tool-loop-"));
+    await mkdir(join(workspacePath, ".msgcode"), { recursive: true });
+    await writeFile(
+        join(workspacePath, ".msgcode", "config.json"),
+        JSON.stringify({
+            "pi.enabled": true,
+            "tooling.mode": "autonomous",
+            "tooling.allow": ["bash", "read_file", "write_file", "edit_file"],
+            "tooling.require_confirm": [],
+        }, null, 2),
+        "utf-8"
+    );
+    return workspacePath;
+}
 
-            expect(code).toContain("超过上限");
-            expect(code).toContain("请求数");
-            expect(code).toContain("上限");
-            expect(code).toContain("错误码");
-        });
+describe("P5.7-R3g: Tool Loop Multi-Tool (Behavior Lock)", () => {
+    it("单轮多个工具应按 FIFO 顺序执行", async () => {
+        const originalFetch = globalThis.fetch;
+        const workspacePath = await createToolEnabledWorkspace();
+        await writeFile(join(workspacePath, ".msgcode", "info.txt"), "hello-r3g", "utf-8");
+        let callCount = 0;
+
+        globalThis.fetch = (async () => {
+            callCount += 1;
+
+            if (callCount === 1) {
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: "",
+                            tool_calls: [
+                                {
+                                    id: "call_fifo_1",
+                                    type: "function",
+                                    function: {
+                                        name: "bash",
+                                        arguments: JSON.stringify({ command: "printf 'one'" }),
+                                    },
+                                },
+                                {
+                                    id: "call_fifo_2",
+                                    type: "function",
+                                    function: {
+                                        name: "read_file",
+                                        arguments: JSON.stringify({ path: ".msgcode/info.txt" }),
+                                    },
+                                },
+                            ],
+                        },
+                        finish_reason: "tool_calls",
+                    }],
+                });
+            }
+
+            return asJsonResponse({
+                choices: [{
+                    message: { role: "assistant", content: "执行完成" },
+                    finish_reason: "stop",
+                }],
+            });
+        }) as typeof fetch;
+
+        try {
+            const result = await runLmStudioToolLoop({
+                baseUrl: "http://127.0.0.1:1234",
+                model: "test-model",
+                prompt: "先执行命令再读取文件",
+                workspacePath,
+                timeoutMs: 10_000,
+            });
+
+            expect(callCount).toBe(2);
+            expect(result.answer).toContain("执行完成");
+            expect(result.actionJournal.length).toBe(2);
+            expect(result.actionJournal[0].tool).toBe("bash");
+            expect(result.actionJournal[1].tool).toBe("read_file");
+            expect(result.actionJournal[0].stepId).toBeLessThan(result.actionJournal[1].stepId);
+            expect(result.toolCall?.name).toBe("bash");
+        } finally {
+            globalThis.fetch = originalFetch;
+            await rm(workspacePath, { recursive: true, force: true });
+        }
     });
 
-    describe("call order", () => {
-        it("工具调用应该按 FIFO 顺序执行", () => {
-            const fs = require("node:fs");
-            const code = fs.readFileSync("src/lmstudio.ts", "utf-8");
+    it("多轮 tool_calls 应持续执行直到模型停止调用工具", async () => {
+        const originalFetch = globalThis.fetch;
+        const workspacePath = await createToolEnabledWorkspace();
+        await writeFile(join(workspacePath, ".msgcode", "info2.txt"), "hello-round2", "utf-8");
+        let callCount = 0;
 
-            expect(code).toContain("for (const tc of toolCalls)");
-            expect(code).toContain("executedToolCalls.push");
-        });
+        globalThis.fetch = (async () => {
+            callCount += 1;
 
-        it("所有工具结果应该回灌后再总结", () => {
-            const fs = require("node:fs");
-            const code = fs.readFileSync("src/lmstudio.ts", "utf-8");
+            if (callCount === 1) {
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: "",
+                            tool_calls: [{
+                                id: "call_round_1",
+                                type: "function",
+                                function: {
+                                    name: "bash",
+                                    arguments: JSON.stringify({ command: "printf 'round1'" }),
+                                },
+                            }],
+                        },
+                        finish_reason: "tool_calls",
+                    }],
+                });
+            }
 
-            expect(code).toContain("executedToolCalls.map");
-            expect(code).toContain("toolResultMessages");
-            expect(code).toContain("...toolResultMessages");
-            expect(code).toContain('toolChoice: "none"');
-        });
+            if (callCount === 2) {
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: "",
+                            tool_calls: [{
+                                id: "call_round_2",
+                                type: "function",
+                                function: {
+                                    name: "read_file",
+                                    arguments: JSON.stringify({ path: ".msgcode/info2.txt" }),
+                                },
+                            }],
+                        },
+                        finish_reason: "tool_calls",
+                    }],
+                });
+            }
+
+            return asJsonResponse({
+                choices: [{
+                    message: { role: "assistant", content: "多轮执行完成" },
+                    finish_reason: "stop",
+                }],
+            });
+        }) as typeof fetch;
+
+        try {
+            const result = await runLmStudioToolLoop({
+                baseUrl: "http://127.0.0.1:1234",
+                model: "test-model",
+                prompt: "执行两轮工具",
+                workspacePath,
+                timeoutMs: 10_000,
+            });
+
+            expect(callCount).toBe(3);
+            expect(result.answer).toContain("多轮执行完成");
+            expect(result.actionJournal.length).toBe(2);
+            expect(result.actionJournal[0].tool).toBe("bash");
+            expect(result.actionJournal[1].tool).toBe("read_file");
+        } finally {
+            globalThis.fetch = originalFetch;
+            await rm(workspacePath, { recursive: true, force: true });
+        }
     });
 
-    describe("日志观测", () => {
-        it("日志应该包含 toolCallCount 和 toolNames", () => {
-            const fs = require("node:fs");
-            const code = fs.readFileSync("src/lmstudio.ts", "utf-8");
+    it("单轮工具调用超过上限时应返回 TOOL_LOOP_LIMIT_EXCEEDED", async () => {
+        const originalFetch = globalThis.fetch;
+        const workspacePath = await createToolEnabledWorkspace();
 
-            expect(code).toContain("toolCallCount");
-            expect(code).toContain("toolNames");
-            expect(code).toContain("Tool loop completed");
-        });
+        const tooManyCalls = Array.from({ length: 9 }, (_, idx) => ({
+            id: `call_limit_${idx}`,
+            type: "function" as const,
+            function: {
+                name: "bash",
+                arguments: JSON.stringify({ command: "true" }),
+            },
+        }));
 
-        it("失败日志应该包含 toolErrorCode 和 toolErrorMessage", () => {
-            const fs = require("node:fs");
-            const code = fs.readFileSync("src/lmstudio.ts", "utf-8");
+        globalThis.fetch = (async () => asJsonResponse({
+            choices: [{
+                message: {
+                    role: "assistant",
+                    content: "",
+                    tool_calls: tooManyCalls,
+                },
+                finish_reason: "tool_calls",
+            }],
+        })) as typeof fetch;
 
-            expect(code).toContain("toolErrorCode:");
-            expect(code).toContain("toolErrorMessage:");
-        });
+        try {
+            const result = await runLmStudioToolLoop({
+                baseUrl: "http://127.0.0.1:1234",
+                model: "test-model",
+                prompt: "执行超多工具",
+                workspacePath,
+                timeoutMs: 10_000,
+            });
+
+            expect(result.answer).toContain("TOOL_LOOP_LIMIT_EXCEEDED");
+            expect(result.actionJournal).toEqual([]);
+        } finally {
+            globalThis.fetch = originalFetch;
+            await rm(workspacePath, { recursive: true, force: true });
+        }
     });
 
-    describe("多工具顺序执行逻辑", () => {
-        it("应该遍历所有 tool_calls 而非只取第一个", () => {
-            const fs = require("node:fs");
-            const code = fs.readFileSync("src/lmstudio.ts", "utf-8");
+    it("工具执行失败时应短路并保留诊断信息", async () => {
+        const originalFetch = globalThis.fetch;
+        const workspacePath = await createToolEnabledWorkspace();
+        let callCount = 0;
 
-            // 验证不再使用 toolCalls[0]
-            const lines = code.split("\n");
-            const toolCallsLines = lines.filter(l => l.includes("toolCalls"));
+        globalThis.fetch = (async () => {
+            callCount += 1;
 
-            // 应该有 for...of 遍历而不是 [0] 访问
-            const hasForOf = code.includes("for (const tc of toolCalls)");
-            const hasIndexZero = /toolCalls\[0\]/.test(code);
+            return asJsonResponse({
+                choices: [{
+                    message: {
+                        role: "assistant",
+                        content: "",
+                        tool_calls: [{
+                            id: "call_fail_1",
+                            type: "function",
+                            function: {
+                                name: "bash",
+                                arguments: JSON.stringify({ command: "this_command_should_not_exist_12345" }),
+                            },
+                        }],
+                    },
+                    finish_reason: "tool_calls",
+                }],
+            });
+        }) as typeof fetch;
 
-            expect(hasForOf).toBe(true);
-            // 允许在注释或旧代码中出现 [0]，但不应该在实际逻辑中
-        });
+        try {
+            const result = await runLmStudioToolLoop({
+                baseUrl: "http://127.0.0.1:1234",
+                model: "test-model",
+                prompt: "执行一个不存在的命令",
+                workspacePath,
+                timeoutMs: 10_000,
+            });
 
-        it("应该累积所有工具执行结果", () => {
-            const fs = require("node:fs");
-            const code = fs.readFileSync("src/lmstudio.ts", "utf-8");
-
-            expect(code).toContain("executedToolCalls:");
-            expect(code).toContain("executedToolCalls.push");
-            expect(code).toContain("executedToolCalls.map");
-        });
+            expect(callCount).toBe(1);
+            expect(result.answer).toContain("TOOL_EXEC_FAILED");
+            expect(result.actionJournal.length).toBe(1);
+            expect(result.actionJournal[0].ok).toBe(false);
+            expect(result.actionJournal[0].errorCode).toBe("TOOL_EXEC_FAILED");
+        } finally {
+            globalThis.fetch = originalFetch;
+            await rm(workspacePath, { recursive: true, force: true });
+        }
     });
 });
+

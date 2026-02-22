@@ -21,6 +21,7 @@ export type BotType = "code" | "image" | "file" | "lmstudio" | "default";
  */
 export type ModelClient =
     | "lmstudio"
+    | "minimax"
     | "llama"
     | "claude"
     | "openai"
