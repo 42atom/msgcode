@@ -2,6 +2,14 @@
 
 > Mac 上的 AI 智能体，iMessage 通道优先
 
+## 仓库导航（文档结构）
+
+1. `docs/tasks/README.md`：任务单唯一时间线（主线执行口径）。
+2. `docs/README.md`：文档目录总览（product/desktop/testing/release/archive）。
+3. `src/README.md`：代码分层与职责边界（agent/tmux/tool/memory）。
+4. `test/README.md`：测试结构与回归锁约束。
+5. `scripts/README.md`：冒烟/统计脚本目录规范。
+
 ---
 
 ## Desktop Quickstart（3 步）
