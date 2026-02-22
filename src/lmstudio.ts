@@ -2866,9 +2866,9 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
                 prompt: options.prompt,
                 system: options.system,
                 workspacePath: options.workspacePath,
-                // 工具链路使用最小上下文，避免历史/人格污染协议
+                // P5.7-R9-T2 Step 3: 统一上下文注入 - 恢复场景也使用 summaryContext
                 windowMessages: undefined,
-                summaryContext: undefined,
+                summaryContext: options.summaryContext,
                 soulContext: undefined,
                 model: executorModel,
                 backendRuntime,
@@ -3014,13 +3014,14 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
 
         const execPrompt = `${options.prompt}\n\n执行计划：${planResult}`;
         // P5.7-R3l-4: 传入 traceId 和 route 用于 journal 追踪
+        // P5.7-R9-T2 Step 3: 统一上下文注入 - complex-tool act 阶段也使用 summaryContext
         const toolLoopResult = await runLmStudioToolLoop({
             prompt: execPrompt,
             system: options.system,
             workspacePath: options.workspacePath,
-            // act 阶段仅消费 plan 结果，不注入历史/人格
+            // P5.7-R9-T2 Step 3: act 阶段注入 summaryContext，不注入完整 windowMessages
             windowMessages: undefined,
-            summaryContext: undefined,
+            summaryContext: options.summaryContext,
             soulContext: undefined,
             model: usedModel,
             backendRuntime,
@@ -3143,14 +3144,16 @@ export async function runLmStudioRoutedChat(options: LmStudioRoutedChatOptions):
         status: "processing",
     });
     // P5.7-R3l-4: 传入 traceId 和 route 用于 journal 追踪
+    // P5.7-R9-T2 Step 3: 统一上下文注入 - tool 路由使用 summaryContext（精炼摘要）
     const toolLoopResult = await runLmStudioToolLoop({
         prompt: options.prompt,
         system: options.system,
         workspacePath: options.workspacePath,
-        // 工具链路使用最小上下文，避免历史/人格污染协议
-        windowMessages: undefined,
-        summaryContext: undefined,
-        soulContext: undefined,
+        // P5.7-R9-T2 Step 3: 注入 summaryContext（精炼摘要），不注入完整 windowMessages
+        // 避免"历史污染协议"，但保留关键上下文信息
+        windowMessages: undefined,  // 保持不注入完整历史
+        summaryContext: options.summaryContext,  // 注入 compact 后的摘要
+        soulContext: undefined,  // 工具链路禁止 soul 注入
         model: usedModel,
         backendRuntime,
         traceId,  // P5.7-R3l-4: 追踪 ID
