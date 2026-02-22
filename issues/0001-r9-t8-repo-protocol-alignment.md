@@ -8,7 +8,7 @@ risk: medium
 scope: 文档结构协议（issues/design/notes/adr/changelog/docs-check）对齐
 plan_doc: docs/design/plan-260223-r9-t8-repo-protocol-alignment.md
 links:
-  - docs/tasks/p5-7-r9-t7-agent-backend-core-extraction.md
+  - docs/tasks/p5-7-r9-t8-repo-protocol-alignment.md
 ---
 
 ## Context
@@ -39,8 +39,10 @@ links:
 - `npm run docs:check`：通过（`✓ 文档同步检查通过`）
 - `npx tsc --noEmit`：通过
 - 兼容迁移：根 `CHANGELOG.md` 已保留 stub 指向 `docs/CHANGELOG.md`
+- R9-T8b：`docs:check` 已增加 `issue -> plan -> task` 互链校验（front matter/回链/命名）。
 
 ## Links
 
+Issue: `0001`
 - Plan: `docs/design/plan-260223-r9-t8-repo-protocol-alignment.md`
-- Task: `docs/tasks/p5-7-r9-t7-agent-backend-core-extraction.md`
+- Task: `docs/tasks/p5-7-r9-t8-repo-protocol-alignment.md`

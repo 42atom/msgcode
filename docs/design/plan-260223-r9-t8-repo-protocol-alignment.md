@@ -1,5 +1,8 @@
 # plan-260223-r9-t8-repo-protocol-alignment
 
+Issue: 0001
+Task: docs/tasks/p5-7-r9-t8-repo-protocol-alignment.md
+
 ## Problem
 
 `CLAUDE.md` 定义了文档协议目录与执行流程，但仓库当前仅有 `docs/tasks` 主线，缺少 `issues/design/notes/adr/docs/CHANGELOG.md` 等核心落点，导致规范无法被自动化校验与持续执行。
@@ -37,4 +40,3 @@
    - 缺点：无法防回退，规范会失效。
 
 （章节级）评审意见：[留空,用户将给出反馈]
-
