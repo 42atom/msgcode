@@ -25,7 +25,10 @@ links:
 
 - [x] 建立 `src/agent-backend/` 核心模块骨架与类型出口。
 - [x] 迁移配置解析与 prompt builder 到核心模块，保持行为等价。
-- [x] 迁移 tool loop 与 routed chat 到核心模块，并将 `lmstudio.ts` 降级为兼容壳。
+- [ ] 迁移 tool loop 与 routed chat 到核心模块，并将 `lmstudio.ts` 降级为兼容壳。
+  - [x] tool-loop 主实现已迁移到 agent-backend/tool-loop.ts
+  - [ ] routed-chat 主实现待迁移到 agent-backend/routed-chat.ts
+  - [ ] lmstudio.ts 删除本地实现，改为 import + re-export
 - [x] 增加兼容层与 no-backflow 回归锁，替换脆弱源码字符串断言。
 - [ ] 同步任务文档与兼容说明，完成三门验收。
 
@@ -68,6 +71,42 @@ links:
   - `test`: 1353 pass, 2 fail (外部 AIDOCS 问题)
   - `docs:check`: 通过
 - 提交：`4e13c0d test(p5.7-r9-t7-step4): add compatibility and no-backflow regression locks`
+
+### 测试修复记录 (f78d8d7)
+
+- 修复 `test/p5-7-r9-t2-skill-global-single-source.test.ts` 测试失败
+- 移除 `prompts/lmstudio-system.md` 中的被禁止字符串
+- 验证结果：1355 pass, 0 fail
+
+### runAgentToolLoop 迁移记录 (8973e9e)
+
+- 将 `runAgentToolLoop` 完整实现迁移到 `src/agent-backend/tool-loop.ts`
+- 添加本地 `fetchTextWithTimeout` 函数支持多后端 apiKey
+- 导出 `runAgentToolLoop` 和 `runLmStudioToolLoop` 兼容别名
+- 配套修改：
+  - `src/agent-backend/config.ts`: 添加 `normalizeModelOverride` 函数
+  - `src/agent-backend/index.ts`: 更新导出包含 `runAgentToolLoop`
+- 验证结果：
+  - `tsc`: 通过
+  - `test`: 1354 pass, 1 fail (外部 AIDOCS 问题)
+
+### 当前阻塞项（用户核验反馈）
+
+**[P0] 核心目标未达成**：lmstudio.ts 仍是主实现，不是兼容壳
+- lmstudio.ts 仍有 runLmStudioToolLoop 完整实现（约 600 行）
+- lmstudio.ts 仍有 runLmStudioRoutedChat 完整实现（约 500 行）
+- agent-backend/routed-chat.ts 仍是占位文件
+- 当前 lmstudio.ts 行数约 3285 行，目标≤300 行
+
+**[P1] 回归锁不够硬**
+- 规模锁阈值 3500 与任务目标≤300 不一致
+- 源码文本断言无法证明执行路径已迁移
+
+**待完成工作**
+1. 将 runLmStudioRoutedChat 迁移到 agent-backend/routed-chat.ts
+2. 删除 lmstudio.ts 中的本地实现，改为 import + re-export
+3. 收紧规模锁阈值到 300
+4. 更新测试使用执行路径锁而非源码字符串断言
 
 ## Links
 
