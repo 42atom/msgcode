@@ -144,7 +144,7 @@ describe("P5.7-R3h: Tool Failure Diagnostics (Behavior Lock)", () => {
                     timeoutMs: 10_000,
                 });
 
-                // 首轮 + required-retry + strict-fallback
+                // 首轮 + required-retry + strict-retry
                 expect(callCount).toBe(3);
                 expect(result.answer).toContain("MODEL_PROTOCOL_FAILED");
                 expect(result.actionJournal).toEqual([]);
@@ -241,4 +241,3 @@ describe("P5.7-R3h: Tool Failure Diagnostics (Behavior Lock)", () => {
         });
     });
 });
-

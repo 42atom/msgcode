@@ -634,6 +634,30 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
         toolCalls = msg1?.tool_calls ?? [];
     }
 
+    // 二次强约束重试：显式工具场景下，若 required 仍未返回 tool_calls，再尝试一次
+    if (toolCalls.length === 0 && preferredToolName && activeTools.length > 0) {
+        const strictRetryMessages = [
+            ...messages,
+            {
+                role: "user" as const,
+                content: `你必须调用工具 ${preferredToolName}，并仅返回 tool_calls。禁止任何自然语言。`,
+            },
+        ];
+        const strictRetry = await callChatCompletionsRaw({
+            baseUrl,
+            model: usedModel,
+            messages: strictRetryMessages,
+            tools: activeToolSchemas,
+            toolChoice: "required",
+            temperature: 0,
+            maxTokens: 800,
+            timeoutMs,
+            apiKey: backendRuntime.apiKey,
+        });
+        msg1 = strictRetry.choices[0]?.message;
+        toolCalls = msg1?.tool_calls ?? [];
+    }
+
     const hasPreferredToolMismatch = (calls: ToolCall[]): boolean => {
         if (!preferredToolName) return false;
         return calls.some((tc) => tc.function.name !== preferredToolName);
