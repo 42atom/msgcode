@@ -101,10 +101,10 @@ describe("P5.7-R9-T2: Compact 策略", () => {
 // ============================================
 
 describe("P5.7-R9-T2: 路由一致性", () => {
-    it("lmstudio.ts 的 tool 路由应注入 summaryContext", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/lmstudio.ts"), "utf-8");
+    it("agent-backend/routed-chat.ts 的 tool 路由应注入 summaryContext", () => {
+        const code = readFileSync(resolve(process.cwd(), "src/agent-backend/routed-chat.ts"), "utf-8");
         // 锁定：tool 路由注入 summaryContext（P5.7-R9-T2 Step 3）
-        // 找到 tool 路由的 runLmStudioToolLoop 调用
+        // 找到 tool 路由的 runAgentToolLoop 调用
         expect(code).toContain("summaryContext: options.summaryContext");
     });
 

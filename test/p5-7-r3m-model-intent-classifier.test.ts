@@ -41,13 +41,13 @@ describe("P5.7-R3m: parseModelRouteClassification", () => {
 
 describe("P5.7-R3m: routed chat 接线", () => {
     it("runLmStudioRoutedChat 应调用模型优先分类器", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/lmstudio.ts"), "utf-8");
+        const code = readFileSync(resolve(process.cwd(), "src/agent-backend/routed-chat.ts"), "utf-8");
         expect(code).toContain("classifyRouteModelFirst");
         expect(code).toContain("classificationSource");
     });
 
     it("主链不应再依赖规则分类结果", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/lmstudio.ts"), "utf-8");
+        const code = readFileSync(resolve(process.cwd(), "src/agent-backend/routed-chat.ts"), "utf-8");
         expect(code).not.toContain("classifyRoute(params.prompt");
     });
 });
@@ -55,16 +55,16 @@ describe("P5.7-R3m: routed chat 接线", () => {
 // P5.7-R9-T1 回归锁：内容生成请求必须路由到 tool
 describe("P5.7-R9-T1: 内容生成路由回归锁", () => {
     it("路由分类器系统提示词应包含内容生成规则", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/lmstudio.ts"), "utf-8");
+        const code = readFileSync(resolve(process.cwd(), "src/agent-backend/routed-chat.ts"), "utf-8");
         // 锁定：内容生成请求（图片/自拍/音乐/TTS）必须走 tool 路由
         expect(code).toContain("内容生成请求");
         expect(code).toContain("生成图片");
         expect(code).toContain("生成自拍");
-        expect(code).toContain("TTS语音合成");
+        expect(code).toMatch(/TTS\s*语音合成/);
     });
 
     it("路由分类器系统提示词应正确声明内容生成=tool", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/lmstudio.ts"), "utf-8");
+        const code = readFileSync(resolve(process.cwd(), "src/agent-backend/routed-chat.ts"), "utf-8");
         // 锁定：包含"内容生成...= tool"的规则声明
         expect(code).toMatch(/内容生成.*=.*tool/);
     });

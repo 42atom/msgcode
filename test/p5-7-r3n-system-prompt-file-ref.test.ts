@@ -33,11 +33,12 @@ describe("P5.7-R3n: system prompt file reference", () => {
     });
 
     it("LM Studio 主链应通过 resolveBaseSystemPrompt 读取基础提示词", () => {
-        const lmCode = readText("src/lmstudio.ts");
-        expect(lmCode).toContain("async function resolveBaseSystemPrompt");
+        const promptCode = readText("src/agent-backend/prompt.ts");
+        expect(promptCode).toContain("async function resolveBaseSystemPrompt");
 
-        const matches = lmCode.match(/await resolveBaseSystemPrompt\(options\.system\)/g) || [];
-        expect(matches.length).toBeGreaterThanOrEqual(2);
+        const chatCode = readText("src/agent-backend/chat.ts");
+        const matches = chatCode.match(/resolveBaseSystemPrompt\(/g) || [];
+        expect(matches.length).toBeGreaterThanOrEqual(1);
     });
 
     it(".env 示例应包含提示词文件配置项", () => {

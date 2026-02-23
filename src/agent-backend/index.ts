@@ -78,6 +78,25 @@ export {
 } from "./prompt.js";
 
 // ============================================
+// Chat 模块导出
+// ============================================
+
+export type {
+    AgentChatOptions as ChatOptions,
+} from "./types.js";
+
+export {
+    // Chat 主函数
+    runAgentChat,
+    // 兼容别名
+    runLmStudioChat,
+} from "./chat.js";
+
+export {
+    sanitizeLmStudioOutput,
+} from "./chat.js";
+
+// ============================================
 // Tool Loop 模块导出
 // ============================================
 
@@ -100,4 +119,11 @@ export {
 export type {
     AgentRoutedChatOptions as RoutedChatOptions,
     AgentRoutedChatResult as RoutedChatResultType,
+} from "./types.js";
+
+export {
+    // Routed Chat 主函数
+    runAgentRoutedChat,
+    // 兼容别名
+    runLmStudioRoutedChat,
 } from "./routed-chat.js";

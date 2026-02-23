@@ -110,21 +110,25 @@ describe("P5.7-R9-T3: 延迟摘要", () => {
 describe("P5.7-R9-T3: 系统提示词文件化", () => {
     it("lmstudio.ts 应有默认系统提示词文件路径", () => {
         const code = readFileSync(resolve(process.cwd(), "src/lmstudio.ts"), "utf-8");
-        // 锁定：默认文件路径
+        // 锁定：默认文件路径常量
         expect(code).toContain("DEFAULT_LMSTUDIO_SYSTEM_PROMPT_FILE");
+    });
+
+    it("agent-backend/prompt.ts 应包含完整路径定义", () => {
+        const code = readFileSync(resolve(process.cwd(), "src/agent-backend/prompt.ts"), "utf-8");
         // 路径由 path.resolve(process.cwd(), "prompts", "lmstudio-system.md") 组成
         expect(code).toContain('"prompts"');
         expect(code).toContain('"lmstudio-system.md"');
     });
 
-    it("lmstudio.ts 应支持环境变量覆盖", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/lmstudio.ts"), "utf-8");
+    it("agent-backend/prompt.ts 应支持环境变量覆盖", () => {
+        const code = readFileSync(resolve(process.cwd(), "src/agent-backend/prompt.ts"), "utf-8");
         // 锁定：环境变量覆盖
         expect(code).toContain("LMSTUDIO_SYSTEM_PROMPT_FILE");
     });
 
-    it("lmstudio.ts 应有 resolveBaseSystemPrompt 函数", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/lmstudio.ts"), "utf-8");
+    it("agent-backend/prompt.ts 应有 resolveBaseSystemPrompt 函数", () => {
+        const code = readFileSync(resolve(process.cwd(), "src/agent-backend/prompt.ts"), "utf-8");
         // 锁定：加载入口函数
         expect(code).toContain("async function resolveBaseSystemPrompt");
     });

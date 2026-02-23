@@ -282,19 +282,18 @@ describe("P5.7-R9-T7 Step 4: No-Backflow 回归锁", () => {
 // ============================================
 
 describe("P5.7-R9-T7 Step 4: 文件规模锁", () => {
-    it("lmstudio.ts 行数不应超过阈值（兼容壳目标 ≤ 300 行为理想，当前为过渡期）", () => {
+    it("lmstudio.ts 行数不应超过阈值（兼容壳目标 ≤ 300 行）", () => {
         const lmstudioPath = path.join(process.cwd(), "src", "lmstudio.ts");
         const content = fs.readFileSync(lmstudioPath, "utf-8");
         const lines = content.split("\n").length;
 
-        // 过渡期阈值：保留本地实现时允许较高行数
-        // Step 4 完成后清理时应降至 300 行以内
-        const TRANSITIONAL_THRESHOLD = 3500;
+        // 完成迁移后 lmstudio.ts 应为兼容壳（≤300 行）
+        const FINAL_THRESHOLD = 300;
 
-        expect(lines).toBeLessThan(TRANSITIONAL_THRESHOLD);
+        expect(lines).toBeLessThan(FINAL_THRESHOLD);
 
         // 记录当前行数用于追踪
-        console.log(`lmstudio.ts 当前行数：${lines}（过渡期阈值：${TRANSITIONAL_THRESHOLD}）`);
+        console.log(`lmstudio.ts 当前行数：${lines}（目标阈值：${FINAL_THRESHOLD}）`);
     });
 
     it("agent-backend/tool-loop.ts 应包含主实现迁出说明", () => {

@@ -80,14 +80,14 @@ describe("P5.6.7-R6: 集成冒烟静态验证", () => {
             expect(code).not.toContain("clearMemory");
         });
 
-        it("lmstudio.ts: runLmStudioToolLoop 通过 Tool Bus 调用（统一执行入口）", () => {
+        it("agent-backend/tool-loop.ts: runAgentToolLoop 通过 Tool Bus 调用（统一执行入口）", () => {
             const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
+                path.join(process.cwd(), "src/agent-backend/tool-loop.ts"),
                 "utf-8"
             );
             // P5.6.8-R3a: 语义锁（避免绑定具体变量名）
             expect(code).toContain("async function runTool(");
-            expect(code).toContain('await import("./tools/bus.js")');
+            expect(code).toContain('await import("../tools/bus.js")');
             expect(code).toContain("await executeTool(");
         });
 

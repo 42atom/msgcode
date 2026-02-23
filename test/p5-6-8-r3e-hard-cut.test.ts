@@ -103,9 +103,9 @@ describe("P5.6.8-R3e: 硬切割回归锁", () => {
     });
 
     describe("run_skill 不暴露验证", () => {
-        it("src/lmstudio.ts PI_ON_TOOLS 不应包含 run_skill", () => {
+        it("agent-backend/types.ts PI_ON_TOOLS 不应包含 run_skill", () => {
             const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
+                path.join(process.cwd(), "src/agent-backend/types.ts"),
                 "utf-8"
             );
 
@@ -143,9 +143,9 @@ describe("P5.6.8-R3e: 硬切割回归锁", () => {
     });
 
     describe("PI 四工具验证", () => {
-        it("src/lmstudio.ts PI_ON_TOOLS 必须仅包含四工具", () => {
+        it("agent-backend/types.ts PI_ON_TOOLS 必须仅包含四工具", () => {
             const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
+                path.join(process.cwd(), "src/agent-backend/types.ts"),
                 "utf-8"
             );
 

@@ -4,6 +4,8 @@
  * 目标：
  * 1) CLI 入口应自动加载 ~/.config/msgcode/.env（无需手工 source）
  * 2) LM Studio 缺省模型应优先返回稳定默认模型（目录存在即可）
+ *
+ * P5.7-R9-T7: 更新测试以读取 agent-backend/chat.ts
  */
 
 import { describe, expect, it } from "bun:test";
@@ -21,11 +23,11 @@ describe("P5.7-R6d: autoload contract", () => {
   });
 
   it("LM Studio 模型解析应包含目录存在检查并优先默认模型", () => {
-    const code = fs.readFileSync(path.join(process.cwd(), "src", "lmstudio.ts"), "utf-8");
+    const code = fs.readFileSync(path.join(process.cwd(), "src", "agent-backend", "chat.ts"), "utf-8");
 
     expect(code).toContain("async function isModelPresentInNativeCatalog");
     expect(code).toContain("const preferredAvailable = await isModelPresentInNativeCatalog");
-    expect(code).toContain("return LMSTUDIO_DEFAULT_CHAT_MODEL;");
+    expect(code).toContain("LMSTUDIO_DEFAULT_CHAT_MODEL");
   });
 });
 

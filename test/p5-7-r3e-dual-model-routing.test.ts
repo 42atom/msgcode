@@ -187,7 +187,7 @@ describe("P5.7-R3e: LmStudio Routing Function", () => {
 
     it("runLmStudioRoutedChat 返回值必须包含 route 和 temperature", async () => {
         const code = await import("node:fs").then(fs =>
-            fs.readFileSync(require.resolve("../src/lmstudio.ts"), "utf-8")
+            fs.readFileSync(require.resolve("../src/agent-backend/routed-chat.ts"), "utf-8")
         );
         expect(code).toContain("const route = classification.route");
         expect(code).toContain("getTemperatureForRoute(route)");
@@ -197,7 +197,7 @@ describe("P5.7-R3e: LmStudio Routing Function", () => {
 describe("P5.7-R3e-hotfix: 温度透传验证", () => {
     it("runLmStudioChat 接口必须支持 temperature 参数", async () => {
         const code = await import("node:fs").then(fs =>
-            fs.readFileSync(require.resolve("../src/lmstudio.ts"), "utf-8")
+            fs.readFileSync(require.resolve("../src/agent-backend/chat.ts"), "utf-8")
         );
         expect(code).toContain("temperature?: number");
         expect(code).toContain("options.temperature");
@@ -205,14 +205,14 @@ describe("P5.7-R3e-hotfix: 温度透传验证", () => {
 
     it("runLmStudioChatNative 必须使用传入的 temperature", async () => {
         const code = await import("node:fs").then(fs =>
-            fs.readFileSync(require.resolve("../src/lmstudio.ts"), "utf-8")
+            fs.readFileSync(require.resolve("../src/agent-backend/chat.ts"), "utf-8")
         );
         expect(code).toContain("params.temperature ?? 0");
     });
 
     it("runLmStudioRoutedChat 必须传递 temperature 给 runLmStudioChat", async () => {
         const code = await import("node:fs").then(fs =>
-            fs.readFileSync(require.resolve("../src/lmstudio.ts"), "utf-8")
+            fs.readFileSync(require.resolve("../src/agent-backend/routed-chat.ts"), "utf-8")
         );
         // P5.7-R3j: 验证 no-tool 分支使用 usedTemperature
         expect(code).toContain("temperature: usedTemperature");
@@ -222,7 +222,7 @@ describe("P5.7-R3e-hotfix: 温度透传验证", () => {
 describe("P5.7-R3e-hotfix: 双模型分流验证", () => {
     it("runLmStudioRoutedChat 必须读取 executor/responder 模型配置", async () => {
         const code = await import("node:fs").then(fs =>
-            fs.readFileSync(require.resolve("../src/lmstudio.ts"), "utf-8")
+            fs.readFileSync(require.resolve("../src/agent-backend/routed-chat.ts"), "utf-8")
         );
         expect(code).toContain("getExecutorModel");
         expect(code).toContain("getResponderModel");
@@ -230,7 +230,7 @@ describe("P5.7-R3e-hotfix: 双模型分流验证", () => {
 
     it("no-tool 必须使用 responder 模型", async () => {
         const code = await import("node:fs").then(fs =>
-            fs.readFileSync(require.resolve("../src/lmstudio.ts"), "utf-8")
+            fs.readFileSync(require.resolve("../src/agent-backend/routed-chat.ts"), "utf-8")
         );
         // 验证 no-tool 分支使用 responderModel（R3k: 条件包含 LEVEL_2 降级）
         const noToolSection = code.match(/if \(route === "no-tool"[^)]*\)[\s\S]{0,800}/);
@@ -240,7 +240,7 @@ describe("P5.7-R3e-hotfix: 双模型分流验证", () => {
 
     it("complex-tool 必须使用 executor 模型", async () => {
         const code = await import("node:fs").then(fs =>
-            fs.readFileSync(require.resolve("../src/lmstudio.ts"), "utf-8")
+            fs.readFileSync(require.resolve("../src/agent-backend/routed-chat.ts"), "utf-8")
         );
         // 验证 complex-tool 分支使用 executorModel
         expect(code).toContain("executorModel");
@@ -249,18 +249,18 @@ describe("P5.7-R3e-hotfix: 双模型分流验证", () => {
     // P5.7-R3e-hotfix-2: 验证 tool 分支绑定 executor 模型
     it("tool 分支的 toolLoop 调用必须传递 executorModel", async () => {
         const code = await import("node:fs").then(fs =>
-            fs.readFileSync(require.resolve("../src/lmstudio.ts"), "utf-8")
+            fs.readFileSync(require.resolve("../src/agent-backend/routed-chat.ts"), "utf-8")
         );
-        // P5.7-R3j: 验证 tool 分支传递 model: usedModel 给 runLmStudioToolLoop
+        // P5.7-R3j: 验证 tool 分支传递 model: usedModel 给 runAgentToolLoop
         expect(code).toContain("model: usedModel");
     });
 
     // P5.7-R3e-hotfix-2: 验证 complex-tool 执行阶段绑定 executor 模型
     it("complex-tool 执行阶段的 toolLoop 调用必须传递 executorModel", async () => {
         const code = await import("node:fs").then(fs =>
-            fs.readFileSync(require.resolve("../src/lmstudio.ts"), "utf-8")
+            fs.readFileSync(require.resolve("../src/agent-backend/routed-chat.ts"), "utf-8")
         );
-        // P5.7-R3j: 验证 complex-tool 执行阶段传递 model: usedModel 给 runLmStudioToolLoop
+        // P5.7-R3j: 验证 complex-tool 执行阶段传递 model: usedModel 给 runAgentToolLoop
         expect(code).toContain("model: usedModel");
     });
 });
@@ -268,7 +268,7 @@ describe("P5.7-R3e-hotfix: 双模型分流验证", () => {
 describe("P5.7-R3e-hotfix: complex-tool 计划阶段验证", () => {
     it("complex-tool 必须有计划阶段", async () => {
         const code = await import("node:fs").then(fs =>
-            fs.readFileSync(require.resolve("../src/lmstudio.ts"), "utf-8")
+            fs.readFileSync(require.resolve("../src/agent-backend/routed-chat.ts"), "utf-8")
         );
         // 验证计划阶段提示词
         expect(code).toContain("请先分析这个任务并制定执行计划");
@@ -276,15 +276,15 @@ describe("P5.7-R3e-hotfix: complex-tool 计划阶段验证", () => {
 
     it("complex-tool 必须有执行阶段", async () => {
         const code = await import("node:fs").then(fs =>
-            fs.readFileSync(require.resolve("../src/lmstudio.ts"), "utf-8")
+            fs.readFileSync(require.resolve("../src/agent-backend/routed-chat.ts"), "utf-8")
         );
         // 验证执行阶段调用 tool loop
-        expect(code).toContain("runLmStudioToolLoop");
+        expect(code).toContain("runAgentToolLoop");
     });
 
     it("complex-tool 必须有收口阶段", async () => {
         const code = await import("node:fs").then(fs =>
-            fs.readFileSync(require.resolve("../src/lmstudio.ts"), "utf-8")
+            fs.readFileSync(require.resolve("../src/agent-backend/routed-chat.ts"), "utf-8")
         );
         // 验证收口阶段总结结果
         expect(code).toContain("总结执行结果");
@@ -292,7 +292,7 @@ describe("P5.7-R3e-hotfix: complex-tool 计划阶段验证", () => {
 
     it("complex-tool 三阶段顺序正确（计划→执行→收口）", async () => {
         const code = await import("node:fs").then(fs =>
-            fs.readFileSync(require.resolve("../src/lmstudio.ts"), "utf-8")
+            fs.readFileSync(require.resolve("../src/agent-backend/routed-chat.ts"), "utf-8")
         );
         // 验证阶段顺序
         const planIndex = code.indexOf("计划阶段");
@@ -301,7 +301,7 @@ describe("P5.7-R3e-hotfix: complex-tool 计划阶段验证", () => {
 
         // 如果找不到中文注释，找关键词
         const hasPlan = code.includes("制定执行计划");
-        const hasExec = code.includes("runLmStudioToolLoop");
+        const hasExec = code.includes("runAgentToolLoop");
         const hasSummary = code.includes("总结执行结果");
 
         expect(hasPlan).toBe(true);

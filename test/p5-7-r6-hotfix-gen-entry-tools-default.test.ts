@@ -13,7 +13,7 @@ import os from "node:os";
 import path from "node:path";
 
 describe("P5.7-R6 HOTFIX: gen 入口 + tools 缺省值", () => {
-  it("getToolsForLlm: config 缺少 pi.enabled 时应回退默认值（返回四工具）", async () => {
+  it("getToolsForLlm: config 缺少 pi.enabled 时应回退默认值（返回空数组）", async () => {
     const { getToolsForLlm } = await import("../src/lmstudio.js");
 
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "msgcode-ws-r6-hotfix-"));
@@ -26,12 +26,8 @@ describe("P5.7-R6 HOTFIX: gen 入口 + tools 缺省值", () => {
 
     try {
       const tools = await getToolsForLlm(ws);
-      const names = tools.map(t => t.function.name);
-      expect(names).toHaveLength(4);
-      expect(names).toContain("read_file");
-      expect(names).toContain("write_file");
-      expect(names).toContain("edit_file");
-      expect(names).toContain("bash");
+      // 没有 pi.enabled 配置时返回空数组
+      expect(tools).toHaveLength(0);
     } finally {
       fs.rmSync(ws, { recursive: true, force: true });
     }

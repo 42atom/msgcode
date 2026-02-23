@@ -4,6 +4,7 @@
  * 目标：确保 handlers 读取的 window/summary 必须进入 runAgentRoutedChat 请求构造
  * P5.7-R3e: 更新测试以匹配新的路由分发函数
  * P5.7-R9-T4: 迁移到中性命名（runAgentRoutedChat）
+ * P5.7-R9-T7: 更新测试以读取 agent-backend 模块
  */
 
 import { describe, it, expect } from "bun:test";
@@ -14,7 +15,7 @@ describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
     describe("AgentToolLoopOptions 接口验证", () => {
         it("AgentToolLoopOptions 必须包含 windowMessages 字段", () => {
             const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
+                path.join(process.cwd(), "src/agent-backend/types.ts"),
                 "utf-8"
             );
 
@@ -24,7 +25,7 @@ describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
 
         it("AgentToolLoopOptions 必须包含 summaryContext 字段", () => {
             const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
+                path.join(process.cwd(), "src/agent-backend/types.ts"),
                 "utf-8"
             );
 
@@ -73,7 +74,7 @@ describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
     describe("runAgentToolLoop 注入逻辑验证", () => {
         it("runAgentToolLoop 必须注入 summaryContext", () => {
             const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
+                path.join(process.cwd(), "src/agent-backend/tool-loop.ts"),
                 "utf-8"
             );
 
@@ -84,7 +85,7 @@ describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
 
         it("runAgentToolLoop 必须注入 windowMessages", () => {
             const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
+                path.join(process.cwd(), "src/agent-backend/tool-loop.ts"),
                 "utf-8"
             );
 
@@ -96,20 +97,20 @@ describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
 
         it("runAgentToolLoop 必须有预算限制", () => {
             const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
+                path.join(process.cwd(), "src/agent-backend/tool-loop.ts"),
                 "utf-8"
             );
 
             // 验证预算限制
             expect(code).toContain('MAX_WINDOW_MESSAGES');
             expect(code).toContain('MAX_CONTEXT_CHARS');
-            expect(code).toContain('超预算');
+            expect(code).toContain('if (totalChars + msgChars > MAX_CONTEXT_CHARS)');
             expect(code).toContain('totalChars');
         });
 
         it("messages 构造顺序必须是：system -> summary -> window -> user", () => {
             const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
+                path.join(process.cwd(), "src/agent-backend/tool-loop.ts"),
                 "utf-8"
             );
 
@@ -136,7 +137,7 @@ describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
     describe("注入不是只读验证", () => {
         it("windowMessages 不是只读取不使用", () => {
             const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
+                path.join(process.cwd(), "src/agent-backend/tool-loop.ts"),
                 "utf-8"
             );
 
@@ -149,7 +150,7 @@ describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
 
         it("summaryContext 不是只读取不使用", () => {
             const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
+                path.join(process.cwd(), "src/agent-backend/tool-loop.ts"),
                 "utf-8"
             );
 

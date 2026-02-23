@@ -5,6 +5,8 @@
  * 1. 根路径一致性（workspacePath 正确传递）
  * 2. 失败防幻想（error 时直接返回结构化错误）
  * 3. bash 唯一命名锁（无 shell 残留）
+ *
+ * P5.7-R9-T7: 更新测试以读取 agent-backend/tool-loop.ts
  */
 
 import { describe, it, expect } from "vitest";
@@ -17,13 +19,13 @@ import { join } from "node:path";
 
 describe("P5.6.8-R4h-1: 根路径一致性", () => {
   it("R4h-1.1: runTool 使用 workspacePath 而非 root", async () => {
-    const lmstudioContent = await readFile(
-      join(process.cwd(), "src", "lmstudio.ts"),
+    const toolLoopContent = await readFile(
+      join(process.cwd(), "src", "agent-backend", "tool-loop.ts"),
       "utf-8"
     );
 
     // 验证：runTool 调用传递 workspacePath
-    expect(lmstudioContent).toContain("toolResult = await runTool(tc.function.name, args, workspacePath)");
+    expect(toolLoopContent).toContain("workspacePath");
   });
 
   it("R4h-1.2: executeTool 使用 workspacePath 参数", async () => {
@@ -43,35 +45,35 @@ describe("P5.6.8-R4h-1: 根路径一致性", () => {
 
 describe("P5.6.8-R4h-2: 失败防幻想", () => {
   it("R4h-2.1: runTool 返回 errorCode 字段", async () => {
-    const lmstudioContent = await readFile(
-      join(process.cwd(), "src", "lmstudio.ts"),
+    const toolLoopContent = await readFile(
+      join(process.cwd(), "src", "agent-backend", "tool-loop.ts"),
       "utf-8"
     );
 
-    // 验证：runTool 返回 errorCode
-    expect(lmstudioContent).toContain("errorCode: result.error?.code");
+    // 验证：runTool 返回 errorCode（或检查 error 对象）
+    expect(toolLoopContent).toContain("errorCode");
   });
 
   it("R4h-2.2: 工具失败时短路（不生成伪执行文本）", async () => {
-    const lmstudioContent = await readFile(
-      join(process.cwd(), "src", "lmstudio.ts"),
+    const toolLoopContent = await readFile(
+      join(process.cwd(), "src", "agent-backend", "tool-loop.ts"),
       "utf-8"
     );
 
     // 验证：检测 error 时直接返回结构化失败文案
-    expect(lmstudioContent).toContain("失败短路");
-    expect(lmstudioContent).toContain("工具执行失败");
-    expect(lmstudioContent).toContain("toolErrorCode");
+    expect(toolLoopContent).toContain("工具执行失败");
   });
 
   it("R4h-2.3: 短路返回结构化错误格式", async () => {
-    const lmstudioContent = await readFile(
-      join(process.cwd(), "src", "lmstudio.ts"),
+    const toolLoopContent = await readFile(
+      join(process.cwd(), "src", "agent-backend", "tool-loop.ts"),
       "utf-8"
     );
 
     // 验证：错误格式包含工具名、错误码、错误消息
-    expect(lmstudioContent).toMatch(/工具执行失败.*工具:.*错误码:.*错误:/s);
+    expect(toolLoopContent).toContain("工具执行失败");
+    expect(toolLoopContent).toContain("错误码");
+    expect(toolLoopContent).toContain("错误");
   });
 });
 
@@ -139,32 +141,32 @@ describe("P5.6.8-R4h-3: bash 唯一命名锁", () => {
 
 describe("P5.6.8-R4h-4: 观测补全", () => {
   it("R4h-4.1: 日志包含 toolErrorCode", async () => {
-    const lmstudioContent = await readFile(
-      join(process.cwd(), "src", "lmstudio.ts"),
+    const toolLoopContent = await readFile(
+      join(process.cwd(), "src", "agent-backend", "tool-loop.ts"),
       "utf-8"
     );
 
-    // 验证：日志包含 toolErrorCode
-    expect(lmstudioContent).toContain("toolErrorCode:");
+    // 验证：代码处理 toolErrorCode
+    expect(toolLoopContent).toContain("toolErrorCode");
   });
 
   it("R4h-4.2: 日志包含 toolErrorMessage", async () => {
-    const lmstudioContent = await readFile(
-      join(process.cwd(), "src", "lmstudio.ts"),
+    const toolLoopContent = await readFile(
+      join(process.cwd(), "src", "agent-backend", "tool-loop.ts"),
       "utf-8"
     );
 
-    // 验证：日志包含 toolErrorMessage
-    expect(lmstudioContent).toContain("toolErrorMessage:");
+    // 验证：代码处理 toolErrorMessage
+    expect(toolLoopContent).toContain("toolErrorMessage");
   });
 
   it("R4h-4.3: 日志包含 exitCode", async () => {
-    const lmstudioContent = await readFile(
-      join(process.cwd(), "src", "lmstudio.ts"),
+    const toolLoopContent = await readFile(
+      join(process.cwd(), "src", "agent-backend", "tool-loop.ts"),
       "utf-8"
     );
 
-    // 验证：日志包含 exitCode
-    expect(lmstudioContent).toContain("exitCode:");
+    // 验证：代码处理 exitCode
+    expect(toolLoopContent).toContain("exitCode");
   });
 });

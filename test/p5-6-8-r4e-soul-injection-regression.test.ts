@@ -223,38 +223,38 @@ describe("P5.6.8-R4e: handlers.ts SOUL 注入观测", () => {
   });
 });
 
-describe("P5.6.8-R4e: lmstudio.ts SOUL 系统提示注入", () => {
+describe("P5.6.8-R4e: agent-backend SOUL 系统提示注入", () => {
   it("R4e-6.9: SOUL 注入到系统提示", async () => {
-    // 验证：lmstudio.ts 应该将 SOUL 注入到系统提示
-    const lmstudioContent = await readFile(
-      join(process.cwd(), "src", "lmstudio.ts"),
+    // 验证：agent-backend/prompt.ts 应该将 SOUL 注入到系统提示
+    const promptContent = await readFile(
+      join(process.cwd(), "src", "agent-backend", "prompt.ts"),
       "utf-8"
     );
 
     // 验证：系统提示包含 SOUL 标记
-    expect(lmstudioContent).toContain("[灵魂身份]");
-    expect(lmstudioContent).toContain("[/灵魂身份]");
+    expect(promptContent).toContain("[灵魂身份]");
+    expect(promptContent).toContain("[/灵魂身份]");
 
     // 验证：包含禁止读取灵魂文件的提示
-    expect(lmstudioContent).toContain(
+    expect(promptContent).toContain(
       "SOUL 已内置到系统提示中，你不需要也不应该尝试读取"
     );
   });
 
   it("R4e-6.10: SOUL 仅在 dialog 链路注入（exec 链路禁止）", async () => {
-    // P5.7-R3l-2: SOUL 注入逻辑已移至 buildDialogSystemPrompt
-    // exec 链路（runLmStudioToolLoop）使用 buildExecSystemPrompt，禁止 SOUL 注入
-    const lmstudioContent = await readFile(
-      join(process.cwd(), "src", "lmstudio.ts"),
+    // P5.7-R3l-2: SOUL 注入逻辑在 buildDialogSystemPrompt
+    // exec 链路（runAgentToolLoop）使用 buildExecSystemPrompt，禁止 SOUL 注入
+    const promptContent = await readFile(
+      join(process.cwd(), "src", "agent-backend", "prompt.ts"),
       "utf-8"
     );
 
     // 验证：buildDialogSystemPrompt 包含 SOUL 注入条件
-    expect(lmstudioContent).toContain("function buildDialogSystemPrompt");
-    expect(lmstudioContent).toContain("soulContext");
+    expect(promptContent).toContain("function buildDialogSystemPrompt");
+    expect(promptContent).toContain("soulContext");
 
     // 验证：buildExecSystemPrompt 不包含 SOUL 注入
-    const execFuncMatch = lmstudioContent.match(/function buildExecSystemPrompt\s*\([^)]*\)/);
+    const execFuncMatch = promptContent.match(/function buildExecSystemPrompt\s*\([^)]*\)/);
     expect(execFuncMatch).not.toBeNull();
     if (execFuncMatch) {
       expect(execFuncMatch[0]).not.toContain("soulContext");

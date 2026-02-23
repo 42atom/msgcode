@@ -5,19 +5,22 @@
  * - 验证 plan/act 阶段有短回执日志（pipeline phase started）
  * - 验证日志字段完整性（traceId, route, phase, kernel, soulInjected）
  * - 禁止 .only/.skip 新增
+ *
+ * P5.7-R9-T7: 更新测试以读取 agent-backend/routed-chat.ts
  */
 
 import { describe, it, expect } from "bun:test";
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+function readRoutedChatSource(): string {
+    return fs.readFileSync(path.join(process.cwd(), "src/agent-backend", "routed-chat.ts"), "utf-8");
+}
+
 describe("P5.7-R3l-5: TTFT 补偿 + 可观测锁", () => {
     describe("短回执验证", () => {
         it("complex-tool 路由应该在 plan 阶段入口发送短回执", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
-                "utf-8"
-            );
+            const code = readRoutedChatSource();
 
             // 验证 plan 阶段入口日志存在
             expect(code).toContain('phase: "plan"');
@@ -26,10 +29,7 @@ describe("P5.7-R3l-5: TTFT 补偿 + 可观测锁", () => {
         });
 
         it("complex-tool 路由应该在 act 阶段入口发送短回执", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
-                "utf-8"
-            );
+            const code = readRoutedChatSource();
 
             // 验证 act 阶段入口日志存在
             expect(code).toContain('phase: "act"');
@@ -37,10 +37,7 @@ describe("P5.7-R3l-5: TTFT 补偿 + 可观测锁", () => {
         });
 
         it("tool 路由应该在 plan 阶段入口发送短回执", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
-                "utf-8"
-            );
+            const code = readRoutedChatSource();
 
             // 验证 tool 路由有 plan 阶段短回执（分开验证）
             expect(code).toContain('route: "tool"');
@@ -52,10 +49,7 @@ describe("P5.7-R3l-5: TTFT 补偿 + 可观测锁", () => {
         });
 
         it("tool 路由应该在 act 阶段入口发送短回执", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
-                "utf-8"
-            );
+            const code = readRoutedChatSource();
 
             // 验证 tool 路由有 act 阶段短回执
             expect(code).toContain('route: "tool"');
@@ -69,10 +63,7 @@ describe("P5.7-R3l-5: TTFT 补偿 + 可观测锁", () => {
 
     describe("观测字段完整性验证", () => {
         it("入口日志应该包含所有必要字段", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
-                "utf-8"
-            );
+            const code = readRoutedChatSource();
 
             // 验证入口日志包含五个关键字段
             const startLogMatch = code.match(
@@ -82,10 +73,7 @@ describe("P5.7-R3l-5: TTFT 补偿 + 可观测锁", () => {
         });
 
         it("plan 阶段日志应该包含 soulInjected 字段", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
-                "utf-8"
-            );
+            const code = readRoutedChatSource();
 
             // 验证 plan 阶段日志包含 soulInjected
             const planLogMatch = code.match(
@@ -95,10 +83,7 @@ describe("P5.7-R3l-5: TTFT 补偿 + 可观测锁", () => {
         });
 
         it("act 阶段日志应该包含 soulInjected 字段", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
-                "utf-8"
-            );
+            const code = readRoutedChatSource();
 
             // 验证 act 阶段日志包含 soulInjected
             const actLogMatch = code.match(
@@ -108,10 +93,7 @@ describe("P5.7-R3l-5: TTFT 补偿 + 可观测锁", () => {
         });
 
         it("report 阶段日志应该包含 soulInjected 字段", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
-                "utf-8"
-            );
+            const code = readRoutedChatSource();
 
             // 验证 report 阶段日志包含 soulInjected
             const reportLogMatch = code.match(
@@ -121,10 +103,7 @@ describe("P5.7-R3l-5: TTFT 补偿 + 可观测锁", () => {
         });
 
         it("soulInjected 字段应该基于 soulContext 计算", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
-                "utf-8"
-            );
+            const code = readRoutedChatSource();
 
             // 验证 soul 注入计算逻辑存在（dialog/exec 分离）
             expect(code).toContain("const dialogSoulInjected");
@@ -181,10 +160,7 @@ describe("P5.7-R3l-5: TTFT 补偿 + 可观测锁", () => {
 
     describe("日志结构一致性验证", () => {
         it("所有 pipeline phase started 日志应该包含相同的基础字段", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
-                "utf-8"
-            );
+            const code = readRoutedChatSource();
 
             // 统计 pipeline phase started 日志数量
             const startedLogs = code.match(/"pipeline phase started"/g);
@@ -206,10 +182,7 @@ describe("P5.7-R3l-5: TTFT 补偿 + 可观测锁", () => {
         });
 
         it("所有 pipeline phase completed 日志应该包含 soulInjected 字段", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
-                "utf-8"
-            );
+            const code = readRoutedChatSource();
 
             // 统计 pipeline phase completed 日志数量
             const completedLogs = code.match(/"pipeline phase completed"/g);
