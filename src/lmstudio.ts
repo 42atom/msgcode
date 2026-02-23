@@ -19,6 +19,11 @@
  * - 主实现已迁至 src/agent-backend/{config,prompt}.ts
  * - 本文件保留实现副本以兼容现有测试（过渡期）
  * - Step 4 将清理测试并移除重复实现
+ *
+ * P5.7-R9-T7 Step 3 保守迁移说明：
+ * - 主实现已迁至 src/agent-backend/{tool-loop,routed-chat}.ts
+ * - 本文件保留实现副本以兼容现有测试（过渡期）
+ * - Step 4 将清理测试并移除重复实现
  */
 
 import { config } from "./config.js";
