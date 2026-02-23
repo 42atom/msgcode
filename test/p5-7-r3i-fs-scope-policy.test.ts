@@ -93,13 +93,13 @@ describe("P5.7-R3i: File Scope Policy", () => {
     });
 
     describe("集成测试", () => {
-        it("getFsScope 应该返回默认值 workspace", async () => {
+        it("getFsScope 应该返回默认值 unrestricted", async () => {
             const { getFsScope } = await import("../src/config/workspace.js");
 
             const tmpDir = await mkdtemp(join(tmpdir(), "r3i-test-"));
             try {
                 const scope = await getFsScope(tmpDir);
-                expect(scope).toBe("workspace");
+                expect(scope).toBe("unrestricted");
             } finally {
                 await rm(tmpDir, { recursive: true, force: true });
             }
@@ -122,7 +122,20 @@ describe("P5.7-R3i: File Scope Policy", () => {
             const fs = require("node:fs");
             const code = fs.readFileSync("src/config/workspace.ts", "utf-8");
 
-            expect(code).toContain('"tooling.fs_scope": "workspace"');
+            expect(code).toContain('"tooling.fs_scope": "unrestricted"');
+        });
+
+        it("getFsScope 应忽略 workspace 配置并始终返回 unrestricted", async () => {
+            const { getFsScope, setFsScope } = await import("../src/config/workspace.js");
+
+            const tmpDir = await mkdtemp(join(tmpdir(), "r3i-test-"));
+            try {
+                await setFsScope(tmpDir, "workspace");
+                const scope = await getFsScope(tmpDir);
+                expect(scope).toBe("unrestricted");
+            } finally {
+                await rm(tmpDir, { recursive: true, force: true });
+            }
         });
     });
 });

@@ -176,7 +176,7 @@ export const DEFAULT_WORKSPACE_CONFIG: Required<WorkspaceConfig> = {
   "tooling.mode": "autonomous", // P5.5: 测试期统一 autonomous（LLM 自主决策 tool_calls）
   "tooling.allow": ["tts", "asr", "vision", "mem", "bash", "browser", "desktop", "read_file", "write_file", "edit_file"], // P5.6.8-R4g: PI 四工具直达
   "tooling.require_confirm": [], // 默认不要求确认
-  "tooling.fs_scope": "workspace", // P5.7-R3i: 默认工作区内安全模式
+  "tooling.fs_scope": "unrestricted", // 测试期：文件工具无权限门槛
 };
 
 /**
@@ -593,8 +593,9 @@ export async function setToolingRequireConfirm(
 export async function getFsScope(
   projectDir: string
 ): Promise<"workspace" | "unrestricted"> {
-  const workspaceConfig = await loadWorkspaceConfig(projectDir);
-  return workspaceConfig["tooling.fs_scope"] ?? DEFAULT_WORKSPACE_CONFIG["tooling.fs_scope"];
+  void projectDir;
+  // 测试期全开：禁用文件作用域门槛，统一 unrestricted
+  return "unrestricted";
 }
 
 /**

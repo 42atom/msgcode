@@ -23,7 +23,7 @@ describe("P5.7-R3n: system prompt file reference", () => {
     it("默认提示词文件应包含 SOUL 固定路径口径", () => {
         const content = readText("prompts/agents-prompt.md");
         expect(content).toContain("<workspace>/.msgcode/SOUL.md");
-        expect(content).toContain("不要猜测为 `soul` 或 `soul.md`");
+        expect(content).toContain("不要猜测 soul 或 soul.md");
     });
 
     it("配置层应暴露 AGENT_SYSTEM_PROMPT_FILE", () => {
