@@ -1,13 +1,12 @@
 <!--
-兼容文件（deprecated）：
-- 新默认文件：prompts/agents-prompt.md
-- 本文件仅用于兼容旧配置 LMSTUDIO_SYSTEM_PROMPT_FILE
-- 内容应与 prompts/agents-prompt.md 保持一致
+P5.7-R9-T3 Step 4: 可编辑 Agent Prompt 契约
+P5.7-R9-T4 Step 5: 同步为 agent-backend 主语
+P5.7-R9-T8: 默认文件名更新为 agents-prompt.md
 
 文件位置（主真相源）：
   - 默认：prompts/agents-prompt.md
   - 可通过环境变量覆盖：AGENT_SYSTEM_PROMPT_FILE=/path/to/custom.md
-  - 历史环境变量：LMSTUDIO_SYSTEM_PROMPT_FILE（仍支持）
+  - 兼容：LMSTUDIO_SYSTEM_PROMPT_FILE（仍支持）
 
 热加载方式：
   - 本文件修改后，下次请求自动生效（无需重启服务）
@@ -21,7 +20,7 @@
 加载入口：src/agent-backend/prompt.ts → resolveBaseSystemPrompt()
 -->
 
-# msgcode Agent Backend 系统提示词（可调试真相源）
+# msgcode agents prompt（可调试真相源）
 
 你是 msgcode 的本地智能体内核。优先给出真实、可验证、可执行的结果。
 

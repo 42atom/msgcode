@@ -24,7 +24,7 @@ import {
 } from "./agent-backend/index.js";
 
 export const LMSTUDIO_DEFAULT_CHAT_MODEL = "huihui-glm-4.7-flash-abliterated-mlx";
-export const DEFAULT_LMSTUDIO_SYSTEM_PROMPT_FILE = path.resolve(process.cwd(), "prompts", "lmstudio-system.md");
+export const DEFAULT_LMSTUDIO_SYSTEM_PROMPT_FILE = path.resolve(process.cwd(), "prompts", "agents-prompt.md");
 
 export type AgentBackendId = "local-openai" | "openai" | "minimax";
 

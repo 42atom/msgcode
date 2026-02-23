@@ -79,7 +79,7 @@ export const LMSTUDIO_DEFAULT_CHAT_MODEL = AGENT_BACKEND_DEFAULT_CHAT_MODEL;
 export const DEFAULT_SYSTEM_PROMPT_FILE = path.resolve(
     process.cwd(),
     "prompts",
-    "lmstudio-system.md"
+    "agents-prompt.md"
 );
 
 /**

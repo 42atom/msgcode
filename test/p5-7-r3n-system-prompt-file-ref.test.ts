@@ -16,19 +16,20 @@ function readText(relPath: string): string {
 
 describe("P5.7-R3n: system prompt file reference", () => {
     it("应存在默认系统提示词文件", () => {
-        const promptPath = path.join(process.cwd(), "prompts", "lmstudio-system.md");
+        const promptPath = path.join(process.cwd(), "prompts", "agents-prompt.md");
         expect(fs.existsSync(promptPath)).toBe(true);
     });
 
     it("默认提示词文件应包含 SOUL 固定路径口径", () => {
-        const content = readText("prompts/lmstudio-system.md");
+        const content = readText("prompts/agents-prompt.md");
         expect(content).toContain("<workspace>/.msgcode/SOUL.md");
         expect(content).toContain("不要猜测为 `soul` 或 `soul.md`");
     });
 
-    it("配置层应暴露 LMSTUDIO_SYSTEM_PROMPT_FILE", () => {
+    it("配置层应暴露 AGENT_SYSTEM_PROMPT_FILE（并兼容 LMSTUDIO_SYSTEM_PROMPT_FILE）", () => {
         const configCode = readText("src/config.ts");
         expect(configCode).toContain("lmstudioSystemPromptFile?: string");
+        expect(configCode).toContain("process.env.AGENT_SYSTEM_PROMPT_FILE");
         expect(configCode).toContain("process.env.LMSTUDIO_SYSTEM_PROMPT_FILE");
     });
 
@@ -41,8 +42,9 @@ describe("P5.7-R3n: system prompt file reference", () => {
         expect(matches.length).toBeGreaterThanOrEqual(1);
     });
 
-    it(".env 示例应包含提示词文件配置项", () => {
+    it(".env 示例应包含 AGENT 与 LMSTUDIO 提示词文件配置项", () => {
         const envExample = readText(".env.example");
+        expect(envExample).toContain("AGENT_SYSTEM_PROMPT_FILE=");
         expect(envExample).toContain("LMSTUDIO_SYSTEM_PROMPT_FILE=");
     });
 });

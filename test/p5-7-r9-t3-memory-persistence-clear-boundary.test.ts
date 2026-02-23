@@ -116,15 +116,16 @@ describe("P5.7-R9-T3: 系统提示词文件化", () => {
 
     it("agent-backend/prompt.ts 应包含完整路径定义", () => {
         const code = readFileSync(resolve(process.cwd(), "src/agent-backend/prompt.ts"), "utf-8");
-        // 路径由 path.resolve(process.cwd(), "prompts", "lmstudio-system.md") 组成
+        // 路径由 path.resolve(process.cwd(), "prompts", "agents-prompt.md") 组成
         expect(code).toContain('"prompts"');
-        expect(code).toContain('"lmstudio-system.md"');
+        expect(code).toContain('"agents-prompt.md"');
     });
 
     it("agent-backend/prompt.ts 应支持环境变量覆盖", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/agent-backend/prompt.ts"), "utf-8");
-        // 锁定：环境变量覆盖
-        expect(code).toContain("LMSTUDIO_SYSTEM_PROMPT_FILE");
+        const configCode = readFileSync(resolve(process.cwd(), "src/config.ts"), "utf-8");
+        // 锁定：环境变量覆盖（新主别名 + 兼容别名）
+        expect(configCode).toContain("AGENT_SYSTEM_PROMPT_FILE");
+        expect(configCode).toContain("LMSTUDIO_SYSTEM_PROMPT_FILE");
     });
 
     it("agent-backend/prompt.ts 应有 resolveBaseSystemPrompt 函数", () => {
