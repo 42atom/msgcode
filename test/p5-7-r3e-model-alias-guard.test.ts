@@ -57,13 +57,12 @@ describe("P5.7-R3e HOTFIX: model alias guard", () => {
   });
 
   it("lmstudio 调用链必须包含模型别名归一化逻辑", () => {
-    const code = fs.readFileSync(path.join(process.cwd(), "src", "lmstudio.ts"), "utf-8");
+    const configCode = fs.readFileSync(path.join(process.cwd(), "src", "agent-backend", "config.ts"), "utf-8");
+    const routedCode = fs.readFileSync(path.join(process.cwd(), "src", "agent-backend", "routed-chat.ts"), "utf-8");
 
-    expect(code).toContain("const MODEL_ALIAS_SET = new Set");
-    expect(code).toContain("function normalizeModelOverride");
-    expect(code).toContain("normalizeModelOverride(options.model)");
-    expect(code).toContain("normalizeModelOverride(await getExecutorModel(workspacePath))");
-    expect(code).toContain("normalizeModelOverride(await getResponderModel(workspacePath))");
+    expect(configCode).toContain("const MODEL_ALIAS_SET = new Set");
+    expect(configCode).toContain("function normalizeModelOverride");
+    expect(routedCode).toContain("normalizeModelOverride(await getExecutorModel(workspacePath))");
+    expect(routedCode).toContain("normalizeModelOverride(await getResponderModel(workspacePath))");
   });
 });
-

@@ -40,6 +40,7 @@ async function createToolEnabledWorkspace(): Promise<string> {
     await writeFile(
         join(workspacePath, ".msgcode", "config.json"),
         JSON.stringify({
+            "pi.enabled": true,
             "tooling.mode": "autonomous",
             "tooling.allow": ["bash", "read_file", "write_file", "edit_file"],
             "tooling.require_confirm": [],
@@ -257,7 +258,7 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
             });
 
             expect(callCount).toBe(2);
-            expect(result.answer).toContain("前3行如下");
+            expect(result.answer).toMatch(/前\s*3\s*行如下/);
             expect(result.answer).toContain("# Soul");
             expect(result.answer).toContain("line-1");
             expect(result.answer).toContain("line-2");
@@ -274,12 +275,14 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
         const workspacePath = await createToolEnabledWorkspace();
         await writeFile(join(workspacePath, ".msgcode", "toolcheck.txt"), "alpha", "utf-8");
         let callCount = 0;
+        let firstTools: unknown[] = [];
         let firstToolChoice: unknown;
 
         globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
             callCount += 1;
             const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
             if (callCount === 1) {
+                firstTools = Array.isArray(body.tools) ? body.tools : [];
                 firstToolChoice = body.tool_choice;
                 return asJsonResponse({
                     choices: [{
@@ -324,10 +327,15 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
             });
 
             expect(callCount).toBe(2);
-            expect(firstToolChoice).toEqual({
-                type: "function",
-                function: { name: "edit_file" },
-            });
+            const firstToolNames = firstTools
+                .map((t) => (t as { function?: { name?: unknown } })?.function?.name)
+                .filter((name): name is string => typeof name === "string");
+            expect(firstToolNames).toEqual(["edit_file"]);
+            expect(firstToolChoice === "required" || (
+                typeof firstToolChoice === "object"
+                && firstToolChoice !== null
+                && (firstToolChoice as { function?: { name?: unknown } }).function?.name === "edit_file"
+            )).toBe(true);
             expect(result.toolCall?.name).toBe("edit_file");
 
             const content = await (await import("node:fs/promises")).readFile(

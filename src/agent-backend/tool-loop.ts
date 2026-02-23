@@ -2,9 +2,9 @@
  * msgcode: Agent Backend Tool Loop 模块
  *
  * P5.7-R9-T7: 从 lmstudio.ts 迁移出的工具循环逻辑
- * 目标：分离工具循环执行与路由编排
+ * 主实现已迁出到本文件。
  *
- * 本文件为主实现位置，包含 runAgentToolLoop 主函数。
+ * 目标：分离工具循环执行与路由编排
  */
 
 import { config } from "../config.js";
@@ -12,9 +12,12 @@ import * as path from "node:path";
 import * as fsPromises from "node:fs/promises";
 import * as crypto from "node:crypto";
 import { logger } from "../logger/index.js";
-import { normalizeBaseUrl } from "../providers/openai-compat-adapter.js";
 import { sanitizeLmStudioOutput } from "../providers/output-normalizer.js";
-import { buildChatCompletionRequest, parseChatCompletionResponse } from "../providers/openai-compat-adapter.js";
+import {
+    normalizeBaseUrl as normalizeBaseUrlAdapter,
+    buildChatCompletionRequest,
+    parseChatCompletionResponse,
+} from "../providers/openai-compat-adapter.js";
 import {
     PI_ON_TOOLS,
     type AgentToolLoopOptions,
@@ -74,6 +77,19 @@ type ToolRunResult = {
     durationMs: number;
 };
 
+/**
+ * 统一后端 URL 归一化：
+ * - 去掉尾部 `/`
+ * - 若包含 `/v1` 后缀则去掉，避免后续拼接 `/v1/chat/completions` 形成 `/v1/v1/...`
+ */
+function normalizeBaseUrl(raw: string): string {
+    let base = normalizeBaseUrlAdapter(raw);
+    if (base.endsWith("/v1")) {
+        base = base.slice(0, -3);
+    }
+    return base;
+}
+
 type ChatResponse = {
     choices: Array<{
         message?: {
@@ -85,6 +101,15 @@ type ChatResponse = {
 };
 
 const AIDOCS_ROOT = process.env.AIDOCS_ROOT || "AIDOCS";
+
+function getToolNameFromDef(tool: unknown): string | undefined {
+    if (!tool || typeof tool !== "object") return undefined;
+    const asObj = tool as Record<string, unknown>;
+    if (typeof asObj.name === "string" && asObj.name.trim()) return asObj.name;
+    const fn = asObj.function as Record<string, unknown> | undefined;
+    if (fn && typeof fn.name === "string" && fn.name.trim()) return fn.name;
+    return undefined;
+}
 
 // ============================================
 // HTTP 客户端
@@ -219,10 +244,9 @@ function detectPreferredToolName(
 
     const available = new Set<string>();
     for (const tool of tools) {
-        if (!tool || typeof tool !== "object") continue;
-        const fn = (tool as { function?: { name?: unknown } }).function;
-        if (!fn || typeof fn.name !== "string") continue;
-        available.add(fn.name);
+        const name = getToolNameFromDef(tool);
+        if (!name) continue;
+        available.add(name);
     }
     const candidates = ["read_file", "write_file", "edit_file", "bash"] as const;
     for (const name of candidates) {
@@ -242,10 +266,90 @@ function selectToolsByName(
     toolName: string
 ): readonly unknown[] {
     return tools.filter((tool) => {
-        if (!tool || typeof tool !== "object") return false;
-        const fn = (tool as { function?: { name?: unknown } }).function;
-        return !!fn && typeof fn.name === "string" && fn.name === toolName;
+        const name = getToolNameFromDef(tool);
+        return !!name && name === toolName;
     });
+}
+
+function buildToolParametersSchema(toolName: string): Record<string, unknown> {
+    if (toolName === "bash") {
+        return {
+            type: "object",
+            properties: {
+                command: { type: "string" },
+            },
+            required: ["command"],
+            additionalProperties: true,
+        };
+    }
+    if (toolName === "read_file") {
+        return {
+            type: "object",
+            properties: {
+                path: { type: "string" },
+            },
+            required: ["path"],
+            additionalProperties: true,
+        };
+    }
+    if (toolName === "write_file") {
+        return {
+            type: "object",
+            properties: {
+                path: { type: "string" },
+                content: { type: "string" },
+            },
+            required: ["path", "content"],
+            additionalProperties: true,
+        };
+    }
+    if (toolName === "edit_file") {
+        return {
+            type: "object",
+            properties: {
+                path: { type: "string" },
+                oldText: { type: "string" },
+                newText: { type: "string" },
+            },
+            required: ["path", "oldText", "newText"],
+            additionalProperties: true,
+        };
+    }
+    return {
+        type: "object",
+        properties: {},
+        additionalProperties: true,
+    };
+}
+
+function toOpenAiToolSchema(tool: unknown): unknown | null {
+    if (!tool || typeof tool !== "object") return null;
+    const asRecord = tool as Record<string, unknown>;
+
+    if (asRecord.type === "function" && typeof (asRecord.function as { name?: unknown } | undefined)?.name === "string") {
+        return tool;
+    }
+
+    const name = getToolNameFromDef(tool);
+    if (!name) return null;
+    const description = typeof asRecord.description === "string" ? asRecord.description : "";
+    return {
+        type: "function",
+        function: {
+            name,
+            description,
+            parameters: buildToolParametersSchema(name),
+        },
+    };
+}
+
+function toOpenAiToolSchemas(tools: readonly unknown[]): readonly unknown[] {
+    const out: unknown[] = [];
+    for (const tool of tools) {
+        const schema = toOpenAiToolSchema(tool);
+        if (schema) out.push(schema);
+    }
+    return out;
 }
 
 async function getToolsForLlm(workspacePath?: string): Promise<readonly AidocsToolDef[]> {
@@ -253,9 +357,12 @@ async function getToolsForLlm(workspacePath?: string): Promise<readonly AidocsTo
         return [];
     }
     try {
-        const { loadWorkspaceConfig, DEFAULT_WORKSPACE_CONFIG } = await import("../config/workspace.js");
+        const { loadWorkspaceConfig } = await import("../config/workspace.js");
         const cfg = await loadWorkspaceConfig(workspacePath);
-        const piEnabled = cfg["pi.enabled"] ?? DEFAULT_WORKSPACE_CONFIG["pi.enabled"];
+        // R6 hotfix contract: 未显式配置 pi.enabled 时不启用工具
+        const piEnabled = Object.prototype.hasOwnProperty.call(cfg, "pi.enabled")
+            ? cfg["pi.enabled"]
+            : false;
         if (piEnabled) {
             return PI_ON_TOOLS;
         } else {
@@ -264,6 +371,30 @@ async function getToolsForLlm(workspacePath?: string): Promise<readonly AidocsTo
     } catch {
         return [];
     }
+}
+
+function normalizeSoulPathArgs(toolName: string, args: Record<string, unknown>, workspacePath?: string): Record<string, unknown> {
+    if (toolName !== "read_file") return args;
+    const rawPath = typeof args.path === "string" ? args.path : "";
+    if (!rawPath || !workspacePath) return args;
+
+    const normalizedInput = rawPath.replace(/\\/g, "/").trim();
+    const workspaceNorm = workspacePath.replace(/\\/g, "/").replace(/\/+$/, "");
+    const lower = normalizedInput.toLowerCase();
+    const workspaceLower = workspaceNorm.toLowerCase();
+
+    // 纠偏：<workspace>/SOUL.md 或 ./SOUL.md -> .msgcode/SOUL.md
+    const shouldFix =
+        lower === "soul.md" ||
+        lower === "./soul.md" ||
+        lower.endsWith("/soul.md") ||
+        lower === `${workspaceLower}/soul.md`;
+
+    if (!shouldFix) return args;
+    return {
+        ...args,
+        path: ".msgcode/SOUL.md",
+    };
 }
 
 async function runTool(name: string, args: Record<string, unknown>, root: string): Promise<ToolRunResult> {
@@ -458,19 +589,20 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     const tools = options.tools ?? await getToolsForLlm(workspaceRootForTools);
     const preferredToolName = detectPreferredToolName(options.prompt, tools);
     const preferredToolChoice: ToolChoice | undefined = preferredToolName
-        ? { type: "function", function: { name: preferredToolName } }
+        ? "required"
         : undefined;
     const constrainedTools = preferredToolName
         ? selectToolsByName(tools, preferredToolName)
         : tools;
     const activeTools = constrainedTools.length > 0 ? constrainedTools : tools;
+    const activeToolSchemas = toOpenAiToolSchemas(activeTools);
 
     // 第一次请求
     const r1 = await callChatCompletionsRaw({
         baseUrl,
         model: usedModel,
         messages,
-        tools: activeTools,
+        tools: activeToolSchemas,
         toolChoice: preferredToolChoice ?? "auto",
         temperature: 0,
         maxTokens: 800,
@@ -491,7 +623,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
             baseUrl,
             model: usedModel,
             messages: retryMessages,
-            tools: activeTools,
+            tools: activeToolSchemas,
             toolChoice: preferredToolChoice ?? "required",
             temperature: 0,
             maxTokens: 800,
@@ -502,10 +634,40 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
         toolCalls = msg1?.tool_calls ?? [];
     }
 
+    const hasPreferredToolMismatch = (calls: ToolCall[]): boolean => {
+        if (!preferredToolName) return false;
+        return calls.some((tc) => tc.function.name !== preferredToolName);
+    };
+
+    // 显式工具名纠偏：首轮返回错误工具时，强制再请求一次
+    if (toolCalls.length > 0 && hasPreferredToolMismatch(toolCalls) && activeTools.length > 0) {
+        const strictRetry = await callChatCompletionsRaw({
+            baseUrl,
+            model: usedModel,
+            messages,
+            tools: activeToolSchemas,
+            toolChoice: preferredToolChoice ?? "required",
+            temperature: 0,
+            maxTokens: 800,
+            timeoutMs,
+            apiKey: backendRuntime.apiKey,
+        });
+        msg1 = strictRetry.choices[0]?.message;
+        toolCalls = msg1?.tool_calls ?? [];
+    }
+
     // 仍无 tool_calls：硬失败
     if (toolCalls.length === 0) {
         return {
             answer: `协议失败：未收到工具调用指令\n- 错误码：MODEL_PROTOCOL_FAILED\n\n这通常意味着模型无法调用工具。请重试或切换到对话模式。`,
+            actionJournal: [],
+        };
+    }
+
+    // 纠偏后仍不匹配：拒绝执行错误工具
+    if (hasPreferredToolMismatch(toolCalls)) {
+        return {
+            answer: `工具协议失败：模型未按要求调用工具\n- 期望工具：${preferredToolName}\n- 错误码：MODEL_PROTOCOL_FAILED\n\n请重试并明确要求调用正确工具。`,
             actionJournal: [],
         };
     }
@@ -534,6 +696,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
             } catch {
                 args = {};
             }
+            args = normalizeSoulPathArgs(tc.function.name, args, workspacePath);
 
             let toolResult: ToolRunResult;
             try {
@@ -630,7 +793,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
             baseUrl,
             model: usedModel,
             messages: conversationMessages,
-            tools: activeTools,
+            tools: activeToolSchemas,
             toolChoice: preferredToolChoice ?? "auto",
             temperature: 0,
             maxTokens: 800,
