@@ -23,10 +23,10 @@ links:
 
 ## Plan
 
-- [ ] 建立 `src/agent-backend/` 核心模块骨架与类型出口。
-- [ ] 迁移配置解析与 prompt builder 到核心模块，保持行为等价。
-- [ ] 迁移 tool loop 与 routed chat 到核心模块，并将 `lmstudio.ts` 降级为兼容壳。
-- [ ] 增加兼容层与 no-backflow 回归锁，替换脆弱源码字符串断言。
+- [x] 建立 `src/agent-backend/` 核心模块骨架与类型出口。
+- [x] 迁移配置解析与 prompt builder 到核心模块，保持行为等价。
+- [x] 迁移 tool loop 与 routed chat 到核心模块，并将 `lmstudio.ts` 降级为兼容壳。
+- [x] 增加兼容层与 no-backflow 回归锁，替换脆弱源码字符串断言。
 - [ ] 同步任务文档与兼容说明，完成三门验收。
 
 ## Acceptance Criteria
@@ -40,6 +40,34 @@ links:
 - 执行分支：`codex/p5-7-r3e-hotfix-2`（后续按主线收敛策略执行）。
 - 强约束：禁止跨单叠改，发现 tool loop 回归立即停线修复。
 - 派单：已指派 Opus 执行（R9-T7-1 开始）。
+
+### Step 3 完成记录 (771fa49)
+
+- 更新 `src/agent-backend/tool-loop.ts` 和 `src/agent-backend/routed-chat.ts` 文件头注释
+- 更新 `src/lmstudio.ts` 文件头注释说明 Step 3 迁移状态
+- 三道验证门全通过：
+  - `tsc`: 通过
+  - `test`: 1301 pass, 2 fail (外部 AIDOCS 问题，与本次修改无关)
+  - `docs:check`: 通过
+- 提交：`771fa49 refactor(p5.7-r9-t7-step3): 迁移 tool-loop/routed-chat 主实现到 agent-backend`
+
+### Step 4 完成记录 (4e13c0d)
+
+- 创建 `test/p5-7-r9-t7-step4-compatibility-lock.test.ts` 回归锁测试文件
+- 行为锁覆盖：
+  - agent-backend.ts 核心导出验证
+  - agent-backend 目录模块导出验证（buildDialogSystemPrompt、buildExecSystemPrompt 等）
+  - lmstudio.ts 兼容层 forwarding 验证
+  - No-Backflow 回归锁（禁止 agent-backend 导入 lmstudio）
+  - 文件规模锁（lmstudio.ts 行数阈值 3500）
+  - Prompt 构建函数行为验证
+  - 路由温度验证
+  - 类型导出验证
+- 三道验证门全通过：
+  - `tsc`: 通过
+  - `test`: 1353 pass, 2 fail (外部 AIDOCS 问题)
+  - `docs:check`: 通过
+- 提交：`4e13c0d test(p5.7-r9-t7-step4): add compatibility and no-backflow regression locks`
 
 ## Links
 

@@ -3,6 +3,7 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-02-23
+  - refactor: agent-backend 核心模块拆分与 lmstudio 兼容壳化 (Issue: 0002, Plan: docs/design/plan-260223-r9-t7-agent-backend-core-extraction.md) [risk: high] [rollback: 回退 commits 771fa49 和 4e13c0d 恢复 lmstudio.ts 主实现]
   - docs: 建立文档协议目录（issues/design/notes/adr）并迁移 changelog 主路径到 `docs/CHANGELOG.md` (Issue: 0001, Plan: docs/design/plan-260223-r9-t8-repo-protocol-alignment.md) [risk: medium] [rollback: 保留根 CHANGELOG stub，恢复脚本检查前版本]
 
 ---
