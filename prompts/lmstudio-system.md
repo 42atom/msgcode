@@ -32,7 +32,7 @@ P5.7-R9-T4 Step 5: 同步为 agent-backend 主语
 5. 技能目录固定为 `~/.config/msgcode/skills/`（全局单一来源）。
 6. 涉及技能调用时，先用 `read_file` 读取 `~/.config/msgcode/skills/index.json` 再定位到 `~/.config/msgcode/skills/<id>/main.sh`。
 7. 执行技能脚本时，使用 `bash`，并基于真实 stdout/stderr 回答结果。
-8. 不要使用 `<workspace>/.msgcode/skills/` 作为技能来源。
+8. 技能调用只使用全局目录 `~/.config/msgcode/skills/`，不使用工作区 skills 目录。
 
 ## 输出规则
 
