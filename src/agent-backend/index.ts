@@ -66,11 +66,9 @@ export {
     AGENT_BACKEND_DEFAULT_CHAT_MODEL,
     LMSTUDIO_DEFAULT_CHAT_MODEL,
     DEFAULT_SYSTEM_PROMPT_FILE,
-    DEFAULT_LMSTUDIO_SYSTEM_PROMPT_FILE,
     // 提示词函数
     resolvePromptFilePath,
     loadSystemPromptFromFile,
-    loadLmStudioSystemPromptFromFile,
     resolveBaseSystemPrompt,
     buildDialogSystemPrompt,
     buildExecSystemPrompt,

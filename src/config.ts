@@ -83,10 +83,10 @@ export interface Config {
     lmstudioBaseUrl?: string;
     // LM Studio 模型名（可选）
     lmstudioModel?: string;
-    // LM Studio System Prompt（可选）
-    lmstudioSystemPrompt?: string;
-    // LM Studio System Prompt 文件路径（可选）
-    lmstudioSystemPromptFile?: string;
+    // Agent System Prompt（可选）
+    agentSystemPrompt?: string;
+    // Agent System Prompt 文件路径（可选）
+    agentSystemPromptFile?: string;
     // LM Studio 请求超时（毫秒），默认: 120000
     lmstudioTimeoutMs?: number;
     // LM Studio 最大输出 token（可选，默认: 4000）
@@ -199,8 +199,8 @@ export function loadConfig(): Config {
         workspaceRoot: process.env.WORKSPACE_ROOT || path.join(os.homedir(), "msgcode-workspaces"),
         lmstudioBaseUrl: process.env.LMSTUDIO_BASE_URL,
         lmstudioModel: process.env.LMSTUDIO_MODEL,
-        lmstudioSystemPrompt: process.env.AGENT_SYSTEM_PROMPT || process.env.LMSTUDIO_SYSTEM_PROMPT,
-        lmstudioSystemPromptFile: process.env.AGENT_SYSTEM_PROMPT_FILE || process.env.LMSTUDIO_SYSTEM_PROMPT_FILE,
+        agentSystemPrompt: process.env.AGENT_SYSTEM_PROMPT,
+        agentSystemPromptFile: process.env.AGENT_SYSTEM_PROMPT_FILE,
         lmstudioTimeoutMs: process.env.LMSTUDIO_TIMEOUT_MS ? Number(process.env.LMSTUDIO_TIMEOUT_MS) : undefined,
         lmstudioMaxTokens: process.env.LMSTUDIO_MAX_TOKENS ? Number(process.env.LMSTUDIO_MAX_TOKENS) : undefined,
         lmstudioApiKey: process.env.LMSTUDIO_API_KEY,

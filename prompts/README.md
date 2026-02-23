@@ -7,14 +7,12 @@
 ```text
 prompts/
 ├── README.md
-├── agents-prompt.md
-└── lmstudio-system.md (compat)
+└── agents-prompt.md
 ```
 
 ## 文件说明
 
 - `agents-prompt.md`：主链基础系统提示词。运行时默认读取该文件，可通过 `AGENT_SYSTEM_PROMPT_FILE` 覆盖。
-- `lmstudio-system.md`：兼容文件，仅用于历史 `LMSTUDIO_SYSTEM_PROMPT_FILE` 配置。
 
 ## 设计约束
 

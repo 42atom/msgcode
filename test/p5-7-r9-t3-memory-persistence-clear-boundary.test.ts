@@ -108,10 +108,9 @@ describe("P5.7-R9-T3: 延迟摘要", () => {
 // ============================================
 
 describe("P5.7-R9-T3: 系统提示词文件化", () => {
-    it("lmstudio.ts 应有默认系统提示词文件路径", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/lmstudio.ts"), "utf-8");
-        // 锁定：默认文件路径常量
-        expect(code).toContain("DEFAULT_LMSTUDIO_SYSTEM_PROMPT_FILE");
+    it("agent-backend/prompt.ts 应有默认系统提示词文件路径", () => {
+        const code = readFileSync(resolve(process.cwd(), "src/agent-backend/prompt.ts"), "utf-8");
+        expect(code).toContain("DEFAULT_SYSTEM_PROMPT_FILE");
     });
 
     it("agent-backend/prompt.ts 应包含完整路径定义", () => {
@@ -121,11 +120,11 @@ describe("P5.7-R9-T3: 系统提示词文件化", () => {
         expect(code).toContain('"agents-prompt.md"');
     });
 
-    it("agent-backend/prompt.ts 应支持环境变量覆盖", () => {
+    it("agent-backend/prompt.ts 应仅支持 AGENT_SYSTEM_PROMPT_FILE 环境变量覆盖", () => {
         const configCode = readFileSync(resolve(process.cwd(), "src/config.ts"), "utf-8");
-        // 锁定：环境变量覆盖（新主别名 + 兼容别名）
+        // 锁定：仅 AGENT_*，无 LMSTUDIO 兼容回退
         expect(configCode).toContain("AGENT_SYSTEM_PROMPT_FILE");
-        expect(configCode).toContain("LMSTUDIO_SYSTEM_PROMPT_FILE");
+        expect(configCode).not.toContain("LMSTUDIO_SYSTEM_PROMPT_FILE");
     });
 
     it("agent-backend/prompt.ts 应有 resolveBaseSystemPrompt 函数", () => {

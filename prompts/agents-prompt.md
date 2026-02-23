@@ -6,7 +6,6 @@ P5.7-R9-T8: 默认文件名更新为 agents-prompt.md
 文件位置（主真相源）：
   - 默认：prompts/agents-prompt.md
   - 可通过环境变量覆盖：AGENT_SYSTEM_PROMPT_FILE=/path/to/custom.md
-  - 兼容：LMSTUDIO_SYSTEM_PROMPT_FILE（仍支持）
 
 热加载方式：
   - 本文件修改后，下次请求自动生效（无需重启服务）

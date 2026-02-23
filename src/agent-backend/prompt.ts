@@ -82,11 +82,6 @@ export const DEFAULT_SYSTEM_PROMPT_FILE = path.resolve(
     "agents-prompt.md"
 );
 
-/**
- * @deprecated 请使用 DEFAULT_SYSTEM_PROMPT_FILE
- */
-export const DEFAULT_LMSTUDIO_SYSTEM_PROMPT_FILE = DEFAULT_SYSTEM_PROMPT_FILE;
-
 // ============================================
 // 辅助函数
 // ============================================
@@ -139,26 +134,21 @@ export async function loadSystemPromptFromFile(filePath?: string): Promise<strin
 }
 
 /**
- * @deprecated 请使用 loadSystemPromptFromFile
- */
-export const loadLmStudioSystemPromptFromFile = loadSystemPromptFromFile;
-
-/**
  * 解析基础系统提示词
  *
  * 优先级：
  * 1. 传入的 systemOverride 参数
- * 2. 配置文件中的 lmstudioSystemPrompt
- * 3. 从文件加载（lmstudioSystemPromptFile）
+ * 2. 配置文件中的 agentSystemPrompt
+ * 3. 从文件加载（agentSystemPromptFile）
  */
 export async function resolveBaseSystemPrompt(systemOverride?: string): Promise<string> {
     const directPrompt = (systemOverride || "").trim();
     if (directPrompt) return directPrompt;
 
-    const envPrompt = (config.lmstudioSystemPrompt || "").trim();
+    const envPrompt = (config.agentSystemPrompt || "").trim();
     if (envPrompt) return envPrompt;
 
-    return await loadSystemPromptFromFile(config.lmstudioSystemPromptFile);
+    return await loadSystemPromptFromFile(config.agentSystemPromptFile);
 }
 
 // ============================================

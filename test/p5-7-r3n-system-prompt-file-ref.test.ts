@@ -26,11 +26,11 @@ describe("P5.7-R3n: system prompt file reference", () => {
         expect(content).toContain("不要猜测为 `soul` 或 `soul.md`");
     });
 
-    it("配置层应暴露 AGENT_SYSTEM_PROMPT_FILE（并兼容 LMSTUDIO_SYSTEM_PROMPT_FILE）", () => {
+    it("配置层应暴露 AGENT_SYSTEM_PROMPT_FILE", () => {
         const configCode = readText("src/config.ts");
-        expect(configCode).toContain("lmstudioSystemPromptFile?: string");
+        expect(configCode).toContain("agentSystemPromptFile?: string");
         expect(configCode).toContain("process.env.AGENT_SYSTEM_PROMPT_FILE");
-        expect(configCode).toContain("process.env.LMSTUDIO_SYSTEM_PROMPT_FILE");
+        expect(configCode).not.toContain("process.env.LMSTUDIO_SYSTEM_PROMPT_FILE");
     });
 
     it("LM Studio 主链应通过 resolveBaseSystemPrompt 读取基础提示词", () => {
@@ -42,9 +42,9 @@ describe("P5.7-R3n: system prompt file reference", () => {
         expect(matches.length).toBeGreaterThanOrEqual(1);
     });
 
-    it(".env 示例应包含 AGENT 与 LMSTUDIO 提示词文件配置项", () => {
+    it(".env 示例应包含 AGENT 提示词文件配置项", () => {
         const envExample = readText(".env.example");
         expect(envExample).toContain("AGENT_SYSTEM_PROMPT_FILE=");
-        expect(envExample).toContain("LMSTUDIO_SYSTEM_PROMPT_FILE=");
+        expect(envExample).not.toContain("LMSTUDIO_SYSTEM_PROMPT_FILE=");
     });
 });

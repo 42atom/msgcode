@@ -3,7 +3,6 @@
  * P5.7-R9-T7: 本文件降级为兼容层，主实现已迁移至 src/agent-backend/
  */
 
-import * as path from "node:path";
 import * as fsPromises from "node:fs/promises";
 import { config } from "./config.js";
 import { logger } from "./logger/index.js";
@@ -24,7 +23,6 @@ import {
 } from "./agent-backend/index.js";
 
 export const LMSTUDIO_DEFAULT_CHAT_MODEL = "huihui-glm-4.7-flash-abliterated-mlx";
-export const DEFAULT_LMSTUDIO_SYSTEM_PROMPT_FILE = path.resolve(process.cwd(), "prompts", "agents-prompt.md");
 
 export type AgentBackendId = "local-openai" | "openai" | "minimax";
 

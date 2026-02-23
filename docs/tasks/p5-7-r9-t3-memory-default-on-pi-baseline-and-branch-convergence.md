@@ -27,9 +27,9 @@
 
 ## 系统提示词文件位置（当前实现）
 
-1. 默认文件：`/Users/admin/GitProjects/msgcode/prompts/lmstudio-system.md`  
-2. 可覆写环境变量：`LMSTUDIO_SYSTEM_PROMPT_FILE`  
-3. 加载入口：`/Users/admin/GitProjects/msgcode/src/lmstudio.ts`（`DEFAULT_LMSTUDIO_SYSTEM_PROMPT_FILE` / `resolveBaseSystemPrompt`）
+1. 默认文件：`/Users/admin/GitProjects/msgcode/prompts/agents-prompt.md`  
+2. 可覆写环境变量：`AGENT_SYSTEM_PROMPT_FILE`  
+3. 加载入口：`/Users/admin/GitProjects/msgcode/src/agent-backend/prompt.ts`（`DEFAULT_SYSTEM_PROMPT_FILE` / `resolveBaseSystemPrompt`）
 
 ## 实施步骤（每步一提交）
 
@@ -48,7 +48,7 @@
    - 阈值触发后才 compact + summary
 
 4. `refactor(p5.7-r9-t3): promote system prompt to editable agent prompt contract`  
-   - 约定主文件仍为 `prompts/lmstudio-system.md`（兼容现有）  
+   - 约定主文件为 `prompts/agents-prompt.md`  
    - 增加文档化编辑说明与 reload 流程（可热改）
 
 5. `test(p5.7-r9-t3): add memory persistence and clear-boundary locks`  
@@ -91,4 +91,3 @@
 1. 不在本单引入新后端。  
 2. 不改变工具协议合同。  
 3. 不改长期 memory 索引实现（只校正边界与接线）。
-
