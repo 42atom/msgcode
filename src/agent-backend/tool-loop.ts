@@ -495,7 +495,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     const MAX_TOOL_STEPS_TOTAL = 24;
 
     const backendRuntime = options.backendRuntime || resolveAgentBackendRuntime();
-    const baseUrl = options.baseUrl || normalizeBaseUrl(backendRuntime.baseUrl);
+    const baseUrl = normalizeBaseUrl(options.baseUrl || backendRuntime.baseUrl);
     const modelOverride = normalizeModelOverride(options.model);
     const backendDefaultModel = normalizeModelOverride(backendRuntime.model);
     const model = modelOverride
