@@ -1,23 +1,24 @@
 /**
- * msgcode: Agent Backend API 适配器（主实现）
+ * msgcode: Agent Backend 兼容层（LmStudio* 别名）
  *
- * P5.7-R9-T4 收口说明：
- * - 本文件仍为主实现承载（agent-backend.ts 从此处 re-export）
- * - 历史命名 LmStudio* 已提供 Agent* 别名，新代码应使用中性命名
- * - lmstudio 作为历史别名保留，但不再是系统主语
+ * P5.7-R9-T7 收口说明：
+ * - 本文件降级为兼容层，主实现已迁移至 src/agent-backend/
+ * - 新代码应从 src/agent-backend/index.js 导入
+ * - 历史命名 LmStudio* 仅作为别名保留，禁止新增依赖
  *
- * 目标：
- * - 支持多后端（local-openai / openai / minimax）
- * - 配置驱动：AGENT_BACKEND + AGENT_MODEL 为主入口
- * - 只转发最终回答（忽略 reasoning_content），并做兜底清洗
+ * 兼容层边界：
+ * - re-export: runLmStudio* / LmStudio* 类型别名
+ * - 禁止: 新增主链逻辑、工具循环实现
  *
- * 优先级：
- * 1) LM Studio 原生 REST `/api/v1/chat`（支持 MCP integrations）
- * 2) OpenAI 兼容 `/v1/chat/completions`（后备）
+ * 配置驱动原则（冻结）：
+ * 1. 后端与模型切换一律走配置，不走代码分支切换
+ * 2. 业务主链禁止出现"按具体模型名判断逻辑"
+ * 3. 配置解析单源化：AGENT_BACKEND + AGENT_MODEL 为主入口
  *
- * 兼容层（P5.7-R9-T4 Step 2 添加）：
- * - 文件末尾提供 Agent* 别名导出
- * - 新代码禁止依赖 LmStudio* 命名
+ * P5.7-R9-T7 Step 2 保守迁移说明：
+ * - 主实现已迁至 src/agent-backend/{config,prompt}.ts
+ * - 本文件保留实现副本以兼容现有测试（过渡期）
+ * - Step 4 将清理测试并移除重复实现
  */
 
 import { config } from "./config.js";
@@ -40,8 +41,15 @@ import {
 // P5.7-R3k: SLO 降级策略
 import { selectModelByDegrade, isToolCallAllowed, getDegradeState } from "./slo-degrade.js";
 
+// P5.7-R9-T7 Step 2: 从核心模块导入常量（用于验证一致性）
+// 注意：本文件仍保留本地实现副本以兼容现有测试（过渡期）
+import {
+    AGENT_BACKEND_DEFAULT_CHAT_MODEL,
+    DEFAULT_SYSTEM_PROMPT_FILE,
+} from "./agent-backend/index.js";
+
 // ============================================
-// P5.7-R3l-2: System Prompt 构建函数拆分
+// 本地实现（保留以兼容现有测试，Step 4 清理）
 // ============================================
 
 /**

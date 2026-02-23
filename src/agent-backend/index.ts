@@ -34,12 +34,6 @@ export type {
     // Routed Chat 类型
     AgentRoutedChatOptions,
     AgentRoutedChatResult,
-    // 兼容别名
-    LmStudioChatOptions,
-    LmStudioToolLoopOptions,
-    LmStudioRoutedChatOptions,
-    RoutedChatResult,
-    ToolLoopResult,
 } from "./types.js";
 
 export { PI_ON_TOOLS } from "./types.js";

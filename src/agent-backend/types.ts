@@ -175,32 +175,3 @@ export interface AgentRoutedChatResult {
     toolCall?: { name: string; args: Record<string, unknown>; result: unknown };
     actionJournal: ActionJournalEntry[];  // P5.7-R3l-4: 必有，无工具时为空数组
 }
-
-// ============================================
-// 兼容别名（过渡期保留）
-// ============================================
-
-/**
- * @deprecated 请使用 AgentChatOptions
- */
-export type LmStudioChatOptions = AgentChatOptions;
-
-/**
- * @deprecated 请使用 AgentToolLoopOptions
- */
-export type LmStudioToolLoopOptions = AgentToolLoopOptions;
-
-/**
- * @deprecated 请使用 AgentRoutedChatOptions
- */
-export type LmStudioRoutedChatOptions = AgentRoutedChatOptions;
-
-/**
- * @deprecated 请使用 AgentRoutedChatResult
- */
-export type RoutedChatResult = AgentRoutedChatResult;
-
-/**
- * @deprecated 请使用 AgentToolLoopResult
- */
-export type ToolLoopResult = AgentToolLoopResult;
