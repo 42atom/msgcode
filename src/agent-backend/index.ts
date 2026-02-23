@@ -48,6 +48,7 @@ export {
     // 配置函数
     parseBackendTimeoutMs,
     normalizeAgentBackendId,
+    normalizeModelOverride,
     resolveAgentBackendRuntime,
     // 兼容函数
     resolveLmStudioBackendRuntime,
@@ -67,7 +68,6 @@ export {
     DEFAULT_SYSTEM_PROMPT_FILE,
     DEFAULT_LMSTUDIO_SYSTEM_PROMPT_FILE,
     // 提示词函数
-    normalizeModelOverride,
     resolvePromptFilePath,
     loadSystemPromptFromFile,
     loadLmStudioSystemPromptFromFile,
@@ -78,7 +78,7 @@ export {
 } from "./prompt.js";
 
 // ============================================
-// Tool Loop 模块导出（Step 3 完成后）
+// Tool Loop 模块导出
 // ============================================
 
 export type {
@@ -86,8 +86,15 @@ export type {
     AgentToolLoopResult as ToolLoopResultType,
 } from "./tool-loop.js";
 
+export {
+    // Tool Loop 主函数
+    runAgentToolLoop,
+    // 兼容别名
+    runLmStudioToolLoop,
+} from "./tool-loop.js";
+
 // ============================================
-// Routed Chat 模块导出（Step 3 完成后）
+// Routed Chat 模块导出
 // ============================================
 
 export type {

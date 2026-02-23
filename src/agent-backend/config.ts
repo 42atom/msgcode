@@ -35,6 +35,20 @@ export const MODEL_ALIAS_SET = new Set([
     "default-responder",
 ]);
 
+/**
+ * 标准化模型覆盖值
+ *
+ * 规则：
+ * - 空字符串/别名返回 undefined（触发自动模型解析）
+ * - 其他值按真实模型 ID 透传
+ */
+export function normalizeModelOverride(model?: string): string | undefined {
+    const normalized = (model || "").trim();
+    if (!normalized) return undefined;
+    if (MODEL_ALIAS_SET.has(normalized.toLowerCase())) return undefined;
+    return normalized;
+}
+
 // ============================================
 // 配置解析辅助函数
 // ============================================
