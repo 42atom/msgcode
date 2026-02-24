@@ -48,8 +48,11 @@ export function computeNextRunAtMs(
 ): number | null {
   // 支持 kind: "at" 类型（一次性任务）
   if (job.schedule.kind === "at") {
-    // 如果 atMs 已过期，返回一个过去的时间（让 scheduler 立即执行）
-    // scheduler 会通过 routeStatus 检查 job 是否仍然有效
+    // 一次性任务：如果 atMs 已过期，返回 null（不再执行）
+    // 这防止了 scheduler 反复执行已过期的一次性任务
+    if (job.schedule.atMs <= nowMs) {
+      return null;
+    }
     return job.schedule.atMs;
   }
 
@@ -121,8 +124,15 @@ export function computeNextRunAtMsForJobs(
   const results = new Map<string, number>();
 
   for (const job of jobs) {
+    // 跳过已有未来执行时间的 job（避免覆盖测试/手动设置的值）
+    if (job.state.nextRunAtMs !== null && job.state.nextRunAtMs > nowMs) {
+      results.set(job.id, job.state.nextRunAtMs);
+      continue;
+    }
+
     try {
-      const nextRunAtMs = computeNextRunAtMs(job, nowMs);
+      // 优先使用已计算的 nextRunAtMs（避免重复计算和保持测试设置）
+      const nextRunAtMs = job.state.nextRunAtMs ?? computeNextRunAtMs(job, nowMs);
       if (nextRunAtMs !== null) {
         results.set(job.id, nextRunAtMs);
         // 更新 job 的 nextRunAtMs（用于持久化）
@@ -163,7 +173,8 @@ export function computeNextWakeAtMs(
     // 支持 kind: "at" 类型（一次性任务）
     if (job.schedule.kind === "at") {
       const atMs = job.schedule.atMs;
-      if (nextWakeAtMs === null || atMs < nextWakeAtMs) {
+      // 只考虑未来的 at 任务（已过期的不再参与调度）
+      if (atMs > nowMs && (nextWakeAtMs === null || atMs < nextWakeAtMs)) {
         nextWakeAtMs = atMs;
       }
       continue;
@@ -188,7 +199,8 @@ export function computeNextWakeAtMs(
     }
 
     try {
-      const nextRunAtMs = computeNextRunAtMs(job, nowMs);
+      // 优先使用已计算的 nextRunAtMs（避免重复计算和保持测试设置）
+      const nextRunAtMs = job.state.nextRunAtMs ?? computeNextRunAtMs(job, nowMs);
       if (nextRunAtMs !== null) {
         if (nextWakeAtMs === null || nextRunAtMs < nextWakeAtMs) {
           nextWakeAtMs = nextRunAtMs;

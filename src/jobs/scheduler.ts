@@ -314,8 +314,9 @@ export class JobScheduler {
         continue;
       }
 
-      // 计算 nextRunAtMs（如果未计算或过期）
-      if (job.state.nextRunAtMs === null || job.state.nextRunAtMs < now) {
+      // 计算 nextRunAtMs（如果未计算）
+      // 注意：对于已过期但已设置 nextRunAtMs 的 job，不重新计算，允许立即执行
+      if (job.state.nextRunAtMs === null) {
         try {
           const nextRunAtMs = computeNextRunAtMs(job, now);
           job.state.nextRunAtMs = nextRunAtMs;

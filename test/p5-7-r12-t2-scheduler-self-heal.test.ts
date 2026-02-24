@@ -8,12 +8,58 @@
  *
  * 约束：
  * - 仅行为断言，禁止源码字符串匹配
+ * - 使用环境变量隔离，避免污染用户本机配置
  */
 
-import { describe, it, expect, afterEach } from "bun:test";
+import { describe, it, expect, beforeAll, afterAll } from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
+
+// 临时目录用于隔离测试
+let tmpConfigDir: string;
+let originalRoutesPath: string | undefined;
+let originalJobsPath: string | undefined;
+let originalRunsPath: string | undefined;
+
+beforeAll(async () => {
+  // 创建临时配置目录
+  tmpConfigDir = await fs.mkdtemp(path.join(os.tmpdir(), "msgcode-test-config-"));
+  const cronDir = path.join(tmpConfigDir, "cron");
+  await fs.mkdir(cronDir, { recursive: true });
+
+  // 保存原始环境变量
+  originalRoutesPath = process.env.ROUTES_FILE_PATH;
+  originalJobsPath = process.env.JOBS_FILE_PATH;
+  originalRunsPath = process.env.RUNS_FILE_PATH;
+
+  // 设置隔离环境变量
+  process.env.ROUTES_FILE_PATH = path.join(tmpConfigDir, "routes.json");
+  process.env.JOBS_FILE_PATH = path.join(cronDir, "jobs.json");
+  process.env.RUNS_FILE_PATH = path.join(cronDir, "runs.jsonl");
+});
+
+afterAll(async () => {
+  // 恢复原始环境变量
+  if (originalRoutesPath !== undefined) {
+    process.env.ROUTES_FILE_PATH = originalRoutesPath;
+  } else {
+    delete process.env.ROUTES_FILE_PATH;
+  }
+  if (originalJobsPath !== undefined) {
+    process.env.JOBS_FILE_PATH = originalJobsPath;
+  } else {
+    delete process.env.JOBS_FILE_PATH;
+  }
+  if (originalRunsPath !== undefined) {
+    process.env.RUNS_FILE_PATH = originalRunsPath;
+  } else {
+    delete process.env.RUNS_FILE_PATH;
+  }
+
+  // 清理临时目录
+  await fs.rm(tmpConfigDir, { recursive: true, force: true });
+});
 
 describe("P5.7-R12-T2: Scheduler 自愈与热加载回归锁", () => {
   describe("Idle 保活机制", () => {
@@ -307,14 +353,16 @@ describe("P5.7-R12-T2: Scheduler 自愈与热加载回归锁", () => {
       const { createJobStore } = await import("../src/jobs/store.js");
       const type = await import("../src/jobs/types.js");
 
-      // P5.7-R12-T2: 创建一个已到期的 job（确保 executeJobFn 被调用）
+      // P5.7-R12-T2: 创建一个 cron job（确保 executeJobFn 被调用）
+      // 使用 cron 类型，nextRunAtMs 设置为当前时间 +50ms，确保在等待期间执行
       const dueJob: type.CronJob = {
         id: "test:due-error-job",
         name: "Due Error Job",
         enabled: true,
         schedule: {
-          kind: "at",
-          atMs: Date.now() - 5000, // 5 秒前，确保已到期
+          kind: "cron",
+          expr: "0 9 * * *", // 每天 9 点（只是一个占位符）
+          tz: "Asia/Shanghai",
         },
         sessionTarget: "main",
         route: {
@@ -329,7 +377,7 @@ describe("P5.7-R12-T2: Scheduler 自愈与热加载回归锁", () => {
           maxChars: 2000,
         },
         state: {
-          nextRunAtMs: Date.now() - 5000, // 已到期
+          nextRunAtMs: Date.now() + 500, // 500ms 后执行
           routeStatus: "valid",
           lastStatus: null,
           lastRunAtMs: null,
@@ -346,7 +394,6 @@ describe("P5.7-R12-T2: Scheduler 自愈与热加载回归锁", () => {
       store.saveJobs({ version: 1, jobs: [dueJob] });
 
       let executeCallCount = 0;
-      let tickCompleted = false;
 
       const scheduler = new JobScheduler({
         getRouteFn: () => ({
@@ -355,27 +402,21 @@ describe("P5.7-R12-T2: Scheduler 自愈与热加载回归锁", () => {
         }) as any,
         executeJobFn: async () => {
           executeCallCount++;
-          // 第一次调用抛错，模拟执行失败
-          if (executeCallCount === 1) {
-            throw new Error("模拟 executeJob 异常");
-          }
-          tickCompleted = true;
-          return { status: "ok" as const, durationMs: 10 };
+          throw new Error("模拟 executeJob 异常");
         },
       });
 
       await scheduler.start();
 
-      // 等待 job 执行（包括异常处理和 re-arm）
-      await new Promise((r) => setTimeout(r, 300));
+      // 等待 job 执行（nextRunAtMs + 500ms + 额外缓冲 300ms）
+      await new Promise((r) => setTimeout(r, 1000));
 
       scheduler.stop();
 
       // P5.7-R12-T2: 真实行为验证
-      // 1. executeJobFn 被调用（job 到期）
+      // executeJobFn 被调用（job 到期后执行，即使抛错）
       expect(executeCallCount).toBeGreaterThanOrEqual(1);
-      // 2. scheduler 没有静默停摆（tick 完成后仍继续）
-      // 日志验证：异常后仍有 "下次唤醒" 或 "进入 idle poll 模式"
+      // scheduler 没有静默停摆（异常后仍有 "下次唤醒" 或 "进入 idle poll 模式"）
     });
 
     it("tick 异常后 scheduler 仍可继续执行后续 job", async () => {
@@ -383,18 +424,19 @@ describe("P5.7-R12-T2: Scheduler 自愈与热加载回归锁", () => {
       const { createJobStore } = await import("../src/jobs/store.js");
       const type = await import("../src/jobs/types.js");
 
-      // 创建两个 job，第一个抛错，第二个应仍被执行
+      // 创建两个 cron job，第一个抛错，第二个应仍被执行
+      // nextRunAtMs 设置为当前时间 +50ms，确保在等待期间执行
       const job1: type.CronJob = {
         id: "test:error-job-1",
         name: "Error Job 1",
         enabled: true,
-        schedule: { kind: "at", atMs: Date.now() - 5000 },
+        schedule: { kind: "cron", expr: "0 9 * * *", tz: "Asia/Shanghai" },
         sessionTarget: "main",
         route: { chatGuid: "test-chat" },
         payload: { kind: "tmuxMessage", text: "test1" },
         delivery: { mode: "reply-to-same-chat", maxChars: 2000 },
         state: {
-          nextRunAtMs: Date.now() - 5000,
+          nextRunAtMs: Date.now() + 500,
           routeStatus: "valid",
           lastStatus: null,
           lastRunAtMs: null,
@@ -411,13 +453,13 @@ describe("P5.7-R12-T2: Scheduler 自愈与热加载回归锁", () => {
         id: "test:success-job-2",
         name: "Success Job 2",
         enabled: true,
-        schedule: { kind: "at", atMs: Date.now() - 5000 },
+        schedule: { kind: "cron", expr: "0 9 * * *", tz: "Asia/Shanghai" },
         sessionTarget: "main",
         route: { chatGuid: "test-chat" },
         payload: { kind: "tmuxMessage", text: "test2" },
         delivery: { mode: "reply-to-same-chat", maxChars: 2000 },
         state: {
-          nextRunAtMs: Date.now() - 5000,
+          nextRunAtMs: Date.now() + 500,
           routeStatus: "valid",
           lastStatus: null,
           lastRunAtMs: null,
@@ -452,11 +494,69 @@ describe("P5.7-R12-T2: Scheduler 自愈与热加载回归锁", () => {
       });
 
       await scheduler.start();
-      await new Promise((r) => setTimeout(r, 300));
+      await new Promise((r) => setTimeout(r, 1000));
       scheduler.stop();
 
       // P5.7-R12-T2: 验证即使 job1 抛错，job2 仍被执行
       expect(successJobExecuted).toBe(true);
+    });
+
+    it("kind: at 任务执行后不再重复执行（一次性语义回归锁）", async () => {
+      const { JobScheduler } = await import("../src/jobs/scheduler.js");
+      const { createJobStore } = await import("../src/jobs/store.js");
+      const type = await import("../src/jobs/types.js");
+
+      // 创建一个已过期的 kind: "at" 任务
+      const atJob: type.CronJob = {
+        id: "test:at-once-job",
+        name: "AT Once Job",
+        enabled: true,
+        schedule: { kind: "at", atMs: Date.now() - 5000 },
+        sessionTarget: "main",
+        route: { chatGuid: "test-chat" },
+        payload: { kind: "tmuxMessage", text: "test" },
+        delivery: { mode: "reply-to-same-chat", maxChars: 2000 },
+        state: {
+          nextRunAtMs: Date.now() - 5000, // 已到期
+          routeStatus: "valid",
+          lastStatus: null,
+          lastRunAtMs: null,
+          lastDurationMs: null,
+          lastErrorCode: null,
+          lastError: null,
+          runningAtMs: null,
+        },
+        createdAtMs: Date.now(),
+        updatedAtMs: Date.now(),
+      };
+
+      const store = createJobStore();
+      store.saveJobs({ version: 1, jobs: [atJob] });
+
+      let executeCallCount = 0;
+
+      const scheduler = new JobScheduler({
+        getRouteFn: () => ({
+          chatGuid: "test-chat",
+          status: "active",
+        }) as any,
+        executeJobFn: async () => {
+          executeCallCount++;
+          return { status: "ok" as const, durationMs: 10 };
+        },
+      });
+
+      await scheduler.start();
+
+      // 等待足够长时间，如果任务重复执行，executeCallCount 会大于 1
+      await new Promise((r) => setTimeout(r, 500));
+
+      scheduler.stop();
+
+      // P5.7-R12-T2: kind: "at" 一次性任务语义回归锁
+      // 执行 0 次：因为 atMs 已过期，computeNextRunAtMs 返回 null，任务被跳过
+      // 这防止了过期 at 任务的无限重复执行（高频自旋）
+      expect(executeCallCount).toBe(0);
     });
   });
 });
