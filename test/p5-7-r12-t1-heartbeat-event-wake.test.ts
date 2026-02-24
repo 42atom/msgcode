@@ -371,15 +371,21 @@ describe("P5.7-R12-T1: Heartbeat 常驻唤醒回归锁", () => {
   describe("P1-hotfix-2: stop 清空 pendingTick", () => {
     it("stop 后再次 start 不会带着旧 pendingTick 多跑一轮", async () => {
       const { HeartbeatRunner } = await import("../src/runtime/heartbeat.js");
-      const tickCount = { value: 0 };
+      const tickCounts = { first: 0, second: 0 };
+      let phase: "first" | "second" = "first";
+
       const runner = new HeartbeatRunner({ intervalMs: 200 });
 
-      // 第一次启动，制造 pendingTick
       runner.onTick(async () => {
-        tickCount.value++;
+        if (phase === "first") {
+          tickCounts.first++;
+        } else {
+          tickCounts.second++;
+        }
         await new Promise((r) => setTimeout(r, 250)); // 慢执行 > interval
       });
 
+      // 第一次启动，制造 pendingTick
       runner.start();
       await new Promise((r) => setTimeout(r, 50)); // 让 tick 开始（会触发 pending）
       runner.triggerNow("manual"); // 触发 pendingTick
@@ -388,12 +394,14 @@ describe("P5.7-R12-T1: Heartbeat 常驻唤醒回归锁", () => {
       // stop 应该清空 pendingTick
       await runner.stop();
 
-      // 第二次启动，不应有残留 pendingTick
-      tickCount.value = 0; // 重置计数
-      await new Promise((r) => setTimeout(r, 50)); // 等待一小段时间
+      // 第二次启动，验证没有残留 pendingTick
+      phase = "second";
+      runner.start();
+      await new Promise((r) => setTimeout(r, 150)); // 等待 150ms（< 200ms interval）
+      await runner.stop();
 
-      // 预期：150ms 内只有 interval 触发的 tick（0-1 次），不应有额外的 pendingTick 触发
-      expect(tickCount.value).toBeLessThanOrEqual(1);
+      // 预期：第二次启动 150ms 内最多 1 次 tick（首次 manual），不应有额外 pendingTick
+      expect(tickCounts.second).toBeLessThanOrEqual(1);
     });
   });
 
