@@ -114,3 +114,19 @@
 
 无阻塞项。
 
+---
+
+## Hotfix 记录（2026-02-24）
+
+**问题发现**: 核验发现 3 个缺陷
+
+| 问题 | 级别 | 根因 | 修复 |
+|------|------|------|------|
+| 长任务 tick 导致链路中断 | P1 | 防重入逻辑未重排 timer | 添加 pendingTick 补发机制 |
+| triggerNow 复制定时链 | P1 | scheduleTick 每次新建 timer | 开头清理旧 timer |
+| stop 未真正等待 tick | P2 | 固定 setTimeout(100) | 改为轮询等待 |
+
+**Hotfix 提交**: `0f67b37`
+
+**Hotfix 后测试**: 17 pass, 0 fail（原 14 + 新增 3 条回归锁）
+
