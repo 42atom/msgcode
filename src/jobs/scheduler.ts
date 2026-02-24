@@ -7,6 +7,7 @@
  * - 单 timer + unref()（不阻塞进程退出）
  * - 每次 wake 只跑"到期的下一批 job"
  * - 防卡死阈值可配置
+ * - P5.7-R12-T2: idle 保活 + 异常自愈
  */
 
 import type { CronJob, JobRun, JobStatus, JobErrorCode, RuntimeJobErrorCode, JobsErrorCode } from "./types.js";
@@ -14,6 +15,9 @@ import type { RouteEntry } from "../routes/store.js";
 import { createJobStore, type JobStore } from "./store.js";
 import { computeNextRunAtMs, computeNextRunAtMsForJobs, computeNextWakeAtMs } from "./cron.js";
 import { DEFAULT_STUCK_TIMEOUT_MS } from "./types.js";
+
+// P5.7-R12-T2: Idle 状态保活轮询间隔（60s）
+const IDLE_POLL_INTERVAL_MS = 60_000;
 
 // ============================================
 // 配置
@@ -92,6 +96,8 @@ export class JobScheduler {
     if (!store) {
       console.log("[Scheduler] jobs.json 不存在，创建新文件");
       this.store.saveJobs({ version: 1, jobs: [] });
+      // P5.7-R12-T2: 空 store 也要启动 timer（idle 保活）
+      this.armTimer();
     } else {
       // 2) 校验并更新 routeStatus（对齐点 2）
       await this.validateAllRoutes();
@@ -224,6 +230,8 @@ export class JobScheduler {
 
   /**
    * 启动下一个 timer
+   *
+   * P5.7-R12-T2: 无任务时改为 idle poll，不再静默停摆
    */
   private armTimer(): void {
     if (!this.running) {
@@ -238,9 +246,17 @@ export class JobScheduler {
     // 计算下次唤醒时间
     const { nextWakeAtMs, dueJobs } = this.calculateNextWake();
 
+    // P5.7-R12-T2: 无任务时使用 idle poll（60s），不再静默停摆
     if (nextWakeAtMs === null) {
-      console.log("[Scheduler] 没有到期的 job，暂停调度");
-      this.timerId = null;
+      console.log("[Scheduler] 无到期任务，进入 idle poll 模式（60s 间隔）");
+      this.timerId = setTimeout(() => {
+        this.tick().catch((err) => {
+          console.error("[Scheduler] idle tick 错误:", err);
+        });
+      }, IDLE_POLL_INTERVAL_MS);
+
+      // unref() 允许进程退出
+      this.timerId.unref();
       return;
     }
 
@@ -313,27 +329,31 @@ export class JobScheduler {
 
   /**
    * 执行 tick
+   *
+   * P5.7-R12-T2: 使用 try-finally 确保 armTimer 始终被调用
    */
   private async tick(): Promise<void> {
-    const { dueJobs } = this.calculateNextWake();
+    try {
+      const { dueJobs } = this.calculateNextWake();
 
-    if (dueJobs.length === 0) {
+      if (dueJobs.length === 0) {
+        // 无任务时 armTimer 会设置 idle poll
+        return;
+      }
+
+      // 回调
+      if (this.config.onTick) {
+        this.config.onTick({ dueJobs });
+      }
+
+      // 串行执行所有到期的 job（避免并发问题）
+      for (const job of dueJobs) {
+        await this.executeJob(job);
+      }
+    } finally {
+      // P5.7-R12-T2: 无论成功还是异常，都重新 arm timer
       this.armTimer();
-      return;
     }
-
-    // 回调
-    if (this.config.onTick) {
-      this.config.onTick({ dueJobs });
-    }
-
-    // 串行执行所有到期的 job（避免并发问题）
-    for (const job of dueJobs) {
-      await this.executeJob(job);
-    }
-
-    // 重新计算并启动 timer
-    this.armTimer();
   }
 
   /**

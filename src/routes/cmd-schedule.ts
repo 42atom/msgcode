@@ -107,7 +107,7 @@ export async function handleScheduleEnableCommand(options: CommandHandlerOptions
     };
   }
 
-  const { setScheduleEnabled } = await import("../config/schedules.js");
+  const { setScheduleEnabled, mapSchedulesToJobs } = await import("../config/schedules.js");
   const success = await setScheduleEnabled(entry.workspacePath, scheduleId, true);
 
   if (!success) {
@@ -119,11 +119,12 @@ export async function handleScheduleEnableCommand(options: CommandHandlerOptions
     };
   }
 
+  // P5.7-R12-T2: 自动同步 schedules 到 jobs（无需 /reload）
+  await syncSchedulesToJobs(entry.workspacePath, options.chatId);
+
   return {
     success: true,
-    message: `已启用 schedule: ${scheduleId}\n` +
-      `\n` +
-      `提示: 修改后请使用 /reload 重新加载 schedules`,
+    message: `已启用 schedule: ${scheduleId}`,
   };
 }
 
@@ -146,7 +147,7 @@ export async function handleScheduleDisableCommand(options: CommandHandlerOption
     };
   }
 
-  const { setScheduleEnabled } = await import("../config/schedules.js");
+  const { setScheduleEnabled, mapSchedulesToJobs } = await import("../config/schedules.js");
   const success = await setScheduleEnabled(entry.workspacePath, scheduleId, false);
 
   if (!success) {
@@ -158,11 +159,12 @@ export async function handleScheduleDisableCommand(options: CommandHandlerOption
     };
   }
 
+  // P5.7-R12-T2: 自动同步 schedules 到 jobs（无需 /reload）
+  await syncSchedulesToJobs(entry.workspacePath, options.chatId);
+
   return {
     success: true,
-    message: `已禁用 schedule: ${scheduleId}\n` +
-      `\n` +
-      `提示: 修改后请使用 /reload 重新加载 schedules`,
+    message: `已禁用 schedule: ${scheduleId}`,
   };
 }
 
@@ -229,4 +231,31 @@ export async function handleReloadCommand(options: CommandHandlerOptions): Promi
     success: true,
     message: results.join("\n"),
   };
+}
+
+// ============================================
+// P5.7-R12-T2: 辅助函数
+// ============================================
+
+/**
+ * 同步 schedules 到 jobs（热加载）
+ *
+ * 用于 enable/disable 命令后自动生效，无需用户手动 /reload
+ */
+async function syncSchedulesToJobs(workspacePath: string, chatGuid: string): Promise<void> {
+  const { mapSchedulesToJobs } = await import("../config/schedules.js");
+  const { createJobStore } = await import("../jobs/store.js");
+
+  const scheduleJobs = await mapSchedulesToJobs(workspacePath, chatGuid);
+  const store = createJobStore();
+  const existingStore = store.loadJobs();
+
+  if (existingStore) {
+    // 保留非 schedule jobs，合并新的 schedule jobs
+    const nonScheduleJobs = existingStore.jobs.filter(j => !j.id.startsWith("schedule:"));
+    const mergedJobs = [...nonScheduleJobs, ...scheduleJobs];
+    store.saveJobs({ version: 1, jobs: mergedJobs });
+  } else {
+    store.saveJobs({ version: 1, jobs: scheduleJobs });
+  }
 }
