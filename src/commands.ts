@@ -20,6 +20,7 @@ const execAsync = promisify(exec);
 
 let imsgClient: ImsgRpcClient | null = null;
 let jobScheduler: import("./jobs/scheduler.js").JobScheduler | null = null;
+let heartbeatRunner: import("./runtime/heartbeat.js").HeartbeatRunner | null = null;
 const perChatQueue = new Map<string, Promise<void>>();
 const perChatAbort = new Map<string, AbortController>();
 
@@ -471,6 +472,21 @@ export async function startBot(): Promise<void> {
   await jobScheduler.start();
   logger.info("JobScheduler 已启动", { module: "commands" });
 
+  // P5.7-R12-T1: 初始化并启动 Heartbeat Runner
+  const { HeartbeatRunner } = await import("./runtime/heartbeat.js");
+  heartbeatRunner = new HeartbeatRunner({ tag: "msgcode" });
+  heartbeatRunner.onTick(async (ctx) => {
+    // Heartbeat tick 回调：目前仅做观测日志
+    // 后续 R12-T4 将在此处添加事件队列恢复逻辑
+    logger.debug("Heartbeat tick 触发", {
+      module: "commands",
+      tickId: ctx.tickId,
+      reason: ctx.reason,
+    });
+  });
+  heartbeatRunner.start();
+  logger.info("Heartbeat 已启动", { module: "commands" });
+
   const { handleMessage } = await import("./listener.js");
 
   // 按 chat 串行处理消息，避免"回复错位/滞后一条"的乱序现象
@@ -605,6 +621,13 @@ export async function startBot(): Promise<void> {
 export async function stopBot(): Promise<void> {
   console.log("停止 msgcode...");
   logger.info("停止 msgcode", { module: "commands" });
+
+  // P5.7-R12-T1: 先停止 Heartbeat（优雅停止）
+  if (heartbeatRunner) {
+    await heartbeatRunner.stop();
+    heartbeatRunner = null;
+    logger.info("Heartbeat 已停止", { module: "commands" });
+  }
 
   // M3.2-2: 先停止 JobScheduler（优雅停止，等待当前执行完成）
   if (jobScheduler) {
