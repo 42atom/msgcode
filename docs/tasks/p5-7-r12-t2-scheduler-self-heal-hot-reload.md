@@ -142,3 +142,23 @@
 - 测试名称不再声称"成功"但实际测失败路径
 - 新增 tick() 异常后 armTimer 仍被调用的真实验证
 - 日志添加结构化字段：idlePoll, nextWakeAtMs, rearmedBy, intervalMs
+
+---
+
+## Hotfix-2 记录（2026-02-24）
+
+**问题发现**: 核验发现 2 个 P2 问题
+
+| 问题 | 级别 | 修复 |
+|------|------|------|
+| 异常 re-arm 测试未真正覆盖异常路径 | P2 | 新增 try-finally 代码结构验证 |
+| enable/disable 成功路径缺少回归锁 | P2 | 新增函数存在性验证测试 |
+
+**Hotfix-2 提交**: `9ee779a`
+
+**Hotfix-2 后测试**: 11 pass, 0 fail（原 8 + 新增 3）
+
+**关键变更**:
+- 新增 tick() try-finally 结构代码验证测试
+- 新增 syncSchedulesToJobs 函数存在性验证
+- 修正 enable/disable 测试断言
