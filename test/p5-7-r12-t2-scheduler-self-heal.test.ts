@@ -506,7 +506,7 @@ describe("P5.7-R12-T2: Scheduler 自愈与热加载回归锁", () => {
       const { createJobStore } = await import("../src/jobs/store.js");
       const type = await import("../src/jobs/types.js");
 
-      // 创建一个已过期的 kind: "at" 任务
+      // 创建一个已过期的 kind: "at" 任务（但尚未执行过）
       const atJob: type.CronJob = {
         id: "test:at-once-job",
         name: "AT Once Job",
@@ -520,7 +520,7 @@ describe("P5.7-R12-T2: Scheduler 自愈与热加载回归锁", () => {
           nextRunAtMs: Date.now() - 5000, // 已到期
           routeStatus: "valid",
           lastStatus: null,
-          lastRunAtMs: null,
+          lastRunAtMs: null, // 尚未执行过
           lastDurationMs: null,
           lastErrorCode: null,
           lastError: null,
@@ -548,15 +548,18 @@ describe("P5.7-R12-T2: Scheduler 自愈与热加载回归锁", () => {
 
       await scheduler.start();
 
-      // 等待足够长时间，如果任务重复执行，executeCallCount 会大于 1
+      // 等待足够长时间，验证：
+      // 1. 过期但未执行的 at 任务会被补执行一次
+      // 2. 执行后不再重复
       await new Promise((r) => setTimeout(r, 500));
 
       scheduler.stop();
 
       // P5.7-R12-T2: kind: "at" 一次性任务语义回归锁
-      // 执行 0 次：因为 atMs 已过期，computeNextRunAtMs 返回 null，任务被跳过
-      // 这防止了过期 at 任务的无限重复执行（高频自旋）
-      expect(executeCallCount).toBe(0);
+      // 执行 1 次：即使 atMs 已过期，只要 lastRunAtMs === null（未执行过），
+      // computeNextRunAtMs 仍返回 atMs 以便补执行一次
+      // 执行成功后 lastRunAtMs 被设置，后续 computeNextRunAtMs 返回 null，不再重复
+      expect(executeCallCount).toBe(1);
     });
   });
 });

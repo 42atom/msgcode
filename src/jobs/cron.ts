@@ -48,9 +48,9 @@ export function computeNextRunAtMs(
 ): number | null {
   // 支持 kind: "at" 类型（一次性任务）
   if (job.schedule.kind === "at") {
-    // 一次性任务：如果 atMs 已过期，返回 null（不再执行）
-    // 这防止了 scheduler 反复执行已过期的一次性任务
-    if (job.schedule.atMs <= nowMs) {
+    // 一次性任务：如果已经执行过（lastRunAtMs !== null），返回 null（不再执行）
+    // 如果 atMs 已过期但尚未执行，仍返回 atMs 以便补执行一次
+    if (job.state.lastRunAtMs !== null) {
       return null;
     }
     return job.schedule.atMs;
@@ -172,10 +172,14 @@ export function computeNextWakeAtMs(
 
     // 支持 kind: "at" 类型（一次性任务）
     if (job.schedule.kind === "at") {
-      const atMs = job.schedule.atMs;
-      // 只考虑未来的 at 任务（已过期的不再参与调度）
-      if (atMs > nowMs && (nextWakeAtMs === null || atMs < nextWakeAtMs)) {
-        nextWakeAtMs = atMs;
+      // 已执行过的 at 任务不参与调度
+      if (job.state.lastRunAtMs !== null) {
+        continue;
+      }
+      // 优先使用 job.state.nextRunAtMs（保持与 computeNextRunAtMs 一致）
+      const nextRunAtMs = job.state.nextRunAtMs ?? job.schedule.atMs;
+      if (nextWakeAtMs === null || nextRunAtMs < nextWakeAtMs) {
+        nextWakeAtMs = nextRunAtMs;
       }
       continue;
     }
