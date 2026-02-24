@@ -162,3 +162,32 @@
 - 新增 tick() try-finally 结构代码验证测试
 - 新增 syncSchedulesToJobs 函数存在性验证
 - 修正 enable/disable 测试断言
+
+---
+
+## Hotfix-3 记录（2026-02-24）
+
+**问题发现**: 核验发现 3 个 P2 问题
+
+| 问题 | 级别 | 修复 |
+|------|------|------|
+| 异常 re-arm 仍非真实行为验证 | P2 | 使用真实 workspace + schedule 创建真实 route |
+| 成功路径回归锁仍未落地 | P2 | enable/disable 测试断言 jobs 集合变化 |
+| 回归锁回退为源码结构检查 | P2 | 删除 readFile 测试，替换为行为断言 |
+
+**Hotfix-3 提交**: `6966822`
+
+**Hotfix-3 后测试**: 8 pass, 0 fail（重写测试）
+
+**关键变更**:
+1. src/jobs/cron.ts:
+   - computeNextRunAtMs: 支持 kind: "at" 类型（一次性任务）
+   - computeNextWakeAtMs: 支持 kind: "at" 和 kind: "every" 类型
+
+2. test/p5.7-r12-t2-scheduler-self-heal.test.ts:
+   - enable 测试：创建真实 workspace + schedule 文件，断言 jobs 集合变化
+   - disable 测试：先 enable 创建 job，再 disable 断言移除，保留非 schedule job
+   - 异常 re-arm 测试：创建已到期的 kind: "at" job，确保 executeJobFn 被调用
+   - 后续 job 执行测试：两个 job 场景，验证异常后仍继续执行
+
+3. 删除所有源码字符串匹配测试，替换为纯行为断言
