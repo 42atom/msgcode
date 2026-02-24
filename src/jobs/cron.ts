@@ -46,6 +46,13 @@ export function computeNextRunAtMs(
   job: CronJob,
   nowMs: number = Date.now()
 ): number | null {
+  // 支持 kind: "at" 类型（一次性任务）
+  if (job.schedule.kind === "at") {
+    // 如果 atMs 已过期，返回一个过去的时间（让 scheduler 立即执行）
+    // scheduler 会通过 routeStatus 检查 job 是否仍然有效
+    return job.schedule.atMs;
+  }
+
   // 只支持 cron schedule
   if (job.schedule.kind !== "cron") {
     return null;
@@ -150,6 +157,28 @@ export function computeNextWakeAtMs(
   for (const job of jobs) {
     // 只考虑启用且路由有效的 job
     if (!job.enabled || job.state.routeStatus !== "valid") {
+      continue;
+    }
+
+    // 支持 kind: "at" 类型（一次性任务）
+    if (job.schedule.kind === "at") {
+      const atMs = job.schedule.atMs;
+      if (nextWakeAtMs === null || atMs < nextWakeAtMs) {
+        nextWakeAtMs = atMs;
+      }
+      continue;
+    }
+
+    // 支持 kind: "every" 类型
+    if (job.schedule.kind === "every") {
+      // 计算下次运行时间（基于 anchor 和 interval）
+      const { everyMs, anchorMs } = job.schedule;
+      const elapsed = nowMs - anchorMs;
+      const intervals = Math.floor(elapsed / everyMs);
+      const nextMs = anchorMs + (intervals + 1) * everyMs;
+      if (nextWakeAtMs === null || nextMs < nextWakeAtMs) {
+        nextWakeAtMs = nextMs;
+      }
       continue;
     }
 
