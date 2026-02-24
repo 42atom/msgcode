@@ -363,4 +363,58 @@ describe("P5.7-R12-T1: Heartbeat 常驻唤醒回归锁", () => {
       expect(tickCompleted.value).toBe(true);
     });
   });
+
+  // ============================================
+  // P5.7-R12-T1 Hotfix-2 回归锁
+  // ============================================
+
+  describe("P1-hotfix-2: stop 清空 pendingTick", () => {
+    it("stop 后再次 start 不会带着旧 pendingTick 多跑一轮", async () => {
+      const { HeartbeatRunner } = await import("../src/runtime/heartbeat.js");
+      const tickCount = { value: 0 };
+      const runner = new HeartbeatRunner({ intervalMs: 200 });
+
+      // 第一次启动，制造 pendingTick
+      runner.onTick(async () => {
+        tickCount.value++;
+        await new Promise((r) => setTimeout(r, 250)); // 慢执行 > interval
+      });
+
+      runner.start();
+      await new Promise((r) => setTimeout(r, 50)); // 让 tick 开始（会触发 pending）
+      runner.triggerNow("manual"); // 触发 pendingTick
+      await new Promise((r) => setTimeout(r, 30));
+
+      // stop 应该清空 pendingTick
+      await runner.stop();
+
+      // 第二次启动，不应有残留 pendingTick
+      tickCount.value = 0; // 重置计数
+      await new Promise((r) => setTimeout(r, 50)); // 等待一小段时间
+
+      // 预期：150ms 内只有 interval 触发的 tick（0-1 次），不应有额外的 pendingTick 触发
+      expect(tickCount.value).toBeLessThanOrEqual(1);
+    });
+  });
+
+  describe("P2-hotfix-2: stop 无超时等待", () => {
+    it("stop() 等待任意长的 tick 完成（无 5s 超时）", async () => {
+      const { HeartbeatRunner } = await import("../src/runtime/heartbeat.js");
+      const tickCompleted = { value: false };
+      const runner = new HeartbeatRunner({ intervalMs: 50 });
+
+      runner.onTick(async () => {
+        await new Promise((r) => setTimeout(r, 800)); // 800ms tick > 5s 超时阈值
+        tickCompleted.value = true;
+      });
+
+      runner.start();
+      await new Promise((r) => setTimeout(r, 30)); // 让 tick 开始执行
+
+      await runner.stop(); // 应等待 800ms 完成，而非 5s 超时返回
+
+      // stop 返回后 tick 应已完成
+      expect(tickCompleted.value).toBe(true);
+    });
+  });
 });

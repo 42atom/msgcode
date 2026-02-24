@@ -74,6 +74,7 @@ export class HeartbeatRunner {
   private isTicking = false;
   private stopRequested = false;
   private pendingTick = false; // P1-hotfix: 标记需要补 tick
+  private currentTickPromise: Promise<void> | null = null; // P2-hotfix: 当前 tick 的 Promise
 
   /**
    * 创建 HeartbeatRunner 实例
@@ -130,7 +131,8 @@ export class HeartbeatRunner {
    *
    * 行为：
    * - 清除定时器
-   * - 等待当前 tick 完成（优雅停止，轮询等待）
+   * - 等待当前 tick 完成（直接 await currentTickPromise，无超时）
+   * - 清空 pendingTick 标志
    */
   async stop(): Promise<void> {
     if (!this.isRunning) {
@@ -141,30 +143,21 @@ export class HeartbeatRunner {
     this.stopRequested = true;
     this.isRunning = false;
 
+    // P1-hotfix-2: 清空 pendingTick，避免下次 start 时残留
+    this.pendingTick = false;
+
     // 清除定时器
     if (this.timerId) {
       clearTimeout(this.timerId);
       this.timerId = null;
     }
 
-    // P2-hotfix: 轮询等待当前 tick 完成（真实等待，而非固定 setTimeout）
-    if (this.isTicking) {
+    // P2-hotfix-2: 直接 await 当前 tick 的 Promise（无超时）
+    if (this.currentTickPromise) {
       logger.info(`[${this.tag}] 等待当前 tick 完成`, {
         module: "runtime/heartbeat",
       });
-      const maxWaitMs = 5000; // 最大等待 5s
-      const pollIntervalMs = 20;
-      let waited = 0;
-      while (this.isTicking && waited < maxWaitMs) {
-        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-        waited += pollIntervalMs;
-      }
-      if (this.isTicking) {
-        logger.warn(`[${this.tag}] 等待 tick 超时，强制停止`, {
-          module: "runtime/heartbeat",
-          waitedMs: waited,
-        });
-      }
+      await this.currentTickPromise;
     }
 
     logger.info(`[${this.tag}] 心跳已停止`, { module: "runtime/heartbeat" });
@@ -213,8 +206,8 @@ export class HeartbeatRunner {
       startTime: Date.now(),
     };
 
-    // 执行 tick 回调
-    this.executeTick(ctx);
+    // P2-hotfix-2: 保存 tick Promise 供 stop() await
+    this.currentTickPromise = this.executeTick(ctx);
 
     // 调度下一轮（如果是 interval 触发或手动触发后需要继续周期）
     if (this.isRunning && !this.stopRequested) {
@@ -281,6 +274,9 @@ export class HeartbeatRunner {
         }, 0);
       }
     }
+
+    // P2-hotfix-2: 清理 currentTickPromise 引用
+    this.currentTickPromise = null;
   }
 
   /**
