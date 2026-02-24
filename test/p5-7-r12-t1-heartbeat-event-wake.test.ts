@@ -287,4 +287,80 @@ describe("P5.7-R12-T1: Heartbeat 常驻唤醒回归锁", () => {
       resetHeartbeat(); // 清理
     });
   });
+
+  // ============================================
+  // P5.7-R12-T1 Hotfix 回归锁
+  // ============================================
+
+  describe("P1: 长任务 tick 不会导致心跳链路中断", () => {
+    it("tick 耗时 > intervalMs 时仍继续心跳（补发机制）", async () => {
+      const { HeartbeatRunner } = await import("../src/runtime/heartbeat.js");
+      const tickCount = { value: 0 };
+      const runner = new HeartbeatRunner({ intervalMs: 50 });
+
+      runner.onTick(async () => {
+        tickCount.value++;
+        await new Promise((r) => setTimeout(r, 120)); // 慢执行 120ms > 50ms interval
+      });
+
+      runner.start();
+      await new Promise((r) => setTimeout(r, 420));
+      await runner.stop();
+
+      // P1-hotfix: 预期 420ms 内至少 3 次 tick（首次 + 补发），不再是 1 次
+      expect(tickCount.value).toBeGreaterThanOrEqual(3);
+    });
+  });
+
+  describe("P1: triggerNow 不会复制定时链", () => {
+    it("多次 triggerNow 不产生并行 interval 链", async () => {
+      const { HeartbeatRunner } = await import("../src/runtime/heartbeat.js");
+      const tickCount = { value: 0 };
+      const runner = new HeartbeatRunner({ intervalMs: 200 });
+
+      runner.onTick(async () => {
+        tickCount.value++;
+      });
+
+      runner.start();
+      await new Promise((r) => setTimeout(r, 50)); // 等待首次 tick
+
+      // 多次手动触发
+      runner.triggerNow("manual");
+      await new Promise((r) => setTimeout(r, 30));
+      runner.triggerNow("manual");
+      await new Promise((r) => setTimeout(r, 30));
+
+      await new Promise((r) => setTimeout(r, 900)); // 总计约 1s
+      await runner.stop();
+
+      // P1-hotfix: 预期 1s 内约 5-6 次 tick（首次 + 2 manual + 约 3 interval），不是 14+
+      expect(tickCount.value).toBeLessThanOrEqual(8);
+      expect(tickCount.value).toBeGreaterThanOrEqual(3);
+    });
+  });
+
+  describe("P2: stop 真正等待 tick 完成", () => {
+    it("stop() 返回后 tick 已完成执行", async () => {
+      const { HeartbeatRunner } = await import("../src/runtime/heartbeat.js");
+      const tickCompleted = { value: false };
+      const runner = new HeartbeatRunner({ intervalMs: 50 });
+
+      runner.onTick(async () => {
+        await new Promise((r) => setTimeout(r, 300)); // 慢执行 300ms
+        tickCompleted.value = true;
+      });
+
+      runner.start();
+      await new Promise((r) => setTimeout(r, 30)); // 让 tick 开始执行
+
+      const stopStart = Date.now();
+      await runner.stop();
+      const stopDuration = Date.now() - stopStart;
+
+      // P2-hotfix: stop 应等待 tick 完成（约 300ms），而非固定 100ms
+      expect(stopDuration).toBeGreaterThanOrEqual(250);
+      expect(tickCompleted.value).toBe(true);
+    });
+  });
 });

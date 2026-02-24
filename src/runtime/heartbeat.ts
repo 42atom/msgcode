@@ -73,6 +73,7 @@ export class HeartbeatRunner {
   private isRunning = false;
   private isTicking = false;
   private stopRequested = false;
+  private pendingTick = false; // P1-hotfix: 标记需要补 tick
 
   /**
    * 创建 HeartbeatRunner 实例
@@ -129,7 +130,7 @@ export class HeartbeatRunner {
    *
    * 行为：
    * - 清除定时器
-   * - 等待当前 tick 完成（优雅停止）
+   * - 等待当前 tick 完成（优雅停止，轮询等待）
    */
   async stop(): Promise<void> {
     if (!this.isRunning) {
@@ -146,13 +147,24 @@ export class HeartbeatRunner {
       this.timerId = null;
     }
 
-    // 等待当前 tick 完成（优雅停止）
+    // P2-hotfix: 轮询等待当前 tick 完成（真实等待，而非固定 setTimeout）
     if (this.isTicking) {
       logger.info(`[${this.tag}] 等待当前 tick 完成`, {
         module: "runtime/heartbeat",
       });
-      // 简单等待：实际 tick 有自己 try-catch，stop 不阻塞等待
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      const maxWaitMs = 5000; // 最大等待 5s
+      const pollIntervalMs = 20;
+      let waited = 0;
+      while (this.isTicking && waited < maxWaitMs) {
+        await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+        waited += pollIntervalMs;
+      }
+      if (this.isTicking) {
+        logger.warn(`[${this.tag}] 等待 tick 超时，强制停止`, {
+          module: "runtime/heartbeat",
+          waitedMs: waited,
+        });
+      }
     }
 
     logger.info(`[${this.tag}] 心跳已停止`, { module: "runtime/heartbeat" });
@@ -178,9 +190,16 @@ export class HeartbeatRunner {
    * @param reason 触发原因
    */
   private scheduleTick(reason: "interval" | "manual"): void {
-    // 防重入检查
+    // P1-hotfix: 先清理现有 timer，避免复制定时链
+    if (this.timerId) {
+      clearTimeout(this.timerId);
+      this.timerId = null;
+    }
+
+    // P1-hotfix: 防重入检查 - 设置 pending 标志而非直接 return
     if (this.isTicking) {
-      logger.warn(`[${this.tag}] tick 重入保护：上次 tick 未完成，跳过本轮`, {
+      this.pendingTick = true;
+      logger.warn(`[${this.tag}] tick 重入保护：上次 tick 未完成，标记补发`, {
         module: "runtime/heartbeat",
         reason,
       });
@@ -250,6 +269,17 @@ export class HeartbeatRunner {
         ok: result.ok,
         ...(result.error ? { error: result.error } : {}),
       });
+
+      // P1-hotfix: 检查是否有 pending tick，立即补发
+      if (this.pendingTick && this.isRunning && !this.stopRequested) {
+        this.pendingTick = false;
+        // 使用 setImmediate 语义（在当前 event loop 结束后立即执行）
+        setTimeout(() => {
+          if (this.isRunning && !this.stopRequested && !this.isTicking) {
+            this.scheduleTick("interval");
+          }
+        }, 0);
+      }
     }
   }
 
