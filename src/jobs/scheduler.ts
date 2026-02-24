@@ -7,7 +7,7 @@
  * - 单 timer + unref()（不阻塞进程退出）
  * - 每次 wake 只跑"到期的下一批 job"
  * - 防卡死阈值可配置
- * - P5.7-R12-T2: idle 保活 + 异常自愈
+ * - P5.7-R12-T2: idle 保活 + 异常自愈 + 结构化日志
  */
 
 import type { CronJob, JobRun, JobStatus, JobErrorCode, RuntimeJobErrorCode, JobsErrorCode } from "./types.js";
@@ -15,6 +15,7 @@ import type { RouteEntry } from "../routes/store.js";
 import { createJobStore, type JobStore } from "./store.js";
 import { computeNextRunAtMs, computeNextRunAtMsForJobs, computeNextWakeAtMs } from "./cron.js";
 import { DEFAULT_STUCK_TIMEOUT_MS } from "./types.js";
+import { logger } from "../logger/index.js";
 
 // P5.7-R12-T2: Idle 状态保活轮询间隔（60s）
 const IDLE_POLL_INTERVAL_MS = 60_000;
@@ -94,7 +95,9 @@ export class JobScheduler {
     // 1) 加载 jobs
     const store = this.store.loadJobs();
     if (!store) {
-      console.log("[Scheduler] jobs.json 不存在，创建新文件");
+      logger.info("[Scheduler] jobs.json 不存在，创建新文件", {
+        module: "jobs/scheduler",
+      });
       this.store.saveJobs({ version: 1, jobs: [] });
       // P5.7-R12-T2: 空 store 也要启动 timer（idle 保活）
       this.armTimer();
@@ -118,7 +121,7 @@ export class JobScheduler {
       this.armTimer();
     }
 
-    console.log("[Scheduler] 已启动");
+    logger.info("[Scheduler] 已启动", { module: "jobs/scheduler" });
   }
 
   /**
@@ -136,7 +139,7 @@ export class JobScheduler {
       this.timerId = null;
     }
 
-    console.log("[Scheduler] 已停止");
+    logger.info("[Scheduler] 已停止", { module: "jobs/scheduler" });
   }
 
   // ============================================
@@ -248,10 +251,17 @@ export class JobScheduler {
 
     // P5.7-R12-T2: 无任务时使用 idle poll（60s），不再静默停摆
     if (nextWakeAtMs === null) {
-      console.log("[Scheduler] 无到期任务，进入 idle poll 模式（60s 间隔）");
+      logger.info("[Scheduler] 进入 idle poll 模式", {
+        module: "jobs/scheduler",
+        idlePoll: true,
+        intervalMs: IDLE_POLL_INTERVAL_MS,
+      });
       this.timerId = setTimeout(() => {
         this.tick().catch((err) => {
-          console.error("[Scheduler] idle tick 错误:", err);
+          logger.error("[Scheduler] idle tick 错误", {
+            module: "jobs/scheduler",
+            error: err instanceof Error ? err.message : String(err),
+          });
         });
       }, IDLE_POLL_INTERVAL_MS);
 
@@ -267,14 +277,24 @@ export class JobScheduler {
 
     this.timerId = setTimeout(() => {
       this.tick().catch((err) => {
-        console.error("[Scheduler] tick 错误:", err);
+        logger.error("[Scheduler] tick 错误", {
+          module: "jobs/scheduler",
+          error: err instanceof Error ? err.message : String(err),
+        });
       });
     }, clampedDelay);
 
     // unref() 允许进程退出
     this.timerId.unref();
 
-    console.log(`[Scheduler] 下次唤醒: ${new Date(nextWakeAtMs).toISOString()} (${dueJobs.length} 个任务)`);
+    // P5.7-R12-T2: 结构化日志包含 nextWakeAtMs、dueJobs
+    logger.info("[Scheduler] 下次唤醒", {
+      module: "jobs/scheduler",
+      nextWakeAtMs,
+      nextWakeAt: new Date(nextWakeAtMs).toISOString(),
+      dueJobsCount: dueJobs.length,
+      idlePoll: false,
+    });
   }
 
   /**
@@ -333,11 +353,14 @@ export class JobScheduler {
    * P5.7-R12-T2: 使用 try-finally 确保 armTimer 始终被调用
    */
   private async tick(): Promise<void> {
+    let rearmedBy: "success" | "error" | "idle" = "idle";
+
     try {
       const { dueJobs } = this.calculateNextWake();
 
       if (dueJobs.length === 0) {
         // 无任务时 armTimer 会设置 idle poll
+        rearmedBy = "idle";
         return;
       }
 
@@ -350,8 +373,20 @@ export class JobScheduler {
       for (const job of dueJobs) {
         await this.executeJob(job);
       }
+
+      rearmedBy = "success";
+    } catch (err) {
+      rearmedBy = "error";
+      logger.error("[Scheduler] tick 执行异常", {
+        module: "jobs/scheduler",
+        error: err instanceof Error ? err.message : String(err),
+      });
     } finally {
       // P5.7-R12-T2: 无论成功还是异常，都重新 arm timer
+      logger.debug("[Scheduler] tick 完成，准备 re-arm", {
+        module: "jobs/scheduler",
+        rearmedBy,
+      });
       this.armTimer();
     }
   }
