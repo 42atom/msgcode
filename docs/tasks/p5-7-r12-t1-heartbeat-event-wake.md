@@ -130,3 +130,24 @@
 
 **Hotfix 后测试**: 17 pass, 0 fail（原 14 + 新增 3 条回归锁）
 
+---
+
+## Hotfix-2 记录（2026-02-24）
+
+**问题发现**: 核验发现 2 个缺陷
+
+| 问题 | 级别 | 根因 | 修复 |
+|------|------|------|------|
+| pendingTick 在 stop 后未清空 | P1 | stop() 未重置 pendingTick | stop() 显式 `this.pendingTick = false` |
+| stop 的 5s 超时可能提前返回 | P2 | 轮询+超时机制 | 用 currentTickPromise 直接 await |
+
+**Hotfix-2 提交**: `ca8602d`
+
+**Hotfix-2 后测试**: 19 pass, 0 fail（原 17 + 新增 2 条回归锁）
+
+**关键变更**:
+- 添加 `currentTickPromise` 字段保存当前 tick 的 Promise
+- `scheduleTick()` 中设置 `currentTickPromise = this.executeTick(ctx)`
+- `stop()` 直接 `await this.currentTickPromise`（无超时限制）
+- `stop()` 显式清空 `pendingTick = false`
+
