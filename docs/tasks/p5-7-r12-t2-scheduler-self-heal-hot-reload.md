@@ -191,3 +191,37 @@
    - 后续 job 执行测试：两个 job 场景，验证异常后仍继续执行
 
 3. 删除所有源码字符串匹配测试，替换为纯行为断言
+
+---
+
+## Hotfix-4 记录（2026-02-24）
+
+**问题发现**: 核验发现 1 个 P1 阻断问题和 1 个 P2 问题
+
+| 问题 | 级别 | 修复 |
+|------|------|------|
+| kind: "at" 任务无限重复执行 | P1 | computeNextRunAtMs 对过期 at 返回 null |
+| 测试全局状态污染风险 | P2 | 支持环境变量隔离 + beforeAll/afterAll 清理 |
+
+**Hotfix-4 提交**: `9c62482`
+
+**Hotfix-4 后测试**: 9 pass, 0 fail（新增 1 个回归锁测试）
+
+**关键变更**:
+1. P1 修复 - kind: "at" 无限循环问题:
+   - computeNextRunAtMs: 对于已过期的 kind: "at" 返回 null（不再执行）
+   - computeNextWakeAtMs: 跳过已过期的 kind: "at" 任务
+   - 防止高频自旋（探针测试：250ms 内执行 116 次）
+
+2. P2 修复 - 测试隔离:
+   - src/jobs/store.ts: 支持 JOBS_FILE_PATH/RUNS_FILE_PATH 环境变量
+   - test: 添加 beforeAll/afterAll 使用临时目录隔离配置
+   - 避免测试写入用户本机 ~/.config/msgcode/
+
+3. 其他修复:
+   - scheduler.ts: calculateNextWake 只在 nextRunAtMs === null 时重新计算
+   - cron.ts: computeNextWakeAtMs 优先使用 job.state.nextRunAtMs
+   - cron.ts: computeNextRunAtMsForJobs 跳过已有未来执行时间的 job
+
+4. 新增回归锁测试:
+   - "kind: at 任务执行后不再重复执行（一次性语义回归锁）"
