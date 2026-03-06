@@ -66,12 +66,6 @@ describe("P5.7-R9-T7 Step 4: agent-backend.ts 核心导出", () => {
         expect(typeof module.parseToolCallBestEffortFromText).toBe("function");
     });
 
-    it("应导出 isLikelyFakeToolExecutionText 函数", async () => {
-        const module = await import("../src/agent-backend.js");
-        expect(module.isLikelyFakeToolExecutionText).toBeDefined();
-        expect(typeof module.isLikelyFakeToolExecutionText).toBe("function");
-    });
-
     it("应导出 sanitizeAgentOutput 函数", async () => {
         const module = await import("../src/agent-backend.js");
         expect(module.sanitizeAgentOutput).toBeDefined();
@@ -387,6 +381,8 @@ describe("P5.7-R9-T7 Step 4: Prompt 构建函数行为", () => {
 
         expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).toContain("执行核");
         expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).toContain("tool_calls");
+        expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).toContain("网页");
+        expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).toContain("至少必须发出一次相关 tool_calls");
     });
 });
 

@@ -137,9 +137,4 @@ describe("P5.7-R9-T4: 工具相关", () => {
         expect(typeof module.parseToolCallBestEffortFromText).toBe("function");
     });
 
-    it("agent-backend.ts 应导出 isLikelyFakeToolExecutionText", async () => {
-        const module = await import("../src/agent-backend.js");
-        expect(module.isLikelyFakeToolExecutionText).toBeDefined();
-        expect(typeof module.isLikelyFakeToolExecutionText).toBe("function");
-    });
 });

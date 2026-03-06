@@ -1,9 +1,9 @@
 /**
  * msgcode: P5.6.8-R4b window/summary 注入回归锁测试
  *
- * 目标：确保 handlers 读取的 window/summary 必须进入 runAgentRoutedChat 请求构造
+ * 目标：确保 handlers 读取的 window/summary 必须进入 executeAgentTurn 请求构造
  * P5.7-R3e: 更新测试以匹配新的路由分发函数
- * P5.7-R9-T4: 迁移到中性命名（runAgentRoutedChat）
+ * P5.7-R12: handlers 通过 executeAgentTurn 统一收口
  * P5.7-R9-T7: 更新测试以读取 agent-backend 模块
  */
 
@@ -55,19 +55,19 @@ describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
             expect(code).toContain('formatSummaryAsContext(summary)');
         });
 
-        it("handlers.ts 必须传递 windowMessages 和 summaryContext 给 runAgentRoutedChat", () => {
+        it("handlers.ts 必须传递 windowMessages 和 summaryContext 给 executeAgentTurn", () => {
             const code = fs.readFileSync(
                 path.join(process.cwd(), "src/handlers.ts"),
                 "utf-8"
             );
 
-            // P5.7-R9-T4: 使用中性命名 runAgentRoutedChat
-            const routedChatMatch = code.match(/runAgentRoutedChat\([\s\S]{0,500}/);
-            expect(routedChatMatch).not.toBeNull();
+            // P5.7-R12: handlers 只依赖 executeAgentTurn 统一入口
+            const executeTurnMatch = code.match(/executeAgentTurn\(\{[\s\S]{0,500}/);
+            expect(executeTurnMatch).not.toBeNull();
 
             // 验证传递了 windowMessages 和 summaryContext
-            expect(routedChatMatch![0]).toContain('windowMessages');
-            expect(routedChatMatch![0]).toContain('summaryContext');
+            expect(executeTurnMatch![0]).toContain("windowMessages");
+            expect(executeTurnMatch![0]).toContain("summaryContext");
         });
     });
 

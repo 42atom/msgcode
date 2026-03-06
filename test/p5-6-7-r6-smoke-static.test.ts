@@ -28,13 +28,13 @@ describe("P5.6.7-R6: 集成冒烟静态验证", () => {
     });
 
     describe("关键语义验证", () => {
-        it("handlers.ts: direct 路径调用 runAgentRoutedChat（中性命名）", () => {
+        it("handlers.ts: direct 路径调用 executeAgentTurn（统一执行入口）", () => {
             const code = fs.readFileSync(
                 path.join(process.cwd(), "src/handlers.ts"),
                 "utf-8"
             );
-            // P5.7-R9-T4: 迁移到中性命名
-            expect(code).toContain("runAgentRoutedChat");
+            // P5.7-R12: 统一通过 executeAgentTurn 收口 direct 主链
+            expect(code).toContain("executeAgentTurn");
         });
 
         it("session-orchestrator.ts: /clear 调用 clearSessionArtifacts", () => {

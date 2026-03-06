@@ -9,7 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 describe("P5.6.2-R1: ToolLoop 主链防回流锁", () => {
-    it("src/handlers.ts 非 slash 聊天必须调用 runAgentRoutedChat（中性命名）", () => {
+    it("src/handlers.ts 非 slash 聊天必须调用 executeAgentTurn（统一执行入口）", () => {
         const code = fs.readFileSync(
             path.join(process.cwd(), "src/handlers.ts"),
             "utf-8"
@@ -19,9 +19,8 @@ describe("P5.6.2-R1: ToolLoop 主链防回流锁", () => {
             .split("\n")
             .filter(line => !line.trim().startsWith("//"))
             .join("\n");
-        // P5.7-R9-T4: 迁移到中性命名
-        // 必须导入 runAgentRoutedChat
-        expect(codeWithoutComments).toContain("runAgentRoutedChat");
+        // P5.7-R12: handlers 应只依赖统一入口，不再直接绑 routed-chat 实现
+        expect(codeWithoutComments).toContain("executeAgentTurn");
     });
 
     it("src/handlers.ts 主链日志必须包含 toolCallCount 字段", () => {

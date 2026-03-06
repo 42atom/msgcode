@@ -198,16 +198,6 @@ export function parseToolCallBestEffortFromText(params: {
     } catch { return null; }
 }
 
-export function isLikelyFakeToolExecutionText(text: string): boolean {
-    const input = (text || "").trim(); if (!input) return false;
-    const hasExplicitToolMarker = /\[\/?TOOL_CALL\]/i.test(input) || /<\/?tool_call>/i.test(input) ||
-        /\btool\s*=>\s*["']?[a-z_][\w-]*/i.test(input) || /\b(read_file|write_file|edit_file|bash)\s*\(/i.test(input);
-    const hasShellFence = /```(?:bash|sh|zsh|shell)\b[\s\S]*?```/i.test(input);
-    const hasExecutionCue = /(执行中|正在执行|命令输出|命令结果|已执行)/i.test(input) ||
-        /(?:^|\n)\s*(?:pwd|ls|cat)\b/im.test(input) || /\/home\/[^\s]*/.test(input);
-    return hasExplicitToolMarker || (hasShellFence && hasExecutionCue);
-}
-
 export async function getToolsForLlm(workspacePath?: string): Promise<readonly AidocsToolDefFromBackend[]> {
     if (!workspacePath) return [];
     try {
@@ -216,11 +206,26 @@ export async function getToolsForLlm(workspacePath?: string): Promise<readonly A
         const piEnabled = Object.prototype.hasOwnProperty.call(cfg, "pi.enabled")
             ? cfg["pi.enabled"]
             : false;
-        if (piEnabled) {
-            // 从 agent-backend 导入 PI_ON_TOOLS
-            const { PI_ON_TOOLS: tools } = await import("./agent-backend/types.js");
-            return tools;
+        if (!piEnabled) {
+            return [];
         }
-        return [];
+
+        // P5.7-R8c: 从单一真相源派生工具列表
+        // 导入 manifest 模块
+        const { resolveLlmToolExposure } = await import("./tools/manifest.js");
+
+        // 读取 workspace tooling.allow（使用默认值）
+        const allowedTools = (cfg["tooling.allow"] as any) || ["bash", "read_file", "write_file", "edit_file"];
+
+        // 解析 LLM 工具暴露结果
+        const exposure = resolveLlmToolExposure(allowedTools);
+
+        // 转换为 AidocsToolDef 格式
+        const toolDefs: AidocsToolDefFromBackend[] = exposure.exposedTools.map((name) => ({
+            name,
+            description: "", // 描述在 toOpenAiToolSchemas 中填充
+        }));
+
+        return toolDefs;
     } catch { return []; }
 }

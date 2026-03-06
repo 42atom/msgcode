@@ -27,6 +27,7 @@ export {
     type AidocsToolDef,
     type ParsedToolCall,
     type ActionJournalEntry,
+    executeAgentTurn,
     runAgentChat,
     runAgentToolLoop,
     runAgentRoutedChat,
@@ -40,7 +41,6 @@ export {
 export {
     getToolsForLlm as getToolsForAgent,
     parseToolCallBestEffortFromText,
-    isLikelyFakeToolExecutionText,
 } from "./lmstudio.js";
 
 // ============================================

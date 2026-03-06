@@ -2,6 +2,11 @@
 
 优先级：P0（连续会话能力 + 架构语义收敛）
 
+## 回链
+
+- Issue: [0009](../../issues/0009-unix-mainline-refactor.md)
+- Plan: docs/design/plan-260306-unix-mainline-refactor.md
+
 ## 基线（已完成）
 
 1. `R9-T1` 已签收（8 场景 PASS）。
@@ -32,6 +37,11 @@
    - Plan：`docs/design/plan-260223-r9-t7-agent-backend-core-extraction.md`
 7. `R9-T8`：CLAUDE 文档协议目录对齐（✅ 插单完成）  
    - 文档：`docs/tasks/p5-7-r9-t8-repo-protocol-alignment.md`
+
+## 后续派单（R9 收敛后）
+
+1. `P5.7-R10`：可用性稳定化派单包（真实冒烟阻断修复）
+   - 文档：`docs/tasks/p5-7-r10-usability-stabilization-pack.md`
 
 禁止并行跨单改动：必须前一单全绿签收后再开下一单。
 
