@@ -164,7 +164,7 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
           `\n` +
           `可用 Agent Backend:\n` +
           `  agent-backend  本地兼容后端（LM Studio/OpenAI-compatible，本地默认）\n` +
-          `  minimax        MiniMax（OpenAI-compatible）\n` +
+          `  minimax        MiniMax（Anthropic-compatible，推荐）\n` +
           `  openai         OpenAI API\n` +
           `\n` +
           `兼容别名（legacy）:\n` +
@@ -229,7 +229,7 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
         `\n` +
         `目前可用的 Backend:\n` +
         `  agent-backend  本地兼容后端（默认）\n` +
-        `  minimax        MiniMax（OpenAI-compatible）\n` +
+        `  minimax        MiniMax（Anthropic-compatible，推荐）\n` +
         `  openai      OpenAI API`,
     };
   }
@@ -241,7 +241,7 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
         `\n` +
         `可用的 Agent Backend:\n` +
         `  agent-backend  本地兼容后端（LM Studio）\n` +
-        `  minimax        MiniMax（OpenAI-compatible）\n` +
+        `  minimax        MiniMax（Anthropic-compatible，推荐）\n` +
         `  openai      OpenAI API\n` +
         `\n` +
         `兼容别名:\n` +

@@ -2,6 +2,12 @@
 
 ## Protocol Entries（CLAUDE.md 约束格式）
 
+- 2026-03-07
+  - agent-backend: `minimax` provider 切换到 Anthropic-compatible 推荐接法，新增独立 provider 适配、Anthropic tool schema 映射与多轮 `tool_use/tool_result` 回灌 (Issue: 0010, Plan: docs/design/plan-260307-minimax-anthropic-provider.md) [risk: medium] [rollback: 回退 `src/providers/minimax-anthropic.ts` 及 `chat/tool-loop/config` 本次接线]
+- 2026-03-06
+  - browser: 引入 `pinchtab@0.7.7` 作为浏览器底座依赖，并记录首轮真实验证结论（优先对接 HTTP API，避免直接包 CLI 主链路） (Issue: 0004, Plan: docs/design/plan-260306-web-transaction-platform-core.md) [risk: medium] [rollback: 移除 `pinchtab` 依赖并回退 README/验证文档更新]
+  - browser: 收口 PinchTab timeout 与 baseUrl 语义，新增 `BROWSER_TIMEOUT` / `BROWSER_ORCHESTRATOR_URL_REQUIRED`，并将 browser timeout 向上映射为 `TOOL_TIMEOUT` (Issue: 0004, Plan: docs/design/plan-260306-web-transaction-platform-core.md) [risk: low] [rollback: 回退 `src/runners/browser-pinchtab.ts`、`src/tools/bus.ts`、README 本次修复]
+  - browser: 新增共享工作 Chrome 根目录口径与 `msgcode browser root` 命令，默认路径固定为 `$WORKSPACE_ROOT/.msgcode/chrome-profiles/<name>` (Issue: 0004, Plan: docs/design/plan-260306-web-transaction-platform-core.md) [risk: low] [rollback: 回退 `src/browser/chrome-root.ts`、`src/cli/browser.ts`、README 本次更新]
 - 2026-02-23
   - refactor: agent-backend 核心模块拆分与 lmstudio 兼容壳化 (Issue: 0002, Plan: docs/design/plan-260223-r9-t7-agent-backend-core-extraction.md) [risk: high] [rollback: 回退 commits 771fa49 和 4e13c0d 恢复 lmstudio.ts 主实现]
   - docs: 建立文档协议目录（issues/design/notes/adr）并迁移 changelog 主路径到 `docs/CHANGELOG.md` (Issue: 0001, Plan: docs/design/plan-260223-r9-t8-repo-protocol-alignment.md) [risk: medium] [rollback: 保留根 CHANGELOG stub，恢复脚本检查前版本]

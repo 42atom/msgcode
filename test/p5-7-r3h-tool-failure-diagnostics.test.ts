@@ -14,6 +14,14 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
+const localOpenAiRuntime = {
+    id: "local-openai" as const,
+    baseUrl: "http://127.0.0.1:1234",
+    model: "test-model",
+    timeoutMs: 10_000,
+    nativeApiEnabled: false,
+};
+
 type ChatCompletionPayload = {
     choices: Array<{
         message: {
@@ -142,6 +150,7 @@ describe("P5.7-R3h: Tool Failure Diagnostics (Behavior Lock)", () => {
                     prompt: "请用 bash 执行 pwd",
                     workspacePath,
                     timeoutMs: 10_000,
+                    backendRuntime: localOpenAiRuntime,
                 });
 
                 // 首轮 + required-retry + strict-retry
@@ -185,6 +194,7 @@ describe("P5.7-R3h: Tool Failure Diagnostics (Behavior Lock)", () => {
                     prompt: "执行失败命令",
                     workspacePath,
                     timeoutMs: 10_000,
+                    backendRuntime: localOpenAiRuntime,
                 });
 
                 expect(result.answer).toContain("TOOL_EXEC_FAILED");
@@ -230,6 +240,9 @@ describe("P5.7-R3h: Tool Failure Diagnostics (Behavior Lock)", () => {
                     prompt: "执行超多工具",
                     workspacePath,
                     timeoutMs: 10_000,
+                    // P5.7-R12-T8: 显式设置 conservative 档位，确保 9 次调用触发超限
+                    quotaProfile: "conservative",
+                    backendRuntime: localOpenAiRuntime,
                 });
 
                 expect(result.answer).toContain("TOOL_LOOP_LIMIT_EXCEEDED");

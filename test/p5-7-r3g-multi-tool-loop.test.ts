@@ -14,6 +14,14 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
+const localOpenAiRuntime = {
+    id: "local-openai" as const,
+    baseUrl: "http://127.0.0.1:1234",
+    model: "test-model",
+    timeoutMs: 10_000,
+    nativeApiEnabled: false,
+};
+
 type ChatCompletionPayload = {
     choices: Array<{
         message: {
@@ -53,6 +61,46 @@ async function createToolEnabledWorkspace(): Promise<string> {
 }
 
 describe("P5.7-R3g: Tool Loop Multi-Tool (Behavior Lock)", () => {
+    it("allowNoTool 直答路径应清理 <think> 标签", async () => {
+        const originalFetch = globalThis.fetch;
+        const workspacePath = await createToolEnabledWorkspace();
+        let callCount = 0;
+
+        globalThis.fetch = (async () => {
+            callCount += 1;
+            return asJsonResponse({
+                choices: [{
+                    message: {
+                        role: "assistant",
+                        content: "<think>先想一下内部步骤</think>\n最终答案",
+                    },
+                    finish_reason: "stop",
+                }],
+            });
+        }) as typeof fetch;
+
+        try {
+            const result = await runLmStudioToolLoop({
+                baseUrl: "http://127.0.0.1:1234",
+                model: "test-model",
+                prompt: "直接回答，不需要工具",
+                workspacePath,
+                timeoutMs: 10_000,
+                allowNoTool: true,
+                backendRuntime: localOpenAiRuntime,
+            });
+
+            expect(callCount).toBe(1);
+            expect(result.decisionSource).toBe("model");
+            expect(result.answer).toBe("最终答案");
+            expect(result.answer).not.toContain("<think>");
+            expect(result.actionJournal).toEqual([]);
+        } finally {
+            globalThis.fetch = originalFetch;
+            await rm(workspacePath, { recursive: true, force: true });
+        }
+    });
+
     it("单轮多个工具应按 FIFO 顺序执行", async () => {
         const originalFetch = globalThis.fetch;
         const workspacePath = await createToolEnabledWorkspace();
@@ -107,11 +155,13 @@ describe("P5.7-R3g: Tool Loop Multi-Tool (Behavior Lock)", () => {
                 prompt: "先执行命令再读取文件",
                 workspacePath,
                 timeoutMs: 10_000,
+                backendRuntime: localOpenAiRuntime,
             });
 
             expect(callCount).toBe(2);
             expect(result.answer).toContain("执行完成");
-            expect(result.actionJournal.length).toBe(2);
+            // P5.7-R12-T3: verify phase 增加了一条 journal entry
+            expect(result.actionJournal.length).toBe(3);
             expect(result.actionJournal[0].tool).toBe("bash");
             expect(result.actionJournal[1].tool).toBe("read_file");
             expect(result.actionJournal[0].stepId).toBeLessThan(result.actionJournal[1].stepId);
@@ -186,11 +236,13 @@ describe("P5.7-R3g: Tool Loop Multi-Tool (Behavior Lock)", () => {
                 prompt: "执行两轮工具",
                 workspacePath,
                 timeoutMs: 10_000,
+                backendRuntime: localOpenAiRuntime,
             });
 
             expect(callCount).toBe(3);
             expect(result.answer).toContain("多轮执行完成");
-            expect(result.actionJournal.length).toBe(2);
+            // P5.7-R12-T3: verify phase 增加了一条 journal entry
+            expect(result.actionJournal.length).toBe(3);
             expect(result.actionJournal[0].tool).toBe("bash");
             expect(result.actionJournal[1].tool).toBe("read_file");
         } finally {
@@ -230,6 +282,9 @@ describe("P5.7-R3g: Tool Loop Multi-Tool (Behavior Lock)", () => {
                 prompt: "执行超多工具",
                 workspacePath,
                 timeoutMs: 10_000,
+                // P5.7-R12-T8: 显式设置 conservative 档位，确保 9 次调用触发超限
+                quotaProfile: "conservative",
+                backendRuntime: localOpenAiRuntime,
             });
 
             expect(result.answer).toContain("TOOL_LOOP_LIMIT_EXCEEDED");
@@ -274,6 +329,7 @@ describe("P5.7-R3g: Tool Loop Multi-Tool (Behavior Lock)", () => {
                 prompt: "执行一个不存在的命令",
                 workspacePath,
                 timeoutMs: 10_000,
+                backendRuntime: localOpenAiRuntime,
             });
 
             expect(callCount).toBe(1);
@@ -287,4 +343,3 @@ describe("P5.7-R3g: Tool Loop Multi-Tool (Behavior Lock)", () => {
         }
     });
 });
-

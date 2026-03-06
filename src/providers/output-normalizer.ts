@@ -31,16 +31,20 @@ export function sanitizeLmStudioOutput(text: string): string {
     // 1. 移除 ANSI 转义码
     let cleaned = stripAnsi(text);
 
-    // 2. 移除元叙事前缀
+    // 2. 剥离 think 标签，避免推理内容泄露到用户可见输出
+    cleaned = dropBeforeLastClosingTag(cleaned, "think");
+    cleaned = cleaned.replace(/<think[\s\S]*?<\/think>/gi, "");
+
+    // 3. 移除元叙事前缀
     cleaned = stripMetaNarrative(cleaned);
 
-    // 3. 移除只读提示
+    // 4. 移除只读提示
     cleaned = stripReadOnlyHint(cleaned);
 
-    // 4. 标准化 JSON 片段
+    // 5. 标准化 JSON 片段
     cleaned = normalizeJsonishEnvelope(cleaned);
 
-    // 5. 去重噪声行
+    // 6. 去重噪声行
     cleaned = dedupeNoisyLines(cleaned.split("\n")).join("\n");
 
     return cleaned.trim();

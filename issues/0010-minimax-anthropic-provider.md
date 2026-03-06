@@ -1,0 +1,82 @@
+---
+id: 0010
+title: MiniMax Anthropic Provider 兼容修复
+status: doing
+owner: agent
+labels: [feature, refactor, architecture]
+risk: medium
+scope: agent-backend/providers MiniMax 独立 provider 与 tool-use 契约对齐
+plan_doc: docs/design/plan-260307-minimax-anthropic-provider.md
+links:
+  - docs/tasks/p5-7-r13-minimax-anthropic-provider.md
+  - docs/notes/research-260307-minimax-provider-compat.md
+---
+
+## Context
+
+- 用户确认采用推荐方案：为 MiniMax 单独实现真正的 provider，走 Anthropic-compatible 接口。
+- 官方文档明确将 Anthropic API Compatible 标为 Recommended，并将 Claude Code / 多数 coding tools 指向该入口。
+- 当前仓库对 `minimax` 的接入仍走 OpenAI-compatible chat completions，自写 adapter 未覆盖官方要求的：
+  - interleaved thinking 历史保真
+  - Anthropic content blocks（`thinking/text/tool_use/tool_result`）
+  - MiniMax 官方 coding / agent 推荐入口
+
+## Goal / Non-Goals
+
+- Goal: 让 `agent-backend` 在 `minimax` provider 下走 Anthropic-compatible provider，并正确执行多轮 tool use。
+- Goal: 保持现有主链单一入口，不引入 content-based fake recover。
+- Goal: 为 MiniMax provider 补可复现的行为锁，覆盖 tool use 与 no-tool 直答。
+- Non-Goals: 本轮不重构 `openai` / `local-openai` provider。
+- Non-Goals: 本轮不实现通用 Anthropic provider，只落 MiniMax 专用适配。
+- Non-Goals: 本轮不做多 provider 平台化抽象，不新增控制层。
+
+## Plan
+
+- [x] 记录官方兼容要求与当前实现差异
+- [x] 创建 Plan 文档并冻结最小实现边界
+- [ ] 新增 MiniMax Anthropic provider 适配实现
+- [ ] 接线 `runAgentChat` / `runAgentToolLoop` 到 minimax 专用 provider
+- [ ] 补 MiniMax tool-use 多轮与 no-tool 回归锁
+- [ ] 跑定向与全量验证
+
+## Acceptance Criteria
+
+1. `AGENT_BACKEND=minimax` 时，不再走 OpenAI-compatible `chat/completions` 主路径。
+2. MiniMax tool use 能按 Anthropic content block 语义执行多轮工具调用。
+3. 不新增 XML / text-based fake recover 逻辑。
+4. 相关测试能覆盖：
+   - 无工具直答
+   - 单轮工具调用
+   - 多轮工具调用
+   - 工具结果回灌后最终回答
+
+## Notes
+
+- Evidence:
+  - Docs: MiniMax `Compatible Anthropic API`, `Compatible OpenAI API`, `Tool Use & Interleaved Thinking`, `API Overview`
+  - Code: `src/agent-backend/chat.ts`, `src/agent-backend/tool-loop.ts`, `src/providers/openai-compat-adapter.ts`
+- 已确认当前问题不在“MiniMax 不支持工具调用”，而在“我们接法与官方推荐接法不一致”。
+- 本轮已完成改动：
+  - 新增 `src/providers/minimax-anthropic.ts`，实现 MiniMax Anthropic-compatible base URL、headers、request、response 解析。
+  - `src/tools/manifest.ts` 新增 Anthropic tool schema 映射。
+  - `src/agent-backend/chat.ts` 在 `minimax` 下改走 `/anthropic/v1/messages`。
+  - `src/agent-backend/tool-loop.ts` 在 `minimax` 下改走 Anthropic content blocks（`text/tool_use/tool_result`）与多轮回灌。
+  - 旧 `tool-loop` 行为锁显式钉回 `local-openai` mock，避免被当前 shell 的 `AGENT_BACKEND=minimax` 污染。
+  - 用户可见口径已更新：`.env.example`、`src/routes/cmd-model.ts`、`src/README.md`、`docs/CHANGELOG.md`。
+- 验证结果：
+  - `npm test -- test/p5-7-r10-minimax-anthropic-provider.test.ts`
+  - `npm test -- test/p5-7-r3g-multi-tool-loop.test.ts`
+  - `npm test -- test/p5-7-r3h-tool-failure-diagnostics.test.ts`
+  - `npm test -- test/p5-7-r3l-4-journal-hotfix-regression.test.ts`
+  - `npm test -- test/p5-7-r3l-7-tool-protocol-retry-and-soul-normalize.test.ts`
+  - `npm test -- test/p5-7-r3l-8-multi-round-tool-loop.test.ts`
+  - `npm test -- test/p5-7-r9-t2-skill-global-single-source.test.ts`
+  - `npx tsc --noEmit`
+  - `npm run docs:check`
+  - `npm test`（1367 pass / 0 fail）
+  - 真实 API 冒烟：`runAgentChat({ prompt: "只回复 OK", backendRuntime: resolveAgentBackendRuntime("minimax") })` → `OK`
+
+## Links
+
+- Plan: `docs/design/plan-260307-minimax-anthropic-provider.md`
+- Task: `docs/tasks/p5-7-r13-minimax-anthropic-provider.md`

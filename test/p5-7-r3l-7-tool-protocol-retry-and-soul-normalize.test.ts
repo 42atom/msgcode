@@ -12,6 +12,14 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+const localOpenAiRuntime = {
+    id: "local-openai" as const,
+    baseUrl: "http://127.0.0.1:1234",
+    model: "test-model",
+    timeoutMs: 10_000,
+    nativeApiEnabled: false,
+};
+
 type ChatCompletionPayload = {
     choices: Array<{
         message: {
@@ -124,12 +132,14 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
                 prompt: "执行 bash pwd",
                 workspacePath,
                 timeoutMs: 10_000,
+                backendRuntime: localOpenAiRuntime,
             });
 
             expect(callCount).toBe(3);
             expect(sawRetryChoice).toBe(true);
             expect(result.toolCall?.name).toBe("bash");
-            expect(result.actionJournal.length).toBe(1);
+            // P5.7-R12-T3: verify phase 增加了一条 journal entry
+            expect(result.actionJournal.length).toBe(2);
             expect(result.actionJournal[0].ok).toBe(true);
         } finally {
             globalThis.fetch = originalFetch;
@@ -184,11 +194,13 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
                 prompt: "读取 SOUL 文件",
                 workspacePath,
                 timeoutMs: 10_000,
+                backendRuntime: localOpenAiRuntime,
             });
 
             expect(callCount).toBe(2);
             expect(result.answer).toContain("soul-read-ok");
-            expect(result.actionJournal.length).toBe(1);
+            // P5.7-R12-T3: verify phase 增加了一条 journal entry
+            expect(result.actionJournal.length).toBe(2);
             expect(result.actionJournal[0].tool).toBe("read_file");
             expect(result.actionJournal[0].ok).toBe(true);
         } finally {
@@ -255,6 +267,7 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
                 prompt: "你的soul文件前三行是什么",
                 workspacePath,
                 timeoutMs: 10_000,
+                backendRuntime: localOpenAiRuntime,
             });
 
             expect(callCount).toBe(2);
@@ -324,6 +337,7 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
                 prompt: "请使用 edit_file 工具把 .msgcode/toolcheck.txt 里的 alpha 改成 beta",
                 workspacePath,
                 timeoutMs: 10_000,
+                backendRuntime: localOpenAiRuntime,
             });
 
             expect(callCount).toBe(2);
@@ -392,6 +406,7 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
                 prompt: "请使用 edit_file 工具把 .msgcode/toolcheck.txt 里的 alpha 改成 beta",
                 workspacePath,
                 timeoutMs: 10_000,
+                backendRuntime: localOpenAiRuntime,
             });
 
             expect(callCount).toBe(2);

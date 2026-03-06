@@ -12,6 +12,14 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+const localOpenAiRuntime = {
+    id: "local-openai" as const,
+    baseUrl: "http://127.0.0.1:1234",
+    model: "test-model",
+    timeoutMs: 10_000,
+    nativeApiEnabled: false,
+};
+
 type ChatCompletionPayload = {
     choices: Array<{
         message: {
@@ -117,11 +125,13 @@ describe("P5.7-R3l-8: multi-round tool loop", () => {
                 prompt: "先执行命令再读取文件",
                 workspacePath,
                 timeoutMs: 10_000,
+                backendRuntime: localOpenAiRuntime,
             });
 
             expect(callCount).toBe(3);
             expect(result.answer).toContain("两轮工具已执行完成");
-            expect(result.actionJournal.length).toBe(2);
+            // P5.7-R12-T3: verify phase 增加了一条 journal entry
+            expect(result.actionJournal.length).toBe(3);
             expect(result.actionJournal[0].tool).toBe("bash");
             expect(result.actionJournal[1].tool).toBe("read_file");
             expect(result.actionJournal[0].ok).toBe(true);
@@ -132,4 +142,3 @@ describe("P5.7-R3l-8: multi-round tool loop", () => {
         }
     });
 });
-

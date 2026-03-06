@@ -25,6 +25,13 @@ import {
 } from "./prompt.js";
 import { normalizeBaseUrl as normalizeBaseUrlAdapter, fetchWithTimeout } from "../providers/openai-compat-adapter.js";
 import { sanitizeLmStudioOutput as sanitizeCore, dropBeforeLastClosingTag } from "../providers/output-normalizer.js";
+import {
+    type MiniMaxAnthropicMessage,
+    buildMiniMaxAnthropicHeaders,
+    buildMiniMaxAnthropicRequest,
+    normalizeMiniMaxAnthropicBaseUrl,
+    parseMiniMaxAnthropicResponse,
+} from "../providers/minimax-anthropic.js";
 
 // ============================================
 // 类型定义
@@ -580,6 +587,37 @@ async function runLmStudioChatOpenAICompat(params: LmStudioOpenAIChatParams): Pr
     return text;
 }
 
+async function runMiniMaxChatAnthropic(params: LmStudioOpenAIChatParams): Promise<string> {
+    const url = `${normalizeMiniMaxAnthropicBaseUrl(params.baseUrl)}/v1/messages`;
+
+    const messages: MiniMaxAnthropicMessage[] = [
+        { role: "user", content: params.prompt },
+    ];
+
+    const rawText = await fetchTextWithTimeout({
+        url,
+        method: "POST",
+        timeoutMs: params.timeoutMs,
+        headers: buildMiniMaxAnthropicHeaders(params.apiKey),
+        body: buildMiniMaxAnthropicRequest({
+            model: params.model,
+            messages,
+            system: params.system,
+            maxTokens: params.maxTokens,
+            temperature: params.temperature ?? 0.7,
+        }),
+    });
+
+    const parsed = parseMiniMaxAnthropicResponse(rawText);
+    if (parsed.error) {
+        throw new Error(`MiniMax API 错误：${parsed.error}`);
+    }
+    if (!parsed.textContent || !parsed.textContent.trim()) {
+        throw new Error(`MiniMax(${params.model}) 未返回可展示的内容`);
+    }
+    return parsed.textContent;
+}
+
 // ============================================
 // 主函数：runAgentChat
 // ============================================
@@ -682,6 +720,24 @@ export async function runAgentChat(options: AgentChatOptions): Promise<string> {
             temperature,
         });
         return sanitizeLmStudioOutput(text);
+    }
+
+    async function runMiniMaxOnce(maxOutputTokens: number): Promise<string> {
+        const text = await runMiniMaxChatAnthropic({
+            baseUrl,
+            model: resolvedModel,
+            prompt: promptWithContext,
+            system: compatSystemPrompt && compatSystemPrompt.trim() ? compatSystemPrompt.trim() : undefined,
+            maxTokens: maxOutputTokens,
+            timeoutMs,
+            apiKey: backendRuntime.apiKey,
+            temperature,
+        });
+        return sanitizeLmStudioOutput(text);
+    }
+
+    if (backendRuntime.id === "minimax") {
+        return await runMiniMaxOnce(maxTokens);
     }
 
     if (backendRuntime.nativeApiEnabled) {

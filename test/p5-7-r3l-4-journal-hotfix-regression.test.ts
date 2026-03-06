@@ -12,6 +12,14 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+const localOpenAiRuntime = {
+    id: "local-openai" as const,
+    baseUrl: "http://127.0.0.1:1234",
+    model: "test-model",
+    timeoutMs: 10_000,
+    nativeApiEnabled: false,
+};
+
 type ChatCompletionPayload = {
     choices: Array<{
         message: {
@@ -85,6 +93,7 @@ describe("P5.7-R3l-4 HOTFIX: actionJournal", () => {
                 prompt: "执行失败命令",
                 workspacePath,
                 timeoutMs: 10_000,
+                backendRuntime: localOpenAiRuntime,
             });
 
             expect(callCount).toBe(1); // 失败短路，不进入二轮总结
@@ -147,10 +156,12 @@ describe("P5.7-R3l-4 HOTFIX: actionJournal", () => {
                 prompt: "执行成功命令",
                 workspacePath,
                 timeoutMs: 10_000,
+                backendRuntime: localOpenAiRuntime,
             });
 
             expect(callCount).toBe(2);
-            expect(result.actionJournal.length).toBe(1);
+            // P5.7-R12-T3: verify phase 增加了一条 journal entry
+            expect(result.actionJournal.length).toBe(2);
             expect(result.actionJournal[0].ok).toBe(true);
             expect(result.actionJournal[0].durationMs).toBeGreaterThan(0);
         } finally {

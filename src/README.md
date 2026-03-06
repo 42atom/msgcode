@@ -7,7 +7,7 @@ src/
 ├── cli/             # 命令合同与 CLI 子命令实现
 ├── routes/          # iMessage 路由命令层（bind/model/policy/...）
 ├── runtime/         # 运行时编排（会话、调度、路由决策）
-├── providers/       # 后端适配层（OpenAI-compatible / ToolLoop 适配）
+├── providers/       # 后端适配层（OpenAI-compatible / Anthropic-compatible / ToolLoop 适配）
 ├── tools/           # Tool Bus 与工具执行网关
 ├── memory/          # 长短期记忆注入、索引、检索
 ├── runners/         # 执行器与多媒体/系统 runner
@@ -40,4 +40,3 @@ src/
 ## 变更日志
 
 1. 2026-02-23：新增本文件，统一 `src` 分层视图与开发约束。
-

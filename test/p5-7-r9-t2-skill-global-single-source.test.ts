@@ -12,6 +12,14 @@ import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+const localOpenAiRuntime = {
+  id: "local-openai" as const,
+  baseUrl: "http://127.0.0.1:1234",
+  model: "test-model",
+  timeoutMs: 10_000,
+  nativeApiEnabled: false,
+};
+
 type ChatCompletionPayload = {
   choices: Array<{
     message: {
@@ -48,6 +56,7 @@ async function createToolEnabledWorkspace(root: string): Promise<string> {
     join(workspacePath, ".msgcode", "config.json"),
     JSON.stringify(
       {
+        "pi.enabled": true,
         "tooling.mode": "autonomous",
         "tooling.allow": ["bash", "read_file", "write_file", "edit_file"],
         "tooling.require_confirm": [],
@@ -149,9 +158,16 @@ describe("P5.7-R9-T2: Skills global-only single source", () => {
         prompt: "测试技能索引来源",
         workspacePath,
         timeoutMs: 10_000,
+        backendRuntime: localOpenAiRuntime,
       });
 
       expect(result.answer).toContain("ok");
+      expect(observedSystemPrompt).toContain("[当前可用工具索引]");
+      expect(observedSystemPrompt).toContain("- read_file:");
+      expect(observedSystemPrompt).toContain("- bash:");
+      expect(observedSystemPrompt).toContain("skill 名不是工具名");
+      expect(observedSystemPrompt).toContain("查记忆用 mem");
+      expect(observedSystemPrompt).toContain("禁止把 file、memory、thread、todo、cron、media、gen、banana-pro-image-gen 当作工具名");
       expect(observedSystemPrompt).toContain("[技能系统]");
       expect(observedSystemPrompt).toContain("全局技能：");
       expect(observedSystemPrompt).not.toContain("工作区技能：");
@@ -234,6 +250,7 @@ describe("P5.7-R9-T2: Skills global-only single source", () => {
         prompt: "测试技能路径注入",
         workspacePath,
         timeoutMs: 10_000,
+        backendRuntime: localOpenAiRuntime,
       });
 
       expect(result.answer).toContain("done");

@@ -108,10 +108,12 @@ export function resolveAgentBackendRuntime(rawBackend?: string): AgentBackendRun
         : 120_000;
 
     if (id === "minimax") {
-        const baseUrl = (process.env.MINIMAX_BASE_URL || process.env.AGENT_BASE_URL || "").trim();
-        if (!baseUrl) {
-            throw new Error("MiniMax backend 未配置：请设置 MINIMAX_BASE_URL 或 AGENT_BASE_URL");
-        }
+        const baseUrl = (
+            process.env.MINIMAX_ANTHROPIC_BASE_URL ||
+            process.env.MINIMAX_BASE_URL ||
+            process.env.AGENT_BASE_URL ||
+            "https://api.minimax.io/anthropic"
+        ).trim();
         return {
             id,
             baseUrl,
