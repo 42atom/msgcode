@@ -22,17 +22,26 @@ export async function probeConnections(options?: ProbeOptions): Promise<ProbeRes
     const timeout = options?.timeout ?? 2000;
 
     // 1. imsg RPC 连接（通过检查 imsg 二进制和尝试运行）
-    try {
-        // 检查 imsg 是否可执行
-        await withTimeout(
-            execAsync(`"${config.imsgPath}" --version`),
-            timeout,
-            "imsg --version"
-        );
-        details.imsg_executable = true;
-    } catch {
-        details.imsg_executable = false;
-        issues.push("imsg 不可用");
+    if (config.transports.includes("imsg")) {
+        if (!config.imsgPath) {
+            details.imsg_executable = false;
+            issues.push("IMSG_PATH 未设置");
+        } else {
+            try {
+                // 检查 imsg 是否可执行
+                await withTimeout(
+                    execAsync(`"${config.imsgPath}" --version`),
+                    timeout,
+                    "imsg --version"
+                );
+                details.imsg_executable = true;
+            } catch {
+                details.imsg_executable = false;
+                issues.push("imsg 不可用");
+            }
+        }
+    } else {
+        details.imsg_executable = null;
     }
 
     // 2. tmux 连接（先检查二进制，再检查 server）
@@ -92,7 +101,7 @@ export async function probeConnections(options?: ProbeOptions): Promise<ProbeRes
 
     // 判断状态
     let status: ProbeResult["status"] = "pass";
-    if (!details.imsg_executable || !details.tmux_available) {
+    if ((config.transports.includes("imsg") && details.imsg_executable === false) || !details.tmux_available) {
         status = "error";
     } else if (issues.length > 0) {
         status = "warning";

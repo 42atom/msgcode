@@ -19,6 +19,8 @@ import { getVersion } from "./version.js";
 const execAsync = promisify(exec);
 
 let imsgClient: ImsgRpcClient | null = null;
+let sendClient: Pick<ImsgRpcClient, "send"> | null = null;
+let feishuTransport: import("./feishu/transport.js").FeishuTransport | null = null;
 let jobScheduler: import("./jobs/scheduler.js").JobScheduler | null = null;
 let heartbeatRunner: import("./runtime/heartbeat.js").HeartbeatRunner | null = null;
 const perChatQueue = new Map<string, Promise<void>>();
@@ -101,7 +103,7 @@ function pruneFastReplied(now: number): void {
  * - 处理成功后标记为 fastReplied
  */
 async function handleControlCommandInFastLane(message: InboundMessage): Promise<void> {
-  return handleControlCommandInFastLaneWithClient(message);
+  return handleControlCommandInFastLaneWithClient(message, sendClient ?? undefined);
 }
 
 type FastLaneSendClient = Pick<ImsgRpcClient, "send">;
@@ -357,7 +359,11 @@ export async function startBot(): Promise<void> {
     const preflightResult = await runPreflight(manifest);
 
     // 检查 requiredForStart
-    const missingStart = preflightResult.requiredForStart.filter((r) => !r.available);
+    const enableImsg = config.transports.includes("imsg");
+    const missingStart = preflightResult.requiredForStart
+      .filter((r) => !r.available)
+      // feishu-only 时允许缺失 imsg/messages_db（manifest 仍保持 iMessage-first）
+      .filter((r) => (enableImsg ? true : !["imsg", "messages_db"].includes(r.dependencyId)));
     if (missingStart.length > 0) {
       console.error("启动必需依赖缺失:");
       for (const check of missingStart) {
@@ -389,41 +395,75 @@ export async function startBot(): Promise<void> {
   const { initLoggerFromSettings } = await import("./logger/index.js");
   await initLoggerFromSettings();
 
-  imsgClient = new ImsgRpcClient(config.imsgPath);
-  await imsgClient.start();
+  const transports = config.transports;
+  const enableImsg = transports.includes("imsg");
+  const enableFeishu = transports.includes("feishu");
+
+  // 统一发送口径：按 chat_guid 前缀分发到具体 transport。
+  // - iMessage：chat_guid 为原始 guid（不带前缀）
+  // - Feishu：chat_guid 形如 feishu:<chat_id>
+  sendClient = {
+    send: async (params: any) => {
+      const chatGuid = params?.chat_guid;
+      const text = typeof params?.text === "string" ? params.text : String(params?.text ?? "");
+      const file = params?.file ? String(params.file) : undefined;
+
+      if (typeof chatGuid === "string" && chatGuid.startsWith("feishu:")) {
+        if (!feishuTransport) {
+          throw new Error("feishu transport 未初始化");
+        }
+        return await feishuTransport.send({ chat_guid: chatGuid, text, file });
+      }
+
+      if (!imsgClient) {
+        throw new Error("imsg transport 未初始化");
+      }
+      return await imsgClient.send(params);
+    },
+  };
+
+  if (enableImsg) {
+    if (!config.imsgPath) {
+      throw new Error("已启用 imsg transport，但 config.imsgPath 为空");
+    }
+    imsgClient = new ImsgRpcClient(config.imsgPath);
+    await imsgClient.start();
+  }
 
   // E14: 加载游标状态，使用 since_rowid 或 start 参数
   // rowid 全局递增，因此使用 max(lastSeenRowid) 即可避免历史积压
   const { loadState } = await import("./state/store.js");
 
-  try {
-    const state = loadState();
-    const chatStates = Object.values(state.chats);
+  if (enableImsg && imsgClient) {
+    try {
+      const state = loadState();
+      const chatStates = Object.values(state.chats);
 
-    if (chatStates.length > 0) {
-      const maxRowid = chatStates.reduce((acc, s) => Math.max(acc, s.lastSeenRowid), 0);
-      if (maxRowid > 0) {
-        logger.info(`加载 ${chatStates.length} 个群组游标，使用最大 rowid: ${maxRowid}`, { module: "commands" });
-        await imsgClient.subscribe({
-          sinceRowid: maxRowid,
-        });
+      if (chatStates.length > 0) {
+        const maxRowid = chatStates.reduce((acc, s) => Math.max(acc, s.lastSeenRowid), 0);
+        if (maxRowid > 0) {
+          logger.info(`加载 ${chatStates.length} 个群组游标，使用最大 rowid: ${maxRowid}`, { module: "commands" });
+          await imsgClient.subscribe({
+            sinceRowid: maxRowid,
+          });
+        } else {
+          // 有 state 但无有效游标：使用 start 窗口
+          const startTime = new Date(Date.now() - 60000).toISOString();
+          logger.info(`游标为空，使用 start 时间窗口: ${startTime}`, { module: "commands" });
+          await imsgClient.subscribe({ start: startTime });
+        }
       } else {
-        // 有 state 但无有效游标：使用 start 窗口
+        // 无游标：使用 start 参数（最近 60 秒）
         const startTime = new Date(Date.now() - 60000).toISOString();
-        logger.info(`游标为空，使用 start 时间窗口: ${startTime}`, { module: "commands" });
+        logger.info(`无游标，使用 start 时间窗口: ${startTime}`, { module: "commands" });
         await imsgClient.subscribe({ start: startTime });
       }
-    } else {
-      // 无游标：使用 start 参数（最近 60 秒）
+    } catch (stateError) {
+      // state.json 不存在或格式错误，回退到 start 窗口
+      logger.warn(`无法加载游标状态: ${stateError instanceof Error ? stateError.message : String(stateError)}`, { module: "commands" });
       const startTime = new Date(Date.now() - 60000).toISOString();
-      logger.info(`无游标，使用 start 时间窗口: ${startTime}`, { module: "commands" });
       await imsgClient.subscribe({ start: startTime });
     }
-  } catch (stateError) {
-    // state.json 不存在或格式错误，回退到 start 窗口
-    logger.warn(`无法加载游标状态: ${stateError instanceof Error ? stateError.message : String(stateError)}`, { module: "commands" });
-    const startTime = new Date(Date.now() - 60000).toISOString();
-    await imsgClient.subscribe({ start: startTime });
   }
 
   // M3.2-2: 初始化 JobScheduler（daemon 自动调度）
@@ -457,10 +497,10 @@ export async function startBot(): Promise<void> {
       return enqueueLane(job.route.chatGuid, () => executeJob(job, {
         delivery: true,
         imsgSend: async (chatGuid, text) => {
-          if (!imsgClient) {
-            throw new Error("imsgClient 未初始化");
+          if (!sendClient) {
+            throw new Error("sendClient 未初始化");
           }
-          await imsgClient.send({ chat_guid: chatGuid, text });
+          await sendClient.send({ chat_guid: chatGuid, text });
         },
       }));
     },
@@ -492,7 +532,7 @@ export async function startBot(): Promise<void> {
   // 按 chat 串行处理消息，避免"回复错位/滞后一条"的乱序现象
   // 允许不同 chat 并行，但同一 chat 必须严格有序。
   // E16: 添加 DEBUG_TRACE 支持以追踪队列状态
-  imsgClient.on("message", (message: InboundMessage) => {
+  const handleInbound = (message: InboundMessage) => {
     const chatKey = message.chatId;
     const prev = perChatQueue.get(chatKey) ?? Promise.resolve();
     const text = (message.text ?? "").trim();
@@ -565,7 +605,10 @@ export async function startBot(): Promise<void> {
           });
         }
         try {
-          await handleMessage(message, { imsgClient: imsgClient!, signal: controller.signal });
+          if (!sendClient) {
+            throw new Error("sendClient 未初始化");
+          }
+          await handleMessage(message, { sendClient, signal: controller.signal });
         } finally {
           // 只清理自己的 controller（避免并发覆盖）
           if (perChatAbort.get(chatKey) === controller) {
@@ -593,18 +636,37 @@ export async function startBot(): Promise<void> {
       });
 
     perChatQueue.set(chatKey, next);
-  });
+  };
 
-  imsgClient.on("error", (error: Error) => {
-    logger.error("imsg RPC 错误", { module: "commands", error: error.message });
-  });
+  // iMessage transport
+  if (imsgClient) {
+    imsgClient.on("message", handleInbound);
+    imsgClient.on("error", (error: Error) => {
+      logger.error("imsg RPC 错误", { module: "commands", error: error.message });
+    });
+    imsgClient.on("close", () => {
+      logger.warn("imsg RPC 连接已关闭", { module: "commands" });
+    });
+  }
 
-  imsgClient.on("close", () => {
-    logger.warn("imsg RPC 连接已关闭", { module: "commands" });
-  });
+  // Feishu transport（可选）
+  if (enableFeishu) {
+    if (!config.feishu) {
+      throw new Error("enableFeishu=1 但 config.feishu 为空");
+    }
+    const { createFeishuTransport } = await import("./feishu/transport.js");
+    feishuTransport = createFeishuTransport({
+      appId: config.feishu.appId,
+      appSecret: config.feishu.appSecret,
+      encryptKey: config.feishu.encryptKey,
+      onInbound: (m) => handleInbound(m),
+    });
+    await feishuTransport.start();
+    logger.info("Feishu transport 已启用", { module: "commands" });
+  }
 
-  console.log("msgcode 已启动（imsg RPC）");
-  logger.info("msgcode 已启动（imsg RPC）", { module: "commands" });
+  console.log(`msgcode 已启动（transports: ${transports.join(",")}）`);
+  logger.info("msgcode 已启动", { module: "commands", transports });
 
   process.on("SIGINT", async () => {
     await stopBot();
@@ -644,6 +706,17 @@ export async function stopBot(): Promise<void> {
     }
     imsgClient = null;
   }
+
+  if (feishuTransport) {
+    try {
+      await feishuTransport.stop();
+    } catch {
+      // ignore
+    }
+    feishuTransport = null;
+  }
+
+  sendClient = null;
 
   await killMsgcodeProcesses();
   // 重要：stop 只停止 msgcode 本身，不杀 tmux 会话。

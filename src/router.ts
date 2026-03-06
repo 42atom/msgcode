@@ -10,6 +10,8 @@
 import { config, type GroupConfig } from "./config.js";
 import { normalizeChatId, stableGroupNameForChatId } from "./imsg/adapter.js";
 import { getRouteByChatId as getRouteFromStore } from "./routes/store.js";
+import fs from "node:fs";
+import path from "node:path";
 
 /**
  * Bot 类型
@@ -73,7 +75,27 @@ export function routeByChatId(chatId: string): Route | null {
         }
     }
 
-    return null;
+    // 未绑定：fallback 到默认工作目录（可配置），提升开箱即用体验
+    // 允许 env 动态覆盖（测试隔离/临时切换）
+    const workspaceRoot = process.env.WORKSPACE_ROOT
+        ? path.resolve(process.env.WORKSPACE_ROOT)
+        : config.workspaceRoot;
+    const defaultDir = (process.env.MSGCODE_DEFAULT_WORKSPACE_DIR || "").trim() || config.defaultWorkspaceDir || "default";
+    const workspacePath = path.resolve(workspaceRoot, defaultDir);
+    try {
+        if (!fs.existsSync(workspacePath)) {
+            fs.mkdirSync(workspacePath, { recursive: true });
+        }
+    } catch {
+        // ignore：创建失败不阻塞路由，但后续会在 handler 里报错（更可观测）
+    }
+
+    return {
+        chatId, // 回复仍回到当前 chat
+        groupName: stableGroupNameForChatId(chatId),
+        projectDir: workspacePath,
+        botType: "agent-backend",
+    };
 }
 
 /**

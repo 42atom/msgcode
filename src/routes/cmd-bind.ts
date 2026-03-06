@@ -2,7 +2,10 @@
  * msgcode: 管理域命令（bind/where/unbind）
  */
 
+import path from "node:path";
+import fs from "node:fs";
 import type { BotType, ModelClient } from "../router.js";
+import { config } from "../config.js";
 import {
   createRoute,
   getRouteByChatId,
@@ -126,11 +129,23 @@ export async function handleWhereCommand(options: CommandHandlerOptions): Promis
   const entry = getRouteByChatId(chatId);
 
   if (!entry) {
+    const workspaceRoot = getWorkspaceRootForDisplay();
+    const defaultDir = (process.env.MSGCODE_DEFAULT_WORKSPACE_DIR || "").trim() || config.defaultWorkspaceDir || "default";
+    const defaultPath = path.resolve(workspaceRoot, defaultDir);
+    try {
+      if (!fs.existsSync(defaultPath)) {
+        fs.mkdirSync(defaultPath, { recursive: true });
+      }
+    } catch {
+      // ignore
+    }
     return {
       success: true,
-      message: `本群未绑定任何工作目录\n` +
+      message: `本群未绑定任何工作目录（将使用默认工作目录）\n` +
         `\n` +
-        `使用 /bind <dir> [client] 绑定工作空间\n` +
+        `默认工作目录: ${defaultPath}\n` +
+        `\n` +
+        `使用 /bind <dir> [client] 绑定工作空间（覆盖默认）\n` +
         `例如: /bind acme/ops claude`,
     };
   }

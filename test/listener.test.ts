@@ -40,6 +40,7 @@ describe("listener (2.0)", () => {
 
     process.env.ROUTES_FILE_PATH = TEST_ROUTES_FILE;
     process.env.WORKSPACE_ROOT = TEST_WORKSPACE_ROOT;
+    process.env.MSGCODE_DEFAULT_WORKSPACE_DIR = "default";
 
     if (!config.whitelist.emails.includes("test@example.com")) {
       config.whitelist.emails.push("test@example.com");
@@ -55,21 +56,23 @@ describe("listener (2.0)", () => {
     cleanTestData();
   });
 
-  it("未绑定时，/start 会提示先 /bind", async () => {
+  it("未绑定时，/where 会显示默认工作目录，并提示可 /bind 覆盖", async () => {
     const imsg = new FakeImsgClient();
     await handleMessage(
       {
         id: "m1",
         chatId: "any;+;chat-guid-1",
-        text: "/start",
+        text: "/where",
         isFromMe: false,
         sender: "test@example.com",
         handle: "test@example.com",
       },
-      { imsgClient: imsg as unknown as any }
+      { sendClient: imsg as unknown as any }
     );
 
     expect(imsg.sent.length).toBe(1);
+    expect(imsg.sent[0].text).toContain("默认工作目录");
+    expect(imsg.sent[0].text).toContain(path.join(TEST_WORKSPACE_ROOT, "default"));
     expect(imsg.sent[0].text).toContain("/bind");
   });
 
@@ -86,7 +89,7 @@ describe("listener (2.0)", () => {
         sender: "test@example.com",
         handle: "test@example.com",
       },
-      { imsgClient: imsg as unknown as any }
+      { sendClient: imsg as unknown as any }
     );
 
     expect(imsg.sent.length).toBe(1);
@@ -102,7 +105,7 @@ describe("listener (2.0)", () => {
         sender: "test@example.com",
         handle: "test@example.com",
       },
-      { imsgClient: imsg as unknown as any }
+      { sendClient: imsg as unknown as any }
     );
 
     expect(imsg.sent.length).toBe(2);

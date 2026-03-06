@@ -86,5 +86,7 @@ export function normalizeChatId(chatId: string): string {
 export function stableGroupNameForChatId(chatId: string): string {
   const normalized = normalizeChatId(chatId);
   const suffix = normalized.length >= 8 ? normalized.slice(-8) : normalized;
-  return `chat-${suffix}`;
+  // tmux session name 需要尽量可移植：去掉潜在非法字符（例如 feishu:<id> 的冒号）
+  const safe = suffix.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  return `chat-${safe || "unknown"}`;
 }

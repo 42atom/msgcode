@@ -422,12 +422,13 @@ describe("路由命令处理器", () => {
       await handleBindCommand({ chatId: testChatId, args: ["pi-test-workspace"] });
     });
 
-    it("未绑定工作区时返回错误", async () => {
+    it("未绑定工作区时也可查询状态（使用默认工作目录 fallback）", async () => {
       const options: CommandHandlerOptions = { chatId: "any;+;no-workspace", args: [] };
       const result = await handlePiCommand(options);
 
-      expect(result.success).toBe(false);
-      expect(result.message).toContain("未绑定工作目录");
+      expect(result.success).toBe(true);
+      expect(result.message).toContain("PI:");
+      expect(result.message).toContain("运行形态");
     });
 
     it("/pi status 查看状态（默认应禁用）", async () => {

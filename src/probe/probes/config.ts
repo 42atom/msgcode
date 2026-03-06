@@ -36,7 +36,7 @@ export async function probeConfig(options?: ProbeOptions): Promise<ProbeResult> 
     details.whitelist_phones_count = config.whitelist.phones.length;
     details.whitelist_emails_count = config.whitelist.emails.length;
 
-    if (!config.imsgPath) {
+    if (config.transports.includes("imsg") && !config.imsgPath) {
         issues.push("IMSG_PATH 未设置");
     }
     if (config.whitelist.phones.length === 0 && config.whitelist.emails.length === 0) {
@@ -60,7 +60,7 @@ export async function probeConfig(options?: ProbeOptions): Promise<ProbeResult> 
 
     // 判断状态
     let status: ProbeResult["status"] = "pass";
-    if (!config.imsgPath || (config.whitelist.phones.length === 0 && config.whitelist.emails.length === 0)) {
+    if ((config.transports.includes("imsg") && !config.imsgPath) || (config.whitelist.phones.length === 0 && config.whitelist.emails.length === 0)) {
         status = "error";
     } else if (issues.length > 0) {
         status = "warning";

@@ -24,7 +24,8 @@ import { AutoTtsLane } from "./runners/tts/auto-lane.js";
 import crypto from "node:crypto";
 
 export interface ListenerConfig {
-  imsgClient: ImsgRpcClient;
+  // 统一发送口径：按 chatId 前缀路由到具体 transport（imsg/feishu）
+  sendClient: Pick<ImsgRpcClient, "send">;
   debug?: boolean;
   signal?: AbortSignal;
 }
@@ -35,7 +36,9 @@ export interface ListenerConfig {
 
 let autoTtsLane: AutoTtsLane | null = null;
 
-function getAutoTtsLane(imsgClient: ImsgRpcClient): AutoTtsLane {
+type SendClient = Pick<ImsgRpcClient, "send">;
+
+function getAutoTtsLane(sendClient: SendClient): AutoTtsLane {
   if (autoTtsLane) return autoTtsLane;
 
   autoTtsLane = new AutoTtsLane({
@@ -44,10 +47,10 @@ function getAutoTtsLane(imsgClient: ImsgRpcClient): AutoTtsLane {
       return await runTts(opts);
     },
     sendText: async (chatId, text) => {
-      await sendText(imsgClient, chatId, text);
+      await sendText(sendClient, chatId, text);
     },
     sendFile: async (chatId, filePath) => {
-      await imsgClient.send({ chat_guid: chatId, text: "", file: filePath });
+      await sendClient.send({ chat_guid: chatId, text: "", file: filePath });
     },
   });
 
@@ -73,7 +76,7 @@ function pruneByTtl(map: Map<string, number>, now: number, ttlMs: number): void 
 }
 
 async function sendText(
-  imsgClient: ImsgRpcClient,
+  sendClient: SendClient,
   chatGuid: string,
   text: string
 ): Promise<void> {
@@ -86,7 +89,7 @@ async function sendText(
       textDigest: digest,
       ...(process.env.DEBUG_TRACE_TEXT === "1" ? { textPreview: text.slice(0, 80) } : {}),
     });
-    const result = await imsgClient.send({ chat_guid: chatGuid, text });
+    const result = await sendClient.send({ chat_guid: chatGuid, text });
     logger.debug("回复已发送", {
       module: "listener",
       chatId: chatGuid,
@@ -169,7 +172,7 @@ function shouldSendAcknowledgement(content: string): boolean {
  * @returns handler 结果
  */
 async function withAcknowledgement<T>(
-  imsgClient: ImsgRpcClient,
+  sendClient: SendClient,
   chatGuid: string,
   content: string,
   handlerFn: () => Promise<T>
@@ -190,7 +193,7 @@ async function withAcknowledgement<T>(
     if (!ackSent) {
       ackSent = true;
       try {
-        await sendText(imsgClient, chatGuid, ACKNOWLEDGEMENT_TEXT);
+        await sendText(sendClient, chatGuid, ACKNOWLEDGEMENT_TEXT);
         logger.debug("已发送长任务回执", {
           module: "listener",
           chatId: chatGuid,
@@ -590,7 +593,7 @@ export async function handleMessage(
       chatId: message.chatId,
       args: parsed.args,
     });
-    await sendText(ctx.imsgClient, message.chatId, result.message);
+    await sendText(ctx.sendClient, message.chatId, result.message);
     shouldAdvanceCursor = true;
     return;
   }
@@ -615,7 +618,7 @@ export async function handleMessage(
       if (now - last > UNBOUND_HINT_COOLDOWN_MS) {
         unboundHintAt.set(message.chatId, now);
         await sendText(
-          ctx.imsgClient,
+          ctx.sendClient,
           message.chatId,
           "本群尚未绑定工作目录。\n先发送: /bind <dir>\n例如: /bind acme/ops"
         );
@@ -772,7 +775,7 @@ export async function handleMessage(
 
       if (hasOcrError) {
         // P0: OCR 失败直接固定文案回复，不喂给 4.7（避免元叙事）
-        await sendText(ctx.imsgClient, message.chatId, "图片识别失败。若要纯抽字请发：ocr");
+        await sendText(ctx.sendClient, message.chatId, "图片识别失败。若要纯抽字请发：ocr");
         shouldAdvanceCursor = true;
         return;
       }
@@ -806,7 +809,7 @@ export async function handleMessage(
       }
 
       result = await withAcknowledgement(
-        ctx.imsgClient,
+        ctx.sendClient,
         message.chatId,
         contentToHandle,
         () => handler.handle(contentToHandle, {
@@ -829,7 +832,7 @@ export async function handleMessage(
       }
 
       result = await withAcknowledgement(
-        ctx.imsgClient,
+        ctx.sendClient,
         message.chatId,
         contentToHandle,
         () => handler.handle(contentToHandle, {
@@ -877,7 +880,7 @@ export async function handleMessage(
         error: result.error || "unknown",
       });
       await sendText(
-        ctx.imsgClient,
+        ctx.sendClient,
         message.chatId,
         result.error ? `错误: ${result.error}` : "错误: 处理失败"
       );
@@ -889,10 +892,10 @@ export async function handleMessage(
     let didSend = false;
     if (result.file?.path) {
       const text = result.response ? result.response : "";
-      await ctx.imsgClient.send({ chat_guid: message.chatId, text, file: result.file.path });
+      await ctx.sendClient.send({ chat_guid: message.chatId, text, file: result.file.path });
       didSend = true;
     } else if (result.response) {
-      await sendText(ctx.imsgClient, message.chatId, result.response);
+      await sendText(ctx.sendClient, message.chatId, result.response);
       didSend = true;
     }
 
@@ -934,7 +937,7 @@ export async function handleMessage(
           return Math.floor(n);
         })();
 
-        getAutoTtsLane(ctx.imsgClient).enqueue({
+        getAutoTtsLane(ctx.sendClient).enqueue({
           chatId: message.chatId,
           workspacePath: projectDir,
           text: deferText,
@@ -964,7 +967,7 @@ export async function handleMessage(
     }
 
     await sendText(
-      ctx.imsgClient,
+      ctx.sendClient,
       message.chatId,
       `Handler 异常: ${handlerError instanceof Error ? handlerError.message : String(handlerError)}`
     );
