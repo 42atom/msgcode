@@ -42,6 +42,8 @@ import {
     toOpenAiToolSchemas,
 } from "../tools/manifest.js";
 import type { ToolName } from "../tools/types.js";
+import { getChromeRootInfo } from "../browser/chrome-root.js";
+import { getPinchtabRuntimeInfo } from "../browser/pinchtab-runtime.js";
 import {
     type MiniMaxAnthropicContentBlock,
     type MiniMaxAnthropicMessage,
@@ -498,6 +500,37 @@ function buildWorkspacePathHint(workspacePath?: string): string {
         "当任务要求读取当前 workspace 的 .msgcode/config.json 时，只能使用上面这个绝对路径。",
         "禁止猜测、拼接或虚构其他工作区绝对路径（例如 /Users/admin/*workspace）。",
     ].join("\n");
+}
+
+function buildBrowserRuntimeHint(toolNames: ToolName[]): string {
+    if (!toolNames.includes("browser")) {
+        return "";
+    }
+
+    try {
+        const pinchtab = getPinchtabRuntimeInfo();
+        const chrome = getChromeRootInfo();
+        return [
+            "[当前浏览器底座]",
+            "唯一正式浏览器通道：browser 工具（PinchTab）。",
+            `PinchTab orchestrator baseUrl：${pinchtab.baseUrl}`,
+            `PinchTab binary 绝对路径：${pinchtab.binaryPath}`,
+            `PinchTab binary 是否存在：${pinchtab.binaryExists ? "yes" : "no"}`,
+            `共享工作 Chrome profilesRoot：${chrome.profilesRoot}`,
+            `默认工作 Chrome root：${chrome.chromeRoot}`,
+            "如需人工启动共享工作 Chrome，只能使用下面这条系统提供的启动命令：",
+            chrome.launchCommand,
+            "不要猜测其他浏览器路径，不要使用 agent-browser 作为正式浏览器通道。",
+            "如需查看 PinchTab CLI 合同，可读取 ~/.config/msgcode/skills/pinchtab-browser/SKILL.md。",
+        ].join("\n");
+    } catch (error) {
+        return [
+            "[当前浏览器底座]",
+            "唯一正式浏览器通道：browser 工具（PinchTab）。",
+            `浏览器底座信息解析失败：${error instanceof Error ? error.message : String(error)}`,
+            "不要猜测其他浏览器路径，不要使用 agent-browser 作为正式浏览器通道。",
+        ].join("\n");
+    }
 }
 
 async function runTool(name: string, args: Record<string, unknown>, root: string): Promise<ToolRunResult> {
@@ -1076,6 +1109,10 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     const workspacePathHint = buildWorkspacePathHint(workspacePath);
     if (workspacePathHint) {
         system += `\n\n${workspacePathHint}`;
+    }
+    const browserRuntimeHint = buildBrowserRuntimeHint(toolNames);
+    if (browserRuntimeHint) {
+        system += `\n\n${browserRuntimeHint}`;
     }
 
     // 技能系统注入：只有真实暴露了 read_file + bash 时才提示

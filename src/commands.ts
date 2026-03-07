@@ -396,6 +396,23 @@ export async function startBot(): Promise<void> {
   const { initLoggerFromSettings } = await import("./logger/index.js");
   await initLoggerFromSettings();
 
+  try {
+    const { ensurePinchtabReady } = await import("./browser/pinchtab-runtime.js");
+    const pinchtab = await ensurePinchtabReady();
+    logger.info("PinchTab 已就绪", {
+      module: "commands",
+      baseUrl: pinchtab.baseUrl,
+      binaryPath: pinchtab.binaryPath,
+      startedByMsgcode: pinchtab.startedByMsgcode,
+      isLocal: pinchtab.isLocal,
+    });
+  } catch (error) {
+    logger.warn("PinchTab 预启动失败，browser 主链暂不可用", {
+      module: "commands",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
   const transports = config.transports;
   const enableImsg = transports.includes("imsg");
   const enableFeishu = transports.includes("feishu");

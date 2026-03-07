@@ -8,7 +8,7 @@
 
 import { describe, it, expect } from "bun:test";
 import { runLmStudioToolLoop } from "../src/lmstudio.js";
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, chmod } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -49,6 +49,13 @@ function asJsonResponse(payload: ChatCompletionPayload): Response {
   });
 }
 
+function asRawJsonResponse(payload: unknown): Response {
+  return new Response(JSON.stringify(payload), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+}
+
 async function createToolEnabledWorkspace(root: string): Promise<string> {
   const workspacePath = join(root, "workspace");
   await mkdir(join(workspacePath, ".msgcode"), { recursive: true });
@@ -59,6 +66,26 @@ async function createToolEnabledWorkspace(root: string): Promise<string> {
         "pi.enabled": true,
         "tooling.mode": "autonomous",
         "tooling.allow": ["bash", "read_file", "write_file", "edit_file"],
+        "tooling.require_confirm": [],
+      },
+      null,
+      2,
+    ),
+    "utf-8",
+  );
+  return workspacePath;
+}
+
+async function createBrowserToolEnabledWorkspace(root: string): Promise<string> {
+  const workspacePath = join(root, "workspace");
+  await mkdir(join(workspacePath, ".msgcode"), { recursive: true });
+  await writeFile(
+    join(workspacePath, ".msgcode", "config.json"),
+    JSON.stringify(
+      {
+        "pi.enabled": true,
+        "tooling.mode": "autonomous",
+        "tooling.allow": ["browser", "bash", "read_file"],
         "tooling.require_confirm": [],
       },
       null,
@@ -337,6 +364,112 @@ describe("P5.7-R9-T2: Skills global-only single source", () => {
       expect(observedSystemPrompt).not.toContain("vela-workspace");
     } finally {
       globalThis.fetch = originalFetch;
+      await rm(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("应向模型注入 PinchTab 与共享工作 Chrome 路径口径", async () => {
+    const originalFetch = globalThis.fetch;
+    const originalWorkspaceRoot = process.env.WORKSPACE_ROOT;
+    const originalBinaryPath = process.env.PINCHTAB_BINARY_PATH;
+    const originalBaseUrl = process.env.PINCHTAB_BASE_URL;
+    const tmpRoot = await mkdtemp(join(tmpdir(), "msgcode-r9-t2-browser-hint-"));
+    let observedSystemPrompt = "";
+    let chatCallCount = 0;
+
+    try {
+      process.env.WORKSPACE_ROOT = tmpRoot;
+      const binaryPath = join(tmpRoot, "pinchtab-test");
+      await writeFile(binaryPath, "#!/bin/sh\nexit 0\n", "utf-8");
+      await chmod(binaryPath, 0o755);
+      process.env.PINCHTAB_BINARY_PATH = binaryPath;
+      process.env.PINCHTAB_BASE_URL = "http://127.0.0.1:9867";
+      const workspacePath = await createBrowserToolEnabledWorkspace(tmpRoot);
+
+      globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url.startsWith("http://127.0.0.1:1234")) {
+          chatCallCount += 1;
+          if (chatCallCount === 1) {
+            observedSystemPrompt = getSystemPromptFromRequest(init);
+            return asJsonResponse({
+              choices: [
+                {
+                  message: {
+                    role: "assistant",
+                    content: "",
+                    tool_calls: [
+                      {
+                        id: "call_browser_hint_1",
+                        type: "function",
+                        function: {
+                          name: "browser",
+                          arguments: JSON.stringify({ operation: "health" }),
+                        },
+                      },
+                    ],
+                  },
+                  finish_reason: "tool_calls",
+                },
+              ],
+            });
+          }
+          return asJsonResponse({
+            choices: [
+              {
+                message: {
+                  role: "assistant",
+                  content: "ok",
+                },
+                finish_reason: "stop",
+              },
+            ],
+          });
+        }
+
+        if (url === "http://127.0.0.1:9867/health") {
+          return asRawJsonResponse({ status: "ok", mode: "dashboard" });
+        }
+
+        throw new Error(`unexpected fetch url: ${url}`);
+      }) as typeof fetch;
+
+      const result = await runLmStudioToolLoop({
+        baseUrl: "http://127.0.0.1:1234",
+        model: "test-model",
+        prompt: "打开 example.com",
+        workspacePath,
+        timeoutMs: 10_000,
+        backendRuntime: localOpenAiRuntime,
+      });
+
+      expect(result.answer).toContain("ok");
+      expect(observedSystemPrompt).toContain("[当前浏览器底座]");
+      expect(observedSystemPrompt).toContain("唯一正式浏览器通道：browser 工具（PinchTab）。");
+      expect(observedSystemPrompt).toContain("PinchTab orchestrator baseUrl：http://127.0.0.1:9867");
+      expect(observedSystemPrompt).toContain(`PinchTab binary 绝对路径：${binaryPath}`);
+      expect(observedSystemPrompt).toContain("共享工作 Chrome profilesRoot：");
+      expect(observedSystemPrompt).toContain("默认工作 Chrome root：");
+      expect(observedSystemPrompt).toContain("不要使用 agent-browser 作为正式浏览器通道");
+      expect(observedSystemPrompt).toContain("pinchtab-browser/SKILL.md");
+      expect(observedSystemPrompt).toContain("--remote-debugging-port=9222");
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalWorkspaceRoot === undefined) {
+        delete process.env.WORKSPACE_ROOT;
+      } else {
+        process.env.WORKSPACE_ROOT = originalWorkspaceRoot;
+      }
+      if (originalBinaryPath === undefined) {
+        delete process.env.PINCHTAB_BINARY_PATH;
+      } else {
+        process.env.PINCHTAB_BINARY_PATH = originalBinaryPath;
+      }
+      if (originalBaseUrl === undefined) {
+        delete process.env.PINCHTAB_BASE_URL;
+      } else {
+        process.env.PINCHTAB_BASE_URL = originalBaseUrl;
+      }
       await rm(tmpRoot, { recursive: true, force: true });
     }
   });

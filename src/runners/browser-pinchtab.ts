@@ -7,7 +7,12 @@
  * - 调用方必须显式提供 instanceId/tabId
  */
 
-const DEFAULT_PINCHTAB_BASE_URL = "http://127.0.0.1:9867";
+import {
+  ensurePinchtabReady,
+  getPinchtabBaseUrl,
+  getPinchtabHeaders,
+} from "../browser/pinchtab-runtime.js";
+
 const DEFAULT_TIMEOUT_MS = 30000;
 
 export const BROWSER_ERROR_CODES = {
@@ -130,22 +135,6 @@ const ORCHESTRATOR_ONLY_OPERATIONS = new Set<BrowserOperation>([
   "tabs.open",
   "tabs.list",
 ]);
-
-function getPinchtabBaseUrl(): string {
-  const raw = process.env.PINCHTAB_BASE_URL
-    || process.env.PINCHTAB_URL
-    || DEFAULT_PINCHTAB_BASE_URL;
-  return raw.endsWith("/") ? raw.slice(0, -1) : raw;
-}
-
-function getPinchtabHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {};
-  const token = process.env.PINCHTAB_TOKEN || process.env.BRIDGE_TOKEN;
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-  return headers;
-}
 
 function isAbortError(error: unknown): boolean {
   if (!error || typeof error !== "object") {
@@ -297,24 +286,38 @@ function asRecord(value: unknown): Record<string, unknown> {
 }
 
 async function ensureOrchestratorBaseUrl(timeoutMs?: number): Promise<void> {
-  const health = await requestPinchtab<PinchtabHealth>("/health", {
-    timeoutMs,
-  }) as PinchtabHealth;
-
-  if (health.mode === "dashboard") {
-    return;
-  }
-
-  throw new BrowserCommandError(
-    BROWSER_ERROR_CODES.ORCHESTRATOR_URL_REQUIRED,
-    "PINCHTAB_BASE_URL/PINCHTAB_URL must point to the orchestrator/dashboard URL; instance URLs are not supported for this operation",
-    {
-      details: {
-        baseUrl: getPinchtabBaseUrl(),
-        health: asRecord(health),
-      },
+  try {
+    await ensurePinchtabReady({ timeoutMs });
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error) {
+      const code = String((error as { code?: unknown }).code || "");
+      const message = error instanceof Error ? error.message : String(error);
+      if (code === "PINCHTAB_ORCHESTRATOR_URL_REQUIRED") {
+        throw new BrowserCommandError(
+          BROWSER_ERROR_CODES.ORCHESTRATOR_URL_REQUIRED,
+          `${message}; instance URLs are not supported for this operation`,
+          {
+            details: {
+              baseUrl: getPinchtabBaseUrl(),
+            },
+          }
+        );
+      }
+      if (code === "PINCHTAB_HEALTH_TIMEOUT" || code === "PINCHTAB_BOOT_TIMEOUT") {
+        throw new BrowserCommandError(
+          BROWSER_ERROR_CODES.TIMEOUT,
+          message,
+          { details: { baseUrl: getPinchtabBaseUrl() } }
+        );
+      }
+      throw new BrowserCommandError(
+        BROWSER_ERROR_CODES.PINCHTAB_UNAVAILABLE,
+        message,
+        { details: { baseUrl: getPinchtabBaseUrl() } }
+      );
     }
-  );
+    throw error;
+  }
 }
 
 export async function executeBrowserOperation(
