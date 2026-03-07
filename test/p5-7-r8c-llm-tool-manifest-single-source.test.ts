@@ -189,7 +189,10 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     const toolLoopModule = await import("../src/agent-backend/tool-loop.js");
     const tools = await toolLoopModule.getToolsForLlm(workspacePath);
 
-    expect(tools).toEqual([]);
+    // P5.7-R15 + R16: pi.enabled=false 时也返回完整工具列表（skill 场景）
+    // 因为 skill 场景需要默认工具能力来执行后续操作
+    expect(tools).toContain("read_file");
+    expect(tools).toContain("bash");
   });
 
   // ============================================
