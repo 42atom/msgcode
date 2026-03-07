@@ -108,6 +108,8 @@ export {
     runAgentToolLoop,
     // 兼容别名
     runLmStudioToolLoop,
+    // P5.7-R8c: 工具暴露解析器
+    getToolsForLlm,
 } from "./tool-loop.js";
 
 // ============================================
@@ -118,6 +120,10 @@ export type {
     AgentRoutedChatOptions as RoutedChatOptions,
     AgentRoutedChatResult as RoutedChatResultType,
 } from "./types.js";
+
+export {
+    executeAgentTurn,
+} from "./execute-turn.js";
 
 export {
     // Routed Chat 主函数

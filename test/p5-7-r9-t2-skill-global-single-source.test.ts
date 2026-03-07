@@ -169,6 +169,10 @@ describe("P5.7-R9-T2: Skills global-only single source", () => {
       expect(observedSystemPrompt).toContain("查记忆用 mem");
       expect(observedSystemPrompt).toContain("禁止把 file、memory、thread、todo、cron、media、gen、banana-pro-image-gen 当作工具名");
       expect(observedSystemPrompt).toContain("[技能系统]");
+      expect(observedSystemPrompt).toContain("全局 skills 索引 JSON（只读）");
+      expect(observedSystemPrompt).toContain('"source": "global-single-source"');
+      expect(observedSystemPrompt).toContain('"skills": [');
+      expect(observedSystemPrompt).toContain('"id": "file"');
       expect(observedSystemPrompt).toContain("全局技能：");
       expect(observedSystemPrompt).not.toContain("工作区技能：");
       expect(observedSystemPrompt).not.toContain("workspace-only-skill");

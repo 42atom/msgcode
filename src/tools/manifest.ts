@@ -226,6 +226,34 @@ export const TOOL_MANIFESTS: Record<ToolName, ToolManifest> = {
   },
 
   // ============================================
+  // 飞书工具
+  // ============================================
+  feishu_send_file: {
+    name: "feishu_send_file",
+    description: "发送文件到飞书群聊。支持上传本地文件并发送到指定飞书群。",
+    parameters: {
+      type: "object",
+      properties: {
+        filePath: {
+          type: "string",
+          description: "本地文件路径（绝对路径或相对于工作目录的路径）",
+        },
+        chatId: {
+          type: "string",
+          description: "飞书群聊 ID（例如：oc_xxxxxxxxxxxxxxxx）。可省略，默认读取当前 workspace 的 runtime.current_chat_id。",
+        },
+        message: {
+          type: "string",
+          description: "可选的附加文本消息，会与文件一起发送",
+        },
+      },
+      required: ["filePath"],
+      additionalProperties: false,
+    },
+    riskLevel: "medium",  // message-send 需要确认
+  },
+
+  // ============================================
   // 媒体工具
   // ============================================
   tts: {
