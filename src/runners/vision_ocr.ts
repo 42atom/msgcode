@@ -14,6 +14,10 @@ import { exec, execSync } from "node:child_process";
 import { promisify } from "node:util";
 import { config } from "../config.js";
 import { logger } from "../logger/index.js";
+import {
+  getModelServiceLeaseManager,
+  createLocalModelReleaseAction,
+} from "../runtime/model-service-lease.js";
 
 const execAsync = promisify(exec);
 
@@ -424,6 +428,15 @@ export async function runVisionOcr(options: VisionOcrOptions): Promise<VisionOcr
 
   // 统一使用 LMSTUDIO_VISION_MODEL（GLM-4.6V），不再切换模型
   const modelId = process.env.LMSTUDIO_VISION_MODEL || "huihui-glm-4.6v-flash-abliterated-mlx";
+  const modelBaseUrl = (config.lmstudioBaseUrl || "http://127.0.0.1:1234").replace(/\/+$/, "");
+  const modelServiceLease = getModelServiceLeaseManager();
+  const modelServiceName = `vision:lmstudio:${modelId}`;
+  const releaseAction = createLocalModelReleaseAction({
+    baseUrl: modelBaseUrl,
+    model: modelId,
+    apiKey: config.lmstudioApiKey,
+    timeoutMs: 10_000,
+  });
   const userQuery = (options.userQuery || "").trim();
 
   // 检测是否明确要求 OCR（决定输出模式：纯抽字 vs 理解回答）
@@ -510,7 +523,11 @@ export async function runVisionOcr(options: VisionOcrOptions): Promise<VisionOcr
   }
 
   // 7. 调用 LM Studio Vision API
-  const ocrResult = await callLmStudioVisionOcr(actualImagePath, mimeType, modelId, timeoutMs, explicitOcr, options.userQuery);
+  const ocrResult = await modelServiceLease.withService(
+    modelServiceName,
+    async () => callLmStudioVisionOcr(actualImagePath, mimeType, modelId, timeoutMs, explicitOcr, options.userQuery),
+    releaseAction
+  );
 
   if (!ocrResult.success || !ocrResult.text) {
     result.error = ocrResult.error || "识别失败";

@@ -10,7 +10,13 @@
  */
 
 import { describe, test, expect, beforeEach } from "bun:test";
+import { randomUUID } from "node:crypto";
+import * as fs from "node:fs";
+import { tmpdir } from "node:os";
+import * as path from "node:path";
 import {
+    initializeEventQueue,
+    restoreQueuesFromDisk,
     pushSteer,
     drainSteer,
     hasSteer,
@@ -23,6 +29,7 @@ import {
     clearAllQueues,
     type QueuedMessage,
 } from "../src/steering-queue";
+import { EventQueueStore } from "../src/runtime/event-queue-store";
 
 describe("Steering Queue", () => {
     const testChatId = "test-chat-123";
@@ -175,6 +182,51 @@ describe("Steering Queue", () => {
 
             expect(drained2).toHaveLength(1);
             expect(drained2[0].content).toBe("chat2 消息");
+        });
+
+        test("重启恢复后保持 steer/followUp 队列语义", async () => {
+            const chatId = "chat-recover";
+            const eventQueueDir = path.join(tmpdir(), `msgcode-steering-${randomUUID()}`);
+            fs.mkdirSync(eventQueueDir, { recursive: true });
+
+            try {
+                const store = new EventQueueStore({ eventQueueDir });
+                await store.pushEvent({
+                    eventId: randomUUID(),
+                    taskId: "steer-task",
+                    chatId,
+                    type: "tool_call",
+                    status: "queued",
+                    payload: JSON.stringify({ content: "恢复 steer", queueType: "steer" }),
+                    createdAt: Date.now(),
+                });
+                await store.pushEvent({
+                    eventId: randomUUID(),
+                    taskId: "follow-task",
+                    chatId,
+                    type: "tool_call",
+                    status: "queued",
+                    payload: JSON.stringify({ content: "恢复 follow", queueType: "followUp" }),
+                    createdAt: Date.now(),
+                });
+
+                clearAllQueues();
+                initializeEventQueue(eventQueueDir);
+                await restoreQueuesFromDisk(chatId);
+                pushFollowUp(chatId, "当前轮后消息");
+                await new Promise((resolve) => setTimeout(resolve, 10));
+
+                const drainedSteer = drainSteer(chatId);
+                const drainedFollow = drainFollowUp(chatId);
+
+                expect(drainedSteer.map((message) => message.content)).toContain("恢复 steer");
+                expect(drainedFollow.map((message) => message.content)).toContain("恢复 follow");
+                expect(drainedFollow.map((message) => message.content)).toContain("当前轮后消息");
+
+                await new Promise((resolve) => setTimeout(resolve, 10));
+            } finally {
+                fs.rmSync(eventQueueDir, { recursive: true, force: true });
+            }
         });
     });
 

@@ -15,6 +15,7 @@ import type { ImsgAttachment } from "../attachments/vault.js";
 import { isAudioAttachment, isImageAttachment } from "../attachments/vault.js";
 import { resolveMlxWhisper } from "../runners/utils.js";
 import { executeTool } from "../tools/bus.js";
+import { getModelServiceLeaseManager } from "../runtime/model-service-lease.js";
 
 // ============================================
 // 配置常量
@@ -186,6 +187,8 @@ async function processAudio(
   // 执行 ASR
   const asrDir = getAsrDir(workspacePath);
   await mkdir(asrDir, { recursive: true });
+  const modelServiceLease = getModelServiceLeaseManager();
+  const modelServiceName = `asr:mlx-whisper:${modelPath}`;
 
   try {
     const { exec } = await import("node:child_process");
@@ -199,9 +202,14 @@ async function processAudio(
     const asrLanguage = process.env.ASR_LANGUAGE || "zh";
     const asrInitialPrompt = process.env.ASR_INITIAL_PROMPT || "请用中文转写，数字用阿拉伯数字，'乘以'不要写成'成'";
 
-    await execAsync(
-      `${binName} "${vaultPath}" --model "${modelPath}" --output-dir "${asrDir}" --output-name "${digest}" --task transcribe --language ${asrLanguage} --temperature 0 --initial-prompt "${asrInitialPrompt}"`,
-      { timeout: ASR_TIMEOUT_MS }
+    await modelServiceLease.withService(
+      modelServiceName,
+      async () => {
+        await execAsync(
+          `${binName} "${vaultPath}" --model "${modelPath}" --output-dir "${asrDir}" --output-name "${digest}" --task transcribe --language ${asrLanguage} --temperature 0 --initial-prompt "${asrInitialPrompt}"`,
+          { timeout: ASR_TIMEOUT_MS }
+        );
+      }
     );
 
     // mlx-whisper 输出文件名可能是 input_name.txt，需要检查
