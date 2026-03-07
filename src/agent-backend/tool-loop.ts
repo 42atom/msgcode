@@ -302,6 +302,52 @@ function hasToolProtocolArtifacts(text: string): boolean {
     );
 }
 
+/**
+ * 检测 prompt 是否为执行型请求
+ *
+ * 当用户要求执行操作（删除/停止/创建/修改等）时，模型应该调用工具
+ * 如果模型没有调用工具就返回"已完成"，这是假成功
+ */
+function looksLikeExecutionRequest(prompt: string): boolean {
+    const input = (prompt || "").toLowerCase();
+    if (!input) return false;
+
+    // 执行型关键词
+    const executionPatterns = [
+        // 删除/停止类
+        /\b(删除|停止|取消|移除|删掉|关掉|终止|移除|清掉)\b/,
+        /\b(delete|stop|cancel|remove|terminate|disable|remove)\b/,
+        // 创建/执行类
+        /\b(创建|执行|运行|启动|新建|添加|设置|部署)\b/,
+        /\b(create|execute|run|start|new|add|set|deploy|install)\b/,
+        // 修改类
+        /\b(修改|编辑|更新|改动|调整|修复|重写)\b/,
+        /\b(edit|modify|update|change|fix|rewrite)\b/,
+    ];
+
+    return executionPatterns.some((pattern) => pattern.test(input));
+}
+
+/**
+ * 检测模型回复是否像是"已完成"的响应
+ *
+ * 如果模型说"已删除/已完成/成功了"，但没有执行工具，这就是假成功
+ */
+function looksLikeCompletionResponse(text: string): boolean {
+    const input = (text || "").toLowerCase();
+    if (!input) return false;
+
+    // 完成型关键词（表示任务已完成）
+    const completionPatterns = [
+        /\b(已|已经|成功|完成|搞定|处理好|执行完)\b/,
+        /\b(已完成|已删除|已停止|已取消|已创建|已完成)\b/,
+        /\b(already|success|completed|done|finished|executed)\b/,
+    ];
+
+    // 如果同时包含"已"和执行结果描述，可能是假成功
+    return completionPatterns.some((pattern) => pattern.test(input));
+}
+
 function promptLooksLikeFeishuAttachmentSend(prompt: string): boolean {
     const input = (prompt || "").trim();
     if (!input) return false;
@@ -853,12 +899,29 @@ async function runMiniMaxAnthropicToolLoop(params: {
 
     let toolCalls = response.toolCalls;
 
+    // 假成功防护：检测执行型请求但模型没有执行工具的场景
     if (params.options.allowNoTool && toolCalls.length === 0) {
-        return {
-            answer: sanitizeLmStudioOutput(response.content || ""),
-            actionJournal: [],
-            decisionSource: "model",
-        };
+        const content = response.content || "";
+
+        // 情况 1: 模型输出包含伪工具文本，如 [TOOL_CALL]
+        // 这说明模型想调用工具但没成功，不应直接返回伪文本给用户
+        if (hasToolProtocolArtifacts(content)) {
+            // 有工具意图但未执行，继续推进一轮
+            // 不直接返回，让下面的重试逻辑处理
+        }
+        // 情况 2: 执行型请求但模型说"已完成"而没有执行工具
+        // 这说明模型在假完成，需要继续推进
+        else if (looksLikeExecutionRequest(params.options.prompt) && looksLikeCompletionResponse(content)) {
+            // 执行型请求但未执行工具，继续推进
+        }
+        // 情况 3: 真正的 no-tool 请求，可以直接返回
+        else {
+            return {
+                answer: sanitizeLmStudioOutput(content),
+                actionJournal: [],
+                decisionSource: "model",
+            };
+        }
     }
 
     if (toolCalls.length === 0 && params.activeToolSchemas.length > 0) {
@@ -1361,14 +1424,27 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     let msg1 = r1.choices[0]?.message;
     let toolCalls = msg1?.tool_calls ?? [];
 
+    // 假成功防护：检测执行型请求但模型没有执行工具的场景
     // P5.7-R12-T10: agent-first 改造 - 如果允许 no-tool，模型可以自己决定不调用工具
     if (options.allowNoTool && toolCalls.length === 0) {
-        // 模型决定不调用工具，直接返回文本结果
-        return {
-            answer: sanitizeLmStudioOutput(msg1?.content || ""),
-            actionJournal: [],
-            decisionSource: "model",
-        };
+        const content = msg1?.content || "";
+
+        // 情况 1: 模型输出包含伪工具文本，如 [TOOL_CALL]
+        if (hasToolProtocolArtifacts(content)) {
+            // 有工具意图但未执行，继续推进
+        }
+        // 情况 2: 执行型请求但模型说"已完成"而没有执行工具
+        else if (looksLikeExecutionRequest(options.prompt) && looksLikeCompletionResponse(content)) {
+            // 执行型请求但未执行工具，继续推进
+        }
+        // 情况 3: 真正的 no-tool 请求，可以直接返回
+        else {
+            return {
+                answer: sanitizeLmStudioOutput(content),
+                actionJournal: [],
+                decisionSource: "model",
+            };
+        }
     }
 
     // 无 tool_calls：重试一次（required 模式）

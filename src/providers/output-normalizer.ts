@@ -41,10 +41,25 @@ export function sanitizeLmStudioOutput(text: string): string {
     // 4. 移除只读提示
     cleaned = stripReadOnlyHint(cleaned);
 
-    // 5. 标准化 JSON 片段
+    // 5. 移除伪工具协议文本，如 [TOOL_CALL], <invoke>, <tool_call> 等
+    // 这些是模型内部协议标记，不应泄露给用户
+    cleaned = cleaned
+        // 移除 [TOOL_CALL]...[/TOOL_CALL] 块
+        .replace(/\[\/?TOOL_CALL\][\s\S]*?\[\/?TOOL_CALL\]/gi, "")
+        // 移除 <invoke>...</invoke> 块
+        .replace(/<invoke[\s\S]*?<\/invoke>/gi, "")
+        // 移除 <tool_call>...</tool_call> 块
+        .replace(/<[\w:-]*tool_call[\w:-]*>[\s\S]*?<\/[\w:-]*tool_call>/gi, "")
+        // 移除 <parameter>...</parameter> 块
+        .replace(/<parameter[\s\S]*?<\/parameter>/gi, "")
+        // 清理残留的空行
+        .replace(/^\s*[\r\n]+\s*/gm, "\n")
+        .replace(/(\n\s*){3,}/g, "\n\n");
+
+    // 6. 标准化 JSON 片段
     cleaned = normalizeJsonishEnvelope(cleaned);
 
-    // 6. 去重噪声行
+    // 7. 去重噪声行
     cleaned = dedupeNoisyLines(cleaned.split("\n")).join("\n");
 
     return cleaned.trim();
