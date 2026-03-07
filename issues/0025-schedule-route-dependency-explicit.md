@@ -1,7 +1,7 @@
 ---
 id: 0025
 title: Schedule Route 依赖显式化 - 禁止"创建成功但永不投递"的半成功状态
-status: doing
+status: done
 owner: agent
 labels: [feature, schedule, architecture]
 risk: medium
@@ -125,3 +125,29 @@ return { success: true, message: resultMessage };
 - Issue 0022: Scheduler skill + bash 主链收口
 - Issue 0023: Schedule 域双入口合同统一
 - Plan: docs/design/plan-260308-schedule-route-dependency-explicit.md
+
+## Smoke Test Results (2026-03-07)
+
+### Commit ID
+`afd4853`
+
+### 场景 A：有 route 的 workspace
+- Workspace: `/Users/admin/msgcode-workspaces/game01` (已绑定 route)
+- 命令: `npx tsx src/cli.ts schedule add smoke-test-xxx --workspace "/Users/admin/msgcode-workspaces/game01" --cron "0 9 * * *" --tz UTC --message "smoke test" --json`
+- 结果: ✅ 成功
+  - status: "pass"
+  - 文件已创建: `/Users/admin/msgcode-workspaces/game01/.msgcode/schedules/smoke-test-xxx.json`
+  - Jobs.json 已投影，routeStatus: "valid"
+
+### 场景 B：无 route 的 workspace
+- Workspace: `/tmp/msgcode-no-route-test` (未绑定)
+- 命令: `npx tsx src/cli.ts schedule add smoke-test-xxx --workspace /tmp/msgcode-no-route-test --cron "0 9 * * *" --tz UTC --message "smoke test" --json`
+- 结果: ✅ 正确失败
+  - status: "error"
+  - 错误码: "SCHEDULE_WORKSPACE_NOT_FOUND"
+  - 消息: "工作区 /tmp/msgcode-no-route-test 未绑定到任何群组，无法创建可投递的 schedule"
+
+### 结论
+- 有 route 时 schedule 可创建并正确投影到 jobs.json
+- 无 route 时直接返回错误，不会出现"创建成功但永不投递"的半成功状态
+- CLI 与聊天命令使用相同的检查逻辑
