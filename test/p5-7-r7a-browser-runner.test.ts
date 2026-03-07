@@ -165,6 +165,57 @@ describe("P5.7-R7A: browser runner", () => {
     });
   });
 
+  it("tabs.open 收到不存在的 profileId 时应忽略它并退回默认 launch", async () => {
+    const requests: Array<{ url: string; method: string; body?: string }> = [];
+
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      requests.push({
+        url,
+        method: init?.method ?? "GET",
+        body: typeof init?.body === "string" ? init.body : undefined,
+      });
+      if (url.endsWith("/health")) {
+        return jsonResponse({ status: "ok", mode: "dashboard" });
+      }
+      if (url.endsWith("/profiles")) {
+        return jsonResponse([{ id: "prof_real_1", name: "real-profile" }]);
+      }
+      if (url.endsWith("/instances/launch")) {
+        return jsonResponse({
+          id: "inst_auto_2",
+          profileId: "prof_real_1",
+          profileName: "real-profile",
+          port: "9998",
+          headless: true,
+          status: "running",
+        });
+      }
+      return jsonResponse({
+        tabId: "tab_auto_2",
+        url: "https://github.com/",
+      });
+    }) as typeof globalThis.fetch;
+
+    const result = await executeBrowserOperation({
+      operation: "tabs.open",
+      url: "https://github.com/",
+      profileId: "work-default",
+    });
+
+    expect(result.data.instanceId).toBe("inst_auto_2");
+    expect(result.data.autoLaunched).toBe(true);
+    expect(result.data.tabId).toBe("tab_auto_2");
+    expect(requests).toHaveLength(4);
+    expect(requests[0].url).toBe("http://127.0.0.1:9988/health");
+    expect(requests[1].url).toBe("http://127.0.0.1:9988/profiles");
+    expect(requests[2].url).toBe("http://127.0.0.1:9988/instances/launch");
+    expect(JSON.parse(requests[2].body ?? "{}")).toEqual({
+      mode: "headless",
+    });
+    expect(requests[3].url).toBe("http://127.0.0.1:9988/instances/inst_auto_2/tabs/open");
+  });
+
   it("tabs.snapshot 应该请求 GET /tabs/{id}/snapshot 并返回文本", async () => {
     const requests: string[] = [];
 

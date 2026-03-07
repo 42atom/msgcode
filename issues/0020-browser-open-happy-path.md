@@ -17,6 +17,7 @@ due:
 
 - 最新真实日志显示，模型调用 `browser` 时直接走了 `tabs.open`，但没有先提供 `instanceId`，导致桥接层以 `TOOL_BAD_ARGS` 失败。
 - 当前 PinchTab 底座已正常预启动，问题不在服务可用性，而在浏览器工具 happy path 太生硬。
+- 后续日志继续证明，自动 launch 生效后又暴露出第二层桥接问题：模型传入的 `profileId=work-default` 并不是 PinchTab 真实 profile，导致 `profile not found`。
 
 ## Goal / Non-Goals
 
@@ -44,6 +45,7 @@ due:
 1. `browser` 调用 `tabs.open` 且只给 `url` 时，不再报 `instanceId` 缺失。
 2. 自动补实例后，`tabs.open` 返回结果中包含 `instanceId`。
 3. 定向 runner/tool-loop 测试通过。
+4. 若传入的 `profileId` 在 PinchTab 中不存在，桥接层会忽略它并退回默认 launch。
 
 ## Notes
 
@@ -51,6 +53,7 @@ due:
 - 关键片段：
   - `Tool Bus: FAILURE browser`
   - `错误：browser: 'tabs.open' requires 'instanceId'`
+  - `错误：BROWSER_HTTP_ERROR: profile "work-default" not found`
 - Code:
   - `/Users/admin/GitProjects/msgcode/src/runners/browser-pinchtab.ts`
   - `/Users/admin/GitProjects/msgcode/src/tools/manifest.ts`
@@ -58,6 +61,8 @@ due:
 - Tests:
   - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r7a-browser-runner.test.ts test/p5-7-r9-t2-skill-global-single-source.test.ts`
   - `13 pass, 0 fail`
+  - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r7a-browser-runner.test.ts`
+  - `10 pass, 0 fail`
 
 ## Links
 

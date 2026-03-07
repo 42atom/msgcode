@@ -21,8 +21,9 @@ Issue: 0020
 
 1. `tabs.open` 若显式给了 `instanceId`，保持现状。
 2. `tabs.open` 若未给 `instanceId`，桥接层自动 `instances.launch` 一个默认实例。
-3. `tabs.open` 结果补回 `instanceId`，让后续 `tabs.snapshot/text/action` 可继续沿用。
-4. 提示层只补一条最小合同说明，不再要求模型手动拼完整实例启动协议。
+3. 若传入的 `profileId` 在 PinchTab 中不存在，自动忽略该 `profileId` 并退回默认 launch。
+4. `tabs.open` 结果补回 `instanceId`，让后续 `tabs.snapshot/text/action` 可继续沿用。
+5. 提示层只补一条最小合同说明，不再要求模型手动拼完整实例启动协议。
 
 ## Plan
 
@@ -66,6 +67,7 @@ Issue: 0020
 - 继续观察：
   - `Tool Bus: FAILURE browser`
   - `错误：browser: 'tabs.open' requires 'instanceId'`
+  - `错误：BROWSER_HTTP_ERROR: profile "work-default" not found`
   - `toolSequence=ok:browser`
 
 （章节级）评审意见：[留空，用户将给出反馈]

@@ -300,7 +300,18 @@ async function resolveInstanceIdForTabsOpen(
   const mode = normalizeMode(input.mode ?? "headless");
   const body: Record<string, unknown> = { mode };
   if (typeof input.profileId === "string" && input.profileId.trim()) {
-    body.profileId = input.profileId.trim();
+    const requestedProfileId = input.profileId.trim();
+    const profiles = await requestPinchtab<PinchtabProfile[]>("/profiles", {
+      timeoutMs: input.timeoutMs,
+    });
+    const profileList = Array.isArray(profiles) ? profiles : [];
+    const profileExists = profileList.some((profile) => {
+      const id = typeof profile?.id === "string" ? profile.id.trim() : "";
+      return id === requestedProfileId;
+    });
+    if (profileExists) {
+      body.profileId = requestedProfileId;
+    }
   }
   if (input.port !== undefined && String(input.port).trim()) {
     body.port = String(input.port).trim();
