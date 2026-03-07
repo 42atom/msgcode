@@ -67,7 +67,7 @@ file：文件查找、读取、写入、复制、移动、发送
 memory：长期记忆 add、search、stats、index、get
 thread：会话线程 list、messages、active、switch
 todo：任务 add、list、done
-cron：定时提醒 add、list、remove
+scheduler：定时任务。先读 ~/.config/msgcode/skills/scheduler/SKILL.md，再用 bash 调用 scheduler skill
 media：屏幕截图
 gen：图片、自拍、语音、音乐生成
 banana-pro-image-gen：Banana Pro 图片生成、编辑、描述

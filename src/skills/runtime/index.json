@@ -3,6 +3,12 @@
   "source": "global-single-source",
   "skills": [
     {
+      "id": "scheduler",
+      "name": "Scheduler",
+      "entry": "~/.config/msgcode/skills/scheduler/main.sh",
+      "description": "定时任务与 cron 的 skill + bash 主链，走 msgcode schedule CLI"
+    },
+    {
       "id": "patchright-browser",
       "name": "Patchright Browser",
       "entry": "~/.config/msgcode/skills/patchright-browser/main.sh",
