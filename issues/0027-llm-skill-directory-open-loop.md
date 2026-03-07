@@ -58,7 +58,7 @@ route=no-tool
 模型只吐伪 [TOOL_CALL] read_file ...
 ```
 
-### 当前状态（0026 修复后）
+### 当前状态（0026 修复后，P5.7-R15）
 ```
 Tool Bus: SUCCESS read_file
 随后失败：
@@ -66,10 +66,21 @@ Tool Bus: SUCCESS read_file
   错误码：MODEL_PROTOCOL_FAILED
 ```
 
+### 本次修复后（P5.7-R16）
+```
+getToolsForLlm() 在无 workspace 或 pi.enabled=false 时返回完整工具列表：
+- read_file（skill 读取）
+- bash（后续执行）
+- browser（浏览器操作）
+- mem（记忆操作）
+- tts/asr/vision/desktop
+```
+
 ### 根因分析
 1. LLM 读取 skill 后想继续执行 `bash` 工具
 2. 框架检查工具列表，发现 `bash` 未暴露
 3. 返回 `MODEL_PROTOCOL_FAILED`，阻断 LLM 合理动作
+4. **修复**：在 skill 场景下暴露完整工具列表
 
 ## Notes
 
