@@ -643,6 +643,9 @@ function buildWorkspacePathHint(workspacePath?: string): string {
         `当前 workspace config 绝对路径：${workspaceConfigPath}`,
         "当任务要求读取当前 workspace 的 .msgcode/config.json 时，只能使用上面这个绝对路径。",
         "禁止猜测、拼接或虚构其他工作区绝对路径（例如 /Users/admin/*workspace）。",
+        "",
+        "重要：所有 msgcode CLI 命令（如 schedule add/remove/list）必须显式带上 --workspace 参数：",
+        `  --workspace ${normalized}`,
     ].join("\n");
 }
 
