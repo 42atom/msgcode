@@ -96,7 +96,9 @@ export type SessionTarget = "main" | "isolated";
 /**
  * Payload（做什么）
  */
-export type Payload = { kind: "tmuxMessage"; text: string };
+export type Payload =
+  | { kind: "tmuxMessage"; text: string }
+  | { kind: "chatMessage"; text: string; chatGuid: string };
 
 /**
  * Delivery（回发策略）

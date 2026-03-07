@@ -68,7 +68,12 @@ export async function executeJob(
 ): Promise<JobExecutionResult> {
   const startTime = Date.now();
 
-  // 只支持 tmuxMessage payload
+  // P5.7-R17: 支持 chatMessage payload（不走 tmux，直接发消息）
+  if (job.payload.kind === "chatMessage") {
+    return await executeChatMessageJob(job, ctx, startTime);
+  }
+
+  // 仅支持 tmuxMessage payload
   if (job.payload.kind !== "tmuxMessage") {
     return {
       status: "skipped",
@@ -202,6 +207,100 @@ export async function executeJob(
   }
 
   return result;
+}
+
+/**
+ * P5.7-R17: 执行 chatMessage 类型的 job（不走 tmux，直接发消息）
+ *
+ * @param job CronJob
+ * @param ctx 执行上下文
+ * @param startTime 开始时间
+ * @returns 执行结果
+ */
+async function executeChatMessageJob(
+  job: CronJob,
+  ctx: JobExecutionContext,
+  startTime: number
+): Promise<JobExecutionResult> {
+  const text = job.payload.text;
+  if (!text) {
+    return {
+      status: "skipped",
+      durationMs: Date.now() - startTime,
+      error: "payload.text 为空",
+      errorCode: "PAYLOAD_EMPTY",
+    };
+  }
+
+  // 获取 route 验证
+  const route = getRouteByChatId(job.route.chatGuid);
+  if (!route) {
+    return {
+      status: "skipped",
+      durationMs: Date.now() - startTime,
+      error: `路由不存在: ${job.route.chatGuid}`,
+      errorCode: "ROUTE_NOT_FOUND",
+    };
+  }
+
+  if (route.status !== "active") {
+    return {
+      status: "skipped",
+      durationMs: Date.now() - startTime,
+      error: `路由未激活: ${route.label} (${route.status})`,
+      errorCode: "ROUTE_INACTIVE",
+    };
+  }
+
+  // 直接发送消息到聊天通道（不走 tmux）
+  const shouldDelivery = ctx.delivery !== false;
+
+  if (shouldDelivery && job.delivery.mode === "reply-to-same-chat") {
+    let responseText = text;
+
+    // 按 maxChars 截断
+    if (job.delivery.maxChars && responseText.length > job.delivery.maxChars) {
+      responseText = responseText.slice(0, job.delivery.maxChars) + "...";
+    }
+
+    // 发送消息
+    try {
+      if (ctx.imsgSend) {
+        await ctx.imsgSend(job.route.chatGuid, responseText);
+      } else {
+        // 没有 imsgSend，回退为错误
+        return {
+          status: "error",
+          durationMs: Date.now() - startTime,
+          error: "imsgSend 未提供",
+          errorCode: "IMSG_SEND_FAILED",
+        };
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      // 非 bestEffort 模式：发送失败算任务失败
+      if (!job.delivery.bestEffort) {
+        return {
+          status: "error",
+          durationMs: Date.now() - startTime,
+          error: `发送失败: ${msg}`,
+          errorCode: "IMSG_SEND_FAILED",
+        };
+      }
+      // bestEffort 模式：记录错误但继续
+      return {
+        status: "ok",
+        durationMs: Date.now() - startTime,
+        details: { deliveryError: msg },
+      };
+    }
+  }
+
+  // 成功
+  return {
+    status: "ok",
+    durationMs: Date.now() - startTime,
+  };
 }
 
 // ============================================

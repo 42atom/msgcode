@@ -177,6 +177,11 @@ export function scheduleToJob(
   const workspaceHash = createHash("sha256").update(projectDir).digest("hex").slice(0, 12);
   const stableJobId = `schedule:${workspaceHash}:${schedule.id}`;
 
+  // P5.7-R17: 根据 delivery.mode 决定 payload 类型
+  // reply-to-same-chat: 直接走聊天通道，不依赖 tmux
+  // 其他: 走 tmuxMessage
+  const isChatDelivery = schedule.delivery.mode === "reply-to-same-chat";
+
   const job: CronJob = {
     id: stableJobId,
     enabled: schedule.enabled,
@@ -191,10 +196,16 @@ export function scheduleToJob(
       tz: schedule.tz,
     } as Schedule,
     sessionTarget: "main",
-    payload: {
-      kind: "tmuxMessage",
-      text: schedule.message,
-    },
+    payload: isChatDelivery
+      ? {
+          kind: "chatMessage",
+          text: schedule.message,
+          chatGuid,
+        }
+      : {
+          kind: "tmuxMessage",
+          text: schedule.message,
+        },
     delivery: {
       mode: schedule.delivery.mode,
       bestEffort: true,
