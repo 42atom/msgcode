@@ -119,6 +119,13 @@
 - 日志：`JobScheduler: executing chat delivery`（不再 tmux）
 - runs.jsonl：`status=ok`
 
+### 真机验证结果（2026-03-08 02:08）
+```
+18:07:01 - 旧 tmuxMessage → TMUX_SESSION_DEAD ❌
+18:08:00 - 新 chatMessage → status=ok ✅
+18:09:00 - 新 chatMessage → status=ok ✅
+```
+
 ---
 
-**评审意见**：[留空,用户将给出反馈]
+**评审意见**：✅ 已验证通过
