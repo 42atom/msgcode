@@ -17,6 +17,7 @@ msgcode 内建技能列表，按领域分类。
 | [gen](gen/SKILL.md) | R6 | 内容生成 | 生成图片/语音/音乐 |
 | [browser](browser/SKILL.md) | R7 | 浏览器自动化 | 打开网页/点击/输入文本 |
 | [agent](agent/SKILL.md) | R8 | 代理任务 | 运行编码代理/研究代理/查询状态 |
+| [roundtable](roundtable/SKILL.md) | R9 | 多视角决策 | 自动选角讨论/风险压力测试/共识收敛 |
 
 ## 按域分组
 
@@ -41,6 +42,9 @@ msgcode 内建技能列表，按领域分类。
 ### R8: 代理域
 - `agent` - 代理任务
 
+### R9: 决策分析域
+- `roundtable` - 多视角决策
+
 ## 技能文件格式
 
 每个技能是一个 `SKILL.md` 文件，包含：
@@ -56,7 +60,7 @@ description: <触发描述>
 ## 触发时机
 ...
 
-## 命令列表
+## 命令列表或执行流程
 ...
 
 ## 示例
@@ -65,7 +69,7 @@ description: <触发描述>
 
 ## 如何使用
 
-模型根据用户请求匹配技能的 `description` 和 `触发时机`，然后调用相应的 `msgcode <domain> <action>` 命令。
+模型根据用户请求匹配技能的 `description` 和 `触发时机`，然后执行对应流程。命令型技能调用 `msgcode <domain> <action>`；方法型技能按 `SKILL.md` 的步骤与模板产出结果。
 
 ## 设计文档
 

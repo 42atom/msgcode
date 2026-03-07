@@ -91,3 +91,8 @@
 - slo stats (continuous):
 - auto-degrade:
 ```
+
+## 回链
+
+- Issue: issues/0007-tool-loop-quota-strategy.md
+- Plan: docs/design/plan-260306-tool-loop-quota-strategy.md
