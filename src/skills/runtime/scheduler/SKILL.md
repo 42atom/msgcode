@@ -1,8 +1,12 @@
 # scheduler skill
 
+本 skill 是参考实现，不是唯一方式。周期任务可用 cron；一次性任务（如"明早10点"）请根据环境自行选择实现（at/launchd/定时脚本等）。
+
 触发：定时提醒、周期任务、cron、schedule、每隔一段时间执行、每天/每周固定时间提醒。
 
-正式调度主链：`scheduler skill -> bash -> msgcode schedule ...`
+调度主链：`scheduler skill -> bash -> msgcode schedule ...`（仅周期任务适用）
+
+一次性任务执行链：LLM 根据环境自行选择实现方式（at/launchd/bash 定时脚本等）
 
 本 skill 作用：
 - 告诉模型不要发明 `cron_add` 之类不存在的工具。
@@ -17,7 +21,7 @@
 - `--workspace` 必须使用系统已经提供的当前 workspace 绝对路径，不要猜路径。
 - 添加后可用 `list` 确认，再由 scheduler 在后台执行。
 
-常用：
+周期任务示例：
 - `bash ~/.config/msgcode/skills/scheduler/main.sh add morning-digest --workspace <workspace-abs-path> --cron '0 9 * * *' --tz Asia/Shanghai --message '每天早上 9 点提醒我看日报' --json`
 - `bash ~/.config/msgcode/skills/scheduler/main.sh list --workspace <workspace-abs-path> --json`
 - `bash ~/.config/msgcode/skills/scheduler/main.sh remove morning-digest --workspace <workspace-abs-path> --json`

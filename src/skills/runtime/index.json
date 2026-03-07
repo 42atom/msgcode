@@ -6,7 +6,7 @@
       "id": "scheduler",
       "name": "Scheduler",
       "entry": "~/.config/msgcode/skills/scheduler/main.sh",
-      "description": "定时任务与 cron 的 skill + bash 主链，走 msgcode schedule CLI"
+      "description": "定时任务 skill 参考实现，周期任务走 msgcode schedule CLI，一次性任务由 LLM 自行决定实现"
     },
     {
       "id": "patchright-browser",
