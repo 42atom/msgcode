@@ -42,6 +42,8 @@ import {
   handleScheduleValidateCommand as handleScheduleValidateCommandImpl,
   handleScheduleEnableCommand as handleScheduleEnableCommandImpl,
   handleScheduleDisableCommand as handleScheduleDisableCommandImpl,
+  handleScheduleAddCommand as handleScheduleAddCommandImpl,
+  handleScheduleRemoveCommand as handleScheduleRemoveCommandImpl,
   handleReloadCommand as handleReloadCommandImpl,
 } from "./cmd-schedule.js";
 import {
@@ -130,15 +132,19 @@ export async function handleRouteCommand(
     case "soulCurrent":
       return handleSoulCurrentCommand(options);
     case "scheduleList":
-      return handleScheduleListCommand(options);
+      return handleScheduleListCommandImpl(options);
     case "scheduleValidate":
-      return handleScheduleValidateCommand(options);
+      return handleScheduleValidateCommandImpl(options);
     case "scheduleEnable":
-      return handleScheduleEnableCommand(options);
+      return handleScheduleEnableCommandImpl(options);
     case "scheduleDisable":
-      return handleScheduleDisableCommand(options);
+      return handleScheduleDisableCommandImpl(options);
+    case "scheduleAdd":
+      return handleScheduleAddCommandImpl(options);
+    case "scheduleRemove":
+      return handleScheduleRemoveCommandImpl(options);
     case "reload":
-      return handleReloadCommand(options);
+      return handleReloadCommandImpl(options);
     case "toolstats":
       return handleToolstatsCommand(options);
     case "toolAllowList":
@@ -315,6 +321,10 @@ export function parseRouteCommand(text: string): { command: string; args: string
       return { command: "scheduleEnable", args: parts.slice(2) };
     } else if (subCommand === "disable") {
       return { command: "scheduleDisable", args: parts.slice(2) };
+    } else if (subCommand === "add") {
+      return { command: "scheduleAdd", args: parts.slice(2) };
+    } else if (subCommand === "remove") {
+      return { command: "scheduleRemove", args: parts.slice(2) };
     }
     return { command: "scheduleList", args: [] };
   }
