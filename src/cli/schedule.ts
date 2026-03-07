@@ -11,20 +11,24 @@
 
 import { Command } from "commander";
 import path from "node:path";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { writeFile, unlink } from "node:fs/promises";
 import type { Diagnostic } from "../memory/types.js";
 import { parseWorkspaceParam } from "../memory/types.js";
-import { getWorkspaceRootForDisplay } from "../routes/store.js";
+import { getWorkspaceRootForDisplay, getActiveRoutes, type RouteEntry } from "../routes/store.js";
 import { createEnvelope } from "./command-runner.js";
 import {
   listSchedules,
   getSchedule,
   validateSchedule,
+  scheduleToJob,
   type ScheduleFile,
   type ScheduleInfo,
 } from "../config/schedules.js";
+import { createHash } from "node:crypto";
+import { writeFileSync, renameSync, unlinkSync } from "node:fs";
 import { Cron } from "croner";
+import { JobStore, getDefaultJobsPathSync } from "../jobs/store.js";
 
 // ============================================
 // 错误码定义
@@ -39,6 +43,173 @@ export const SCHEDULE_ERROR_CODES = {
   LIST_FAILED: "SCHEDULE_LIST_FAILED",
   REMOVE_FAILED: "SCHEDULE_REMOVE_FAILED",
 } as const;
+
+// ============================================
+// Schedule → Jobs 同步（Schedule 是真相源，Jobs 是执行投影）
+// ============================================
+
+/**
+ * 原子写入文件（简化版）
+ */
+function atomicWrite(filePath: string, content: string): void {
+  const tmpPath = `${filePath}.${Date.now()}.tmp`;
+  try {
+    writeFileSync(tmpPath, content, "utf-8");
+    renameSync(tmpPath, filePath);
+  } catch (err) {
+    try {
+      unlinkSync(tmpPath);
+    } catch {}
+    throw err;
+  }
+}
+
+/**
+ * 生成稳定的 jobId（与 scheduleToJob 保持一致）
+ */
+function generateJobId(projectDir: string, scheduleId: string): string {
+  const workspaceHash = createHash("sha256").update(projectDir).digest("hex").slice(0, 12);
+  return `schedule:${workspaceHash}:${scheduleId}`;
+}
+
+/**
+ * 根据 workspace 路径查找对应的 route（chatGuid）
+ */
+function findRouteByWorkspace(workspacePath: string): RouteEntry | null {
+  const routes = getActiveRoutes();
+  for (const route of routes) {
+    if (route.workspacePath === workspacePath) {
+      return route;
+    }
+  }
+  return null;
+}
+
+/**
+ * 将 schedule 同步到 jobs.json
+ *
+ * @param workspacePath 工作区路径
+ * @param scheduleId Schedule ID
+ * @param enabled 是否启用（用于 enable/disable 操作）
+ * @returns 同步结果
+ */
+function syncScheduleToJobs(
+  workspacePath: string,
+  scheduleId: string,
+  enabled?: boolean
+): { success: boolean; warning?: string } {
+  const jobsPath = getDefaultJobsPathSync();
+
+  // 1. 查找 route
+  const route = findRouteByWorkspace(workspacePath);
+  if (!route) {
+    return {
+      success: false,
+      warning: `工作区 ${workspacePath} 未绑定到任何群组，schedule 不会触发`,
+    };
+  }
+
+  // 2. 加载 jobs.json
+  let store: { version: number; jobs: unknown[] };
+  if (existsSync(jobsPath)) {
+    try {
+      const content = readFileSync(jobsPath, "utf-8");
+      store = JSON.parse(content);
+    } catch {
+      store = { version: 1, jobs: [] };
+    }
+  } else {
+    store = { version: 1, jobs: [] };
+  }
+
+  // 3. 查找或创建 job
+  const jobId = generateJobId(workspacePath, scheduleId);
+  const existingIndex = store.jobs.findIndex(
+    (j: unknown) => (j as { id: string }).id === jobId
+  );
+
+  if (enabled === undefined) {
+    // add 操作：如果 job 不存在则跳过（可能在 remove 后）
+    // 不自动创建，等待 scheduler 启动时重建
+    return { success: true };
+  }
+
+  if (enabled) {
+    // enable 操作：需要从 schedule 文件读取完整配置
+    const schedule = getScheduleSync(workspacePath, scheduleId);
+    if (!schedule) {
+      // schedule 文件不存在，跳过
+      return { success: true };
+    }
+
+    const job = scheduleToJob(schedule, route.chatGuid, workspacePath);
+    job.enabled = true;
+
+    if (existingIndex >= 0) {
+      (store.jobs as unknown[])[existingIndex] = job;
+    } else {
+      (store.jobs as unknown[]).push(job);
+    }
+  } else {
+    // disable 操作：标记为禁用
+    if (existingIndex >= 0) {
+      (store.jobs as unknown[])[existingIndex] = {
+        ...((store.jobs as unknown[])[existingIndex] as { enabled: boolean }),
+        enabled: false,
+      };
+    }
+  }
+
+  // 4. 保存
+  try {
+    atomicWrite(jobsPath, JSON.stringify(store, null, 2));
+    return { success: true };
+  } catch (err) {
+    return {
+      success: false,
+      warning: `同步到 jobs.json 失败: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+}
+
+/**
+ * 从 schedule 文件删除 job（同步删除 jobs.json）
+ */
+function removeScheduleFromJobs(workspacePath: string, scheduleId: string): void {
+  const jobsPath = getDefaultJobsPathSync();
+  if (!existsSync(jobsPath)) {
+    return;
+  }
+
+  try {
+    const content = readFileSync(jobsPath, "utf-8");
+    const store = JSON.parse(content);
+    const jobId = generateJobId(workspacePath, scheduleId);
+    store.jobs = store.jobs.filter((j: unknown) => (j as { id: string }).id !== jobId);
+
+    atomicWrite(jobsPath, JSON.stringify(store, null, 2));
+  } catch {
+    // 忽略删除失败
+  }
+}
+
+/**
+ * 同步版本的 getSchedule（用于 sync 函数）
+ */
+function getScheduleSync(workspacePath: string, scheduleId: string): ScheduleInfo | null {
+  const schedulePath = path.join(workspacePath, ".msgcode", "schedules", `${scheduleId}.json`);
+  if (!existsSync(schedulePath)) {
+    return null;
+  }
+
+  try {
+    const content = readFileSync(schedulePath, "utf-8");
+    const schedule = JSON.parse(content) as ScheduleFile;
+    return { ...schedule, id: scheduleId };
+  } catch {
+    return null;
+  }
+}
 
 // ============================================
 // 辅助函数
@@ -224,6 +395,14 @@ export function createScheduleAddCommand(): Command {
         // 写入文件
         const schedulePath = getSchedulePath(workspacePath, scheduleId);
         await writeFile(schedulePath, JSON.stringify(schedule, null, 2), "utf-8");
+
+        // 同步到 jobs.json（Schedule 是真相源，Jobs 是执行投影）
+        const syncResult = syncScheduleToJobs(workspacePath, scheduleId, true);
+        if (syncResult.warning) {
+          warnings.push(
+            createScheduleDiagnostic("SCHEDULE_SYNC_WARNING", syncResult.warning)
+          );
+        }
 
         const createdAt = new Date().toISOString();
         const data = {
@@ -416,6 +595,9 @@ export function createScheduleRemoveCommand(): Command {
         const schedulePath = getSchedulePath(workspacePath, scheduleId);
         await unlink(schedulePath);
 
+        // 同步从 jobs.json 删除
+        removeScheduleFromJobs(workspacePath, scheduleId);
+
         const removedAt = new Date().toISOString();
         const data = {
           scheduleId,
@@ -472,6 +654,152 @@ export function createScheduleRemoveCommand(): Command {
 // Schedule 命令组
 // ============================================
 
+/**
+ * enable 命令 - 启用 schedule
+ */
+export function createScheduleEnableCommand(): Command {
+  const cmd = new Command("enable");
+
+  cmd
+    .description("启用定时调度")
+    .argument("<scheduleId>", "Schedule ID")
+    .requiredOption("--workspace <id|path>", "Workspace ID、相对路径或绝对路径")
+    .option("--json", "JSON 格式输出")
+    .action(async (scheduleId: string, options) => {
+      const startTime = Date.now();
+      const command = "msgcode schedule enable";
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      try {
+        const workspacePath = await resolveWorkspacePathParam(options.workspace);
+
+        const { setScheduleEnabled } = await import("../config/schedules.js");
+        const success = await setScheduleEnabled(workspacePath, scheduleId, true);
+
+        if (!success) {
+          errors.push(
+            createScheduleDiagnostic(
+              SCHEDULE_ERROR_CODES.NOT_FOUND,
+              `Schedule 不存在: ${scheduleId}`
+            )
+          );
+          const envelope = createEnvelope(command, startTime, "error", {}, warnings, errors);
+          if (options.json) {
+            console.log(JSON.stringify(envelope, null, 2));
+          } else {
+            console.error(`错误: Schedule 不存在 (${scheduleId})`);
+          }
+          process.exit(1);
+          return;
+        }
+
+        // 同步到 jobs.json
+        const syncResult = syncScheduleToJobs(workspacePath, scheduleId, true);
+        if (syncResult.warning) {
+          warnings.push(createScheduleDiagnostic("SCHEDULE_SYNC_WARNING", syncResult.warning));
+        }
+
+        const envelope = createEnvelope(command, startTime, "pass", { scheduleId }, warnings, errors);
+
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.log(`已启用 schedule: ${scheduleId}`);
+        }
+
+        process.exit(0);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        errors.push(
+          createScheduleDiagnostic("SCHEDULE_ENABLE_FAILED", `启用 schedule 失败: ${message}`)
+        );
+        const envelope = createEnvelope(command, startTime, "error", {}, warnings, errors);
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.error("错误:", message);
+        }
+        process.exit(1);
+      }
+    });
+
+  return cmd;
+}
+
+/**
+ * disable 命令 - 禁用 schedule
+ */
+export function createScheduleDisableCommand(): Command {
+  const cmd = new Command("disable");
+
+  cmd
+    .description("禁用定时调度")
+    .argument("<scheduleId>", "Schedule ID")
+    .requiredOption("--workspace <id|path>", "Workspace ID、相对路径或绝对路径")
+    .option("--json", "JSON 格式输出")
+    .action(async (scheduleId: string, options) => {
+      const startTime = Date.now();
+      const command = "msgcode schedule disable";
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      try {
+        const workspacePath = await resolveWorkspacePathParam(options.workspace);
+
+        const { setScheduleEnabled } = await import("../config/schedules.js");
+        const success = await setScheduleEnabled(workspacePath, scheduleId, false);
+
+        if (!success) {
+          errors.push(
+            createScheduleDiagnostic(
+              SCHEDULE_ERROR_CODES.NOT_FOUND,
+              `Schedule 不存在: ${scheduleId}`
+            )
+          );
+          const envelope = createEnvelope(command, startTime, "error", {}, warnings, errors);
+          if (options.json) {
+            console.log(JSON.stringify(envelope, null, 2));
+          } else {
+            console.error(`错误: Schedule 不存在 (${scheduleId})`);
+          }
+          process.exit(1);
+          return;
+        }
+
+        // 同步到 jobs.json
+        const syncResult = syncScheduleToJobs(workspacePath, scheduleId, false);
+        if (syncResult.warning) {
+          warnings.push(createScheduleDiagnostic("SCHEDULE_SYNC_WARNING", syncResult.warning));
+        }
+
+        const envelope = createEnvelope(command, startTime, "pass", { scheduleId }, warnings, errors);
+
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.log(`已禁用 schedule: ${scheduleId}`);
+        }
+
+        process.exit(0);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        errors.push(
+          createScheduleDiagnostic("SCHEDULE_DISABLE_FAILED", `禁用 schedule 失败: ${message}`)
+        );
+        const envelope = createEnvelope(command, startTime, "error", {}, warnings, errors);
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.error("错误:", message);
+        }
+        process.exit(1);
+      }
+    });
+
+  return cmd;
+}
+
 export function createScheduleCommand(): Command {
   const cmd = new Command("schedule");
 
@@ -480,6 +808,8 @@ export function createScheduleCommand(): Command {
   cmd.addCommand(createScheduleAddCommand());
   cmd.addCommand(createScheduleListCommand());
   cmd.addCommand(createScheduleRemoveCommand());
+  cmd.addCommand(createScheduleEnableCommand());
+  cmd.addCommand(createScheduleDisableCommand());
 
   return cmd;
 }
