@@ -19,6 +19,12 @@ import { runTts } from "../runners/tts.js";
 import { runAsr } from "../runners/asr.js";
 import { runVisionOcr } from "../runners/vision_ocr.js";
 import { runBashCommand } from "../runners/bash-runner.js";
+import {
+  executeBrowserOperation,
+  BrowserCommandError,
+  BROWSER_ERROR_CODES,
+  type BrowserOperation,
+} from "../runners/browser-pinchtab.js";
 import { logger } from "../logger/index.js";
 import { recordToolEvent } from "./telemetry.js";
 
@@ -34,6 +40,7 @@ const TOOL_META: Record<ToolName, { sideEffect: SideEffectLevel }> = {
   read_file: { sideEffect: "read-only" },  // P5.6.8-R3: PI 四基础工具
   write_file: { sideEffect: "local-write" },
   edit_file: { sideEffect: "local-write" },
+  feishu_send_file: { sideEffect: "message-send" },  // 飞书文件发送
 };
 
 const MEDIA_PIPELINE_ALLOWED: ToolName[] = ["asr", "vision"];
@@ -155,6 +162,55 @@ function validateToolArgs(
     case "bash": {
       if (!args.command || typeof args.command !== "string" || !args.command.trim()) {
         return { code: "TOOL_BAD_ARGS", message: "bash: 'command' must be a non-empty string" };
+      }
+      break;
+    }
+    case "browser": {
+      if (!args.operation || typeof args.operation !== "string" || !args.operation.trim()) {
+        return { code: "TOOL_BAD_ARGS", message: "browser: 'operation' must be a non-empty string" };
+      }
+
+      const operation = String(args.operation).trim();
+      switch (operation) {
+        case "instances.launch": {
+          const mode = typeof args.mode === "string" ? args.mode.trim() : "headless";
+          if (mode !== "headed" && mode !== "headless") {
+            return { code: "TOOL_BAD_ARGS", message: "browser: 'mode' must be headed or headless" };
+          }
+          break;
+        }
+        case "instances.stop":
+        case "tabs.list":
+        case "tabs.open": {
+          if (!args.instanceId || typeof args.instanceId !== "string" || !args.instanceId.trim()) {
+            return { code: "TOOL_BAD_ARGS", message: `browser: '${operation}' requires 'instanceId'` };
+          }
+          if (operation === "tabs.open" && (!args.url || typeof args.url !== "string" || !args.url.trim())) {
+            return { code: "TOOL_BAD_ARGS", message: "browser: 'tabs.open' requires 'url'" };
+          }
+          break;
+        }
+        case "tabs.snapshot":
+        case "tabs.text":
+        case "tabs.action":
+        case "tabs.eval": {
+          if (!args.tabId || typeof args.tabId !== "string" || !args.tabId.trim()) {
+            return { code: "TOOL_BAD_ARGS", message: `browser: '${operation}' requires 'tabId'` };
+          }
+          if (operation === "tabs.action" && (!args.kind || typeof args.kind !== "string" || !args.kind.trim())) {
+            return { code: "TOOL_BAD_ARGS", message: "browser: 'tabs.action' requires 'kind'" };
+          }
+          if (operation === "tabs.eval" && (!args.expression || typeof args.expression !== "string" || !args.expression.trim())) {
+            return { code: "TOOL_BAD_ARGS", message: "browser: 'tabs.eval' requires 'expression'" };
+          }
+          break;
+        }
+      }
+      break;
+    }
+    case "feishu_send_file": {
+      if (!args.filePath || typeof args.filePath !== "string" || !args.filePath.trim()) {
+        return { code: "TOOL_BAD_ARGS", message: "feishu_send_file: 'filePath' must be a non-empty string" };
       }
       break;
     }
@@ -359,6 +415,62 @@ export async function executeTool(
           durationMs: Date.now() - started,
         };
         break;
+      }
+      case "browser": {
+        try {
+          const browser = await withTimeout(
+            executeBrowserOperation({
+              operation: String(args.operation) as BrowserOperation,
+              mode: typeof args.mode === "string" ? args.mode as "headed" | "headless" : undefined,
+              profileId: typeof args.profileId === "string" ? args.profileId : undefined,
+              instanceId: typeof args.instanceId === "string" ? args.instanceId : undefined,
+              tabId: typeof args.tabId === "string" ? args.tabId : undefined,
+              url: typeof args.url === "string" ? args.url : undefined,
+              kind: typeof args.kind === "string" ? args.kind : undefined,
+              ref: typeof args.ref === "string" ? args.ref : undefined,
+              text: typeof args.text === "string" ? args.text : undefined,
+              key: typeof args.key === "string" ? args.key : undefined,
+              expression: typeof args.expression === "string" ? args.expression : undefined,
+              interactive: args.interactive === true,
+              compact: args.compact === true,
+              port: typeof args.port === "string" || typeof args.port === "number" ? args.port : undefined,
+              timeoutMs: ctx.timeoutMs,
+            }),
+            ctx.timeoutMs ?? 120000
+          );
+
+          result = {
+            ok: true,
+            tool,
+            data: {
+              operation: browser.operation,
+              result: browser.data,
+            },
+            durationMs: Date.now() - started,
+          };
+          break;
+        } catch (error) {
+          const message = error instanceof BrowserCommandError
+            ? `${error.code}: ${error.message}`
+            : (error instanceof Error ? error.message : String(error));
+          const code = (
+            (error instanceof BrowserCommandError && error.code === BROWSER_ERROR_CODES.TIMEOUT)
+            || message === "TOOL_TIMEOUT"
+          )
+            ? "TOOL_TIMEOUT"
+            : "TOOL_EXEC_FAILED";
+
+          result = {
+            ok: false,
+            tool,
+            error: {
+              code,
+              message,
+            },
+            durationMs: Date.now() - started,
+          };
+          break;
+        }
       }
       case "desktop": {
         // T8.4: 优先使用 rpc 透传，兼容旧 subcommand
@@ -800,6 +912,65 @@ export async function executeTool(
           ok: true,
           tool,
           data: { path: args.path as string, editsApplied },
+          durationMs: Date.now() - started,
+        };
+        break;
+      }
+      case "feishu_send_file": {
+        // 飞书文件发送工具
+        const filePath = String(args.filePath ?? "").trim();
+        let chatId = args.chatId ? String(args.chatId).trim() : undefined;
+        const { loadWorkspaceConfig } = await import("../config/workspace.js");
+        const workspaceConfig = await loadWorkspaceConfig(ctx.workspacePath);
+
+        // 如果没提供 chatId，优先使用当前对话的群 ID
+        // ctx.chatId 格式是 feishu:oc_xxx，需要转换成 oc_xxx
+        if (!chatId && ctx.chatId) {
+          chatId = ctx.chatId.replace(/^feishu:/, "");
+        }
+
+        // 再 fallback 到 workspace 当前会话上下文（单一真相源）
+        if (!chatId) {
+          chatId = (workspaceConfig["runtime.current_chat_id"] as string | undefined)?.trim();
+        }
+        chatId = chatId || "";
+        const message = args.message ? String(args.message).trim() : undefined;
+
+        // 读取飞书配置（优先环境变量，然后 workspace config）
+        let appId = process.env.FEISHU_APP_ID?.trim();
+        let appSecret = process.env.FEISHU_APP_SECRET?.trim();
+
+        if (!appId || !appSecret) {
+          appId = (workspaceConfig["feishu.appId"] as string | undefined)?.trim();
+          appSecret = (workspaceConfig["feishu.appSecret"] as string | undefined)?.trim();
+        }
+
+        if (!appId || !appSecret) {
+          throw new Error("飞书配置未找到：请设置环境变量 FEISHU_APP_ID/FEISHU_APP_SECRET 或 workspace config 中的 feishu.appId/feishu.appSecret");
+        }
+        if (!chatId) {
+          throw new Error("飞书 chatId 未找到：请传入 chatId，或先让当前请求把 runtime.current_chat_id 写入 .msgcode/config.json");
+        }
+
+        // 调用飞书发送文件函数
+        const { feishuSendFile } = await import("../tools/feishu-send.js");
+        const out = await withTimeout(
+          feishuSendFile(
+            { filePath, chatId, message },
+            { appId, appSecret }
+          ),
+          ctx.timeoutMs ?? 60000
+        );
+
+        result = {
+          ok: out.ok,
+          tool,
+          data: out.ok ? {
+            chatId: out.chatId,
+            ...(out.attachmentType ? { attachmentType: out.attachmentType } : {}),
+            ...(out.attachmentKey ? { attachmentKey: out.attachmentKey } : {}),
+          } : undefined,
+          error: out.ok ? undefined : { code: "TOOL_EXEC_FAILED", message: out.error || "发送失败" },
           durationMs: Date.now() - started,
         };
         break;

@@ -18,7 +18,8 @@ export type ToolName =
   // P5.6.13-R1A-EXEC: run_skill 已退役
   | "read_file"  // P5.6.8-R3: PI 四基础工具
   | "write_file"
-  | "edit_file";
+  | "edit_file"
+  | "feishu_send_file";  // 飞书文件发送工具
 
 export type ToolDataMap = {
   tts: { audioPath: string };
@@ -27,7 +28,7 @@ export type ToolDataMap = {
   mem: Record<string, unknown>;
   // P5.7-R3f/R3h: bash 工具数据（含诊断字段）
   bash: { exitCode: number; stdout: string; stderr: string; fullOutputPath?: string };
-  browser: Record<string, unknown>;
+  browser: { operation: string; result: Record<string, unknown> };
   // T6.1: Desktop tool data (exitCode + stdout + stderr from desktopctl)
   desktop: { exitCode: number | null; stdout: string; stderr: string };
   // P5.6.13-R1A-EXEC: run_skill 已退役
@@ -35,6 +36,8 @@ export type ToolDataMap = {
   read_file: { content: string };
   write_file: { path: string };
   edit_file: { path: string; editsApplied: number };
+  // 飞书文件发送工具
+  feishu_send_file: { chatId: string; attachmentType?: "file" | "image"; attachmentKey?: string };
 };
 
 export type ToolSource =

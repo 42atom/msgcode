@@ -20,6 +20,7 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import type { ToolName, ToolingMode } from "../tools/types.js";
 
 /**
  * Workspace 配置（存储在 .msgcode/config.json）
@@ -55,6 +56,27 @@ export interface WorkspaceConfig {
    * - tmux: 透传执行形态（无上下文编排，忠实转发）
    */
   "runtime.kind"?: "agent" | "tmux";
+
+  /**
+   * 当前请求所属 transport（运行时写入）
+   * - imsg: iMessage / 本地消息链路
+   * - feishu: 飞书 Bot 链路
+   */
+  "runtime.current_transport"?: "imsg" | "feishu";
+
+  /**
+   * 当前请求所属 chatId（运行时写入）
+   * - 飞书场景：oc_xxx
+   * - iMessage 场景：归一化 chatId
+   */
+  "runtime.current_chat_id"?: string;
+
+  /**
+   * 当前请求所属完整 chatGuid（运行时写入）
+   * - 飞书场景：feishu:oc_xxx
+   * - iMessage 场景：chat123 / +8613xxxx 等现有 chatGuid
+   */
+  "runtime.current_chat_guid"?: string;
 
   /**
    * Agent Provider（仅 runtime.kind=agent 时有效）
@@ -125,16 +147,23 @@ export interface WorkspaceConfig {
    * - unrestricted: 允许访问全盘文件（agent 场景）
    */
   "tooling.fs_scope"?: FsScope;
-}
 
-/**
- * 工具相关类型
- * P5.6.14-R1b: 新增 AgentProvider/TmuxClient 类型别名
- */
-export type ToolingMode = "explicit" | "autonomous" | "tool-calls";
-export type ToolName =
-  | "tts" | "asr" | "vision" | "mem" | "bash" | "browser" | "desktop"
-  | "read_file" | "write_file" | "edit_file";
+  // ==================== 飞书配置 ====================
+  /**
+   * 飞书 App ID
+   */
+  "feishu.appId"?: string;
+
+  /**
+   * 飞书 App Secret
+   */
+  "feishu.appSecret"?: string;
+
+  /**
+   * 飞书 Encrypt Key（可选）
+   */
+  "feishu.encryptKey"?: string;
+}
 
 /**
  * P5.7-R3i: 文件工具作用域策略
@@ -169,14 +198,20 @@ export const DEFAULT_WORKSPACE_CONFIG: Required<WorkspaceConfig> = {
   "model.responder": "", // P5.7-R3e: 空=继承 agent.provider
   "policy.mode": "egress-allowed", // 默认允许外联（远程场景避免被门禁卡住；高敏 workspace 可手动切回 local-only）
   "runtime.kind": "agent", // P5.6.14-R1: 默认 agent 形态
+  "runtime.current_transport": "imsg",
+  "runtime.current_chat_id": "",
+  "runtime.current_chat_guid": "",
   "agent.provider": "agent-backend", // P5.7-R9-T6: 默认 agent-backend（中性语义）
   "tmux.client": "codex", // P5.6.14-R1: 默认 codex client
   "runner.default": "agent-backend", // P5.7-R9-T6: 兼容字段，默认 agent-backend
   "pi.enabled": true, // 测试期默认开启 PI
   "tooling.mode": "autonomous", // P5.5: 测试期统一 autonomous（LLM 自主决策 tool_calls）
-  "tooling.allow": ["tts", "asr", "vision", "mem", "bash", "browser", "desktop", "read_file", "write_file", "edit_file"], // P5.6.8-R4g: PI 四工具直达
+  "tooling.allow": ["tts", "asr", "vision", "mem", "bash", "browser", "desktop", "read_file", "write_file", "edit_file", "feishu_send_file"], // P5.6.8-R4g: PI 四工具直达 + 飞书文件发送
   "tooling.require_confirm": [], // 默认不要求确认
   "tooling.fs_scope": "unrestricted", // 测试期：文件工具无权限门槛
+  "feishu.appId": "", // 飞书 App ID（默认空，需要用户配置）
+  "feishu.appSecret": "", // 飞书 App Secret（默认空，需要用户配置）
+  "feishu.encryptKey": "", // 飞书 Encrypt Key（默认空，可选）
 };
 
 /**
@@ -240,6 +275,21 @@ export async function saveWorkspaceConfig(
 
   // 写入配置文件
   await writeFile(configPath, JSON.stringify(merged, null, 2), "utf-8");
+}
+
+export async function saveCurrentSessionContext(
+  projectDir: string,
+  session: {
+    transport: "imsg" | "feishu";
+    chatId: string;
+    chatGuid: string;
+  }
+): Promise<void> {
+  await saveWorkspaceConfig(projectDir, {
+    "runtime.current_transport": session.transport,
+    "runtime.current_chat_id": session.chatId,
+    "runtime.current_chat_guid": session.chatGuid,
+  });
 }
 
 /**

@@ -3,6 +3,7 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-07
+  - feishu: 当前会话上下文写入 workspace `.msgcode/config.json`，`feishu_send_file` 缺省读取 `runtime.current_chat_id`，并修复上传失败被误判为成功的问题 (Issue: 0011, Plan: docs/design/plan-260307-feishu-send-file-runtime-context.md) [risk: medium] [rollback: 回退 `listener/config/tools/feishu` 本次改动，恢复显式 chatId + 旧发送语义]
   - agent-backend: `minimax` provider 切换到 Anthropic-compatible 推荐接法，新增独立 provider 适配、Anthropic tool schema 映射与多轮 `tool_use/tool_result` 回灌 (Issue: 0010, Plan: docs/design/plan-260307-minimax-anthropic-provider.md) [risk: medium] [rollback: 回退 `src/providers/minimax-anthropic.ts` 及 `chat/tool-loop/config` 本次接线]
 - 2026-03-06
   - browser: 引入 `pinchtab@0.7.7` 作为浏览器底座依赖，并记录首轮真实验证结论（优先对接 HTTP API，避免直接包 CLI 主链路） (Issue: 0004, Plan: docs/design/plan-260306-web-transaction-platform-core.md) [risk: medium] [rollback: 移除 `pinchtab` 依赖并回退 README/验证文档更新]

@@ -300,6 +300,40 @@ function hasToolProtocolArtifacts(text: string): boolean {
     );
 }
 
+function promptLooksLikeFeishuAttachmentSend(prompt: string): boolean {
+    const input = (prompt || "").trim();
+    if (!input) return false;
+    return /(飞书|feishu)/i.test(input)
+        && /(发送|发给|上传|回传)/.test(input)
+        && /(文件|图片|附件|截图|png|jpg|jpeg|pdf|image)/i.test(input);
+}
+
+function answerClaimsFeishuDelivery(answer: string): boolean {
+    const input = (answer || "").trim();
+    if (!input) return false;
+    return /(已|已经).{0,8}(发送|上传).{0,24}(飞书|群|图片|文件|附件)/.test(input)
+        || (/发送成功/.test(input) && /(飞书|图片|文件|附件)/.test(input));
+}
+
+function hasSuccessfulFeishuSendResult(executedToolCalls: ExecutedToolCall[]): boolean {
+    return executedToolCalls.some(({ tc, result }) => {
+        if (tc.function.name !== "feishu_send_file") return false;
+        if (!result || typeof result !== "object") return false;
+        return typeof (result as Record<string, unknown>).attachmentType === "string";
+    });
+}
+
+function hardenFeishuDeliveryClaim(
+    answer: string,
+    executedToolCalls: ExecutedToolCall[],
+    prompt: string
+): string {
+    if (!promptLooksLikeFeishuAttachmentSend(prompt)) return answer;
+    if (!answerClaimsFeishuDelivery(answer)) return answer;
+    if (hasSuccessfulFeishuSendResult(executedToolCalls)) return answer;
+    return "我还没有真正把附件发送到飞书。只有 feishu_send_file 成功后，我才会确认“已发送”。";
+}
+
 function buildToolLoopFallbackAnswer(
     executedToolCalls: ExecutedToolCall[],
     prompt: string
@@ -937,6 +971,8 @@ async function runMiniMaxAnthropicToolLoop(params: {
         }
     }
 
+    finalAnswer = hardenFeishuDeliveryClaim(finalAnswer, executedToolCalls, params.options.prompt);
+
     const { verifyResult, verifyJournal } = await runVerifyPhase(
         executedToolCalls,
         actionJournal,
@@ -1036,6 +1072,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
             if (existsSync(globalSkillIndexPath)) {
                 try {
                     const indexContent = await fsPromises.readFile(globalSkillIndexPath, "utf-8");
+                    skillHint += `全局 skills 索引 JSON（只读）:\n${indexContent.trim()}\n`;
                     const index = JSON.parse(indexContent);
                     if (index.skills && Array.isArray(index.skills) && index.skills.length > 0) {
                         const skillIds: string[] = [];
@@ -1465,6 +1502,8 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
         }
     }
 
+    finalAnswer = hardenFeishuDeliveryClaim(finalAnswer, executedToolCalls, options.prompt);
+
     // P5.7-R12-T3: 在返回前执行 verify phase
     const { verifyResult, verifyJournal } = await runVerifyPhase(
         executedToolCalls,
@@ -1503,3 +1542,9 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
  * @deprecated 请使用 runAgentToolLoop
  */
 export const runLmStudioToolLoop = runAgentToolLoop;
+
+export const __test = process.env.NODE_ENV === "test"
+    ? {
+        hardenFeishuDeliveryClaim,
+    }
+    : undefined;

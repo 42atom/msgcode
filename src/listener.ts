@@ -19,7 +19,7 @@ import {
 } from "./routes/commands.js";
 import { logger } from "./logger/index.js";
 import { updateLastSeen } from "./state/store.js";
-import { getMemoryInjectConfig } from "./config/workspace.js";
+import { getMemoryInjectConfig, saveCurrentSessionContext } from "./config/workspace.js";
 import { AutoTtsLane } from "./runners/tts/auto-lane.js";
 import crypto from "node:crypto";
 
@@ -626,6 +626,24 @@ export async function handleMessage(
     }
     shouldAdvanceCursor = true;
     return;
+  }
+
+  if (route.projectDir) {
+    try {
+      const isFeishu = message.chatId.startsWith("feishu:");
+      await saveCurrentSessionContext(route.projectDir, {
+        transport: isFeishu ? "feishu" : "imsg",
+        chatId: isFeishu ? message.chatId.replace(/^feishu:/, "") : message.chatId,
+        chatGuid: message.chatId,
+      });
+    } catch (error) {
+      logger.warn("当前会话上下文写入 workspace config 失败", {
+        module: "listener",
+        chatId: message.chatId,
+        projectDir: route.projectDir,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   // 命令/转发交给对应 bot handler（默认 bot 直接走 tmux）

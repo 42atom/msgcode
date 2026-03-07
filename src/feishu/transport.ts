@@ -12,6 +12,8 @@
  */
 
 import { Client, EventDispatcher, LoggerLevel, WSClient } from "@larksuiteoapi/node-sdk";
+import * as fs from "node:fs/promises";
+import * as path from "node:path";
 import type { InboundMessage } from "../imsg/types.js";
 import { logger } from "../logger/index.js";
 
@@ -68,7 +70,74 @@ export interface FeishuTransportConfig {
 export interface FeishuTransport {
   start: () => Promise<void>;
   stop: () => Promise<void>;
-  send: (params: { chat_guid: string; text: string; file?: string }) => Promise<{ ok: boolean }>;
+  send: (params: { chat_guid: string; text: string; file?: string }) => Promise<{
+    ok: boolean;
+    error?: string;
+    attachmentType?: "file" | "image";
+    attachmentKey?: string;
+    fallbackTextSent?: boolean;
+  }>;
+}
+
+function resolveFeishuFileType(filePath: string): "opus" | "mp4" | "pdf" | "doc" | "xls" | "ppt" | "stream" {
+  const ext = path.extname(filePath).toLowerCase();
+  switch (ext) {
+    case ".mp4":
+      return "mp4";
+    case ".opus":
+      return "opus";
+    case ".pdf":
+      return "pdf";
+    case ".doc":
+    case ".docx":
+      return "doc";
+    case ".xls":
+    case ".xlsx":
+    case ".csv":
+      return "xls";
+    case ".ppt":
+    case ".pptx":
+      return "ppt";
+    default:
+      return "stream";
+  }
+}
+
+function isImageFile(filePath: string): boolean {
+  const ext = path.extname(filePath).toLowerCase();
+  return [".jpg", ".jpeg", ".png", ".webp", ".gif", ".tiff", ".tif", ".bmp", ".ico"].includes(ext);
+}
+
+function getFeishuErrorMessage(error: unknown): string {
+  if (!(error instanceof Error)) {
+    return String(error);
+  }
+
+  const maybeResponse = (error as Error & {
+    response?: {
+      status?: number;
+      data?: Record<string, unknown>;
+    };
+  }).response;
+
+  if (!maybeResponse) {
+    return error.message;
+  }
+
+  const parts: string[] = [];
+  if (typeof maybeResponse.status === "number") {
+    parts.push(`HTTP ${maybeResponse.status}`);
+  }
+
+  const data = maybeResponse.data;
+  if (data) {
+    const code = typeof data.code === "number" || typeof data.code === "string" ? String(data.code) : "";
+    const msg = typeof data.msg === "string" ? data.msg : "";
+    if (code) parts.push(`code=${code}`);
+    if (msg) parts.push(msg);
+  }
+
+  return parts.length > 0 ? parts.join(" ") : error.message;
 }
 
 export function createFeishuTransport(config: FeishuTransportConfig): FeishuTransport {
@@ -172,7 +241,112 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
     logger.info("Feishu WS transport 已停止", { module: "feishu" });
   }
 
-  async function send(params: { chat_guid: string; text: string; file?: string }): Promise<{ ok: boolean }> {
+  /**
+   * 上传文件到飞书服务器，获取 file_key
+   *
+   * @param params.filePath 本地文件路径
+   * @returns file_key 或错误信息
+   */
+  async function uploadFile(params: { filePath: string }): Promise<{ ok: boolean; file_key?: string; error?: string }> {
+    try {
+      // 验证文件存在
+      const fileStats = await fs.stat(params.filePath);
+      if (!fileStats.isFile()) {
+        return { ok: false, error: "文件不存在或不是常规文件" };
+      }
+
+      // 飞书文件上传限制：30MB，超出直接失败
+      const MAX_FILE_SIZE = 30 * 1024 * 1024;
+      if (fileStats.size > MAX_FILE_SIZE) {
+        return { ok: false, error: `文件超过大小限制（${MAX_FILE_SIZE / 1024 / 1024}MB）` };
+      }
+
+      // 读取文件内容
+      const fileContent = await fs.readFile(params.filePath);
+
+      // 使用飞书 SDK 上传文件
+      // 参考：https://open.feishu.cn/document/server-docs/im-v1/file/create
+      const response: any = await apiClient.im.file.create({
+        data: {
+          file_type: resolveFeishuFileType(params.filePath),
+          file_name: path.basename(params.filePath),
+          file: fileContent,
+        },
+      } as any);
+
+      const fileKey = response?.file_key || response?.data?.file_key;
+      if (fileKey) {
+        logger.info("Feishu 文件上传成功", {
+          module: "feishu",
+          filePath: params.filePath,
+          fileKey,
+          fileSize: fileStats.size,
+        });
+        return { ok: true, file_key: fileKey };
+      }
+
+      return { ok: false, error: response?.msg || "上传失败" };
+    } catch (error) {
+      const errorMessage = getFeishuErrorMessage(error);
+      logger.error("Feishu 文件上传失败", {
+        module: "feishu",
+        filePath: params.filePath,
+        error: errorMessage,
+      });
+      return { ok: false, error: errorMessage };
+    }
+  }
+
+  async function uploadImage(params: { filePath: string }): Promise<{ ok: boolean; image_key?: string; error?: string }> {
+    try {
+      const fileStats = await fs.stat(params.filePath);
+      if (!fileStats.isFile()) {
+        return { ok: false, error: "图片不存在或不是常规文件" };
+      }
+
+      const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+      if (fileStats.size > MAX_IMAGE_SIZE) {
+        return { ok: false, error: `图片超过大小限制（${MAX_IMAGE_SIZE / 1024 / 1024}MB）` };
+      }
+
+      const fileContent = await fs.readFile(params.filePath);
+      const response: any = await apiClient.im.image.create({
+        data: {
+          image_type: "message",
+          image: fileContent,
+        },
+      } as any);
+
+      const imageKey = response?.image_key || response?.data?.image_key;
+      if (imageKey) {
+        logger.info("Feishu 图片上传成功", {
+          module: "feishu",
+          filePath: params.filePath,
+          imageKey,
+          fileSize: fileStats.size,
+        });
+        return { ok: true, image_key: imageKey };
+      }
+
+      return { ok: false, error: response?.msg || "图片上传失败" };
+    } catch (error) {
+      const errorMessage = getFeishuErrorMessage(error);
+      logger.error("Feishu 图片上传失败", {
+        module: "feishu",
+        filePath: params.filePath,
+        error: errorMessage,
+      });
+      return { ok: false, error: errorMessage };
+    }
+  }
+
+  async function send(params: { chat_guid: string; text: string; file?: string }): Promise<{
+    ok: boolean;
+    error?: string;
+    attachmentType?: "file" | "image";
+    attachmentKey?: string;
+    fallbackTextSent?: boolean;
+  }> {
     const chatGuid = params.chat_guid;
     if (!isFeishuChatGuid(chatGuid)) {
       throw new Error(`Feishu send 收到非 feishu chatGuid: ${chatGuid}`);
@@ -182,12 +356,89 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
     const text = (params.text ?? "").trim();
 
     // MVP：file 先降级为提示文本（后续补 resource upload + messageResource）
-    const finalText = params.file
-      ? (text ? `${text}\n\n[附件已生成于本机路径，飞书 transport 暂不支持回传文件（MVP）]` : "[附件已生成于本机路径，飞书 transport 暂不支持回传文件（MVP）]")
-      : text;
+    let finalText = text;
+    let fileError: string | undefined;
+    let attachmentType: "file" | "image" | undefined;
+    let attachmentKey: string | undefined;
+
+    if (params.file) {
+      const treatAsImage = isImageFile(params.file);
+      const uploadResult = treatAsImage
+        ? await uploadImage({ filePath: params.file })
+        : await uploadFile({ filePath: params.file });
+
+      if (!uploadResult.ok) {
+        // 上传失败，降级为提示文本
+        const errorMsg = uploadResult.error || (treatAsImage ? "图片上传失败" : "文件上传失败");
+        fileError = errorMsg;
+        finalText = text ? `${text}\n\n[${treatAsImage ? "图片" : "文件"}发送失败：${errorMsg}]` : `[${treatAsImage ? "图片" : "文件"}发送失败：${errorMsg}]`;
+      } else {
+        attachmentType = treatAsImage ? "image" : "file";
+        attachmentKey = treatAsImage ? uploadResult.image_key : uploadResult.file_key;
+        try {
+          await apiClient.im.message.create({
+            params: {
+              receive_id_type: "chat_id",
+            },
+            data: {
+              receive_id: chatId,
+              msg_type: treatAsImage ? "image" : "file",
+              content: JSON.stringify(
+                treatAsImage
+                  ? { image_key: uploadResult.image_key }
+                  : { file_key: uploadResult.file_key }
+              ),
+            },
+          } as any);
+
+          // 如果有文本，也一起发送
+          if (text) {
+            await apiClient.im.message.create({
+              params: {
+                receive_id_type: "chat_id",
+              },
+              data: {
+                receive_id: chatId,
+                msg_type: "text",
+                content: JSON.stringify({ text }),
+              },
+            } as any);
+          }
+
+          logger.info(treatAsImage ? "Feishu 图片消息发送成功" : "Feishu 文件消息发送成功", {
+            module: "feishu",
+            chatGuid,
+            filePath: params.file,
+            ...(treatAsImage ? { imageKey: uploadResult.image_key } : { fileKey: uploadResult.file_key }),
+          });
+
+          return {
+            ok: true,
+            attachmentType,
+            attachmentKey,
+          };
+        } catch (error) {
+          const errorMessage = getFeishuErrorMessage(error);
+          logger.error(treatAsImage ? "Feishu 图片消息发送失败" : "Feishu 文件消息发送失败", {
+            module: "feishu",
+            chatGuid,
+            filePath: params.file,
+            ...(treatAsImage ? { imageKey: uploadResult.image_key } : { fileKey: uploadResult.file_key }),
+            error: errorMessage,
+          });
+
+          // 降级为提示文本
+          const errorMsg = errorMessage;
+          fileError = errorMsg;
+          attachmentType = undefined;
+          attachmentKey = undefined;
+          finalText = text ? `${text}\n\n[${treatAsImage ? "图片" : "文件"}发送失败：${errorMsg}]` : `[${treatAsImage ? "图片" : "文件"}发送失败：${errorMsg}]`;
+        }
+      }
+    }
 
     if (!finalText) {
-      return { ok: true };
+      return { ok: true, attachmentType, attachmentKey };
     }
 
     try {
@@ -202,17 +453,23 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
         },
       } as any);
 
-      return { ok: true };
+      return {
+        ok: true,
+        error: fileError,
+        attachmentType,
+        attachmentKey,
+        fallbackTextSent: Boolean(fileError),
+      };
     } catch (error) {
+      const errorMessage = getFeishuErrorMessage(error);
       logger.error("Feishu 发送失败", {
         module: "feishu",
         chatGuid,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage,
       });
-      return { ok: false };
+      return { ok: false, error: errorMessage, attachmentType, attachmentKey };
     }
   }
 
   return { start, stop, send };
 }
-
