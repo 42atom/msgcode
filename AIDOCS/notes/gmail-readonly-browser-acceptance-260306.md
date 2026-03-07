@@ -195,7 +195,7 @@
 ## Evidence
 
 - Docs: `AIDOCS/msgcode-2.1/browser_automation_spec_v2.1.md`
-- Docs: `AIDOCS/skills/browser/SKILL.md`
+- Docs: `src/skills/README.md`
 - Docs: `AIDOCS/notes/pinchtab-agent-integration-260306.md`
 - Code: `src/tools/bus.ts`
 - Code: `src/tools/types.ts`

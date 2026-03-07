@@ -52,7 +52,7 @@ START_EPOCH="$(date +%s)"
 
 echo "${TOKEN}" > "${STAMP_FILE}"
 
-PROMPT="【${TOKEN}】严格按步骤执行: 1) 使用read_file读取 /Users/admin/GitProjects/msgcode/AIDOCS/skills/imessage/SKILL.md 2) 使用read_file读取 /Users/admin/GitProjects/msgcode/AIDOCS/skills/file/SKILL.md 3) 使用bash执行: msgcode file send --path ${STAMP_FILE} --to ${CHAT_GUID} --caption ${TOKEN} --json 4) 最后只返回第3步JSON原文。"
+PROMPT="【${TOKEN}】严格按步骤执行: 1) 使用read_file读取 ${HOME}/.config/msgcode/skills/file/SKILL.md 2) 使用bash执行: bash ${HOME}/.config/msgcode/skills/file/main.sh send --path ${STAMP_FILE} --to ${CHAT_GUID} --caption ${TOKEN} --json 3) 最后只返回第2步JSON原文。"
 
 echo "========================================"
 echo "Smoke Token: ${TOKEN}"
@@ -144,4 +144,3 @@ fi
 echo "FAIL: 未观察到完整工具链。"
 echo "建议先看: ${LATEST_HIT}"
 exit 1
-
