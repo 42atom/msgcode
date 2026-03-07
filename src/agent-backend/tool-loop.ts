@@ -510,8 +510,10 @@ function selectToolsByName(
  * 不再使用 PI_ON_TOOLS 硬编码白名单
  */
 export async function getToolsForLlm(workspacePath?: string): Promise<ToolName[]> {
+    // P5.7-R15: skill 场景默认允许 read_file
+    // 当没有 workspace 配置时，至少允许读文件能力（skill 读取需要）
     if (!workspacePath) {
-        return [];
+        return ["read_file"];
     }
     try {
         const { loadWorkspaceConfig } = await import("../config/workspace.js");
