@@ -8,7 +8,7 @@ import { resolveCommandRoute } from "./workspace-resolver.js";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { Cron } from "croner";
-import { getRouteByChatId } from "../routes/store.js";
+import { getRouteByChatId, getActiveRoutes } from "../routes/store.js";
 
 export async function handleScheduleListCommand(options: CommandHandlerOptions): Promise<CommandResult> {
   const entry = resolveCommandRoute(options.chatId)?.route;
@@ -114,22 +114,29 @@ async function resolveWorkspacePathParam(input: string): Promise<string> {
 }
 
 /**
+ * 检查 workspace 是否绑定到任何 route（复用 CLI 逻辑）
+ */
+function findRouteByWorkspace(workspacePath: string): { workspacePath: string; chatGuid: string } | null {
+  const routes = getActiveRoutes();
+  for (const route of routes) {
+    if (route.workspacePath === workspacePath) {
+      return route;
+    }
+  }
+  return null;
+}
+
+/**
  * 复用 CLI 的 syncScheduleToJobs（使用 mapSchedulesToJobs）
+ *
+ * ⚠️ P5.7-R14：route 检查已在写入前完成，此处不再检查
  */
 async function syncScheduleToJobs(
   workspacePath: string,
   chatGuid: string
-): Promise<{ success: boolean; warning?: string }> {
+): Promise<{ success: boolean }> {
   const { mapSchedulesToJobs } = await import("../config/schedules.js");
   const { createJobStore } = await import("../jobs/store.js");
-
-  const route = getRouteByChatId(chatGuid);
-  if (!route) {
-    return {
-      success: false,
-      warning: `工作区 ${workspacePath} 未绑定到任何群组，schedule 不会触发`,
-    };
-  }
 
   const scheduleJobs = await mapSchedulesToJobs(workspacePath, chatGuid);
   const store = createJobStore();
@@ -255,6 +262,18 @@ export async function handleScheduleAddCommand(options: CommandHandlerOptions): 
       };
     }
 
+    // ⚠️ P5.7-R14：显式化 route 依赖，禁止"创建成功但永不投递"
+    // 检查 route 绑定：无 route 时直接失败，不写入文件
+    const route = findRouteByWorkspace(workspacePath);
+    if (!route) {
+      return {
+        success: false,
+        message: `错误：工作区 ${workspacePath} 未绑定到任何群组，无法创建可投递的 schedule\n` +
+          `\n` +
+          `请先使用 /bind 或 msgcode bind 将工作区绑定到群组`,
+      };
+    }
+
     // 构建 schedule 文件
     const schedule = {
       version: 1 as const,
@@ -279,16 +298,12 @@ export async function handleScheduleAddCommand(options: CommandHandlerOptions): 
     writeFileSync(schedulePath, JSON.stringify(schedule, null, 2), "utf-8");
 
     // 同步到 jobs.json（使用 mapSchedulesToJobs 统一逻辑）
-    const syncResult = await syncScheduleToJobs(workspacePath, options.chatId);
+    await syncScheduleToJobs(workspacePath, options.chatId);
 
-    let resultMessage = `已添加 schedule: ${scheduleId}\n` +
+    const resultMessage = `已添加 schedule: ${scheduleId}\n` +
       `  Cron: ${cron}\n` +
       `  时区：${tz}\n` +
       `  消息：${message.slice(0, 50)}${message.length > 50 ? "..." : ""}`;
-
-    if (syncResult.warning) {
-      resultMessage += `\n  警告：${syncResult.warning}`;
-    }
 
     return {
       success: true,

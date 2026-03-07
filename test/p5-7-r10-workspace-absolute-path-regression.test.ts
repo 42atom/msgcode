@@ -77,6 +77,9 @@ describe("P5.7-R10: absolute workspace path", () => {
 
   it("schedule add/list/remove 应支持绝对路径 workspace", () => {
     const ws = createWorkspace();
+
+    // P5.7-R14: schedule add 现在需要 route 绑定，无绑定时会失败
+    // 先测试 add 失败（因为没有 route）
     const add = runCli([
       "schedule",
       "add",
@@ -91,15 +94,21 @@ describe("P5.7-R10: absolute workspace path", () => {
       "daily check",
       "--json",
     ]);
-    const list = runCli(["schedule", "list", "--workspace", ws, "--json"]);
-    const remove = runCli(["schedule", "remove", "daily-check", "--workspace", ws, "--json"]);
 
-    expect(add.code).toBe(0);
-    expect(add.envelope.status).toBe("pass");
+    // 无 route 时应该返回错误
+    expect(add.code).not.toBe(0);
+    expect(add.envelope.status).toBe("error");
+
+    // 验证错误码是 SCHEDULE_WORKSPACE_NOT_FOUND（route 未绑定）
+    expect(add.envelope.errors?.[0]?.code).toBe("SCHEDULE_WORKSPACE_NOT_FOUND");
+
+    // list 和 remove 在无 route 时仍然可以工作（只操作文件系统）
+    const list = runCli(["schedule", "list", "--workspace", ws, "--json"]);
     expect(list.code).toBe(0);
     expect(list.envelope.status).toBe("pass");
-    expect(remove.code).toBe(0);
-    expect(remove.envelope.status).toBe("pass");
+
+    const remove = runCli(["schedule", "remove", "daily-check", "--workspace", ws, "--json"]);
+    expect(remove.code).not.toBe(0); // 失败是因为 schedule 不存在
   });
 
   it("相对路径越界应仍返回 PATH_TRAVERSAL", () => {

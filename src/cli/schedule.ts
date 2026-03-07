@@ -375,6 +375,27 @@ export function createScheduleAddCommand(): Command {
           return;
         }
 
+        // ⚠️ P5.7-R14：显式化 route 依赖，禁止"创建成功但永不投递"
+        // 检查 route 绑定：无 route 时直接失败，不写入文件
+        const route = findRouteByWorkspace(workspacePath);
+        if (!route) {
+          errors.push(
+            createScheduleDiagnostic(
+              SCHEDULE_ERROR_CODES.WORKSPACE_NOT_FOUND,
+              `工作区 ${workspacePath} 未绑定到任何群组，无法创建可投递的 schedule`,
+              "请先使用 /bind 或 msgcode bind 将工作区绑定到群组"
+            )
+          );
+          const envelope = createEnvelope(command, startTime, "error", {}, warnings, errors);
+          if (options.json) {
+            console.log(JSON.stringify(envelope, null, 2));
+          } else {
+            console.error(`错误：工作区未绑定到任何群组 (${workspacePath})`);
+          }
+          process.exit(1);
+          return;
+        }
+
         // 构建 schedule 文件
         const schedule: ScheduleFile = {
           version: 1,
