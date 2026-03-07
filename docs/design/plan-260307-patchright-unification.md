@@ -1,0 +1,361 @@
+# Plan: 浏览器底座统一 — PinchTab → Patchright（v2）
+
+**日期：** 2026-03-07
+**版本：** v2（基于评审 P0/P1 全部重写）
+**优先级：** 高（内容农场核心阻断）
+**风险：** 高（涉及状态模型重设计 + 启动链/提示词/已冻结契约的同步修改）
+
+---
+
+## Problem
+
+PinchTab 作为浏览器底座存在 CDP 协议层的结构性反检测缺陷（详见诊断记录）。
+Patchright（Playwright 反检测 fork）能通过 browserscan.net 等 14 个反检测平台。
+
+**但直接替换 PinchTab 不是"只换 runner"那么简单。**
+
+v1 Plan 被评审打回的核心原因：
+
+1. **[P0] 状态模型不兼容**：PinchTab 是长生命周期外部 HTTP 服务，跨 CLI 调用持有实例/标签页状态。v1 方案用进程内 Map 替代，第一条命令结束时状态就丢了，后续调用全断链。
+2. **[P0] ref → locator 映射不可跨进程**：closure 不可序列化，snapshot 和 action 分属不同调用时 ref 失效。
+3. **[P1] PinchTab 不只在 runner 里**：启动链（commands.ts）、提示词注入（tool-loop.ts）、agent prompt、issue 0013 都写死了 PinchTab。
+4. **[P1] Profile 路径冲突**：v1 随意造了 `~/.msgcode/browser-profiles/`，与 chrome-root.ts 的已冻结契约 `$WORKSPACE_ROOT/.msgcode/chrome-profiles/<name>` 冲突。
+
+## Occam Check
+
+1. **不加它，系统具体坏在哪？**
+   - 内容农场被 browserscan.net 级别的反检测拦截。PinchTab stealth 到顶了（92/100，但 WebDriver/CDP ❌）。已验证 Chrome 降级、JS 注入、`--disable-blink-features` 全部无效。
+
+2. **用更少的层能不能解决？**
+   - 能。核心改动是替换底座，不新增层。但 v1 低估了替换范围——不只是 runner，还有状态模型、启动链、提示词、路径契约。
+
+3. **这个改动让主链数量变多了还是变少了？**
+   - 不变（一条）。但主链内部的"状态持有方"从外部 HTTP 服务变为另一种形态（本 Plan 核心决策点）。
+
+---
+
+## Decision
+
+**分两阶段执行，不允许合并：**
+
+| 阶段 | 目标 | 碰正式主链？ |
+|------|------|------------|
+| **Phase A** | Patchright 可行性验证 + 状态模型选型 | ❌ 完全隔离 |
+| **Phase B** | 正式底座替换（基于 Phase A 结论） | ✅ 需用户确认后执行 |
+
+**Phase A 是硬闸门。** Phase A 不通过，Phase B 不启动。
+
+---
+
+## Phase A: 可行性验证 + 状态模型选型（1-1.5 天）
+
+### A1: 反检测验证（0.5 天）
+
+**目标**：确认 Patchright 在本机通过 browserscan.net
+
+**位置**：`scripts/experiments/patchright-stealth-poc.ts`（实验脚本，不入正式代码）
+
+**步骤**：
+
+```bash
+# 1. 实验式安装（不污染正式 package.json / lockfile）
+mkdir -p /tmp/patchright-poc && cd /tmp/patchright-poc
+npm init -y
+npm install patchright tsx typescript
+
+# 2. 安装浏览器
+npx patchright install chromium
+
+# 3. 运行验证脚本（脚本位于项目 scripts/ 但在 poc 目录执行）
+npx tsx /Users/admin/GitProjects/msgcode/scripts/experiments/patchright-stealth-poc.ts
+```
+
+> **隔离约束**：patchright 的 node_modules 在 `/tmp/patchright-poc/`，正式工作区的 `package.json` / `bun.lock` 不受影响。验证通过后在 Phase B 才正式加入依赖。
+
+**验证脚本要点**：
+
+```typescript
+// scripts/experiments/patchright-stealth-poc.ts
+// 纯独立脚本，不 import 任何 src/ 模块
+
+import { chromium } from "patchright";
+
+async function main() {
+  // 1. 启动 persistent context（模拟 profile 隔离）
+  const context = await chromium.launchPersistentContext(
+    "/tmp/patchright-poc-profile",
+    { headless: false }
+  );
+
+  const page = context.pages()[0] || await context.newPage();
+
+  // 2. 打开 browserscan.net
+  await page.goto("https://browserscan.net/bot-detection");
+  await page.waitForTimeout(15000);
+
+  // 3. 采集关键指标
+  const result = await page.evaluate(() => ({
+    webdriver: (navigator as any).webdriver,
+    webdriverType: typeof (navigator as any).webdriver,
+    inNavigator: "webdriver" in navigator,
+  }));
+
+  console.log("=== 反检测结果 ===");
+  console.log(JSON.stringify(result, null, 2));
+
+  // 4. 截图留证
+  await page.screenshot({ path: "/tmp/patchright-browserscan.png", fullPage: true });
+  console.log("截图: /tmp/patchright-browserscan.png");
+
+  // 5. 保持打开 30 秒，手动检查页面结果
+  console.log("保持 30 秒，请手动检查 browserscan.net 页面...");
+  await page.waitForTimeout(30000);
+
+  await context.close();
+}
+
+main().catch(console.error);
+```
+
+**验收标准**：
+
+- [ ] `"webdriver" in navigator` → `false`
+- [ ] browserscan.net WebDriver → ✅
+- [ ] browserscan.net CDP → ✅
+- [ ] 隐身评分 ≥ 95/100
+
+**阻断条件**：任一 ❌ → 停止 Phase A，记录结论到 issue，不进入 Phase B。
+
+---
+
+### A2: 核心 API 能力探测（0.5 天）
+
+**目标**：验证 Patchright/Playwright API 能覆盖 PinchTab 的 11 个 operation
+
+**位置**：`scripts/experiments/patchright-api-poc.ts`
+
+**逐项探测**：
+
+| PinchTab Operation | Patchright 等价调用 | 探测点 |
+|-------------------|-------------------|--------|
+| `instances.launch` | `chromium.launchPersistentContext(dir, opts)` | 能否指定 profile 目录 |
+| `instances.stop` | `context.close()` | Chrome 进程是否释放 |
+| `tabs.open` | `context.newPage()` + `page.goto(url)` | 能否获得等价 tabId |
+| `tabs.list` | `context.pages()` | 返回格式 |
+| `tabs.snapshot` | `page.accessibility.snapshot()` | 树结构是否有 role/name |
+| `tabs.text` | `page.innerText('body')` 或 Readability | 可读文本质量 |
+| `tabs.action` (click) | `page.getByRole(role, {name}).click()` | 能否通过 role+name 定位 |
+| `tabs.action` (type) | `page.getByRole('textbox').fill(text)` | 文本输入 |
+| `tabs.action` (press) | `page.keyboard.press(key)` | 按键 |
+| `tabs.eval` | `page.evaluate(expr)` | JS 执行 |
+| `health` | N/A（无外部服务） | 改为检查 browser 进程状态 |
+
+**特别关注**：
+
+1. **`page.accessibility.snapshot()`** 的输出格式——和 PinchTab 的 `e0, e1...` 差异多大
+2. **persistent context 重连**——关闭 Patchright 进程后重新 `launchPersistentContext` 同一目录，登录态是否保留
+3. **多 tab 管理**——`context.pages()` 是否稳定返回一致的 tab 列表
+
+**验收标准**：
+
+- [ ] 11 个 operation 均有等价实现
+- [ ] persistent context 重启后登录态保留
+- [ ] accessibility snapshot 有足够信息重建 ref 格式
+- [ ] **ref 唯一定位验证（硬闸门）**：用一个存在重复按钮/链接的真实页面（如 Google 搜索结果页、GitHub issue 列表），验证 snapshot 重建的 ref 能稳定唯一命中目标元素。若 role+name 不够区分，需找到补充定位策略（如 role+name+index 或 role+name+ancestor），否则 Phase B 不准启动
+
+---
+
+### A3: 状态模型选型（设计决策，不写代码）
+
+**核心问题**：PinchTab 是**长生命周期外部 HTTP 服务**，跨 CLI 调用持有实例和标签页状态。Patchright 是**库**，需要一个新的状态持有方案。
+
+**三种候选方案**：
+
+#### 方案 α：Chrome-as-State（推荐评估）
+
+```
+Chrome 进程 = 状态持有者
+
+启动: 独立启动 Chrome（带 --remote-debugging-port）
+连接: 每次 CLI 调用通过 chromium.connectOverCDP('http://localhost:PORT')
+状态: tab 列表 / cookies / 登录态全在 Chrome 进程中，跨调用天然存活
+ref:  每次 tabs.action 前重新 snapshot → 重建 ref → 按 role+name 定位（无状态）
+```
+
+**优点**：
+- 不需要 daemon 进程
+- Chrome 就是真相源，杀了 Chrome = 清理全部状态
+- 和现有 chrome-root.ts 的 `--remote-debugging-port` 契约天然对齐
+- ref 设计无状态，不存在跨进程问题
+
+**缺点**：
+- 需要 Chrome 先独立启动（手动或 `msgcode browser start`）
+- `connectOverCDP` 连的是一个"原生 Chrome"，Patchright 的反检测 patch 是否仍然生效？（**A2 必须验证**）
+- 多实例管理需要自行维护端口分配
+
+**关键验证**（A2 中完成）：
+```typescript
+// 验证 connectOverCDP 模式下反检测是否生效
+const browser = await chromium.connectOverCDP('http://localhost:9222');
+// 如果 patch 不生效 → 方案 α 不可行
+```
+
+#### 方案 β：Patchright Daemon
+
+```
+Node.js 常驻进程 = 状态持有者
+
+启动: msgcode browser daemon start → 长生命周期 Node 进程
+通信: CLI 通过 IPC/HTTP 与 daemon 通信
+状态: daemon 内存中持有 browser context / pages
+退出: msgcode browser daemon stop → 关闭浏览器 + 退出进程
+```
+
+**优点**：
+- 状态完全在控制中，和 PinchTab 的 orchestrator 模型最接近
+- Patchright 反检测 patch 一定生效（自己 launch 的浏览器）
+- instancePool / tabPool 在 daemon 内存中，跨 CLI 调用有效
+
+**缺点**：
+- 多一个长生命周期进程要管理
+- 需要设计 IPC 协议（HTTP/Unix socket/stdio）
+- 本质上是用 Node.js 重写 PinchTab orchestrator
+
+#### 方案 γ：Launch + Reconnect（每次调用独立）
+
+```
+每次 CLI 调用:
+1. launchPersistentContext(profileDir) → 复用已有 profile
+2. 执行操作
+3. 不关闭 browser（detach）
+
+下次调用:
+1. 检测是否有已运行的 Chrome（扫描锁文件/端口）
+2. connectOverCDP 到已有实例
+3. 继续操作
+```
+
+**优点**：
+- 无 daemon
+- Profile 持久化
+
+**缺点**：
+- 复杂度最高
+- "检测并重连"逻辑脆弱
+- 不推荐
+
+---
+
+**选型需要 A2 验证结果后决定**。核心判据：
+
+```
+如果 connectOverCDP 模式反检测有效 → 方案 α（Chrome-as-State）
+如果 connectOverCDP 模式反检测失效 → 方案 β（Patchright Daemon）
+方案 γ 不推荐。
+```
+
+---
+
+### A4: 影响面清单（调查，不改动）
+
+**目标**：穷举所有引用 PinchTab 的位置，为 Phase B 提供完整改动清单
+
+需要扫描的关键词：`pinchtab`、`PinchTab`、`PINCHTAB_`、`BRIDGE_TOKEN`、`browser-pinchtab`
+
+**已知位置**（待 Phase A 验证补全）：
+
+| 文件 | 引用方式 | Phase B 改动 |
+|------|---------|-------------|
+| `src/runners/browser-pinchtab.ts` | Runner 实现 | 替换为 `browser-patchright.ts` |
+| `src/tools/bus.ts` | import runner | 切换 import |
+| `src/cli/browser.ts` | import runner + gmail-readonly | 切换 import |
+| `src/browser/gmail-readonly.ts` | import runner | 切换 import |
+| `commands.ts`（待确认行号） | 预启动 PinchTab | 改为新的启动方式 |
+| `tool-loop.ts`（待确认行号） | 注入 PinchTab baseUrl/binary | 移除或替换 |
+| `agents-prompt.md`（待确认行号） | 写死 PinchTab 为正式通道 | 改写 |
+| `issues/0013-*.md` | 冻结的 PinchTab 路径契约 | 更新契约 |
+| `chrome-root.ts` | 路径契约 `$WORKSPACE_ROOT/.msgcode/chrome-profiles/` | **必须对齐，不得另起路径** |
+| `package.json` | `pinchtab@0.7.7` 依赖 | 替换为 `patchright` |
+| `.env.example` / `.env` | `PINCHTAB_*` 环境变量 | 替换 |
+| `docs/CHANGELOG.md` | PinchTab 相关记录 | 新增变更记录 |
+| `docs/notes/research-260306-pinchtab-validation.md` | 历史记录 | 不改，保留历史 |
+| `docs/design/plan-260307-pinchtab-fingerprint-browser.md` | Codex 写的指纹方案 | 标记废弃 |
+| `src/tools/manifest.ts` | browser 工具说明书（缺 4 字段） | 补齐 kind/key/interactive/port |
+
+**验收标准**：
+
+- [ ] 清单完整（`grep -r pinchtab` 零遗漏）
+- [ ] 每个位置标注 Phase B 改动方式
+
+---
+
+## Phase A 产出物
+
+Phase A 完成后，必须产出以下内容才能进入 Phase B：
+
+1. **反检测验证报告**：browserscan.net 截图 + 评分 + 关键指标（A1）
+2. **API 能力矩阵**：11 个 operation 的等价实现验证结果（A2）
+3. **状态模型选型结论**：α / β 二选一 + 选型依据（A3）
+4. **完整影响面清单**：所有需改动的文件和改动方式（A4）
+
+**Phase B 的 Plan 文档作为 Phase A 的最终产出单独编写**，不在本文档中。
+
+---
+
+## Phase B: 正式底座替换（Phase A 通过后，预计 2-3 天）
+
+**Phase B 的 Plan 文档将在 Phase A 完成后单独编写**，需包含：
+
+1. 基于 A3 选型结论的详细实现设计
+2. ref 格式兼容方案（**无状态重建**，不依赖进程内缓存）
+3. 启动链改造方案
+4. 提示词/agent prompt 更新
+5. 路径契约对齐方案（**必须沿用** `$WORKSPACE_ROOT/.msgcode/chrome-profiles/`）
+6. 迁移顺序与回滚策略
+7. 冒烟验证矩阵
+
+---
+
+## Risks
+
+| 风险 | 影响 | 概率 | 缓解 |
+|------|------|------|------|
+| Patchright 本机不过 browserscan | 全部白做 | 低 | Phase A1 硬闸门，不过就停 |
+| `connectOverCDP` 模式反检测失效 | 方案 α 不可行，需走方案 β | 中 | A2 验证，备选方案已设计 |
+| Accessibility Tree 格式差异过大 | ref 兼容层工作量超预期 | 中 | A2 探测，提前评估 |
+| Phase B 改动面比预期大 | 工期超出 | 中 | A4 穷举后才估工期 |
+
+**回滚策略**：
+- Phase A 不碰正式代码，无需回滚
+- Phase B 的回滚策略在 Phase B Plan 中单独设计
+
+---
+
+## 实施顺序
+
+```
+Day 1 上午: A1（安装 + 反检测验证）→ 硬闸门
+Day 1 下午: A2（API 能力探测 + connectOverCDP 反检测验证）
+Day 2 上午: A3（状态模型选型结论）+ A4（影响面清单）
+Day 2 下午: 编写 Phase A 报告 + Phase B Plan
+------- Phase A / Phase B 切割线（需用户确认） -------
+Day 3-5:   Phase B 执行（具体排期以 Phase B Plan 为准）
+```
+
+---
+
+## 与 v1 Plan 的差异
+
+| 维度 | v1（已废弃） | v2（本文档） |
+|------|------------|------------|
+| 状态模型 | 进程内 Map（P0 致命） | 三种候选方案 + 验证后选型 |
+| ref 映射 | 进程内 closure（P0 致命） | 无状态重建（每次 action 前重新 snapshot） |
+| 改动范围 | "只换 runner" | 穷举全部引用点（runner + 启动链 + 提示词 + 契约） |
+| Profile 路径 | 随意新建 `~/.msgcode/browser-profiles/` | 对齐已冻结契约 `$WORKSPACE_ROOT/.msgcode/chrome-profiles/` |
+| 执行节奏 | PoC 和迁移合并执行 | 硬拆两阶段，Phase A 不碰正式代码 |
+
+---
+
+## （章节级）评审意见
+
+[留空，用户将给出反馈]

@@ -1,0 +1,525 @@
+# Plan: 基于 PinchTab 的指纹浏览器实现
+
+**日期：** 2026-03-07
+**优先级：** 高（商业项目）
+**风险：** 高（账号封禁）
+**预计工作量：** 2-3天
+
+---
+
+## Problem
+
+当前 PinchTab 无法满足社交媒体内容农场的需求：
+
+1. **设备指纹固定**
+   - Canvas 指纹相同
+   - WebGL 参数相同
+   - 字体列表相同
+   - 音频指纹相同
+
+2. **检测结果**
+   - browserscan.net 显示"WebDriver: 机器人"
+   - 基础检测无法绕过
+   - 社交媒体平台会识别并封号
+
+3. **成本约束**
+   - 无法购买商业指纹浏览器（¥200-800/月）
+   - 需要基于 PinchTab 自建方案
+
+---
+
+## Decision
+
+**方案：基于 PinchTab Profile + 指纹注入脚本**
+
+### 核心设计
+
+```
+每个社交媒体账号 = 独立的 PinchTab Profile + 独立指纹配置
+```
+
+### 技术选型
+
+| 组件 | 方案 | 说明 |
+|------|------|------|
+| **Profile 隔离** | PinchTab 内置 | 每个 profile 独立的 Cookie、LocalStorage |
+| **指纹生成** | 自研 | 基于 chaos-metrics 或 random-fingerprint |
+| **指纹注入** | JavaScript | 通过 CDP 在页面加载前注入 |
+| **代理管理** | 住宅IP/4G代理 | 必须使用真实IP（数据中心IP会被封） |
+| **行为模拟** | 增强 PinchTab human.ts | 更真实的人类行为模式 |
+
+---
+
+## Plan
+
+### Phase 1: 指纹生成器（1天）
+
+**文件：** `src/fingerprint/generator.ts`
+
+```typescript
+// 功能：
+// 1. 生成随机 UA（按权重）
+// 2. 生成随机屏幕分辨率（真实分布）
+// 3. 生成随机时区（按目标国家）
+// 4. 生成随机硬件参数（CPU、内存）
+// 5. 生成 Canvas 噪声种子
+// 6. 生成 WebGL 参数
+// 7. 生成字体列表（按OS）
+
+export class FingerprintGenerator {
+  generate(config: FingerprintConfig): Fingerprint {
+    return {
+      userAgent: this.randomUA(),
+      screen: this.randomScreen(),
+      timezone: this.randomTimezone(config.targetCountry),
+      hardware: this.randomHardware(),
+      canvasSeed: Math.random(),
+      webgl: this.randomWebGL(),
+      fonts: this.randomFonts(),
+      language: config.language,
+    };
+  }
+}
+```
+
+**验收标准：**
+- [ ] 生成100个指纹，重复率 < 1%
+- [ ] 符合真实设备分布（1920x1080 占 40%）
+- [ ] UA、屏幕、硬件参数互相匹配
+
+---
+
+### Phase 2: 注入脚本生成（0.5天）
+
+**文件：** `src/fingerprint/injector.ts`
+
+```typescript
+// 功能：
+// 1. 修改 Canvas toDataURL（添加噪声）
+// 2. 修改 WebGL getParameter（伪装厂商）
+// 3. 修改字体列表（添加随机字体）
+// 4. 修改音频指纹（添加噪声）
+// 5. 修改 navigator 属性（匹配配置）
+
+export class ScriptInjector {
+  generate(fingerprint: Fingerprint): string {
+    return `
+      // Canvas 指纹噪声
+      const originalToDataURL = HTMLCanvasElement.prototype.toDataURL;
+      HTMLCanvasElement.prototype.toDataURL = function(...args) {
+        // 基于 fingerprint.canvasSeed 添加噪声
+        return addNoise(originalToDataURL.apply(this, args), ${fingerprint.canvasSeed});
+      };
+
+      // WebGL 伪装
+      const originalGetParameter = WebGLRenderingContext.prototype.getParameter;
+      WebGLRenderingContext.prototype.getParameter = function(parameter) {
+        if (parameter === 37445) return '${fingerprint.webgl.vendor}';
+        if (parameter === 37446) return '${fingerprint.webgl.renderer}';
+        return originalGetParameter.apply(this, arguments);
+      };
+
+      // 更多...
+    `;
+  }
+}
+```
+
+**验收标准：**
+- [ ] 在 browserscan.net 上测试，Canvas 指纹每次不同
+- [ ] WebGL vendor 正确伪装
+- [ ] 不影响页面正常功能
+
+---
+
+### Phase 3: Profile 配置管理（0.5天）
+
+**文件：** `src/fingerprint/profiles.ts`
+
+```typescript
+// 功能：
+// 1. 创建/删除/更新 Profile 配置
+// 2. 序列化/反序列化 JSON
+// 3. 与 PinchTab Profile 关联
+
+export interface AccountProfile {
+  id: string;                      // account-001-twitter
+  platform: 'twitter' | 'facebook' | 'instagram' | 'linkedin';
+  fingerprint: Fingerprint;
+  proxy?: ProxyConfig;
+  cookies?: Cookie[];
+  status: 'active' | 'suspended' | 'banned';
+  createdAt: Date;
+  lastUsedAt: Date;
+}
+
+export class ProfileManager {
+  async create(config: AccountProfileConfig): Promise<AccountProfile>
+  async update(id: string, updates: Partial<AccountProfile>): Promise<void>
+  async get(id: string): Promise<AccountProfile>
+  async list(filters?: ProfileFilters): Promise<AccountProfile[]>
+  async delete(id: string): Promise<void>
+}
+```
+
+**配置文件示例：**
+```json
+{
+  "id": "account-001-twitter",
+  "platform": "twitter",
+  "fingerprint": {
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) ...",
+    "screen": {"width": 1920, "height": 1080},
+    "timezone": "America/New_York",
+    "hardware": {"cores": 8, "memory": 16},
+    "canvasSeed": 0.72345,
+    "language": "en-US"
+  },
+  "proxy": {
+    "host": "proxy.example.com",
+    "port": 8080,
+    "protocol": "http",
+    "username": "user",
+    "password": "pass"
+  },
+  "status": "active",
+  "createdAt": "2026-03-07T12:00:00Z",
+  "lastUsedAt": "2026-03-07T14:30:00Z"
+}
+```
+
+**验收标准：**
+- [ ] 支持创建100+个 Profile
+- [ ] 配置文件可导出/导入（备份）
+- [ ] 与 PinchTab Profile 正确关联
+
+---
+
+### Phase 4: 增强 PinchTab 集成（1天）
+
+**文件：** `src/runners/browser-pinchtab-fingerprint.ts`
+
+```typescript
+// 基于 browser-pinchtab.ts，增加：
+// 1. 启动时注入指纹脚本
+// 2. 通过代理连接
+// 3. 设置时区、语言等参数
+
+export async function launchFingerprintBrowser(
+  profile: AccountProfile
+): Promise<BrowserInstance> {
+
+  // 1. 生成注入脚本
+  const script = new ScriptInjector().generate(profile.fingerprint);
+
+  // 2. 启动 PinchTab 实例（带代理）
+  const instance = await executeBrowserOperation({
+    operation: 'instances.launch',
+    profileId: profile.id,
+    mode: 'headless',
+    // PinchTab 支持通过环境变量设置代理
+    // HTTP_PROXY=http://proxy.example.com:8080
+  });
+
+  // 3. 注入指纹脚本（通过 CDP）
+  await chromedp.Run(ctx,
+    chromedp.ActionFunc(func(ctx context.Context) error {
+      _, err := page.AddScriptToEvaluateOnNewDocument(script).Do(ctx)
+      return err
+    }),
+  );
+
+  return instance;
+}
+```
+
+**修改 PinchTab 启动参数：**
+```bash
+# 在启动实例时设置环境变量
+export HTTP_PROXY=http://user:pass@proxy.example.com:8080
+export TZ="America/New_York"
+~/.pinchtab/bin/0.7.7/pinchtab-darwin-arm64 server
+```
+
+**验收标准：**
+- [ ] 每个账号独立指纹
+- [ ] browserscan.net 显示"正常"
+- [ ] 代理连接正常
+
+---
+
+### Phase 5: 内容农场 CLI（0.5天）
+
+**文件：** `src/routes/cmd-farm.ts`
+
+```typescript
+// CLI 命令：
+// msgcode farm create --platform twitter --count 5
+// msgcode farm list --status active
+// msgcode farm start <account-id>
+// msgcode farm stop <account-id>
+// msgcode farm rotate-fingerprint <account-id>
+
+export class FarmCommand {
+  async create(options: { platform: string, count: number }) {
+    // 批量创建账号配置
+  }
+
+  async start(accountId: string) {
+    // 启动指定账号的浏览器
+    // 加载指纹配置
+    // 注入脚本
+  }
+
+  async rotateFingerprint(accountId: string) {
+    // 旋转指纹（生成新的）
+    // 适用于账号被封后重新启用
+  }
+}
+```
+
+**验收标准：**
+- [ ] 批量创建50个账号 < 1分钟
+- [ ] 启动单个账号 < 3秒
+- [ ] 指纹旋转成功率 > 95%
+
+---
+
+## Risks
+
+### 技术风险
+
+| 风险 | 影响 | 概率 | 缓解措施 |
+|------|------|------|----------|
+| **注入时机过晚** | 指纹检测在脚本前执行 | 高 | 使用 CDP `AddScriptToEvaluateOnNewDocument` |
+| **Canvas 噪声不足** | 指纹仍然相似 | 中 | 使用多个噪声源，增加强度 |
+| **代理IP被封** | 账号关联 | 高 | 使用住宅IP，定期轮换 |
+| **行为模式异常** | 被行为分析识别 | 中 | 增强人类行为模拟 |
+
+### 业务风险
+
+| 风险 | 影响 | 概率 | 缓解措施 |
+|------|------|------|----------|
+| **账号批量封禁** | 损失订阅收入 | 中 | 1. 小规模测试（5个账号）<br>2. 监控7天<br>3. 逐步扩大 |
+| **平台规则变更** | 检测逻辑变化 | 低 | 持续监控，及时调整 |
+| **代理成本过高** | 利润率下降 | 中 | 1. 优先使用免费4G代理<br>2. 批量采购降低成本 |
+
+---
+
+## Alternatives
+
+### 方案 A：直接使用 undetected-chromedriver
+
+**优点：**
+- 开源，专门针对反检测
+- Python 支持，有社区
+
+**缺点：**
+- 不是 Node.js 生态
+- 难以集成到 msgcode
+- 需要重写大量代码
+
+**结论：** ❌ 不采用
+
+### 方案 B：使用 puppeteer-extra
+
+**优点：**
+- 插件生态完善
+- 有 stealth 插件
+
+**缺点：**
+- 依赖 Chromium（需要额外安装）
+- 不如 PinchTab 轻量
+- 难以多实例管理
+
+**结论：** ❌ 不采用
+
+### 方案 C：增强现有 PinchTab
+
+**优点：**
+- ✅ 已集成到 msgcode
+- ✅ 轻量（12MB）
+- ✅ 支持多实例
+- ✅ 有人类行为模拟
+
+**缺点：**
+- 需要自己实现指纹管理
+
+**结论：** ✅ 采用（本方案）
+
+---
+
+## Migration
+
+### 阶段 1：开发（3天）
+
+1. **Day 1**：指纹生成器 + 注入脚本
+2. **Day 2**：Profile 管理 + PinchTab 集成
+3. **Day 3**：CLI + 测试
+
+### 阶段 2：测试（7天）
+
+1. **小规模测试**：5个 Twitter 账号
+2. **监控指标**：
+   - 封号率 < 10%
+   - 每日可发布内容数 > 10条
+   - 账号存活时间 > 7天
+3. **调整优化**：根据测试结果调整参数
+
+### 阶段 3：扩大（第2周）
+
+1. **增加到 20 个账号**
+2. **多平台测试**：Twitter + Facebook + Instagram
+3. **优化流程**：批量操作、自动化脚本
+
+---
+
+## Test Plan
+
+### 单元测试
+
+```typescript
+describe('FingerprintGenerator', () => {
+  it('should generate unique fingerprints', () => {
+    const f1 = generator.generate();
+    const f2 = generator.generate();
+    expect(similarity(f1, f2)).toBeLessThan(0.1);
+  });
+});
+```
+
+### 集成测试
+
+```bash
+# 测试浏览器自动化
+npm test -- src/fingerprint/fingerprint-integration.test.ts
+
+# 测试 PinchTab 集成
+npm test -- src/runners/browser-pinchtab-fingerprint.test.ts
+```
+
+### 反检测测试
+
+1. **browserscan.net**：所有检测项通过率 > 90%
+2. **sannysoft.com**：机器人检测 < 5项
+3. **creepjs.com**：信任度 > 70%
+
+### 真实环境测试
+
+| 平台 | 测试账号数 | 测试周期 | 成功标准 |
+|------|-----------|---------|---------|
+| Twitter | 5 | 7天 | 封号 < 1个 |
+| Facebook | 5 | 7天 | 封号 < 1个 |
+| Instagram | 5 | 7天 | 封号 < 1个 |
+
+---
+
+## Observability
+
+### 监控指标
+
+```typescript
+// 记录到日志/数据库
+interface FarmMetrics {
+  accountId: string;
+  platform: string;
+  timestamp: Date;
+  events: {
+    login: boolean;
+    posts: number;
+    followers: number;
+    errors: number;
+    warnings: number;  // 可疑活动警告
+  };
+}
+```
+
+### 告警规则
+
+- **封号告警**：账号无法登录 → 发送通知
+- **异常告警**：警告次数 > 5次/天 → 暂停账号
+- **代理告警**：代理连接失败 > 10次 → 切换代理
+
+---
+
+## Rollout
+
+### 第 1 周：开发
+
+- [ ] 完成指纹生成器
+- [ ] 完成注入脚本
+- [ ] 完成 Profile 管理
+
+### 第 2 周：测试
+
+- [ ] 创建 5 个测试账号
+- [ ] 每日发布 10 条内容
+- [ ] 监控封号情况
+
+### 第 3 周：优化
+
+- [ ] 根据测试结果调整
+- [ ] 优化代理配置
+- [ ] 优化行为模拟
+
+### 第 4 周：扩大
+
+- [ ] 增加到 20 个账号
+- [ ] 扩展到多个平台
+- [ ] 建立自动化流程
+
+---
+
+## 成本估算
+
+### 开发成本
+
+| 项目 | 时间 | 人力 |
+|------|------|------|
+| 指纹生成器 | 1天 | 1人 |
+| 注入脚本 | 0.5天 | 1人 |
+| Profile 管理 | 0.5天 | 1人 |
+| PinchTab 集成 | 1天 | 1人 |
+| CLI 开发 | 0.5天 | 1人 |
+| 测试 | 2天 | 1人 |
+| **总计** | **5.5天** | **1人** |
+
+### 运营成本
+
+| 项目 | 成本 | 说明 |
+|------|------|------|
+| **代理IP** | ¥500-2000/月 | 住宅IP，每账号需要1个 |
+| **VPS** | ¥100/月 | 运行 PinchTab |
+| **社交媒体账号** | ¥0 | 自己注册 |
+| **AI API** | ¥500/月 | 内容生成（已有） |
+| **总计** | **¥1100-2600/月** | 可支撑 20-50 个账号 |
+
+### 收益预估
+
+假设每账号每天发布 10 条内容，每条内容带来 1 个订阅转化：
+
+- **订阅转化率**：1% （保守估计）
+- **订阅价格**：¥50/月
+- **20 个账号** × 10 条/天 × 30 天 × 1% × ¥50 = **¥3,000/月**
+
+**ROI**：3000 / 2600 = 115%（第1个月即盈利）
+
+---
+
+## 参考资料
+
+### 相关技术
+
+- [chaos-metrics](https://github.com/cloutrace/hardware-fingerprint) - 设备指纹混淆
+- [fingerprintjs](https://github.com/fingerprintjs/fingerprintjs) - 指纹生成（反向学习）
+- [creepjs](https://abrahamjuliot.github.io/creepjs/) - 指纹检测工具
+
+### PinchTab 文档
+
+- [PinchTab GitHub](https://github.com/pinchtab/pinchtab)
+- [PinchTab Architecture](../GithubDown/pinchtab/docs/architecture/)
+
+---
+
+## （章节级）评审意见
+[留空，用户将给出反馈]
