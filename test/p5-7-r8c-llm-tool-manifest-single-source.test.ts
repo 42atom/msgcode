@@ -172,7 +172,7 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     expect(tools).not.toContain("browser");
   });
 
-  it("pi.enabled=false 时，getToolsForLlm() 应返回空数组", async () => {
+  it("pi.enabled=false 时，getToolsForLlm() 应返回完整工具列表（skill 场景）", async () => {
     const workspacePath = await createTempWorkspace();
     const configPath = join(workspacePath, ".msgcode", "config.json");
 
