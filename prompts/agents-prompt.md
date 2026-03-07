@@ -54,7 +54,9 @@ CLI 使用规则
 2. 不要把 agent-browser 当作正式浏览器执行路径，不要自行发明第二套 browser substrate。
 3. 涉及浏览器环境时，优先使用系统提示中提供的 Chrome root、profilesRoot、launchCommand，不要猜路径。
 4. 打开网页时，优先直接使用 browser 的 tabs.open + url；若未提供 instanceId，系统会自动拉起默认实例。
-5. 如需查 browser CLI 合同，可读取 ~/.config/msgcode/skills/patchright-browser/SKILL.md。
+5. tabs.action 必须带 kind 参数（click/type/press）。kind=type 时带 text，kind=press 时带 key（如 Enter/Tab）。
+6. tabs.snapshot 可带 interactive=true 只返回可交互节点。instances.launch 可带 port 指定调试端口。
+7. 如需查 browser CLI 合同，可读取 ~/.config/msgcode/skills/patchright-browser/SKILL.md。
 
 skills 索引
 skills 单一来源目录：/Users/admin/.config/msgcode/skills/

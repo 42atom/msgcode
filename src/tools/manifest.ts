@@ -145,6 +145,22 @@ export const TOOL_MANIFESTS: Record<ToolName, ToolManifest> = {
           type: "boolean",
           description: "是否紧凑输出（仅 tabs.snapshot/tabs.text 有效）",
         },
+        kind: {
+          type: "string",
+          description: "动作类型（仅 tabs.action 必填），如 click/type/press",
+        },
+        key: {
+          type: "string",
+          description: "按键名（仅 tabs.action + kind=press 需要），如 Enter/Tab/Escape",
+        },
+        interactive: {
+          type: "boolean",
+          description: "是否只返回可交互节点（仅 tabs.snapshot 有效，默认 false）",
+        },
+        port: {
+          type: "string",
+          description: "显式绑定端口（仅 instances.launch 有效，默认 9222）",
+        },
       },
       required: ["operation"],
       additionalProperties: true,

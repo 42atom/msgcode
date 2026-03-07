@@ -20,3 +20,10 @@
 - `bash ~/.config/msgcode/skills/patchright-browser/main.sh instances launch --mode headed --root-name work-default --json`
 - `bash ~/.config/msgcode/skills/patchright-browser/main.sh tabs open --url https://example.com --json`
 - `bash ~/.config/msgcode/skills/patchright-browser/main.sh snapshot --tab-id <id> --compact --json`
+- `bash ~/.config/msgcode/skills/patchright-browser/main.sh action --tab-id <id> --kind click --ref '{"role":"link","name":"More info","index":0}' --json`
+
+参数速查：
+- tabs.action 必填 kind（click/type/press），ref 为 JSON：{"role":"...","name":"...","index":N}
+- kind=type 时带 text，kind=press 时带 key（Enter/Tab/Escape 等）
+- tabs.snapshot 可带 --interactive 只返回可交互节点
+- instances.launch 可带 --port 指定 Chrome 调试端口（默认 9222）

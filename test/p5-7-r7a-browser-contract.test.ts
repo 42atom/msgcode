@@ -70,6 +70,27 @@ describe("P5.7-R7A: browser CLI 合同", () => {
     expect(root?.errorCodes).toContain("BROWSER_ROOT_CREATE_FAILED");
   });
 
+  it("browser manifest 应包含 kind/key/interactive/port 参数", async () => {
+    const { TOOL_MANIFESTS } = await import("../src/tools/manifest.js");
+    const props = TOOL_MANIFESTS.browser.parameters.properties;
+
+    // tabs.action 必需的动作类型
+    expect(props.kind).toBeDefined();
+    expect(props.kind.type).toBe("string");
+
+    // tabs.action + kind=press 的按键名
+    expect(props.key).toBeDefined();
+    expect(props.key.type).toBe("string");
+
+    // tabs.snapshot 可选的交互节点过滤
+    expect(props.interactive).toBeDefined();
+    expect(props.interactive.type).toBe("boolean");
+
+    // instances.launch 可选的端口绑定
+    expect(props.port).toBeDefined();
+    expect(props.port.type).toBe("string");
+  });
+
   it("browser --help 应显示核心子命令", () => {
     const output = execSync("NODE_OPTIONS='--import tsx' node src/cli.ts browser --help", {
       encoding: "utf-8",

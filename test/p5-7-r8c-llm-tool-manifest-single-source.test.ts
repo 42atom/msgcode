@@ -247,6 +247,16 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     expect(props.ref).toBeDefined();
     expect(props.expression).toBeDefined();
 
+    // tabs.action 必需参数
+    expect(props.kind).toBeDefined();
+    expect(props.key).toBeDefined();
+
+    // tabs.snapshot 可选参数
+    expect(props.interactive).toBeDefined();
+
+    // instances.launch 可选参数
+    expect(props.port).toBeDefined();
+
     // 旧风格参数不应存在
     expect(props.selector).toBeUndefined();
     expect(props.value).toBeUndefined();
