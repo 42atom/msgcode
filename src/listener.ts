@@ -105,6 +105,42 @@ async function sendText(
   }
 }
 
+function extractAttachmentEvidence(attachmentText: string): string[] {
+  const blocks = attachmentText
+    .split("[attachment]")
+    .map((block) => block.trim())
+    .filter(Boolean);
+
+  const evidence: string[] = [];
+  for (const block of blocks) {
+    const fields = new Map<string, string>();
+    for (const line of block.split("\n").map((line) => line.trim()).filter(Boolean)) {
+      const idx = line.indexOf("=");
+      if (idx <= 0) continue;
+      const key = line.slice(0, idx).trim();
+      const value = line.slice(idx + 1).trim();
+      if (key && value) {
+        fields.set(key, value);
+      }
+    }
+
+    const path = fields.get("path");
+    if (!path) continue;
+
+    const parts = ["附件"];
+    const type = fields.get("type");
+    const mime = fields.get("mime");
+    const digest = fields.get("digest");
+    if (type) parts.push(`type=${type}`);
+    if (mime) parts.push(`mime=${mime}`);
+    parts.push(`path=${path}`);
+    if (digest) parts.push(`digest=${digest}`);
+    evidence.push(parts.join(" "));
+  }
+
+  return evidence;
+}
+
 /**
  * E14: 更新游标（仅在消息成功处理后）
  *
@@ -670,19 +706,10 @@ export async function handleMessage(
   });
 
   if (hasAttachments && message.attachments) {
-    const { copyToVault, isAudioAttachment, isImageAttachment, formatAttachmentForTmux } = await import("./attachments/vault.js");
+    const { copyToVault, formatAttachmentForTmux } = await import("./attachments/vault.js");
     const { processAttachment, formatDerivedForTmux } = await import("./media/pipeline.js");
 
     for (const attachment of message.attachments) {
-      // B2: 只处理允许的附件类型（使用 vault.ts 的类型检查，支持 mime/UTI/扩展名兜底）
-      const isAudio = isAudioAttachment(attachment);
-      const isImage = isImageAttachment(attachment);
-      const isAllowed = isAudio || isImage || attachment.mime === "application/pdf";
-
-      if (!isAllowed) {
-        continue;
-      }
-
       // 复制到 vault
       const msgId = message.id ?? "unknown";
       const workspacePath = route.projectDir;
@@ -709,7 +736,7 @@ export async function handleMessage(
       const thisAttachmentText = formatAttachmentForTmux(attachment, copyResult.localPath, copyResult.digest) + "\n";
       attachmentText += thisAttachmentText;
 
-      // MediaPipeline: 自动处理附件（ASR/读图/提取）
+      // MediaPipeline: 仅自动处理图片；其他附件交给模型自行决策
       try {
         const pipelineResult = await processAttachment(copyResult.localPath, attachment, workspacePath, text);
 
@@ -806,10 +833,16 @@ export async function handleMessage(
         .filter(line => line.startsWith("[图片文字]") || line.startsWith("[语音转写]"))
         .map(line => line.replace(/^\[[^\]]+\]\s*/g, "").trim())
         .filter(Boolean);
+      const attachmentEvidence = extractAttachmentEvidence(attachmentText);
 
-      // 若用户未附带问题但有证据（只发图/语音），给一个默认问题，避免模型进入"分析输入"模式
+      // 若用户未附带问题但只有图片 OCR 结果，给一个默认问题，避免模型进入"分析输入"模式
       if (!contentToHandle && derivedEvidence.length > 0) {
         contentToHandle = "请用一句话概括主要内容。";
+      }
+
+      // 非图片附件默认不做系统自动处理，改为把附件信息交给模型自行决策
+      if (!contentToHandle && attachmentEvidence.length > 0) {
+        contentToHandle = "你收到了一些附件。请先基于附件信息判断是否需要调用工具读取或处理，再回复用户。";
       }
 
       if (derivedEvidence.length > 0) {
@@ -818,6 +851,14 @@ export async function handleMessage(
           "补充信息：" +
           "\n" +
           derivedEvidence.join("\n");
+      }
+
+      if (attachmentEvidence.length > 0) {
+        contentToHandle +=
+          (contentToHandle ? "\n\n" : "") +
+          "附件信息：" +
+          "\n" +
+          attachmentEvidence.join("\n");
       }
 
       // 如果既没有文本也没有可处理的附件，跳过

@@ -34,6 +34,26 @@ export function fromFeishuChatGuid(chatGuid: string): string {
   return chatGuid.slice(FEISHU_CHAT_GUID_PREFIX.length);
 }
 
+type FeishuContentInspection = {
+  contentKind: "empty" | "json-string" | "text-string" | "object" | "other";
+  topLevelKeys: string[];
+  resourceKey?: string;
+  resourceKeyField?: string;
+  fileName?: string;
+  preview?: string;
+};
+
+type FeishuInboundResourceType = "audio" | "image" | "file";
+
+type FeishuInboundAttachmentSpec = {
+  resourceType: FeishuInboundResourceType;
+  resourceKey: string;
+  filename: string;
+  mime?: string;
+};
+
+type FeishuResourceDownloadType = "image" | "file";
+
 function parseFeishuTextContent(content: unknown): string | undefined {
   if (!content) return undefined;
 
@@ -57,6 +77,180 @@ function parseFeishuTextContent(content: unknown): string | undefined {
   }
 
   return undefined;
+}
+
+function inspectFeishuContent(content: unknown): FeishuContentInspection {
+  if (content === null || content === undefined) {
+    return { contentKind: "empty", topLevelKeys: [] };
+  }
+
+  let parsed: unknown = content;
+  let contentKind: FeishuContentInspection["contentKind"] = "other";
+  let preview: string | undefined;
+
+  if (typeof content === "string") {
+    const trimmed = content.trim();
+    preview = trimmed.length > 200 ? `${trimmed.slice(0, 200)}...` : trimmed;
+    if (!trimmed) {
+      return { contentKind: "empty", topLevelKeys: [] };
+    }
+    try {
+      parsed = JSON.parse(trimmed);
+      contentKind = "json-string";
+    } catch {
+      return {
+        contentKind: "text-string",
+        topLevelKeys: [],
+        preview,
+      };
+    }
+  } else if (typeof content === "object") {
+    contentKind = "object";
+  }
+
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return {
+      contentKind,
+      topLevelKeys: [],
+      preview,
+    };
+  }
+
+  const record = parsed as Record<string, unknown>;
+  const topLevelKeys = Object.keys(record).sort();
+  const keyFields = ["file_key", "image_key", "audio_key", "media_key"] as const;
+  const resourceKeyField = keyFields.find((field) => typeof record[field] === "string");
+  const resourceKey = resourceKeyField ? String(record[resourceKeyField]) : undefined;
+  const fileNameFields = ["file_name", "name", "title"] as const;
+  const fileNameField = fileNameFields.find((field) => typeof record[field] === "string");
+  const fileName = fileNameField ? String(record[fileNameField]) : undefined;
+
+  if (!preview) {
+    const json = JSON.stringify(record);
+    preview = json.length > 200 ? `${json.slice(0, 200)}...` : json;
+  }
+
+  return {
+    contentKind,
+    topLevelKeys,
+    resourceKey,
+    resourceKeyField,
+    fileName,
+    preview,
+  };
+}
+
+function sanitizeFilename(filename: string): string {
+  const base = path.basename(filename).trim();
+  if (!base) return "attachment.bin";
+  return base.replace(/[\\/]/g, "_");
+}
+
+function inferMimeFromFilename(filename: string, msgType: FeishuInboundResourceType): string | undefined {
+  const ext = path.extname(filename).toLowerCase();
+  if (msgType === "audio") {
+    switch (ext) {
+      case ".opus":
+        return "audio/opus";
+      case ".mp3":
+        return "audio/mpeg";
+      case ".m4a":
+        return "audio/mp4";
+      case ".wav":
+        return "audio/wav";
+      default:
+        return "audio/unknown";
+    }
+  }
+
+  if (msgType === "image") {
+    switch (ext) {
+      case ".jpg":
+      case ".jpeg":
+        return "image/jpeg";
+      case ".gif":
+        return "image/gif";
+      case ".webp":
+        return "image/webp";
+      case ".bmp":
+        return "image/bmp";
+      case ".tif":
+      case ".tiff":
+        return "image/tiff";
+      case ".png":
+      default:
+        return "image/png";
+    }
+  }
+
+  switch (ext) {
+    case ".pdf":
+      return "application/pdf";
+    case ".html":
+      return "text/html";
+    case ".txt":
+      return "text/plain";
+    case ".json":
+      return "application/json";
+    case ".csv":
+      return "text/csv";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+function resolveFeishuInboundAttachmentSpec(
+  msgType: string | undefined,
+  messageId: string,
+  content: unknown
+): FeishuInboundAttachmentSpec | null {
+  if (msgType !== "audio" && msgType !== "image" && msgType !== "file") {
+    return null;
+  }
+
+  const inspection = inspectFeishuContent(content);
+  if (!inspection.resourceKey) {
+    return null;
+  }
+
+  const fallbackFilename = (() => {
+    if (msgType === "audio") return `${messageId}.opus`;
+    if (msgType === "image") return `${messageId}.png`;
+    return `${messageId}.bin`;
+  })();
+
+  const filename = sanitizeFilename(inspection.fileName || fallbackFilename);
+  const mime = inferMimeFromFilename(filename, msgType);
+
+  return {
+    resourceType: msgType,
+    resourceKey: inspection.resourceKey,
+    filename,
+    mime,
+  };
+}
+
+async function downloadFeishuMessageResource(
+  apiClient: Client,
+  messageId: string,
+  spec: FeishuInboundAttachmentSpec
+): Promise<string> {
+  const tempDir = path.join(process.env.TMPDIR || "/tmp", "msgcode-feishu-inbound");
+  await fs.mkdir(tempDir, { recursive: true });
+  const localPath = path.join(tempDir, `${messageId}_${sanitizeFilename(spec.filename)}`);
+
+  const response = await apiClient.im.messageResource.get({
+    params: {
+      type: spec.resourceType === "image" ? "image" : "file",
+    },
+    path: {
+      message_id: messageId,
+      file_key: spec.resourceKey,
+    },
+  } as any);
+
+  await response.writeFile(localPath);
+  return localPath;
 }
 
 export interface FeishuTransportConfig {
@@ -186,8 +380,9 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
         } else {
           text = undefined;
         }
+        const contentInspection = inspectFeishuContent(message?.content);
 
-        const inbound: InboundMessage = {
+        const inboundBase: InboundMessage = {
           id: String(messageId),
           chatId: toFeishuChatGuid(String(chatId)),
           text,
@@ -199,17 +394,94 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
           isGroup: message?.chat_type ? String(message.chat_type) === "group" : undefined,
         };
 
-        // 关键点：不要 await，避免触发 3s 超时重推
-        config.onInbound(inbound);
+        const msgTypeLabel = msgType ? String(msgType) : "unknown";
+        logger.info(
+          `Feishu 入站事件 msgType=${msgTypeLabel} messageId=${String(messageId)} contentKind=${contentInspection.contentKind} resourceKeyField=${contentInspection.resourceKeyField ?? "none"} resourceKey=${contentInspection.resourceKey ?? "none"} fileName=${contentInspection.fileName ?? "none"}`,
+          {
+          module: "feishu",
+          chatId: inboundBase.chatId,
+          rawChatId: String(chatId),
+          messageId: String(messageId),
+          msgType: msgTypeLabel,
+          hasText: Boolean(inboundBase.text),
+          attachmentMapped: Boolean(inboundBase.attachments && inboundBase.attachments.length > 0),
+          contentKind: contentInspection.contentKind,
+          contentKeys: contentInspection.topLevelKeys,
+          resourceKeyField: contentInspection.resourceKeyField ?? null,
+          resourceKey: contentInspection.resourceKey ?? null,
+          fileName: contentInspection.fileName ?? null,
+          contentPreview: contentInspection.preview ?? null,
+        });
 
-        // 非文本消息：也交给上层（允许 /where 之类由用户发文本触发）
-        if (!inbound.text && msgType && msgType !== "text") {
-          logger.debug("Feishu 非文本消息已收到（MVP 忽略内容）", {
-            module: "feishu",
-            chatId: inbound.chatId,
-            msgType,
-          });
+        if (msgType === "text") {
+          // 关键点：不要 await，避免触发 3s 超时重推
+          config.onInbound(inboundBase);
+          return;
         }
+
+        const attachmentSpec = resolveFeishuInboundAttachmentSpec(msgTypeLabel, String(messageId), message?.content);
+        if (!attachmentSpec) {
+          logger.info(
+            `Feishu 非文本消息尚未映射为附件 msgType=${msgTypeLabel} resourceKeyField=${contentInspection.resourceKeyField ?? "none"} resourceKey=${contentInspection.resourceKey ?? "none"} fileName=${contentInspection.fileName ?? "none"}`,
+            {
+              module: "feishu",
+              chatId: inboundBase.chatId,
+              msgType: msgTypeLabel,
+              attachmentMapped: false,
+              resourceKeyField: contentInspection.resourceKeyField ?? null,
+              resourceKey: contentInspection.resourceKey ?? null,
+              fileName: contentInspection.fileName ?? null,
+            }
+          );
+          return;
+        }
+
+        void (async () => {
+          try {
+            const localPath = await downloadFeishuMessageResource(apiClient, String(messageId), attachmentSpec);
+            const inboundWithAttachment: InboundMessage = {
+              ...inboundBase,
+              attachments: [
+                {
+                  filename: attachmentSpec.filename,
+                  transfer_name: attachmentSpec.filename,
+                  mime: attachmentSpec.mime,
+                  path: localPath,
+                  missing: false,
+                },
+              ],
+            };
+
+            logger.info(
+              `Feishu 非文本消息已映射为附件 msgType=${msgTypeLabel} localPath=${localPath} mime=${attachmentSpec.mime ?? "none"} fileName=${attachmentSpec.filename}`,
+              {
+                module: "feishu",
+                chatId: inboundBase.chatId,
+                msgType: msgTypeLabel,
+                messageId: String(messageId),
+                attachmentMapped: true,
+                localPath,
+                mime: attachmentSpec.mime ?? null,
+                fileName: attachmentSpec.filename,
+              }
+            );
+
+            config.onInbound(inboundWithAttachment);
+          } catch (downloadError) {
+            logger.warn(
+              `Feishu 非文本消息资源下载失败 msgType=${msgTypeLabel} resourceKey=${attachmentSpec.resourceKey} fileName=${attachmentSpec.filename}`,
+              {
+                module: "feishu",
+                chatId: inboundBase.chatId,
+                msgType: msgTypeLabel,
+                messageId: String(messageId),
+                resourceKey: attachmentSpec.resourceKey,
+                fileName: attachmentSpec.filename,
+                error: downloadError instanceof Error ? downloadError.message : String(downloadError),
+              }
+            );
+          }
+        })();
       } catch (error) {
         logger.error("Feishu 事件处理失败", {
           module: "feishu",
@@ -473,3 +745,10 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
 
   return { start, stop, send };
 }
+
+export const __test = process.env.NODE_ENV === "test"
+  ? {
+      inspectFeishuContent,
+      resolveFeishuInboundAttachmentSpec,
+    }
+  : undefined;

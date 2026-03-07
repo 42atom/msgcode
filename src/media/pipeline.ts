@@ -2,7 +2,7 @@
  * msgcode: MediaPipeline（M4-A 媒体处理流水线）
  *
  * 职责：
- * - 自动处理附件（audio/image/pdf）→ 生成派生文本
+ * - 自动处理图片附件（image）→ 生成派生文本
  * - 去重（digest key）+ 限流（lane queue）
  * - 失败不崩（优雅降级）
  */
@@ -140,9 +140,9 @@ async function calculateDigest(filePath: string): Promise<string> {
 /**
  * 处理音频附件（ASR 转写）
  *
- * P0: ASR 属于媒体预处理，不属于 LLM 工具决策
- * - 通过 digest 去重避免重复处理
- * - Tool Bus 策略检查已在 pipeline 入口完成（source="media-pipeline"）
+ * 说明：
+ * - 该函数保留供模型显式调用 ASR 工具后的后续链路参考
+ * - 自动媒体主链不再默认对音频做预处理
  */
 async function processAudio(
   vaultPath: string,
@@ -345,21 +345,11 @@ export async function processAttachment(
   }
 
   // 判断附件类型（B2: 使用 vault.ts 的类型检查函数，支持 mime/UTI/扩展名兜底）
-  const isAudio = isAudioAttachment(attachment);
   const isImage = isImageAttachment(attachment);
-  const isPdf = attachment.mime === "application/pdf";
 
-  // 处理音频
-  if (isAudio && AUTO_ASR) {
-    result.derived = await processAudio(vaultPath, digest, workspacePath);
-  }
-  // 处理图片
-  else if (isImage) {
+  // 仅对图片做自动视觉处理；其他附件交给模型自行决策
+  if (isImage) {
     result.derived = await processImage(vaultPath, digest, workspacePath, userQuery);
-  }
-  // 处理文档（占位）
-  else if (isPdf) {
-    result.derived = await processDoc(vaultPath, digest, workspacePath);
   }
 
   return result;
