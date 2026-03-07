@@ -313,15 +313,16 @@ function looksLikeExecutionRequest(prompt: string): boolean {
     if (!input) return false;
 
     // 执行型关键词
+    // 注意：中文不使用 \b 词边界，使用宽松匹配
     const executionPatterns = [
-        // 删除/停止类
-        /\b(删除|停止|取消|移除|删掉|关掉|终止|移除|清掉)\b/,
-        /\b(delete|stop|cancel|remove|terminate|disable|remove)\b/,
+        // 删除/停止类 - 中文无需 \b
+        /(删除|停止|取消|移除|删掉|关掉|终止|清掉)/,
+        /\b(delete|stop|cancel|remove|terminate|disable)\b/,
         // 创建/执行类
-        /\b(创建|执行|运行|启动|新建|添加|设置|部署)\b/,
+        /(创建|执行|运行|启动|新建|添加|设置|部署)/,
         /\b(create|execute|run|start|new|add|set|deploy|install)\b/,
         // 修改类
-        /\b(修改|编辑|更新|改动|调整|修复|重写)\b/,
+        /(修改|编辑|更新|改动|调整|修复|重写)/,
         /\b(edit|modify|update|change|fix|rewrite)\b/,
     ];
 
@@ -338,9 +339,9 @@ function looksLikeCompletionResponse(text: string): boolean {
     if (!input) return false;
 
     // 完成型关键词（表示任务已完成）
+    // 中文部分不使用 \b
     const completionPatterns = [
-        /\b(已|已经|成功|完成|搞定|处理好|执行完)\b/,
-        /\b(已完成|已删除|已停止|已取消|已创建|已完成)\b/,
+        /(已|已经|成功|完成|搞定|处理好|执行完)/,
         /\b(already|success|completed|done|finished|executed)\b/,
     ];
 
@@ -924,6 +925,9 @@ async function runMiniMaxAnthropicToolLoop(params: {
         }
     }
 
+    // 假成功防护：对于执行型请求，强制要求工具调用
+    const isExecutionRequest = looksLikeExecutionRequest(params.options.prompt);
+
     if (toolCalls.length === 0 && params.activeToolSchemas.length > 0) {
         const retryMessages: MiniMaxAnthropicMessage[] = [
             ...conversationMessages,
@@ -934,14 +938,18 @@ async function runMiniMaxAnthropicToolLoop(params: {
                     : "请严格返回 tool_use；不要输出自然语言。",
             },
         ];
+        // 对于执行型请求，强制要求工具调用
+        const toolChoice = isExecutionRequest
+            ? { type: "any" } as const
+            : ({ type: "auto" } as const);
         response = await callMiniMaxAnthropicRaw({
             baseUrl: params.baseUrl,
             model: params.model,
             messages: retryMessages,
             system: anthropicContext.system,
             tools: params.activeToolSchemas,
-            // P0 松绑：使用 auto 让模型自由选择
-            toolChoice: { type: "auto" },
+            // 对于执行型请求，强制要求工具调用
+            toolChoice,
             temperature: 0,
             maxTokens: 800,
             timeoutMs: params.timeoutMs,
@@ -1447,6 +1455,9 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
         }
     }
 
+    // 假成功防护：对于执行型请求，强制要求工具调用
+    const isExecutionRequest = looksLikeExecutionRequest(options.prompt);
+
     // 无 tool_calls：重试一次（required 模式）
     if (toolCalls.length === 0 && activeToolNames.length > 0) {
         const retryMessages = [
@@ -1458,12 +1469,16 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                     : "请严格返回 tool_calls；不要输出自然语言。",
             },
         ];
+        // 对于执行型请求，强制要求工具调用
+        const toolChoice = isExecutionRequest
+            ? "required"
+            : (preferredToolChoice ?? "required");
         const retry = await callChatCompletionsRaw({
             baseUrl,
             model: usedModel,
             messages: retryMessages,
             tools: activeToolSchemas,
-            toolChoice: preferredToolChoice ?? "required",
+            toolChoice,
             temperature: 0,
             maxTokens: 800,
             timeoutMs,
