@@ -1,17 +1,34 @@
 # Skills
 
+## 单真相源说明（2026-03-08）
+
+**runtime skills 是唯一正式真相源**：
+
+- 真相源：`src/skills/runtime/` → `~/.config/msgcode/skills/`
+- 执行主链：runtime skill -> bash -> CLI 命令
+- builtin registry（`registry.ts`）为历史占位，不再作为技能执行的正式主链
+
+**builtin registry 退役说明**：
+
+- `registry.ts` 保留仅为向后兼容
+- `runSkill()` 为占位实现，已退役
+- `schedule-skill` / `browser-skill` 已被 runtime skills (`scheduler` / `patchright-browser`) 取代
+
 ## 目录结构
 
 ```
 src/skills/
-├── README.md               # 本目录说明
+├── README.md               # 本目录说明（含单真相源说明）
 ├── index.ts                # 导出聚合（仅聚合，不承载逻辑）
 ├── types.ts                # 类型定义（SkillId, SkillContext, SkillResult 等）
-├── registry.ts             # 技能注册表（注册、发现、检测、路由）
+├── registry.ts             # ⚠️ 历史占位 - 不再作为执行主链
 ├── auto.ts                 # 自然语言触发（向后兼容）
 ├── runtime-sync.ts         # runtime skill 安装/同步
 └── runtime/                # 仓库托管的 runtime skill 真相源
-    ├── index.json          # 托管 skill 索引
+    ├── index.json          # 托管 skill 索引（scheduler, patchright-browser）
+    ├── scheduler/
+    │   ├── SKILL.md
+    │   └── main.sh
     └── patchright-browser/
         ├── SKILL.md
         └── main.sh
@@ -20,10 +37,10 @@ src/skills/
 ## 职责边界
 
 - `types.ts`：纯类型定义，不承载逻辑
-- `registry.ts`：技能注册、发现、检测、路由分发
+- `registry.ts`：⚠️ 历史占位 - 保留向后兼容，不再作为执行主链
 - `index.ts`：导出聚合，方便外部引用
 - `auto.ts`：自然语言触发（向后兼容，保留 system-info）
-- `builtin/*`：技能能力描述，**不含执行副作用**（实际执行走 CLI 命令合同）
+- `runtime/`：**正式技能真相源** - 执行主链：runtime skill -> bash -> CLI 命令
 
 ## 架构决策
 

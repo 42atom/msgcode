@@ -2,6 +2,10 @@
  * msgcode: Skill 类型定义
  *
  * 定义技能系统的核心接口和类型
+ *
+ * ⚠️ 单真相源说明（2026-03-08）：
+ * - 正式技能真相源：`src/skills/runtime/` → `~/.config/msgcode/skills/`
+ * - builtin registry 为历史占位，不再作为执行主链
  */
 
 /**
@@ -97,6 +101,10 @@ export interface SkillInfo {
   domain: string;
   /** 是否为内置技能 */
   builtin: boolean;
+  /** ⚠️ 是否已退役（2026-03-08） */
+  deprecated?: boolean;
+  /** ⚠️ 替代者技能 ID（若已退役） */
+  replacedBy?: string;
 }
 
 /**

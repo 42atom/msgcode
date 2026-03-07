@@ -1,12 +1,16 @@
 /**
- * msgcode: 内置技能注册表
+ * msgcode: 内置技能注册表（历史占位 / 非正式索引）
  *
- * 职责：
- * - 技能注册与发现
- * - 技能索引（供 LLM 决策）
- * - 技能触发检测
+ * ⚠️ 退役说明（2026-03-08）：
+ * - 本文件为历史占位，不再作为技能执行的正式主链
+ * - `runSkill()` 为 TODO 占位实现，无实际执行逻辑
+ * - 正式技能真相源：`src/skills/runtime/` → `~/.config/msgcode/skills/`
  *
- * 不承载 skill 业务逻辑，只做编排与分发
+ * 保留用途：
+ * - `detectSkillMatch()` - 自然语言触发检测（向后兼容）
+ * - `getSkillIndex()` - 技能索引参考（非正式）
+ *
+ * 不承载技能业务逻辑，只做编排与分发（历史职能）
  */
 
 import type { BuiltinSkillId, SkillMatch, SkillContext, SkillResult, SkillInfo } from "./types.js";
@@ -99,13 +103,18 @@ export function initSkillRegistry(): void {
     builtin: true,
   });
 
+  // ⚠️ 退役说明（2026-03-08）：schedule-skill 已被 runtime skill "scheduler" 取代
+  // 正式主链：scheduler skill -> bash -> msgcode schedule CLI
+  // 此处保留仅为历史参考，不再作为执行通道
   builtinSkills.set("schedule-skill", {
     id: "schedule-skill",
-    name: "调度管理",
-    description: "周期或延时任务的调度（add/list/remove）",
+    name: "调度管理（已退役）",
+    description: "[历史占位] 周期或延时任务的调度 - 已被 runtime skill 'scheduler' 取代",
     trigger: "定时任务、周期任务、调度计划、cron 任务",
     domain: "todo",
     builtin: true,
+    deprecated: true,
+    replacedBy: "scheduler",
   });
 
   // R6: 多模态感知与生成域
@@ -127,14 +136,18 @@ export function initSkillRegistry(): void {
     builtin: true,
   });
 
-  // R7: 高阶环境域
+  // ⚠️ 退役说明（2026-03-08）：browser-skill 已被 runtime skill "patchright-browser" 取代
+  // 正式主链：patchright-browser skill -> bash -> msgcode browser CLI
+  // 此处保留仅为历史参考，不再作为执行通道
   builtinSkills.set("browser-skill", {
     id: "browser-skill",
-    name: "浏览器自动化",
-    description: "无头浏览器基础操作（open/click/type）",
+    name: "浏览器自动化（已退役）",
+    description: "[历史占位] 无头浏览器基础操作 - 已被 runtime skill 'patchright-browser' 取代",
     trigger: "打开网页、点击元素、输入文本、浏览器操作",
     domain: "browser",
     builtin: true,
+    deprecated: true,
+    replacedBy: "patchright-browser",
   });
 
   // R8: 代理域
@@ -202,10 +215,12 @@ export function detectSkillMatch(message: string): SkillMatch | null {
 }
 
 /**
- * 运行技能（统一入口）
+ * 运行技能（⚠️ 退役占位 - 2026-03-08）
  *
- * 实际执行逻辑由各 skill 模块自行实现
- * 此处为路由分发
+ * 此函数为历史占位实现，不再作为技能执行的正式主链
+ * 正式技能执行主链：runtime skill -> bash -> CLI 命令
+ *
+ * @deprecated 技能执行已收敛到 runtime + CLI 主链
  */
 export async function runSkill(
   skillId: string,
@@ -214,23 +229,13 @@ export async function runSkill(
 ): Promise<SkillResult> {
   const started = Date.now();
 
-  try {
-    // TODO: 根据 skillId 路由到具体实现
-    // 当前为占位实现
-    return {
-      ok: false,
-      skillId,
-      output: "",
-      error: `skill not implemented: ${skillId}`,
-      durationMs: Date.now() - started,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      skillId,
-      output: "",
-      error: error instanceof Error ? error.message : String(error),
-      durationMs: Date.now() - started,
-    };
-  }
+  // ⚠️ 退役说明：技能执行已收敛到 runtime + CLI 主链
+  // 此函数不再路由到任何具体实现
+  return {
+    ok: false,
+    skillId,
+    output: "",
+    error: `skill not implemented: ${skillId}（技能执行已收敛到 runtime + CLI 主链）`,
+    durationMs: Date.now() - started,
+  };
 }
