@@ -1,7 +1,7 @@
 ---
 id: 0026
 title: Agent 读 Skill 桥断裂 - 自然语言无法真实执行 read_file
-status: open
+status: doing
 owner: agent
 labels: [feature, agent, skill, bug]
 risk: high
