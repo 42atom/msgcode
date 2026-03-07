@@ -13,7 +13,7 @@
 优先入口：`~/.config/msgcode/skills/pinchtab-browser/main.sh`
 
 规则：
-- 先把 PinchTab 当成唯一正式浏览器底座，不要使用 agent-browser。
+- 这是旧 PinchTab 合同说明，不再代表当前正式主链；当前正式浏览器底座是 Patchright，`agent-browser` 也不是正式执行路径。
 - 需要共享工作 Chrome 路径时，先执行：
   - `bash ~/.config/msgcode/skills/pinchtab-browser/main.sh root --ensure --json`
 - 需要查看 profiles/instances/tabs 时，显式调用对应子命令，不猜默认 instance/tab。
