@@ -1,7 +1,7 @@
 ---
 id: 0029
 title: Schedule 聊天投递不应走 tmux - reply-to-same-chat 被错误落成 tmuxMessage
-status: doing
+status: done
 owner: agent
 labels: [bug, schedule, delivery]
 risk: high
@@ -37,8 +37,8 @@ due:
 - [x] 拿代码根因
 - [x] 修投影逻辑（Payload 类型 + scheduleToJob）
 - [x] 修执行逻辑（executeJob + executeChatMessageJob）
-- [ ] 补测试
-- [ ] 真机验证
+- [x] 补测试（45 schedule tests pass）
+- [x] 真机验证（status=ok）
 
 ## Evidence
 
