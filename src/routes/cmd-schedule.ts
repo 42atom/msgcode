@@ -3,11 +3,11 @@
  */
 
 import { join } from "node:path";
-import { getRouteByChatId } from "./store.js";
 import type { CommandHandlerOptions, CommandResult } from "./cmd-types.js";
+import { resolveCommandRoute } from "./workspace-resolver.js";
 
 export async function handleScheduleListCommand(options: CommandHandlerOptions): Promise<CommandResult> {
-  const entry = getRouteByChatId(options.chatId);
+  const entry = resolveCommandRoute(options.chatId)?.route;
   if (!entry) {
     return {
       success: false,
@@ -53,7 +53,7 @@ export async function handleScheduleListCommand(options: CommandHandlerOptions):
 }
 
 export async function handleScheduleValidateCommand(options: CommandHandlerOptions): Promise<CommandResult> {
-  const entry = getRouteByChatId(options.chatId);
+  const entry = resolveCommandRoute(options.chatId)?.route;
   if (!entry) {
     return {
       success: false,
@@ -99,7 +99,7 @@ export async function handleScheduleEnableCommand(options: CommandHandlerOptions
     };
   }
 
-  const entry = getRouteByChatId(options.chatId);
+  const entry = resolveCommandRoute(options.chatId)?.route;
   if (!entry) {
     return {
       success: false,
@@ -139,7 +139,7 @@ export async function handleScheduleDisableCommand(options: CommandHandlerOption
     };
   }
 
-  const entry = getRouteByChatId(options.chatId);
+  const entry = resolveCommandRoute(options.chatId)?.route;
   if (!entry) {
     return {
       success: false,
@@ -169,7 +169,7 @@ export async function handleScheduleDisableCommand(options: CommandHandlerOption
 }
 
 export async function handleReloadCommand(options: CommandHandlerOptions): Promise<CommandResult> {
-  const entry = getRouteByChatId(options.chatId);
+  const entry = resolveCommandRoute(options.chatId)?.route;
   if (!entry) {
     return {
       success: false,

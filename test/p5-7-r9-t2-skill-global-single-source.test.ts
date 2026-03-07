@@ -267,4 +267,77 @@ describe("P5.7-R9-T2: Skills global-only single source", () => {
       await rm(tmpRoot, { recursive: true, force: true });
     }
   });
+
+  it("应向模型注入当前 workspace 与 config 绝对路径，禁止虚构工作区路径", async () => {
+    const originalFetch = globalThis.fetch;
+    const tmpRoot = await mkdtemp(join(tmpdir(), "msgcode-r9-t2-workspace-hint-"));
+    let observedSystemPrompt = "";
+    let callCount = 0;
+
+    try {
+      const workspacePath = await createToolEnabledWorkspace(tmpRoot);
+      const expectedConfigPath = join(workspacePath, ".msgcode", "config.json");
+
+      globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        callCount += 1;
+
+        if (callCount === 1) {
+          observedSystemPrompt = getSystemPromptFromRequest(init);
+          return asJsonResponse({
+            choices: [
+              {
+                message: {
+                  role: "assistant",
+                  content: "",
+                  tool_calls: [
+                    {
+                      id: "call_workspace_hint_1",
+                      type: "function",
+                      function: {
+                        name: "bash",
+                        arguments: JSON.stringify({ command: "pwd" }),
+                      },
+                    },
+                  ],
+                },
+                finish_reason: "tool_calls",
+              },
+            ],
+          });
+        }
+
+        return asJsonResponse({
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content: "ok",
+              },
+              finish_reason: "stop",
+            },
+          ],
+        });
+      }) as typeof fetch;
+
+      const result = await runLmStudioToolLoop({
+        baseUrl: "http://127.0.0.1:1234",
+        model: "test-model",
+        prompt: "读取当前 workspace config",
+        workspacePath,
+        timeoutMs: 10_000,
+        backendRuntime: localOpenAiRuntime,
+      });
+
+      expect(result.answer).toContain("ok");
+      expect(observedSystemPrompt).toContain("[当前工作区]");
+      expect(observedSystemPrompt).toContain(`当前工作区绝对路径：${workspacePath}`);
+      expect(observedSystemPrompt).toContain(`当前 workspace config 绝对路径：${expectedConfigPath}`);
+      expect(observedSystemPrompt).toContain("只能使用上面这个绝对路径");
+      expect(observedSystemPrompt).toContain("禁止猜测、拼接或虚构其他工作区绝对路径");
+      expect(observedSystemPrompt).not.toContain("vela-workspace");
+    } finally {
+      globalThis.fetch = originalFetch;
+      await rm(tmpRoot, { recursive: true, force: true });
+    }
+  });
 });

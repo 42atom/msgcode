@@ -2,8 +2,8 @@
  * msgcode: 工具域命令（toolstats/tool allow）
  */
 
-import { getRouteByChatId } from "./store.js";
 import type { CommandHandlerOptions, CommandResult } from "./cmd-types.js";
+import { resolveCommandRoute } from "./workspace-resolver.js";
 
 export async function handleToolstatsCommand(_options: CommandHandlerOptions): Promise<CommandResult> {
   const { getToolStats } = await import("../tools/telemetry.js");
@@ -59,7 +59,7 @@ export async function handleToolstatsCommand(_options: CommandHandlerOptions): P
 }
 
 export async function handleToolAllowListCommand(options: CommandHandlerOptions): Promise<CommandResult> {
-  const entry = getRouteByChatId(options.chatId);
+  const entry = resolveCommandRoute(options.chatId)?.route;
   if (!entry) {
     return {
       success: false,
@@ -110,7 +110,7 @@ export async function handleToolAllowAddCommand(options: CommandHandlerOptions):
     };
   }
 
-  const entry = getRouteByChatId(options.chatId);
+  const entry = resolveCommandRoute(options.chatId)?.route;
   if (!entry) {
     return {
       success: false,
@@ -152,7 +152,7 @@ export async function handleToolAllowRemoveCommand(options: CommandHandlerOption
     };
   }
 
-  const entry = getRouteByChatId(options.chatId);
+  const entry = resolveCommandRoute(options.chatId)?.route;
   if (!entry) {
     return {
       success: false,

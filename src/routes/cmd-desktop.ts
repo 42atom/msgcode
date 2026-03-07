@@ -6,12 +6,12 @@
  * - 业务实现拆分到 cmd-desktop-*.ts
  */
 
-import { getRouteByChatId } from "./store.js";
 import type { CommandHandlerOptions, CommandResult } from "./cmd-types.js";
+import { resolveCommandRoute } from "./workspace-resolver.js";
 
 export async function handleDesktopCommand(options: CommandHandlerOptions): Promise<CommandResult> {
   const { chatId, args } = options;
-  const entry = getRouteByChatId(chatId);
+  const entry = resolveCommandRoute(chatId)?.route;
   if (!entry) {
     return {
       success: false,

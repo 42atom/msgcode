@@ -6,10 +6,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
-import { routeByChatId } from "../router.js";
-import { getRouteByChatId } from "./store.js";
 import type { CommandHandlerOptions, CommandResult } from "./cmd-types.js";
 import type { AgentProvider, ToolName } from "../config/workspace.js";
+import { resolveCommandRoute } from "./workspace-resolver.js";
 
 function getConfigDir(): string {
   return (process.env.MSGCODE_CONFIG_DIR || "").trim() || join(os.homedir(), ".config", "msgcode");
@@ -109,10 +108,10 @@ export async function handleModelCommand(options: CommandHandlerOptions): Promis
     process.env.AGENT_BACKEND = provider;
   }
 
-  const entry = getRouteByChatId(chatId);
-  const fallback = !entry ? routeByChatId(chatId) : null;
-  const projectDir = entry?.workspacePath || fallback?.projectDir;
-  const label = entry?.label || fallback?.groupName;
+  const resolved = resolveCommandRoute(chatId);
+  const entry = resolved?.route;
+  const projectDir = entry?.workspacePath;
+  const label = entry?.label;
 
   if (!projectDir) {
     return {
@@ -304,10 +303,10 @@ export async function handlePolicyCommand(options: CommandHandlerOptions): Promi
     return null;
   }
 
-  const entry = getRouteByChatId(chatId);
-  const fallback = !entry ? routeByChatId(chatId) : null;
-  const projectDir = entry?.workspacePath || fallback?.projectDir;
-  const label = entry?.label || fallback?.groupName;
+  const resolved = resolveCommandRoute(chatId);
+  const entry = resolved?.route;
+  const projectDir = entry?.workspacePath;
+  const label = entry?.label;
 
   if (!projectDir) {
     return {
@@ -390,9 +389,9 @@ export async function handlePiCommand(options: CommandHandlerOptions): Promise<C
   const { chatId, args } = options;
   const { loadWorkspaceConfig, saveWorkspaceConfig, getRuntimeKind } = await import("../config/workspace.js");
 
-  const entry = getRouteByChatId(chatId);
-  const fallback = !entry ? routeByChatId(chatId) : null;
-  const projectDir = entry?.workspacePath || fallback?.projectDir;
+  const resolved = resolveCommandRoute(chatId);
+  const entry = resolved?.route;
+  const projectDir = entry?.workspacePath;
 
   if (!projectDir) {
     return {

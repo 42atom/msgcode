@@ -486,6 +486,20 @@ function normalizeSoulPathArgs(toolName: string, args: Record<string, unknown>, 
     };
 }
 
+function buildWorkspacePathHint(workspacePath?: string): string {
+    const normalized = (workspacePath || "").trim();
+    if (!normalized) return "";
+
+    const workspaceConfigPath = path.join(normalized, ".msgcode", "config.json");
+    return [
+        "[当前工作区]",
+        `当前工作区绝对路径：${normalized}`,
+        `当前 workspace config 绝对路径：${workspaceConfigPath}`,
+        "当任务要求读取当前 workspace 的 .msgcode/config.json 时，只能使用上面这个绝对路径。",
+        "禁止猜测、拼接或虚构其他工作区绝对路径（例如 /Users/admin/*workspace）。",
+    ].join("\n");
+}
+
 async function runTool(name: string, args: Record<string, unknown>, root: string): Promise<ToolRunResult> {
     const { executeTool } = await import("../tools/bus.js");
     const { randomUUID } = await import("node:crypto");
@@ -1059,6 +1073,10 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     let system = buildExecSystemPrompt(baseSystem, useMcp);
 
     system += `\n\n${renderLlmToolIndex(toolNames)}`;
+    const workspacePathHint = buildWorkspacePathHint(workspacePath);
+    if (workspacePathHint) {
+        system += `\n\n${workspacePathHint}`;
+    }
 
     // 技能系统注入：只有真实暴露了 read_file + bash 时才提示
     if (toolNames.includes("read_file") && toolNames.includes("bash")) {
@@ -1546,5 +1564,6 @@ export const runLmStudioToolLoop = runAgentToolLoop;
 export const __test = process.env.NODE_ENV === "test"
     ? {
         hardenFeishuDeliveryClaim,
+        buildWorkspacePathHint,
     }
     : undefined;

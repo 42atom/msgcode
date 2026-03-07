@@ -13,10 +13,10 @@
  * - 重复创建必须拒绝
  */
 
-import { getRouteByChatId } from "./store.js";
 import type { CommandHandlerOptions, CommandResult } from "./cmd-types.js";
 import type { TaskSupervisor } from "../runtime/task-supervisor.js";
 import { getTaskSupervisor as getGlobalTaskSupervisor } from "../commands.js";
+import { resolveCommandRoute } from "./workspace-resolver.js";
 import {
     handleTaskRun,
     handleTaskStatus,
@@ -54,7 +54,8 @@ export async function handleTaskCommand(options: CommandHandlerOptions): Promise
     const { chatId, args } = options;
 
     // 检查工作区绑定
-    const entry = getRouteByChatId(chatId);
+    const resolved = resolveCommandRoute(chatId);
+    const entry = resolved?.route;
     if (!entry) {
         return {
             success: false,
