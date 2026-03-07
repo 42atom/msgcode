@@ -1,5 +1,7 @@
 # Plan: 基于 PinchTab 的指纹浏览器实现
 
+> 状态：已被 `docs/design/plan-260307-patchright-unification.md` 与 `docs/design/plan-260307-patchright-browser-cutover.md` supersede。保留仅作历史记录，不再作为正式执行方案。
+
 **日期：** 2026-03-07
 **优先级：** 高（商业项目）
 **风险：** 高（账号封禁）

@@ -1,0 +1,193 @@
+# Patchright Phase A 验证记录（260307）
+
+Issue: 0015
+Plan: `docs/design/plan-260307-patchright-unification.md`
+
+## Problem
+
+需要在完全隔离正式主链的前提下验证 Patchright 是否足以替代 PinchTab 成为新的浏览器底座，并明确状态模型选型依据。
+
+## 验证范围
+
+1. A1 反检测验证
+2. A2 API 能力矩阵
+3. A3 状态模型选型
+4. A4 PinchTab 影响面清单
+
+## A1 反检测验证
+
+### 隔离安装
+
+- 实验目录：`/tmp/patchright-poc`
+- 安装命令：
+  - `mkdir -p /tmp/patchright-poc && cd /tmp/patchright-poc && npm init -y`
+  - `npm install patchright tsx typescript`
+  - `npx patchright install chromium`
+- 结果：
+  - 依赖只写入 `/tmp/patchright-poc/package.json`
+  - 正式工作区 `package.json` / lockfile 未改动
+
+### 验证脚本
+
+- 脚本：`scripts/experiments/patchright-stealth-poc.ts`
+- 执行命令：
+  - `cd /tmp/patchright-poc && npx tsx /Users/admin/GitProjects/msgcode/scripts/experiments/patchright-stealth-poc.ts`
+
+### 产物
+
+- 截图：`/var/folders/69/klm08tq10wv1px7jmz8hxcgm0000gp/T/patchright-phase-a/patchright-browserscan.png`
+- JSON：`/var/folders/69/klm08tq10wv1px7jmz8hxcgm0000gp/T/patchright-phase-a/patchright-browserscan.json`
+
+### 结果
+
+- `title`: `BrowserScan - Robot Detection/WebDriver | BrowserScan`
+- 页面正文出现：
+  - `Test Results: Normal`
+  - `WebDriver Normal`
+  - `CDP Normal`
+- `navigator.webdriver === false`
+- `"webdriver" in navigator === true`
+
+### 结论
+
+- Patchright 直启模式在 browserscan.net 上通过了当前最关键的两项：
+  - WebDriver：`Normal`
+  - CDP：`Normal`
+- 当前 browserscan 页面未直接输出单一数字总分，因此 Phase A 以页面正文和截图证据为准，而不是强造一个“95/100”。
+
+## A2 API 能力矩阵
+
+### 验证脚本
+
+- 脚本：`scripts/experiments/patchright-api-poc.ts`
+- 执行命令：
+  - `cd /tmp/patchright-poc && npx tsx /Users/admin/GitProjects/msgcode/scripts/experiments/patchright-api-poc.ts`
+
+### 产物
+
+- JSON：`/var/folders/69/klm08tq10wv1px7jmz8hxcgm0000gp/T/patchright-phase-a/patchright-api-poc.json`
+- `connectOverCDP` 截图：
+  - `/var/folders/69/klm08tq10wv1px7jmz8hxcgm0000gp/T/patchright-phase-a/patchright-cdp-browserscan.png`
+
+### 能力矩阵
+
+| Operation | 结果 | 说明 |
+|-----------|------|------|
+| `health` | ✅ | 以 `context.browser().isConnected()` + `pageCount` 作为无服务模型下的 health |
+| `instances.launch` | ✅ | `chromium.launchPersistentContext(profileDir)` |
+| `instances.stop` | ✅ | `context.close()` |
+| `tabs.open` | ✅ | `page.goto(file://...)` |
+| `tabs.list` | ✅ | `context.pages()` |
+| `tabs.snapshot` | ✅ | **替代方案**：`locator.ariaSnapshot()`，当前版本无 `page.accessibility` |
+| `tabs.text` | ✅ | `locator("body").innerText()` |
+| `tabs.action` click | ✅ | `getByRole(...).nth(index).click()` |
+| `tabs.action` type | ✅ | `getByRole("textbox").fill()` |
+| `tabs.action` press | ✅ | `locator.press("Enter")` |
+| `tabs.eval` | ✅ | `page.evaluate()` |
+
+### 持久化验证
+
+- `localStorage` 在 relaunch 后仍为 `ok`
+- 说明 persistent context 能覆盖“关闭后再打开保持状态”的核心需求
+
+### ref 唯一定位验证
+
+- 验证页：`https://news.ycombinator.com/news`
+- 重复 link：`hide`
+- 重复计数：`30`
+- 结论：`role + name` 不足以唯一定位，**必须补 index**
+- 当前可行策略：`role + name + index`
+
+### `connectOverCDP` 反检测验证
+
+- 方式：
+  - 先用 Patchright 自带 Chromium 二进制启动原生 Chrome，带 `--remote-debugging-port=9333`
+  - 再用 `chromium.connectOverCDP("http://127.0.0.1:9333")` 连接
+- 结果：
+  - `WebDriver Normal`
+  - `CDP Normal`
+  - `navigator.webdriver === false`
+
+### 结论
+
+- `connectOverCDP` 模式下，Patchright 的反检测结果仍然成立
+- 这直接支持状态模型选型走 α（Chrome-as-State）
+
+## A3 状态模型选型
+
+### 选型
+
+- 选定：**方案 α：Chrome-as-State**
+
+### 原因
+
+1. `connectOverCDP` 模式实测仍通过 browserscan 的 WebDriver/CDP 检测。
+2. 无需另起 Node daemon，就能把状态交给 Chrome 进程本身。
+3. 与现有 [chrome-root.ts](/Users/admin/GitProjects/msgcode/src/browser/chrome-root.ts) 的 `$WORKSPACE_ROOT/.msgcode/chrome-profiles/<name>` 契约天然一致。
+
+### 不选 β 的原因
+
+- β（Patchright Daemon）也能成立，但它会重新引入一个长生命周期服务，等价于“再造一个 PinchTab orchestrator”，不符合当前最小主链。
+
+### 额外结论
+
+- `tabs.snapshot` 不能照搬 `page.accessibility.snapshot()`，必须改为 `locator.ariaSnapshot()` 或自建 DOM/ARIA 摘要。
+- `ref` 不能继续只用 `e0/e1` 这类进程内序号，必须改成无状态可重建格式，至少包含：
+  - `role`
+  - `name`
+  - `index`
+
+## A4 影响面清单
+
+### Phase B 需改动的正式代码/测试
+
+- 运行时：
+  - `src/runners/browser-pinchtab.ts`
+  - `src/browser/pinchtab-runtime.ts`
+  - `src/browser/gmail-readonly.ts`
+  - `src/cli/browser.ts`
+  - `src/tools/bus.ts`
+  - `src/tools/manifest.ts`
+  - `src/commands.ts`
+  - `src/agent-backend/tool-loop.ts`
+  - `prompts/agents-prompt.md`
+- 测试：
+  - `test/p5-7-r7a-browser-contract.test.ts`
+  - `test/p5-7-r7a-browser-runner.test.ts`
+  - `test/p5-7-r7b-gmail-readonly.test.ts`
+  - `test/p5-7-r8c-llm-tool-manifest-single-source.test.ts`
+  - `test/p5-7-r9-t2-skill-global-single-source.test.ts`
+  - `test/p5-7-r13-pinchtab-bootstrap.test.ts`
+- 文档/记录：
+  - `issues/0013-pinchtab-single-browser-substrate-bootstrap.md`
+  - `docs/design/plan-260307-pinchtab-single-browser-substrate-bootstrap.md`
+  - `docs/design/plan-260307-pinchtab-fingerprint-browser.md`
+  - `docs/CHANGELOG.md`
+  - `package.json`
+
+### Phase B 可保留不动的历史记录
+
+- `docs/notes/research-260306-pinchtab-validation.md`
+- `docs/design/plan-260306-web-transaction-platform-core.md`
+- `issues/0004-web-transaction-platform-core.md`
+
+### 非 Phase B 主改动对象，但会受口径影响
+
+- `src/skills/runtime/index.json`
+- `src/skills/runtime/pinchtab-browser/SKILL.md`
+- `src/skills/runtime/pinchtab-browser/main.sh`
+- `src/skills/README.md`
+
+### 结论
+
+- 真正要改的是浏览器主链和围绕它的提示词/测试/文档，不是整个仓库。
+- 影响面是可控的，但不能再误判成“只换 runner”。
+
+## 结论
+
+1. **Phase A 通过。**
+2. Patchright 直启与 `connectOverCDP` 两种模式都实测通过 browserscan 的 WebDriver/CDP 检测。
+3. 正式状态模型选 α：**Chrome-as-State**。
+4. `tabs.snapshot` 的等价实现不是 `page.accessibility.snapshot()`，而是 `locator.ariaSnapshot()`。
+5. `ref` 必须改为无状态可重建格式，最低需要 `role + name + index`。
+6. Phase B 可以启动，但应单独按新 plan 执行，而不是直接套 PinchTab runner。
