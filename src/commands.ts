@@ -397,6 +397,25 @@ export async function startBot(): Promise<void> {
   await initLoggerFromSettings();
 
   try {
+    const { syncManagedRuntimeSkills } = await import("./skills/runtime-sync.js");
+    const skillSync = await syncManagedRuntimeSkills();
+    if (skillSync.copiedFiles > 0 || skillSync.indexUpdated) {
+      logger.info("运行时托管 skills 已同步", {
+        module: "commands",
+        copiedFiles: skillSync.copiedFiles,
+        skippedFiles: skillSync.skippedFiles,
+        managedSkillIds: skillSync.managedSkillIds,
+        indexUpdated: skillSync.indexUpdated,
+      });
+    }
+  } catch (error) {
+    logger.warn("运行时托管 skills 同步失败", {
+      module: "commands",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  try {
     const { ensurePinchtabReady } = await import("./browser/pinchtab-runtime.js");
     const pinchtab = await ensurePinchtabReady();
     logger.info("PinchTab 已就绪", {

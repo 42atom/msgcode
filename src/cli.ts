@@ -11,7 +11,7 @@ import { Command } from "commander";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { mkdir, copyFile, readdir } from "node:fs/promises";
+import { mkdir, copyFile } from "node:fs/promises";
 import { existsSync, accessSync, constants } from "node:fs";
 import { exec, spawn } from "node:child_process";
 import dotenv from "dotenv";
@@ -502,6 +502,8 @@ async function initBot(options: { overwriteSkills?: boolean } = {}): Promise<voi
     exec('open "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"');
   }
 
+  await copySkillsToUserConfig(options.overwriteSkills === true);
+
   console.log("\n最短上手：");
   console.log("1) 编辑 ~/.config/msgcode/.env：设置白名单 + IMSG_PATH");
   console.log("2) 启动：msgcode start");
@@ -520,49 +522,20 @@ async function initBot(options: { overwriteSkills?: boolean } = {}): Promise<voi
  * @param overwrite 是否强制覆盖已存在的文件
  */
 async function copySkillsToUserConfig(overwrite: boolean = false): Promise<void> {
+  const { syncManagedRuntimeSkills } = await import("./skills/runtime-sync.js");
   const userSkillsDir = path.join(CONFIG_DIR, "skills");
-  const builtinSkillsDir = path.join(__dirname, "skills", "builtin");
+  const result = await syncManagedRuntimeSkills({
+    overwrite,
+    userSkillsDir,
+  });
 
-  // 检查内置技能目录是否存在（开发/测试环境可能没有编译后的文件）
-  if (!existsSync(builtinSkillsDir)) {
-    logger.info("内置技能目录不存在，跳过复制", {
-      module: "cli",
-      builtinSkillsDir,
-    });
-    return;
+  if (result.copiedFiles > 0) {
+    console.log(`已复制 ${result.copiedFiles} 个托管技能文件到：${userSkillsDir}`);
   }
-
-  // 创建用户技能目录
-  await mkdir(userSkillsDir, { recursive: true });
-
-  // 读取内置技能文件列表
-  const files = await readdir(builtinSkillsDir);
-
-  let copiedCount = 0;
-  let skippedCount = 0;
-
-  for (const file of files) {
-    if (!file.endsWith(".js") && !file.endsWith(".ts")) {
-      continue; // 仅复制 JS/TS 文件
-    }
-
-    const srcPath = path.join(builtinSkillsDir, file);
-    const destPath = path.join(userSkillsDir, file);
-
-    if (existsSync(destPath) && !overwrite) {
-      // 已存在且不强制覆盖，跳过
-      skippedCount++;
-      continue;
-    }
-
-    await copyFile(srcPath, destPath);
-    copiedCount++;
+  if (result.skippedFiles > 0) {
+    console.log(`已跳过 ${result.skippedFiles} 个已存在的技能文件（使用 --overwrite-skills 强制覆盖）`);
   }
-
-  if (copiedCount > 0) {
-    console.log(`已复制 ${copiedCount} 个内置技能到：${userSkillsDir}`);
-  }
-  if (skippedCount > 0) {
-    console.log(`已跳过 ${skippedCount} 个已存在的技能文件（使用 --overwrite-skills 强制覆盖）`);
+  if (result.indexUpdated) {
+    console.log(`已更新 skills 索引：${path.join(userSkillsDir, "index.json")}`);
   }
 }

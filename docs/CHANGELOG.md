@@ -3,6 +3,7 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-07
+  - skills: 仓库新增托管 runtime skill 真相源，`msgcode init/start` 会幂等同步 `pinchtab-browser` 到 `~/.config/msgcode/skills/`，避免安装目录缺失导致 skill 依赖丢失 (Issue: 0014, Plan: docs/design/plan-260307-runtime-skill-source-sync.md) [risk: medium] [rollback: 回退 `src/skills/runtime*`、`src/cli.ts`、`src/commands.ts` 本轮改动]
   - browser: `startBot` 预启动本地 PinchTab，并向执行核注入 PinchTab baseUrl、binary path 与共享工作 Chrome 路径，正式浏览器通道收口为 PinchTab 单一路径 (Issue: 0013, Plan: docs/design/plan-260307-pinchtab-single-browser-substrate-bootstrap.md) [risk: medium] [rollback: 回退 `src/browser/pinchtab-runtime.ts`、`src/commands.ts`、`src/agent-backend/tool-loop.ts` 与 prompt 本轮改动]
   - feishu: 当前会话上下文写入 workspace `.msgcode/config.json`，`feishu_send_file` 缺省读取 `runtime.current_chat_id`，并修复上传失败被误判为成功的问题 (Issue: 0011, Plan: docs/design/plan-260307-feishu-send-file-runtime-context.md) [risk: medium] [rollback: 回退 `listener/config/tools/feishu` 本次改动，恢复显式 chatId + 旧发送语义]
   - agent-backend: `minimax` provider 切换到 Anthropic-compatible 推荐接法，新增独立 provider 适配、Anthropic tool schema 映射与多轮 `tool_use/tool_result` 回灌 (Issue: 0010, Plan: docs/design/plan-260307-minimax-anthropic-provider.md) [risk: medium] [rollback: 回退 `src/providers/minimax-anthropic.ts` 及 `chat/tool-loop/config` 本次接线]

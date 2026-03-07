@@ -9,16 +9,12 @@ src/skills/
 ├── types.ts                # 类型定义（SkillId, SkillContext, SkillResult 等）
 ├── registry.ts             # 技能注册表（注册、发现、检测、路由）
 ├── auto.ts                 # 自然语言触发（向后兼容）
-└── builtin/                # 内置技能实现（R3-R8）
-    ├── file-manager.ts     # R3: 文件管理（find/read/write/move/delete/copy/zip）
-    ├── memory-skill.ts     # R4: 记忆管理（search/add/stats）
-    ├── thread-skill.ts     # R4: 线程管理（list/messages/switch/active）
-    ├── todo-skill.ts       # R5: 任务管理（add/list/done）
-    ├── schedule-skill.ts   # R5: 调度管理（add/list/remove）
-    ├── media-skill.ts      # R6: 媒体感知（screen）
-    ├── gen-skill.ts        # R6: 内容生成（image/selfie/tts/music）
-    ├── browser-skill.ts    # R7: 浏览器自动化（open/click/type）
-    └── agent-skill.ts      # R8: 代理任务（run/status）
+├── runtime-sync.ts         # runtime skill 安装/同步
+└── runtime/                # 仓库托管的 runtime skill 真相源
+    ├── index.json          # 托管 skill 索引
+    └── pinchtab-browser/
+        ├── SKILL.md
+        └── main.sh
 ```
 
 ## 职责边界
@@ -35,13 +31,14 @@ src/skills/
 
 | 位置 | 用途 | 说明 |
 |------|------|------|
-| `src/skills/builtin/` | 内置技能骨架 | 编译后随包分发 |
+| `src/skills/runtime/` | 仓库托管 runtime skills | 安装/启动时同步到用户目录 |
 | `~/.config/msgcode/skills/` | 用户技能目录 | 运行时加载，用户可自定义 |
 | `<workspace>/.msgcode/skills/` | 项目级技能 | 项目特定技能（待实现） |
 
 ### 安装时复制逻辑
 
-- `msgcode init` 时自动复制 `builtin/` 到 `~/.config/msgcode/skills/`
+- `msgcode init` 时自动同步 `src/skills/runtime/` 到 `~/.config/msgcode/skills/`
+- `msgcode start` 时会 best-effort 补齐仓库托管 runtime skills，避免安装目录缺失
 - **幂等原则**：仅首次创建，已存在文件不覆盖
 - **覆盖开关**：`msgcode init --overwrite-skills` 强制覆盖
 
@@ -53,12 +50,12 @@ src/skills/
 
 ## 开发规范
 
-### 新增技能流程
+### 新增 runtime skill 流程
 
-1. 在 `types.ts` 扩展 `BuiltinSkillId` 枚举
-2. 在 `registry.ts` 注册技能元信息（`initSkillRegistry`）
-3. 在 `builtin/` 创建技能实现文件
-4. 在 `index.ts` 添加导出
+1. 在 `src/skills/runtime/<skill-id>/` 新增 `SKILL.md` 与 `main.sh`
+2. 更新 `src/skills/runtime/index.json`
+3. 如有安装/同步逻辑变化，更新 `runtime-sync.ts`
+4. 通过 `msgcode init` 或 `msgcode start` 触发同步
 
 ### 技能检测扩展
 
@@ -71,20 +68,16 @@ src/skills/
 - 错误码固定枚举（参考 R1c 硬门）
 - 退出码非 0 表示失败
 
-## 运行时序
+## Runtime Skill 安装时序
 
 ```
-用户消息
+src/skills/runtime/
    ↓
-detectSkillMatch() → 技能检测
+runtime-sync.ts
    ↓
-runSkill() → 路由分发
+~/.config/msgcode/skills/
    ↓
-builtin/*.ts → 能力描述
-   ↓
-CLI 命令合同 → 实际执行
-   ↓
-返回结果
+Tool Loop / prompt 只读取用户目录 index.json
 ```
 
 ## 变更日志
