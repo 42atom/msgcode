@@ -33,10 +33,10 @@ due:
 
 ## Plan
 
-- [ ] 创建 issue + plan
-- [ ] 拿代码根因
-- [ ] 修投影逻辑
-- [ ] 修执行逻辑
+- [x] 创建 issue + plan
+- [x] 拿代码根因
+- [x] 修投影逻辑（Payload 类型 + scheduleToJob）
+- [x] 修执行逻辑（executeJob + executeChatMessageJob）
 - [ ] 补测试
 - [ ] 真机验证
 
