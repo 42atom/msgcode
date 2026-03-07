@@ -108,7 +108,7 @@ describe("P5.7-R6-3: Gen Audio 命令合同", () => {
 
   describe("help-docs 集成验证", () => {
     it("help-docs --json 必须包含 msgcode gen tts 合同", () => {
-      const output = execSync("npx tsx src/cli.ts help-docs --json", {
+      const output = execSync("NODE_OPTIONS='--import tsx' node src/cli.ts help-docs --json", {
         encoding: "utf-8",
       });
 
@@ -126,7 +126,7 @@ describe("P5.7-R6-3: Gen Audio 命令合同", () => {
     });
 
     it("help-docs --json 必须包含 msgcode gen music 合同", () => {
-      const output = execSync("npx tsx src/cli.ts help-docs --json", {
+      const output = execSync("NODE_OPTIONS='--import tsx' node src/cli.ts help-docs --json", {
         encoding: "utf-8",
       });
 
@@ -170,7 +170,7 @@ describe("P5.7-R6-3: Gen Audio 命令合同", () => {
 
   describe("命令行帮助验证", () => {
     it("gen-audio --help 应该显示 tts 和 music 子命令", () => {
-      const output = execSync("npx tsx src/cli.ts gen-audio --help", {
+      const output = execSync("NODE_OPTIONS='--import tsx' node src/cli.ts gen-audio --help", {
         encoding: "utf-8",
       });
 

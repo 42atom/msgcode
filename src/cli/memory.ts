@@ -59,11 +59,15 @@ async function resolveWorkspacePathParam(input: string): Promise<string> {
     }
     return route.workspacePath;
   } else {
-    // path 类型：相对于 WORKSPACE_ROOT 解析
+    // path 类型：允许绝对路径；相对路径按 WORKSPACE_ROOT 解析
+    if (path.isAbsolute(param.value)) {
+      return path.resolve(param.value);
+    }
+
     const workspaceRoot = getWorkspaceRootForDisplay();
     const resolved = path.resolve(workspaceRoot, param.value);
 
-    // 检查越界
+    // 检查相对路径越界
     const relative = path.relative(workspaceRoot, resolved);
     if (relative.startsWith("..") || path.isAbsolute(relative)) {
       throw new Error(MEMORY_ERROR_CODES.PATH_TRAVERSAL);
@@ -103,7 +107,7 @@ export function createMemoryRememberCommand(): Command {
   cmd
     .description("写入记忆到 workspace 的 memory/YYYY-MM-DD.md")
     .argument("<text>", "要记录的文本")
-    .requiredOption("--workspace <id|path>", "Workspace ID 或相对路径")
+    .requiredOption("--workspace <id|path>", "Workspace ID、相对路径或绝对路径")
     .option("--dry-run", "只打印计划，不实际写入")
     .option("--json", "JSON 格式输出")
     .action(async (text: string, options) => {
@@ -180,7 +184,7 @@ export function createMemoryRememberCommand(): Command {
             createMemoryDiagnostic(
               MEMORY_ERROR_CODES.PATH_TRAVERSAL,
               "路径越界：路径必须在 workspace 下",
-              "使用相对路径，不要包含 .."
+              "使用 workspace 内相对路径（不包含 ..），或直接传绝对路径"
             )
           );
         } else {
@@ -217,7 +221,7 @@ export function createMemoryIndexCommand(): Command {
 
   cmd
     .description("索引 workspace 的 memory 文件")
-    .requiredOption("--workspace <id|path>", "Workspace ID 或相对路径")
+    .requiredOption("--workspace <id|path>", "Workspace ID、相对路径或绝对路径")
     .option("--force", "强制重新索引（忽略 mtime/sha256）")
     .option("--json", "JSON 格式输出")
     .action(async (options) => {
@@ -338,7 +342,7 @@ export function createMemorySearchCommand(): Command {
   cmd
     .description("搜索 memory（FTS5 BM25）")
     .argument("<query>", "搜索查询")
-    .requiredOption("--workspace <id|path>", "Workspace ID 或相对路径")
+    .requiredOption("--workspace <id|path>", "Workspace ID、相对路径或绝对路径")
     .option("--limit <n>", "返回结果数量", String(DEFAULT_SEARCH_LIMIT))
     .option("--json", "JSON 格式输出")
     .action(async (query: string, options) => {
@@ -437,7 +441,7 @@ export function createMemoryGetCommand(): Command {
 
   cmd
     .description("读取 memory 文件片段")
-    .requiredOption("--workspace <id|path>", "Workspace ID 或相对路径")
+    .requiredOption("--workspace <id|path>", "Workspace ID、相对路径或绝对路径")
     .requiredOption("--path <rel>", "文件相对路径（如 memory/2026-02-01.md）")
     .option("--from <n>", "起始行（1-based）", "1")
     .option("--lines <n>", `读取行数（默认 ${DEFAULT_GET_LINES}）`, String(DEFAULT_GET_LINES))
@@ -511,7 +515,7 @@ export function createMemoryGetCommand(): Command {
             createMemoryDiagnostic(
               MEMORY_ERROR_CODES.PATH_TRAVERSAL,
               "路径越界：路径必须在 workspace 下",
-              "使用相对路径，不要包含 .."
+              "使用 workspace 内相对路径（不包含 ..），或直接传绝对路径"
             )
           );
         } else {
@@ -663,7 +667,7 @@ export function createMemoryAddCommand(): Command {
   cmd
     .description("添加记忆到 workspace 的 memory/YYYY-MM-DD.md")
     .argument("<text>", "要记录的文本")
-    .requiredOption("--workspace <id|path>", "Workspace ID 或相对路径")
+    .requiredOption("--workspace <id|path>", "Workspace ID、相对路径或绝对路径")
     .option("--dry-run", "只打印计划，不实际写入")
     .option("--json", "JSON 格式输出")
     .action(async (text: string, options) => {
@@ -758,7 +762,7 @@ export function createMemoryAddCommand(): Command {
             createMemoryDiagnostic(
               MEMORY_ERROR_CODES.PATH_TRAVERSAL,
               "路径越界：路径必须在 workspace 下",
-              "使用相对路径，不要包含 .."
+              "使用 workspace 内相对路径（不包含 ..），或直接传绝对路径"
             )
           );
         } else {
@@ -889,7 +893,7 @@ export function getMemoryAddContract() {
     description: "添加记忆到 workspace 的 memory/YYYY-MM-DD.md",
     options: {
       required: {
-        "--workspace": "Workspace ID 或相对路径",
+        "--workspace": "Workspace ID、相对路径或绝对路径",
       },
       optional: {
         "--dry-run": "只打印计划，不实际写入",
@@ -918,7 +922,7 @@ export function getMemorySearchContract() {
     description: "搜索 memory（FTS5 BM25）",
     options: {
       required: {
-        "--workspace": "Workspace ID 或相对路径",
+        "--workspace": "Workspace ID、相对路径或绝对路径",
       },
       optional: {
         "--limit": "返回结果数量（默认 8）",

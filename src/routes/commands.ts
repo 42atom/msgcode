@@ -55,6 +55,7 @@ import {
   handleSteerCommand as handleSteerCommandImpl,
   handleNextCommand as handleNextCommandImpl,
 } from "./cmd-steer.js";
+import { handleTaskCommand as handleTaskCommandImpl } from "./cmd-task.js";
 
 export type { CommandHandlerOptions, CommandResult } from "./cmd-types.js";
 
@@ -87,6 +88,7 @@ export const handleToolAllowRemoveCommand = handleToolAllowRemoveCommandImpl;
 export const handleDesktopCommand = handleDesktopCommandImpl;
 export const handleSteerCommand = handleSteerCommandImpl;
 export const handleNextCommand = handleNextCommandImpl;
+export const handleTaskCommand = handleTaskCommandImpl;
 
 export async function handleRouteCommand(
   command: string,
@@ -151,6 +153,8 @@ export async function handleRouteCommand(
       return handleSteerCommand(options);
     case "next":
       return handleNextCommand(options);
+    case "task":
+      return handleTaskCommand(options);
     default:
       return {
         success: false,
@@ -203,7 +207,9 @@ export function isRouteCommand(text: string): boolean {
     trimmed.startsWith("/steer ") ||
     trimmed === "/steer" ||
     trimmed.startsWith("/next ") ||
-    trimmed === "/next"
+    trimmed === "/next" ||
+    trimmed.startsWith("/task ") ||
+    trimmed === "/task"
   );
 }
 
@@ -383,6 +389,13 @@ export function parseRouteCommand(text: string): { command: string; args: string
   }
   if (trimmed === "/next") {
     return { command: "next", args: [] };
+  }
+  if (trimmed.startsWith("/task ")) {
+    const parts = trimmed.split(/\s+/);
+    return { command: "task", args: parts.slice(1) };
+  }
+  if (trimmed === "/task") {
+    return { command: "task", args: [] };
   }
 
   return null;

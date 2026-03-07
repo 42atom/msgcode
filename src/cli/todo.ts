@@ -62,6 +62,10 @@ async function resolveWorkspacePathParam(input: string): Promise<string> {
     }
     return route.workspacePath;
   } else {
+    if (path.isAbsolute(param.value)) {
+      return path.resolve(param.value);
+    }
+
     const workspaceRoot = getWorkspaceRootForDisplay();
     const resolved = path.resolve(workspaceRoot, param.value);
 
@@ -149,7 +153,7 @@ export function createTodoAddCommand(): Command {
   cmd
     .description("添加待办事项")
     .argument("<title>", "待办事项标题")
-    .requiredOption("--workspace <id|path>", "Workspace ID 或相对路径")
+    .requiredOption("--workspace <id|path>", "Workspace ID、相对路径或绝对路径")
     .option("--json", "JSON 格式输出")
     .action(async (title: string, options) => {
       const startTime = Date.now();
@@ -256,7 +260,7 @@ export function createTodoListCommand(): Command {
 
   cmd
     .description("列出待办事项")
-    .requiredOption("--workspace <id|path>", "Workspace ID 或相对路径")
+    .requiredOption("--workspace <id|path>", "Workspace ID、相对路径或绝对路径")
     .option("--status <status>", "筛选状态（pending/done）")
     .option("--json", "JSON 格式输出")
     .action(async (options) => {
@@ -356,7 +360,7 @@ export function createTodoDoneCommand(): Command {
   cmd
     .description("完成待办事项")
     .argument("<taskId>", "待办事项 ID")
-    .requiredOption("--workspace <id|path>", "Workspace ID 或相对路径")
+    .requiredOption("--workspace <id|path>", "Workspace ID、相对路径或绝对路径")
     .option("--json", "JSON 格式输出")
     .action(async (taskId: string, options) => {
       const startTime = Date.now();
@@ -484,7 +488,7 @@ export function getTodoAddContract() {
     description: "添加待办事项",
     options: {
       required: {
-        "--workspace": "Workspace ID 或相对路径",
+        "--workspace": "Workspace ID、相对路径或绝对路径",
       },
       optional: {
         "--json": "JSON 格式输出",
@@ -512,7 +516,7 @@ export function getTodoListContract() {
     description: "列出待办事项",
     options: {
       required: {
-        "--workspace": "Workspace ID 或相对路径",
+        "--workspace": "Workspace ID、相对路径或绝对路径",
       },
       optional: {
         "--status": "筛选状态（pending/done）",
@@ -539,7 +543,7 @@ export function getTodoDoneContract() {
     description: "完成待办事项",
     options: {
       required: {
-        "--workspace": "Workspace ID 或相对路径",
+        "--workspace": "Workspace ID、相对路径或绝对路径",
       },
       optional: {
         "--json": "JSON 格式输出",

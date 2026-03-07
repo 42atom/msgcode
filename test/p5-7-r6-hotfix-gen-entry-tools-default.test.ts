@@ -34,7 +34,7 @@ describe("P5.7-R6 HOTFIX: gen 入口 + tools 缺省值", () => {
   });
 
   it("CLI: `msgcode gen --help` 应包含 image/selfie/tts/music 子命令", () => {
-    const out = execSync("npx tsx src/cli.ts gen --help", {
+    const out = execSync("NODE_OPTIONS='--import tsx' node src/cli.ts gen --help", {
       encoding: "utf-8",
       cwd: process.cwd(),
     });
@@ -45,13 +45,13 @@ describe("P5.7-R6 HOTFIX: gen 入口 + tools 缺省值", () => {
   });
 
   it("CLI: `msgcode gen image --prompt '' --json` 应返回固定错误码", () => {
-    const res = spawnSync("npx", ["tsx", "src/cli.ts", "gen", "image", "--prompt", "", "--json"], {
+    const res = spawnSync("node", ["src/cli.ts", "gen", "image", "--prompt", "", "--json"], {
       encoding: "utf-8",
       cwd: process.cwd(),
+      env: { ...process.env, NODE_OPTIONS: "--import tsx" },
     });
     expect(res.status).toBe(1);
     const output = `${res.stdout ?? ""}${res.stderr ?? ""}`;
     expect(output).toContain("GEN_INVALID_PROMPT");
   });
 });
-

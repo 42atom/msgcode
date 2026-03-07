@@ -319,6 +319,12 @@ async function loadGenAudioCommands() {
   program.addCommand(createGenAudioCommandGroup());
 }
 
+// Browser 命令组（P5.7-R7A）
+async function loadBrowserCommands() {
+  const { createBrowserCommand } = await import("./cli/browser.js");
+  program.addCommand(createBrowserCommand());
+}
+
 // Gen 命令组（P5.7-R6 命令入口统一）
 async function loadGenCommands() {
   const { createGenImageCommand, createGenSelfieCommand } = await import("./cli/gen-image.js");
@@ -386,6 +392,9 @@ async function main() {
   if (top === "gen-audio") {
     await loadGenAudioCommands();
   }
+  if (top === "browser") {
+    await loadBrowserCommands();
+  }
   if (top === "help-docs") {
     await loadHelpDocsCommand();
   }
@@ -406,6 +415,7 @@ async function main() {
     await loadGenCommands();
     await loadGenImageCommands();
     await loadGenAudioCommands();
+    await loadBrowserCommands();
     await loadHelpDocsCommand();
   }
   program.parse();

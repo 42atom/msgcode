@@ -73,7 +73,7 @@ describe("P5.7-R6-1: Media 命令合同", () => {
 
   describe("help-docs 集成验证", () => {
     it("help-docs --json 必须包含 msgcode media screen 合同", () => {
-      const output = execSync("npx tsx src/cli.ts help-docs --json", {
+      const output = execSync("NODE_OPTIONS='--import tsx' node src/cli.ts help-docs --json", {
         encoding: "utf-8",
       });
 
@@ -105,7 +105,7 @@ describe("P5.7-R6-1: Media 命令合同", () => {
 
   describe("命令行帮助验证", () => {
     it("media --help 应该显示 screen 子命令", () => {
-      const output = execSync("npx tsx src/cli.ts media --help", {
+      const output = execSync("NODE_OPTIONS='--import tsx' node src/cli.ts media --help", {
         encoding: "utf-8",
       });
 

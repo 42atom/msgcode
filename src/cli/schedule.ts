@@ -58,6 +58,10 @@ async function resolveWorkspacePathParam(input: string): Promise<string> {
     }
     return route.workspacePath;
   } else {
+    if (path.isAbsolute(param.value)) {
+      return path.resolve(param.value);
+    }
+
     const workspaceRoot = getWorkspaceRootForDisplay();
     const resolved = path.resolve(workspaceRoot, param.value);
 
@@ -142,7 +146,7 @@ export function createScheduleAddCommand(): Command {
   cmd
     .description("添加定时调度（workspace-local）")
     .argument("<scheduleId>", "Schedule ID（用户指定）")
-    .requiredOption("--workspace <id|path>", "Workspace ID 或相对路径")
+    .requiredOption("--workspace <id|path>", "Workspace ID、相对路径或绝对路径")
     .requiredOption("--cron <expr>", "Cron 表达式（如 '0 7 * * *'）")
     .requiredOption("--tz <iana>", "时区（如 Asia/Shanghai）")
     .requiredOption("--message <text>", "要发送的消息文本")
@@ -286,7 +290,7 @@ export function createScheduleListCommand(): Command {
 
   cmd
     .description("列出定时调度")
-    .requiredOption("--workspace <id|path>", "Workspace ID 或相对路径")
+    .requiredOption("--workspace <id|path>", "Workspace ID、相对路径或绝对路径")
     .option("--json", "JSON 格式输出")
     .action(async (options) => {
       const startTime = Date.now();
@@ -376,7 +380,7 @@ export function createScheduleRemoveCommand(): Command {
   cmd
     .description("删除定时调度")
     .argument("<scheduleId>", "Schedule ID")
-    .requiredOption("--workspace <id|path>", "Workspace ID 或相对路径")
+    .requiredOption("--workspace <id|path>", "Workspace ID、相对路径或绝对路径")
     .option("--json", "JSON 格式输出")
     .action(async (scheduleId: string, options) => {
       const startTime = Date.now();
@@ -493,7 +497,7 @@ export function getScheduleAddContract() {
     description: "添加定时调度",
     options: {
       required: {
-        "--workspace": "Workspace ID 或相对路径",
+        "--workspace": "Workspace ID、相对路径或绝对路径",
         "--cron": "Cron 表达式（如 '0 7 * * *'）",
         "--tz": "时区（IANA 格式，如 Asia/Shanghai）",
         "--message": "要发送的消息文本",
@@ -527,7 +531,7 @@ export function getScheduleListContract() {
     description: "列出定时调度",
     options: {
       required: {
-        "--workspace": "Workspace ID 或相对路径",
+        "--workspace": "Workspace ID、相对路径或绝对路径",
       },
       optional: {
         "--json": "JSON 格式输出",
@@ -553,7 +557,7 @@ export function getScheduleRemoveContract() {
     description: "删除定时调度",
     options: {
       required: {
-        "--workspace": "Workspace ID 或相对路径",
+        "--workspace": "Workspace ID、相对路径或绝对路径",
       },
       optional: {
         "--json": "JSON 格式输出",
