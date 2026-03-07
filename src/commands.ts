@@ -23,6 +23,7 @@ let sendClient: Pick<ImsgRpcClient, "send"> | null = null;
 let feishuTransport: import("./feishu/transport.js").FeishuTransport | null = null;
 let jobScheduler: import("./jobs/scheduler.js").JobScheduler | null = null;
 let heartbeatRunner: import("./runtime/heartbeat.js").HeartbeatRunner | null = null;
+let taskSupervisor: import("./runtime/task-supervisor.js").TaskSupervisor | null = null;
 const perChatQueue = new Map<string, Promise<void>>();
 const perChatAbort = new Map<string, AbortController>();
 
@@ -515,17 +516,49 @@ export async function startBot(): Promise<void> {
   // P5.7-R12-T1: 初始化并启动 Heartbeat Runner
   const { HeartbeatRunner } = await import("./runtime/heartbeat.js");
   heartbeatRunner = new HeartbeatRunner({ tag: "msgcode" });
+
+  // P5.7-R12: 初始化并启动 Task Supervisor
+  const { createTaskSupervisor } = await import("./runtime/task-supervisor.js");
+  const { initializeEventQueue, restoreAllQueuesFromDisk } = await import("./steering-queue.js");
+  const { executeAgentTurn } = await import("./agent-backend.js");
+  const taskDir = `${config.workspaceRoot}/.msgcode/tasks`;
+  const eventQueueDir = `${config.workspaceRoot}/.msgcode/event-queue`;
+  initializeEventQueue(eventQueueDir);
+  const restoredQueues = await restoreAllQueuesFromDisk();
+  taskSupervisor = createTaskSupervisor({
+    taskDir,
+    eventQueueDir,
+    heartbeatIntervalMs: 60_000,
+    executeTaskTurn: async (task) => executeAgentTurn({
+      prompt: task.goal,
+      workspacePath: task.workspacePath,
+    }),
+  });
+
+  // 启动 Task Supervisor（heartbeat 由 commands 统一接线）
+  await taskSupervisor.start();
+
   heartbeatRunner.onTick(async (ctx) => {
     // Heartbeat tick 回调：目前仅做观测日志
-    // 后续 R12-T4 将在此处添加事件队列恢复逻辑
     logger.debug("Heartbeat tick 触发", {
       module: "commands",
       tickId: ctx.tickId,
       reason: ctx.reason,
     });
+
+    if (taskSupervisor) {
+      await taskSupervisor.handleHeartbeatTick(ctx);
+    }
   });
   heartbeatRunner.start();
   logger.info("Heartbeat 已启动", { module: "commands" });
+  logger.info("Task Supervisor 已启动", {
+    module: "commands",
+    taskDir,
+    eventQueueDir,
+    restoredQueueChats: restoredQueues.chatCount,
+    restoredQueueEvents: restoredQueues.eventCount,
+  });
 
   const { handleMessage } = await import("./listener.js");
 
@@ -691,6 +724,12 @@ export async function stopBot(): Promise<void> {
     logger.info("Heartbeat 已停止", { module: "commands" });
   }
 
+  if (taskSupervisor) {
+    await taskSupervisor.stop();
+    taskSupervisor = null;
+    logger.info("Task Supervisor 已停止", { module: "commands" });
+  }
+
   // M3.2-2: 先停止 JobScheduler（优雅停止，等待当前执行完成）
   if (jobScheduler) {
     jobScheduler.stop();
@@ -737,4 +776,17 @@ export async function allStop(): Promise<void> {
     logger.info("已停止 tmux 会话", { module: "commands", sessions });
   }
   process.exit(0);
+}
+
+// ============================================
+// Getter 函数（供其他模块访问）
+// ============================================
+
+/**
+ * 获取 Task Supervisor 实例
+ *
+ * P5.7-R12: 供 cmd-task.ts 等命令模块使用
+ */
+export function getTaskSupervisor(): import("./runtime/task-supervisor.js").TaskSupervisor | null {
+  return taskSupervisor;
 }

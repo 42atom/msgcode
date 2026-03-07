@@ -10,7 +10,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { BotType } from "./router.js";
-import { runAgentChat, runAgentRoutedChat } from "./agent-backend.js";
+import { executeAgentTurn, runAgentChat } from "./agent-backend.js";
 import type { InboundMessage } from "./imsg/types.js";
 import { clearTtsPrefs, getTtsPrefs, getVoiceReplyMode, setTtsPrefs, setVoiceReplyMode } from "./state/store.js";
 import { logger } from "./logger/index.js";
@@ -737,7 +737,7 @@ export class RuntimeRouterHandler implements CommandHandler {
             // P5.6.1-R2: Persona 全量退役，不再注入 personaContent
             const personaContent = undefined;
             // P5.7-R3e: 主链走路由分发（no-tool / tool / complex-tool）
-            const routedResult = await runAgentRoutedChat({
+            const routedResult = await executeAgentTurn({
                 prompt: trimmed,
                 system: personaContent,
                 ...(context.projectDir ? { workspacePath: context.projectDir } : {}),
