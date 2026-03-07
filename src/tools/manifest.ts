@@ -83,11 +83,11 @@ export function filterDefaultLlmTools(toolNames: ToolName[]): ToolName[] {
  */
 export const TOOL_MANIFESTS: Record<ToolName, ToolManifest> = {
   // ============================================
-  // 浏览器工具（PinchTab Browser Core）
+  // 浏览器工具（Patchright Browser Core）
   // ============================================
   browser: {
     name: "browser",
-    description: "浏览器自动化工具（基于 PinchTab）。支持配置文件管理、实例控制、标签页操作等。",
+    description: "浏览器自动化工具（基于 Patchright + Chrome-as-State）。支持 Chrome root、实例控制、标签页操作等。",
     parameters: {
       type: "object",
       properties: {
@@ -113,9 +113,9 @@ export const TOOL_MANIFESTS: Record<ToolName, ToolManifest> = {
           description: "浏览器模式（仅 instances.launch 有效）",
           enum: ["headed", "headless"],
         },
-        profileId: {
+        rootName: {
           type: "string",
-          description: "配置文件 ID（仅 instances.launch 需要）",
+          description: "共享工作 Chrome root 名（instances.launch 或 tabs.open 自动拉起时可选）",
         },
         instanceId: {
           type: "string",
@@ -131,7 +131,7 @@ export const TOOL_MANIFESTS: Record<ToolName, ToolManifest> = {
         },
         ref: {
           type: "string",
-          description: "元素选择器（仅 tabs.action 需要）",
+          description: "无状态 ref，固定为 JSON 字符串：{\"role\":\"button\",\"name\":\"Submit\",\"index\":0}",
         },
         text: {
           type: "string",

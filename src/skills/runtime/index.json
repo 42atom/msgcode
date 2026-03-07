@@ -3,10 +3,10 @@
   "source": "global-single-source",
   "skills": [
     {
-      "id": "pinchtab-browser",
-      "name": "PinchTab Browser",
-      "entry": "~/.config/msgcode/skills/pinchtab-browser/main.sh",
-      "description": "PinchTab 浏览器底座 CLI 合同与共享工作 Chrome 路径"
+      "id": "patchright-browser",
+      "name": "Patchright Browser",
+      "entry": "~/.config/msgcode/skills/patchright-browser/main.sh",
+      "description": "Patchright 浏览器底座 CLI 合同与共享工作 Chrome 路径"
     }
   ]
 }

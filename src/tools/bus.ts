@@ -24,7 +24,7 @@ import {
   BrowserCommandError,
   BROWSER_ERROR_CODES,
   type BrowserOperation,
-} from "../runners/browser-pinchtab.js";
+} from "../runners/browser-patchright.js";
 import { logger } from "../logger/index.js";
 import { recordToolEvent } from "./telemetry.js";
 import { filterDefaultLlmTools } from "./manifest.js";
@@ -204,12 +204,14 @@ function validateToolArgs(
           break;
         }
         case "instances.stop":
-        case "tabs.list":
-        case "tabs.open": {
+        case "tabs.list": {
           if (!args.instanceId || typeof args.instanceId !== "string" || !args.instanceId.trim()) {
             return { code: "TOOL_BAD_ARGS", message: `browser: '${operation}' requires 'instanceId'` };
           }
-          if (operation === "tabs.open" && (!args.url || typeof args.url !== "string" || !args.url.trim())) {
+          break;
+        }
+        case "tabs.open": {
+          if (!args.url || typeof args.url !== "string" || !args.url.trim()) {
             return { code: "TOOL_BAD_ARGS", message: "browser: 'tabs.open' requires 'url'" };
           }
           break;
@@ -446,6 +448,7 @@ export async function executeTool(
             executeBrowserOperation({
               operation: String(args.operation) as BrowserOperation,
               mode: typeof args.mode === "string" ? args.mode as "headed" | "headless" : undefined,
+              rootName: typeof args.rootName === "string" ? args.rootName : undefined,
               profileId: typeof args.profileId === "string" ? args.profileId : undefined,
               instanceId: typeof args.instanceId === "string" ? args.instanceId : undefined,
               tabId: typeof args.tabId === "string" ? args.tabId : undefined,

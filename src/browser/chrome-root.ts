@@ -125,6 +125,10 @@ function buildLaunchCommand(
   return parts.join("\n");
 }
 
+export function getChromeBinaryPath(): string {
+  return CHROME_BINARY_PATH;
+}
+
 export function getChromeRootInfo(options: ChromeRootOptions = {}): ChromeRootInfo {
   const rootName = normalizeRootName(options.name);
   const remoteDebuggingPort = normalizePort(options.port);

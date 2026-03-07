@@ -24,7 +24,7 @@ afterEach(async () => {
 });
 
 describe("P5.7-R13: runtime skill sync", () => {
-  it("应同步 pinchtab-browser 并保留用户已有自定义 skill 索引", async () => {
+  it("应同步 patchright-browser 并保留用户已有自定义 skill 索引", async () => {
     const userSkillsDir = await mkdtemp(join(tmpdir(), "msgcode-runtime-skills-"));
     tempDirs.push(userSkillsDir);
 
@@ -55,21 +55,22 @@ describe("P5.7-R13: runtime skill sync", () => {
       userSkillsDir,
     });
 
-    expect(result.managedSkillIds).toContain("pinchtab-browser");
+    expect(result.managedSkillIds).toContain("patchright-browser");
     expect(result.copiedFiles).toBeGreaterThanOrEqual(2);
     expect(result.indexUpdated).toBe(true);
 
-    const skillDoc = await readFile(join(userSkillsDir, "pinchtab-browser", "SKILL.md"), "utf-8");
-    const mainSh = await readFile(join(userSkillsDir, "pinchtab-browser", "main.sh"), "utf-8");
+    const skillDoc = await readFile(join(userSkillsDir, "patchright-browser", "SKILL.md"), "utf-8");
+    const mainSh = await readFile(join(userSkillsDir, "patchright-browser", "main.sh"), "utf-8");
     const mergedIndex = JSON.parse(await readFile(join(userSkillsDir, "index.json"), "utf-8")) as {
       skills: Array<{ id: string }>;
     };
-    const mainStat = await stat(join(userSkillsDir, "pinchtab-browser", "main.sh"));
+    const mainStat = await stat(join(userSkillsDir, "patchright-browser", "main.sh"));
 
-    expect(skillDoc).toContain("pinchtab-browser skill");
+    expect(skillDoc).toContain("patchright-browser skill");
     expect(mainSh).toContain('exec msgcode browser "$@"');
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("custom-skill");
-    expect(mergedIndex.skills.map((skill) => skill.id)).toContain("pinchtab-browser");
+    expect(mergedIndex.skills.map((skill) => skill.id)).toContain("patchright-browser");
+    expect(mergedIndex.skills.map((skill) => skill.id)).not.toContain("pinchtab-browser");
     expect(mainStat.mode & 0o111).toBeGreaterThan(0);
   });
 
@@ -77,9 +78,9 @@ describe("P5.7-R13: runtime skill sync", () => {
     const userSkillsDir = await mkdtemp(join(tmpdir(), "msgcode-runtime-skills-existing-"));
     tempDirs.push(userSkillsDir);
 
-    await mkdir(join(userSkillsDir, "pinchtab-browser"), { recursive: true });
+    await mkdir(join(userSkillsDir, "patchright-browser"), { recursive: true });
     await writeFile(
-      join(userSkillsDir, "pinchtab-browser", "main.sh"),
+      join(userSkillsDir, "patchright-browser", "main.sh"),
       "#!/usr/bin/env bash\necho existing\n",
       "utf-8",
     );
@@ -90,7 +91,7 @@ describe("P5.7-R13: runtime skill sync", () => {
       overwrite: false,
     });
 
-    const mainSh = await readFile(join(userSkillsDir, "pinchtab-browser", "main.sh"), "utf-8");
+    const mainSh = await readFile(join(userSkillsDir, "patchright-browser", "main.sh"), "utf-8");
 
     expect(result.skippedFiles).toBeGreaterThanOrEqual(1);
     expect(mainSh).toContain("echo existing");

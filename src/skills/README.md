@@ -12,7 +12,7 @@ src/skills/
 ├── runtime-sync.ts         # runtime skill 安装/同步
 └── runtime/                # 仓库托管的 runtime skill 真相源
     ├── index.json          # 托管 skill 索引
-    └── pinchtab-browser/
+    └── patchright-browser/
         ├── SKILL.md
         └── main.sh
 ```

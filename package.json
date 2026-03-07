@@ -36,7 +36,7 @@
     "commander": "^14.0.2",
     "croner": "^9.1.0",
     "dotenv": "^16.4.0",
-    "pinchtab": "^0.7.7",
+    "patchright": "^1.55.0",
     "sqlite-vec": "^0.1.7-alpha.2"
   },
   "devDependencies": {

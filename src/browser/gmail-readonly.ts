@@ -3,7 +3,7 @@
  *
  * 约束：
  * - 只读
- * - 显式 profileId / instanceId / tabId
+ * - 显式 rootName / instanceId / tabId
  * - 不做自动登录
  */
 
@@ -13,7 +13,7 @@ import {
   BrowserCommandError,
   type BrowserOperationInput,
   type BrowserOperationResult,
-} from "../runners/browser-pinchtab.js";
+} from "../runners/browser-patchright.js";
 
 const GMAIL_INBOX_URL = "https://mail.google.com/mail/u/0/#inbox";
 const DEFAULT_TIMEZONE = "Asia/Singapore";
@@ -41,7 +41,7 @@ export interface GmailReadonlyMessage {
 
 export interface GmailReadonlyResult {
   code: GmailErrorCode;
-  profileId: string;
+  rootName: string;
   instanceId: string;
   tabId: string;
   timezone: string;
@@ -80,7 +80,8 @@ export type BrowserExecutor = (
 ) => Promise<BrowserOperationResult>;
 
 export interface GmailReadonlyParams {
-  profileId: string;
+  rootName?: string;
+  profileId?: string;
   mode?: "headed" | "headless";
   timezone?: string;
   timeoutMs?: number;
@@ -395,7 +396,7 @@ function mapTodayMessages(
 export async function runGmailReadonlyAcceptance(
   params: GmailReadonlyParams
 ): Promise<GmailReadonlyResult> {
-  const profileId = requireNonEmpty(params.profileId, "profileId");
+  const rootName = requireNonEmpty(params.rootName ?? params.profileId ?? "work-default", "rootName");
   const mode = params.mode ?? "headless";
   const timezone = params.timezone ?? DEFAULT_TIMEZONE;
   const execute = params.execute ?? executeBrowserOperation;
@@ -407,7 +408,7 @@ export async function runGmailReadonlyAcceptance(
   try {
     const launch = await callBrowser(execute, {
       operation: "instances.launch",
-      profileId,
+      rootName,
       mode,
       timeoutMs: params.timeoutMs,
     });
@@ -428,14 +429,14 @@ export async function runGmailReadonlyAcceptance(
       throw new GmailReadonlyError(
         GMAIL_ERROR_CODES.LOGIN_REQUIRED,
         "Gmail is not logged in for the selected profile",
-        { profileId, instanceId, tabId, page }
+        { rootName, instanceId, tabId, page }
       );
     }
     if (page.state !== "gmail-inbox") {
       throw new GmailReadonlyError(
         GMAIL_ERROR_CODES.SITE_CHANGED,
         "Unable to confirm Gmail inbox from the current page structure",
-        { profileId, instanceId, tabId, page }
+        { rootName, instanceId, tabId, page }
       );
     }
 
@@ -445,14 +446,14 @@ export async function runGmailReadonlyAcceptance(
       throw new GmailReadonlyError(
         GMAIL_ERROR_CODES.SITE_CHANGED,
         "Gmail inbox opened but mailbox rows could not be extracted from the current page structure",
-        { profileId, instanceId, tabId, page: pageForFailure }
+        { rootName, instanceId, tabId, page: pageForFailure }
       );
     }
     const messages = mapTodayMessages(rawRows, timezone);
 
     return {
       code: GMAIL_ERROR_CODES.OK,
-      profileId,
+      rootName,
       instanceId,
       tabId,
       timezone,
@@ -477,13 +478,13 @@ export async function runGmailReadonlyAcceptance(
       throw new GmailReadonlyError(
         GMAIL_ERROR_CODES.EXTRACTION_FAILED,
         `${error.code}: ${error.message}`,
-        { profileId, instanceId, tabId }
+        { rootName, instanceId, tabId }
       );
     }
     throw new GmailReadonlyError(
       GMAIL_ERROR_CODES.EXTRACTION_FAILED,
       error instanceof Error ? error.message : String(error),
-      { profileId, instanceId, tabId }
+      { rootName, instanceId, tabId }
     );
   } finally {
     if (cleanup && instanceId) {

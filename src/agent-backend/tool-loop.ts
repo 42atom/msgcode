@@ -44,7 +44,6 @@ import {
 } from "../tools/manifest.js";
 import type { ToolName } from "../tools/types.js";
 import { getChromeRootInfo } from "../browser/chrome-root.js";
-import { getPinchtabRuntimeInfo } from "../browser/pinchtab-runtime.js";
 import {
     type MiniMaxAnthropicContentBlock,
     type MiniMaxAnthropicMessage,
@@ -584,25 +583,22 @@ function buildBrowserRuntimeHint(toolNames: ToolName[]): string {
     }
 
     try {
-        const pinchtab = getPinchtabRuntimeInfo();
         const chrome = getChromeRootInfo();
         return [
             "[当前浏览器底座]",
-            "唯一正式浏览器通道：browser 工具（PinchTab）。",
-            `PinchTab orchestrator baseUrl：${pinchtab.baseUrl}`,
-            `PinchTab binary 绝对路径：${pinchtab.binaryPath}`,
-            `PinchTab binary 是否存在：${pinchtab.binaryExists ? "yes" : "no"}`,
+            "唯一正式浏览器通道：browser 工具（Patchright + Chrome-as-State）。",
+            "唯一正式连接方式：Patchright connectOverCDP。",
             `共享工作 Chrome profilesRoot：${chrome.profilesRoot}`,
             `默认工作 Chrome root：${chrome.chromeRoot}`,
             "如需人工启动共享工作 Chrome，只能使用下面这条系统提供的启动命令：",
             chrome.launchCommand,
             "不要猜测其他浏览器路径，不要使用 agent-browser 作为正式浏览器通道。",
-            "如需查看 PinchTab CLI 合同，可读取 ~/.config/msgcode/skills/pinchtab-browser/SKILL.md。",
+            "如需查看 Patchright browser CLI 合同，可读取 ~/.config/msgcode/skills/patchright-browser/SKILL.md。",
         ].join("\n");
     } catch (error) {
         return [
             "[当前浏览器底座]",
-            "唯一正式浏览器通道：browser 工具（PinchTab）。",
+            "唯一正式浏览器通道：browser 工具（Patchright + Chrome-as-State）。",
             `浏览器底座信息解析失败：${error instanceof Error ? error.message : String(error)}`,
             "不要猜测其他浏览器路径，不要使用 agent-browser 作为正式浏览器通道。",
         ].join("\n");

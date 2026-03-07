@@ -70,6 +70,7 @@ due:
 
 ## Notes
 
+- 2026-03-07：已被 `issues/0016-patchright-browser-cutover.md` 取代。PinchTab 不再是正式浏览器底座，本单保留为历史决策与回滚参照。
 - Docs：`node_modules/pinchtab/README.md`（`pinchtab serve --port 9867`）
 - Code：`src/runners/browser-pinchtab.ts`、`src/browser/chrome-root.ts`、`src/commands.ts`、`src/agent-backend/tool-loop.ts`
 - Docs：`docs/notes/research-260306-pinchtab-validation.md`

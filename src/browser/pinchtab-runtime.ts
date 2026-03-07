@@ -81,7 +81,7 @@ function isLocalHost(hostname: string): boolean {
 
 function getBinaryName(): string {
   const platform = process.platform;
-  const arch = (process.arch === "arm64" || process.arch === "aarch64") ? "arm64" : "amd64";
+  const arch = process.arch === "arm64" ? "arm64" : "amd64";
 
   if (platform === "darwin") {
     return `pinchtab-darwin-${arch}`;
@@ -224,7 +224,7 @@ function spawnPinchtabProcess(
     throw new PinchtabBootstrapError(
       "PINCHTAB_BINARY_MISSING",
       `PinchTab binary not found: ${runtime.binaryPath}`,
-      runtime
+      { ...runtime }
     );
   }
 

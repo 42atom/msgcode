@@ -8,7 +8,7 @@ import {
   GmailReadonlyError,
   runGmailReadonlyAcceptance,
 } from "../src/browser/gmail-readonly.js";
-import type { BrowserOperationInput, BrowserOperationResult } from "../src/runners/browser-pinchtab.js";
+import type { BrowserOperationInput, BrowserOperationResult } from "../src/runners/browser-patchright.js";
 
 function createExecutor(sequence: Array<(input: BrowserOperationInput) => BrowserOperationResult | Promise<BrowserOperationResult>>) {
   const calls: BrowserOperationInput[] = [];
@@ -64,7 +64,7 @@ describe("P5.7-R7B: Gmail readonly acceptance", () => {
     ]);
 
     const result = await runGmailReadonlyAcceptance({
-      profileId: "prof_selfwan",
+      rootName: "work-default",
       timezone: "Asia/Singapore",
       execute,
     });
@@ -89,7 +89,7 @@ describe("P5.7-R7B: Gmail readonly acceptance", () => {
 
     await expect(
       runGmailReadonlyAcceptance({
-        profileId: "prof_selfwan",
+        rootName: "work-default",
         execute,
       })
     ).rejects.toMatchObject<Partial<GmailReadonlyError>>({
@@ -125,7 +125,7 @@ describe("P5.7-R7B: Gmail readonly acceptance", () => {
     ]);
 
     const result = await runGmailReadonlyAcceptance({
-      profileId: "prof_selfwan",
+      rootName: "work-default",
       timezone: "Asia/Singapore",
       execute,
     });
@@ -153,7 +153,7 @@ describe("P5.7-R7B: Gmail readonly acceptance", () => {
 
     await expect(
       runGmailReadonlyAcceptance({
-        profileId: "prof_selfwan",
+        rootName: "work-default",
         execute,
       })
     ).rejects.toMatchObject<Partial<GmailReadonlyError>>({

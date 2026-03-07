@@ -217,14 +217,14 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     });
   });
 
-  // P5.7-R8c 返工验证：browser manifest 必须包含真实 PinchTab 合同
-  it("browser manifest 应包含真实 PinchTab operation 枚举", async () => {
+  // P5.7-R8c 返工验证：browser manifest 必须包含真实 Patchright 合同
+  it("browser manifest 应包含真实 Patchright operation 枚举", async () => {
     const { TOOL_MANIFESTS } = await import("../src/tools/manifest.js");
 
     const browserManifest = TOOL_MANIFESTS.browser;
     expect(browserManifest).toBeDefined();
 
-    // 验证 operation 枚举包含真实 PinchTab 合同
+    // 验证 operation 枚举包含真实 Patchright 合同
     const operationEnum = browserManifest.parameters.properties.operation?.enum;
     expect(operationEnum).toContain("tabs.open");
     expect(operationEnum).toContain("tabs.action");
@@ -235,12 +235,13 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     expect(operationEnum).not.toContain("click"); // 旧风格不应存在
   });
 
-  it("browser manifest 应包含真实参数（instanceId/tabId/ref/expression）", async () => {
+  it("browser manifest 应包含真实参数（rootName/instanceId/tabId/ref/expression）", async () => {
     const { TOOL_MANIFESTS } = await import("../src/tools/manifest.js");
 
     const browserManifest = TOOL_MANIFESTS.browser;
     const props = browserManifest.parameters.properties;
 
+    expect(props.rootName).toBeDefined();
     expect(props.instanceId).toBeDefined();
     expect(props.tabId).toBeDefined();
     expect(props.ref).toBeDefined();
@@ -263,7 +264,7 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     expect((browserSchema as any).function?.name).toBe("browser");
     expect((browserSchema as any).function?.parameters).toBeDefined();
 
-    // 验证 operation 枚举包含真实 PinchTab 合同（最关键的验收）
+    // 验证 operation 枚举包含真实 Patchright 合同（最关键的验收）
     const props = (browserSchema as any).function?.parameters?.properties;
     if (props?.operation) {
       expect(props.operation.enum).toContain("tabs.open");

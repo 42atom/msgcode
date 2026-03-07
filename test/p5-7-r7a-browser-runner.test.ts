@@ -1,18 +1,22 @@
 /**
- * msgcode: P5.7-R7A PinchTab runner 回归锁
+ * msgcode: P5.7-R7A Patchright runner 回归锁
  *
  * 目标：
- * - 验证 HTTP API 路径与方法
- * - 验证 snapshot/text/eval 等返回结构
- * - 验证远端错误分类
+ * - 验证 Chrome-as-State 启动链
+ * - 验证 tabs.open 自动拉起实例
+ * - 验证 snapshot 输出无状态 ref
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
+  __setBrowserPatchrightTestDeps,
   BROWSER_ERROR_CODES,
   BrowserCommandError,
   executeBrowserOperation,
-} from "../src/runners/browser-pinchtab.js";
+} from "../src/runners/browser-patchright.js";
 
 function jsonResponse(data: unknown, status = 200): Response {
   return new Response(JSON.stringify(data), {
@@ -21,310 +25,264 @@ function jsonResponse(data: unknown, status = 200): Response {
   });
 }
 
+function createPageStub(options: {
+  targetId: string;
+  title?: string;
+  url?: string;
+  ariaSnapshot?: string;
+  refs?: Array<Record<string, unknown>>;
+}) {
+  let currentUrl = options.url ?? "about:blank";
+
+  const context = {
+    async newCDPSession() {
+      return {
+        async send() {
+          return { targetInfo: { targetId: options.targetId } };
+        },
+        async detach() {
+          return undefined;
+        },
+      };
+    },
+  };
+
+  return {
+    async goto(url: string) {
+      currentUrl = url;
+    },
+    async title() {
+      return options.title ?? "Example Domain";
+    },
+    url() {
+      return currentUrl;
+    },
+    context() {
+      return context;
+    },
+    locator() {
+      return {
+        async ariaSnapshot() {
+          return options.ariaSnapshot ?? "document";
+        },
+        async innerText() {
+          return "Example body text";
+        },
+      };
+    },
+    async evaluate() {
+      return options.refs ?? [];
+    },
+    keyboard: {
+      async press() {
+        return undefined;
+      },
+    },
+  };
+}
+
 describe("P5.7-R7A: browser runner", () => {
-  const originalFetch = globalThis.fetch;
-  const originalBaseUrl = process.env.PINCHTAB_BASE_URL;
-  const originalToken = process.env.PINCHTAB_TOKEN;
+  const originalWorkspaceRoot = process.env.WORKSPACE_ROOT;
+  let tempWorkspaceRoot = "";
 
-  beforeEach(() => {
-    process.env.PINCHTAB_BASE_URL = "http://127.0.0.1:9988";
-    process.env.PINCHTAB_TOKEN = "runner-test-token";
+  beforeEach(async () => {
+    tempWorkspaceRoot = await mkdtemp(join(tmpdir(), "msgcode-browser-runner-"));
+    process.env.WORKSPACE_ROOT = tempWorkspaceRoot;
   });
 
-  afterEach(() => {
-    globalThis.fetch = originalFetch;
-    if (originalBaseUrl === undefined) {
-      delete process.env.PINCHTAB_BASE_URL;
+  afterEach(async () => {
+    __setBrowserPatchrightTestDeps({
+      fetchImpl: fetch,
+      resolvePatchright: () => {
+        throw new Error("patchright dependency is not installed");
+      },
+    });
+
+    if (originalWorkspaceRoot === undefined) {
+      delete process.env.WORKSPACE_ROOT;
     } else {
-      process.env.PINCHTAB_BASE_URL = originalBaseUrl;
+      process.env.WORKSPACE_ROOT = originalWorkspaceRoot;
     }
-    if (originalToken === undefined) {
-      delete process.env.PINCHTAB_TOKEN;
-    } else {
-      process.env.PINCHTAB_TOKEN = originalToken;
+
+    if (tempWorkspaceRoot) {
+      await rm(tempWorkspaceRoot, { recursive: true, force: true });
     }
   });
 
-  it("profiles.list 应该请求 GET /profiles", async () => {
-    const requests: Array<{ url: string; method: string; auth?: string }> = [];
+  it("instances.launch 应拉起共享工作 Chrome 并返回 chrome:<rootName>:<port>", async () => {
+    let fetchCalls = 0;
+    const spawns: Array<{ command: string; args: string[] }> = [];
 
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      requests.push({
-        url,
-        method: init?.method ?? "GET",
-        auth: init?.headers instanceof Headers
-          ? init.headers.get("Authorization") ?? undefined
-          : (init?.headers as Record<string, string> | undefined)?.Authorization,
-      });
-      if (url.endsWith("/health")) {
-        return jsonResponse({ status: "ok", mode: "dashboard" });
-      }
-      return jsonResponse([{ id: "prof_1", name: "work" }]);
-    }) as typeof globalThis.fetch;
-
-    const result = await executeBrowserOperation({ operation: "profiles.list" });
-
-    expect(result.operation).toBe("profiles.list");
-    expect(result.data.profiles).toEqual([{ id: "prof_1", name: "work" }]);
-    expect(requests).toHaveLength(2);
-    expect(requests[0].url).toBe("http://127.0.0.1:9988/health");
-    expect(requests[1].url).toBe("http://127.0.0.1:9988/profiles");
-    expect(requests[1].method).toBe("GET");
-    expect(requests[1].auth).toBe("Bearer runner-test-token");
-  });
-
-  it("instances.launch 应该请求 POST /instances/launch 并透传 mode/profileId", async () => {
-    const requests: Array<{ url: string; method: string; body?: string }> = [];
-
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      requests.push({
-        url,
-        method: init?.method ?? "GET",
-        body: typeof init?.body === "string" ? init.body : undefined,
-      });
-      if (url.endsWith("/health")) {
-        return jsonResponse({ status: "ok", mode: "dashboard" });
-      }
-      return jsonResponse({
-        id: "inst_1",
-        profileId: "prof_1",
-        profileName: "work",
-        port: "9868",
-        headless: true,
-        status: "starting",
-      });
-    }) as typeof globalThis.fetch;
+    __setBrowserPatchrightTestDeps({
+      fetchImpl: (async () => {
+        fetchCalls += 1;
+        if (fetchCalls === 1) {
+          throw new Error("connect ECONNREFUSED");
+        }
+        return jsonResponse({ webSocketDebuggerUrl: "ws://127.0.0.1:9333/devtools/browser/test" });
+      }) as typeof fetch,
+      spawnProcess: ((command, args) => {
+        spawns.push({ command, args });
+        return {
+          pid: 4321,
+          unref() {
+            return undefined;
+          },
+        } as any;
+      }) as any,
+    });
 
     const result = await executeBrowserOperation({
       operation: "instances.launch",
-      profileId: "prof_1",
+      rootName: "work-default",
+      port: 9333,
       mode: "headless",
     });
 
-    expect(result.data.id).toBe("inst_1");
-    expect(requests).toHaveLength(2);
-    expect(requests[0].url).toBe("http://127.0.0.1:9988/health");
-    expect(requests[1].url).toBe("http://127.0.0.1:9988/instances/launch");
-    expect(requests[1].method).toBe("POST");
-    expect(JSON.parse(requests[1].body ?? "{}")).toEqual({
-      profileId: "prof_1",
-      mode: "headless",
-    });
+    expect(result.data.id).toBe("chrome:work-default:9333");
+    expect(result.data.rootName).toBe("work-default");
+    expect(result.data.port).toBe("9333");
+    expect(result.data.headless).toBe(true);
+    expect(spawns).toHaveLength(1);
+    expect(spawns[0].args).toContain("--remote-debugging-port=9333");
+    expect(spawns[0].args).toContain(`--user-data-dir=${join(tempWorkspaceRoot, ".msgcode", "chrome-profiles", "work-default")}`);
   });
 
   it("tabs.open 缺少 instanceId 时应自动 launch 默认实例后继续打开", async () => {
-    const requests: Array<{ url: string; method: string; body?: string }> = [];
+    let fetchCalls = 0;
+    const page = createPageStub({
+      targetId: "target_auto_1",
+      title: "GitHub",
+      url: "https://github.com/",
+    });
 
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      requests.push({
-        url,
-        method: init?.method ?? "GET",
-        body: typeof init?.body === "string" ? init.body : undefined,
-      });
-      if (url.endsWith("/health")) {
-        return jsonResponse({ status: "ok", mode: "dashboard" });
-      }
-      if (url.endsWith("/instances/launch")) {
-        return jsonResponse({
-          id: "inst_auto_1",
-          profileId: "default",
-          profileName: "default",
-          port: "9999",
-          headless: true,
-          status: "running",
-        });
-      }
-      return jsonResponse({
-        tabId: "tab_auto_1",
-        url: "https://github.com/",
-      });
-    }) as typeof globalThis.fetch;
+    __setBrowserPatchrightTestDeps({
+      fetchImpl: (async () => {
+        fetchCalls += 1;
+        if (fetchCalls === 1) {
+          throw new Error("connect ECONNREFUSED");
+        }
+        return jsonResponse({ webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/test" });
+      }) as typeof fetch,
+      spawnProcess: ((command, args) => {
+        return {
+          pid: 1234,
+          unref() {
+            return undefined;
+          },
+        } as any;
+      }) as any,
+      resolvePatchright: () => ({
+        async connectOverCDP() {
+          return {
+            contexts() {
+              return [{
+                pages() {
+                  return [];
+                },
+                async newPage() {
+                  return page;
+                },
+              }];
+            },
+            async close() {
+              return undefined;
+            },
+          };
+        },
+      }),
+    });
 
     const result = await executeBrowserOperation({
       operation: "tabs.open",
       url: "https://github.com/",
-    });
-
-    expect(result.data.instanceId).toBe("inst_auto_1");
-    expect(result.data.autoLaunched).toBe(true);
-    expect(result.data.tabId).toBe("tab_auto_1");
-    expect(requests).toHaveLength(3);
-    expect(requests[0].url).toBe("http://127.0.0.1:9988/health");
-    expect(requests[1].url).toBe("http://127.0.0.1:9988/instances/launch");
-    expect(requests[1].method).toBe("POST");
-    expect(JSON.parse(requests[1].body ?? "{}")).toEqual({
       mode: "headless",
     });
-    expect(requests[2].url).toBe("http://127.0.0.1:9988/instances/inst_auto_1/tabs/open");
-    expect(requests[2].method).toBe("POST");
-    expect(JSON.parse(requests[2].body ?? "{}")).toEqual({
-      url: "https://github.com/",
-    });
+
+    expect(result.data.instanceId).toBe("chrome:work-default:9222");
+    expect(result.data.autoLaunched).toBe(true);
+    expect(result.data.tabId).toBe("target_auto_1");
+    expect(result.data.title).toBe("GitHub");
   });
 
-  it("tabs.open 收到不存在的 profileId 时应忽略它并退回默认 launch", async () => {
-    const requests: Array<{ url: string; method: string; body?: string }> = [];
-
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      const url = String(input);
-      requests.push({
-        url,
-        method: init?.method ?? "GET",
-        body: typeof init?.body === "string" ? init.body : undefined,
-      });
-      if (url.endsWith("/health")) {
-        return jsonResponse({ status: "ok", mode: "dashboard" });
-      }
-      if (url.endsWith("/profiles")) {
-        return jsonResponse([{ id: "prof_real_1", name: "real-profile" }]);
-      }
-      if (url.endsWith("/instances/launch")) {
-        return jsonResponse({
-          id: "inst_auto_2",
-          profileId: "prof_real_1",
-          profileName: "real-profile",
-          port: "9998",
-          headless: true,
-          status: "running",
-        });
-      }
-      return jsonResponse({
-        tabId: "tab_auto_2",
-        url: "https://github.com/",
-      });
-    }) as typeof globalThis.fetch;
-
-    const result = await executeBrowserOperation({
-      operation: "tabs.open",
-      url: "https://github.com/",
-      profileId: "work-default",
+  it("tabs.snapshot 应返回 ariaSnapshot 与无状态 ref", async () => {
+    const page = createPageStub({
+      targetId: "target_snapshot_1",
+      ariaSnapshot: "document\n  button \"Submit\"",
+      refs: [
+        {
+          role: "button",
+          name: "Submit",
+          index: 0,
+          ref: "{\"role\":\"button\",\"name\":\"Submit\",\"index\":0}",
+          tag: "button",
+          text: "Submit",
+        },
+      ],
     });
 
-    expect(result.data.instanceId).toBe("inst_auto_2");
-    expect(result.data.autoLaunched).toBe(true);
-    expect(result.data.tabId).toBe("tab_auto_2");
-    expect(requests).toHaveLength(4);
-    expect(requests[0].url).toBe("http://127.0.0.1:9988/health");
-    expect(requests[1].url).toBe("http://127.0.0.1:9988/profiles");
-    expect(requests[2].url).toBe("http://127.0.0.1:9988/instances/launch");
-    expect(JSON.parse(requests[2].body ?? "{}")).toEqual({
+    let fetchCalls = 0;
+    __setBrowserPatchrightTestDeps({
+      fetchImpl: (async () => {
+        fetchCalls += 1;
+        return jsonResponse({ webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/test" });
+      }) as typeof fetch,
+      spawnProcess: ((command, args) => {
+        return {
+          pid: 5678,
+          unref() {
+            return undefined;
+          },
+        } as any;
+      }) as any,
+      resolvePatchright: () => ({
+        async connectOverCDP() {
+          return {
+            contexts() {
+              return [{
+                pages() {
+                  return [page];
+                },
+                async newPage() {
+                  return page;
+                },
+              }];
+            },
+            async close() {
+              return undefined;
+            },
+          };
+        },
+      }),
+    });
+
+    await executeBrowserOperation({
+      operation: "instances.launch",
+      rootName: "work-default",
       mode: "headless",
     });
-    expect(requests[3].url).toBe("http://127.0.0.1:9988/instances/inst_auto_2/tabs/open");
-  });
-
-  it("tabs.snapshot 应该请求 GET /tabs/{id}/snapshot 并返回文本", async () => {
-    const requests: string[] = [];
-
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
-      requests.push(String(input));
-      return new Response("# Example Domain", {
-        status: 200,
-        headers: { "Content-Type": "text/plain; charset=utf-8" },
-      });
-    }) as typeof globalThis.fetch;
 
     const result = await executeBrowserOperation({
       operation: "tabs.snapshot",
-      tabId: "tab_123",
+      tabId: "target_snapshot_1",
       interactive: true,
-      compact: true,
+      compact: false,
     });
 
-    expect(result.data.snapshot).toBe("# Example Domain");
-    expect(requests[0]).toBe(
-      "http://127.0.0.1:9988/tabs/tab_123/snapshot?filter=interactive&format=compact"
-    );
+    expect(result.data.tabId).toBe("target_snapshot_1");
+    expect(String(result.data.snapshot)).toContain("button \"Submit\"");
+    expect(String(result.data.snapshot)).toContain("{\"role\":\"button\",\"name\":\"Submit\",\"index\":0}");
+    expect(Array.isArray(result.data.refs)).toBe(true);
   });
 
-  it("tabs.eval 应该请求 POST /tabs/{id}/evaluate", async () => {
-    const requests: Array<{ url: string; method: string; body?: string }> = [];
-
-    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      requests.push({
-        url: String(input),
-        method: init?.method ?? "GET",
-        body: typeof init?.body === "string" ? init.body : undefined,
-      });
-      return jsonResponse({ result: "https://example.com/" });
-    }) as typeof globalThis.fetch;
-
-    const result = await executeBrowserOperation({
-      operation: "tabs.eval",
-      tabId: "tab_abc",
-      expression: "location.href",
-    });
-
-    expect(result.data.result).toBe("https://example.com/");
-    expect(requests[0].url).toBe("http://127.0.0.1:9988/tabs/tab_abc/evaluate");
-    expect(requests[0].method).toBe("POST");
-    expect(JSON.parse(requests[0].body ?? "{}")).toEqual({
-      expression: "location.href",
-    });
-  });
-
-  it("tab not found 应该归类为 BROWSER_TAB_NOT_FOUND", async () => {
-    globalThis.fetch = (async () => {
-      return jsonResponse(
-        { code: "error", error: "tab tab_missing not found" },
-        404
-      );
-    }) as typeof globalThis.fetch;
-
+  it("无效 instanceId 应返回 BROWSER_BAD_ARGS", async () => {
     await expect(
       executeBrowserOperation({
-        operation: "tabs.text",
-        tabId: "tab_missing",
+        operation: "instances.stop",
+        instanceId: "bad-instance-id",
       })
     ).rejects.toMatchObject<Partial<BrowserCommandError>>({
-      code: BROWSER_ERROR_CODES.TAB_NOT_FOUND,
+      code: BROWSER_ERROR_CODES.BAD_ARGS,
     });
-  });
-
-  it("fetch 异常应归类为 BROWSER_PINCHTAB_UNAVAILABLE", async () => {
-    globalThis.fetch = (async () => {
-      throw new Error("connect ECONNREFUSED 127.0.0.1:9988");
-    }) as typeof globalThis.fetch;
-
-    await expect(
-      executeBrowserOperation({ operation: "health" })
-    ).rejects.toMatchObject<Partial<BrowserCommandError>>({
-      code: BROWSER_ERROR_CODES.PINCHTAB_UNAVAILABLE,
-    });
-  });
-
-  it("AbortError 应归类为 BROWSER_TIMEOUT", async () => {
-    globalThis.fetch = (async () => {
-      const abortError = new Error("request aborted");
-      abortError.name = "AbortError";
-      throw abortError;
-    }) as typeof globalThis.fetch;
-
-    await expect(
-      executeBrowserOperation({ operation: "tabs.text", tabId: "tab_slow", timeoutMs: 1234 })
-    ).rejects.toMatchObject<Partial<BrowserCommandError>>({
-      code: BROWSER_ERROR_CODES.TIMEOUT,
-      message: "request timed out after 1234ms",
-    });
-  });
-
-  it("management operation 在实例 URL 上应返回 BROWSER_ORCHESTRATOR_URL_REQUIRED", async () => {
-    const requests: string[] = [];
-
-    globalThis.fetch = (async (input: RequestInfo | URL) => {
-      requests.push(String(input));
-      return jsonResponse({ status: "ok", tabs: 1, cdp: "" });
-    }) as typeof globalThis.fetch;
-
-    await expect(
-      executeBrowserOperation({ operation: "profiles.list" })
-    ).rejects.toMatchObject<Partial<BrowserCommandError>>({
-      code: BROWSER_ERROR_CODES.ORCHESTRATOR_URL_REQUIRED,
-    });
-
-    expect(requests).toEqual(["http://127.0.0.1:9988/health"]);
   });
 });

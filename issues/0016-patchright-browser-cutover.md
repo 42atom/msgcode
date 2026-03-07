@@ -1,7 +1,7 @@
 ---
 id: 0016
 title: Patchright 浏览器底座切换（Chrome-as-State）
-status: open
+status: done
 owner: agent
 labels: [feature, refactor, browser]
 risk: high
@@ -37,12 +37,12 @@ due:
 
 ## Plan
 
-- [ ] 创建并评审 Phase B Plan：`docs/design/plan-260307-patchright-browser-cutover.md`
-- [ ] 新增 Patchright runner，替换 PinchTab runner
-- [ ] 重写 browser CLI / gmail readonly / tool bus 接线
-- [ ] 更新启动链与 prompt 口径
-- [ ] 更新 browser manifest、tests 与 docs
-- [ ] 移除 PinchTab 专属 runtime 暴露
+- [x] 创建并评审 Phase B Plan：`docs/design/plan-260307-patchright-browser-cutover.md`
+- [x] 新增 Patchright runner，替换 PinchTab runner
+- [x] 重写 browser CLI / gmail readonly / tool bus 接线
+- [x] 更新启动链与 prompt 口径
+- [x] 更新 browser manifest、tests 与 docs
+- [x] 移除 PinchTab 专属 runtime 暴露
 
 ## Acceptance Criteria
 
@@ -55,6 +55,29 @@ due:
 ## Notes
 
 - Phase A 报告：`docs/notes/research-260307-patchright-phase-a.md`
+- Code：
+  - `src/runners/browser-patchright.ts`
+  - `src/cli/browser.ts`
+  - `src/tools/bus.ts`
+  - `src/agent-backend/tool-loop.ts`
+  - `prompts/agents-prompt.md`
+  - `src/skills/runtime/patchright-browser/`
+- Tests：
+  - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r13-runtime-skill-sync.test.ts test/p5-7-r7a-browser-runner.test.ts test/p5-7-r7a-browser-contract.test.ts test/p5-7-r7b-gmail-readonly.test.ts test/p5-7-r8c-llm-tool-manifest-single-source.test.ts test/p5-7-r9-t2-skill-global-single-source.test.ts test/p5-7-r13-pinchtab-bootstrap.test.ts`
+  - 结果：36 pass, 0 fail
+- Smoke：
+  - `./bin/msgcode browser instances launch --mode headless --root-name smoke-cutover --port 9333 --json`
+  - `./bin/msgcode browser tabs open --instance-id chrome:smoke-cutover:9333 --url https://example.com --json`
+  - `./bin/msgcode browser snapshot --tab-id EBF7E24EA19B2C22B844A755E86C0220 --compact --json`
+  - `./bin/msgcode browser action --tab-id EBF7E24EA19B2C22B844A755E86C0220 --kind click --ref '{"role":"link","name":"Learn more","index":0}' --json`
+  - `./bin/msgcode browser instances stop --instance-id chrome:smoke-cutover:9333 --json`
+  - 结果：launch/open/snapshot/click/stop 全部 `status=pass`
+- Restart：
+  - `./bin/msgcode restart`
+  - `/Users/admin/.config/msgcode/log/msgcode.log` 出现：`共享工作 Chrome 根目录已就绪`
+- TypeScript：
+  - `PATH="$HOME/.bun/bin:$PATH" bun x tsc --noEmit`
+  - 当前仍被仓库既有问题阻塞：`src/feishu/transport.ts` 与 `src/routes/cmd-model.ts`
 
 ## Links
 

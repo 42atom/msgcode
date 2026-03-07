@@ -29,6 +29,8 @@ interface SkillIndexFile {
   skills: SkillIndexEntry[];
 }
 
+const RETIRED_MANAGED_SKILL_IDS = new Set(["pinchtab-browser"]);
+
 export interface RuntimeSkillSyncOptions {
   overwrite?: boolean;
   sourceDir?: string;
@@ -78,6 +80,9 @@ async function copyDirectoryRecursive(
 
   for (const entry of entries) {
     if (entry.name === "index.json") {
+      continue;
+    }
+    if (entry.isDirectory() && RETIRED_MANAGED_SKILL_IDS.has(entry.name)) {
       continue;
     }
 
@@ -131,6 +136,9 @@ function mergeSkillIndexes(
 
   for (const skill of existing?.skills ?? []) {
     if (skill && typeof skill.id === "string" && skill.id.trim()) {
+      if (RETIRED_MANAGED_SKILL_IDS.has(skill.id)) {
+        continue;
+      }
       merged.set(skill.id, skill);
     }
   }

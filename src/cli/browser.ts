@@ -2,7 +2,7 @@
  * msgcode: Browser CLI 命令（P5.7-R7A）
  *
  * 约束：
- * - 只走 PinchTab HTTP API
+ * - 只走 Patchright + connectOverCDP
  * - 所有操作显式使用 instanceId/tabId
  * - 不内置站点业务流程
  */
@@ -15,7 +15,7 @@ import {
   BrowserCommandError,
   executeBrowserOperation,
   type BrowserOperation,
-} from "../runners/browser-pinchtab.js";
+} from "../runners/browser-patchright.js";
 import {
   GMAIL_ERROR_CODES,
   GmailReadonlyError,
@@ -222,7 +222,7 @@ function createInstancesLaunchCommand(): Command {
   cmd
     .description("启动 browser instance")
     .option("--mode <mode>", "运行模式：headed|headless", "headless")
-    .option("--profile-id <id>", "显式 profileId")
+    .option("--root-name <name>", "显式 Chrome rootName", "work-default")
     .option("--port <port>", "显式绑定端口")
     .option("--json", "JSON 格式输出")
     .action(async (options) => {
@@ -232,7 +232,7 @@ function createInstancesLaunchCommand(): Command {
         "instances.launch",
         {
           mode: options.mode,
-          profileId: options.profileId,
+          rootName: options.rootName,
           port: options.port,
         },
         (data) => JSON.stringify(data, null, 2)
@@ -269,7 +269,7 @@ function createTabsOpenCommand(): Command {
 
   cmd
     .description("在指定 instance 中打开 tab")
-    .requiredOption("--instance-id <id>", "显式 instanceId")
+    .option("--instance-id <id>", "显式 instanceId")
     .requiredOption("--url <url>", "目标 URL")
     .option("--json", "JSON 格式输出")
     .action(async (options) => {
@@ -417,7 +417,7 @@ function createGmailReadonlyCommand(): Command {
 
   cmd
     .description("Gmail 收件箱只读摘要验收")
-    .requiredOption("--profile-id <id>", "显式 Gmail profileId")
+    .option("--root-name <name>", "显式 Gmail Chrome rootName", "work-default")
     .option("--mode <mode>", "运行模式：headed|headless", "headless")
     .option("--timezone <tz>", "日期解释时区", "Asia/Singapore")
     .option("--keep-open", "执行后不自动停止实例")
@@ -430,7 +430,7 @@ function createGmailReadonlyCommand(): Command {
 
       try {
         const result = await runGmailReadonlyAcceptance({
-          profileId: options.profileId,
+          rootName: options.rootName,
           mode: options.mode,
           timezone: options.timezone,
           cleanup: !options.keepOpen,
@@ -495,7 +495,7 @@ export function createBrowserCommand(): Command {
   const instances = new Command("instances");
   const tabs = new Command("tabs");
 
-  cmd.description("Browser Core（PinchTab HTTP API）");
+  cmd.description("Browser Core（Patchright + Chrome-as-State）");
 
   profiles.description("browser profile 操作");
   profiles.addCommand(createProfilesListCommand());
@@ -523,9 +523,8 @@ export function createBrowserCommand(): Command {
 }
 
 const COMMON_BROWSER_ERRORS = [
-  BROWSER_ERROR_CODES.AUTH_FAILED,
   BROWSER_ERROR_CODES.HTTP_ERROR,
-  BROWSER_ERROR_CODES.PINCHTAB_UNAVAILABLE,
+  BROWSER_ERROR_CODES.RUNTIME_UNAVAILABLE,
   BROWSER_ERROR_CODES.TIMEOUT,
 ];
 
@@ -561,10 +560,9 @@ export function getBrowserCommandContracts() {
       name: "msgcode browser gmail-readonly",
       description: "Gmail 收件箱只读摘要验收",
       options: {
-        required: {
-          "--profile-id": "显式 Gmail profileId",
-        },
+        required: {},
         optional: {
+          "--root-name": "显式 Gmail Chrome rootName（默认 work-default）",
           "--mode": "运行模式：headed|headless",
           "--timezone": "日期解释时区",
           "--keep-open": "执行后不自动停止实例",
@@ -572,7 +570,7 @@ export function getBrowserCommandContracts() {
         },
       },
       output: {
-        profileId: "显式 profileId",
+        rootName: "显式 Chrome rootName",
         instanceId: "显式 instanceId",
         tabId: "显式 tabId",
         count: "今日邮件数量",
@@ -586,7 +584,6 @@ export function getBrowserCommandContracts() {
         GMAIL_ERROR_CODES.SITE_CHANGED,
         GMAIL_ERROR_CODES.EXTRACTION_FAILED,
         BROWSER_ERROR_CODES.TIMEOUT,
-        BROWSER_ERROR_CODES.ORCHESTRATOR_URL_REQUIRED,
         ...COMMON_BROWSER_ERRORS,
       ],
     },
@@ -600,11 +597,10 @@ export function getBrowserCommandContracts() {
         },
       },
       output: {
-        profiles: "profile 数组",
+        profiles: "Chrome root 数组",
       },
       errorCodes: [
         BROWSER_ERROR_CODES.OK,
-        BROWSER_ERROR_CODES.ORCHESTRATOR_URL_REQUIRED,
         ...COMMON_BROWSER_ERRORS,
       ],
     },
@@ -622,7 +618,6 @@ export function getBrowserCommandContracts() {
       },
       errorCodes: [
         BROWSER_ERROR_CODES.OK,
-        BROWSER_ERROR_CODES.ORCHESTRATOR_URL_REQUIRED,
         ...COMMON_BROWSER_ERRORS,
       ],
     },
@@ -633,22 +628,20 @@ export function getBrowserCommandContracts() {
         required: {},
         optional: {
           "--mode": "运行模式：headed|headless",
-          "--profile-id": "显式 profileId",
+          "--root-name": "显式 Chrome rootName",
           "--port": "显式绑定端口",
           "--json": "JSON 格式输出",
         },
       },
       output: {
         id: "instanceId",
-        profileId: "profileId",
+        rootName: "Chrome rootName",
         port: "实例端口",
         status: "实例状态",
       },
       errorCodes: [
         BROWSER_ERROR_CODES.OK,
         BROWSER_ERROR_CODES.BAD_ARGS,
-        BROWSER_ERROR_CODES.PROFILE_BUSY,
-        BROWSER_ERROR_CODES.ORCHESTRATOR_URL_REQUIRED,
         ...COMMON_BROWSER_ERRORS,
       ],
     },
@@ -671,7 +664,6 @@ export function getBrowserCommandContracts() {
         BROWSER_ERROR_CODES.OK,
         BROWSER_ERROR_CODES.BAD_ARGS,
         BROWSER_ERROR_CODES.INSTANCE_NOT_FOUND,
-        BROWSER_ERROR_CODES.ORCHESTRATOR_URL_REQUIRED,
         ...COMMON_BROWSER_ERRORS,
       ],
     },
@@ -680,10 +672,10 @@ export function getBrowserCommandContracts() {
       description: "在指定 instance 中打开 tab",
       options: {
         required: {
-          "--instance-id": "显式 instanceId",
           "--url": "目标 URL",
         },
         optional: {
+          "--instance-id": "显式 instanceId（可省略，系统会自动拉起默认实例）",
           "--json": "JSON 格式输出",
         },
       },
@@ -696,7 +688,6 @@ export function getBrowserCommandContracts() {
         BROWSER_ERROR_CODES.OK,
         BROWSER_ERROR_CODES.BAD_ARGS,
         BROWSER_ERROR_CODES.INSTANCE_NOT_FOUND,
-        BROWSER_ERROR_CODES.ORCHESTRATOR_URL_REQUIRED,
         ...COMMON_BROWSER_ERRORS,
       ],
     },
@@ -718,7 +709,6 @@ export function getBrowserCommandContracts() {
         BROWSER_ERROR_CODES.OK,
         BROWSER_ERROR_CODES.BAD_ARGS,
         BROWSER_ERROR_CODES.INSTANCE_NOT_FOUND,
-        BROWSER_ERROR_CODES.ORCHESTRATOR_URL_REQUIRED,
         ...COMMON_BROWSER_ERRORS,
       ],
     },
@@ -745,6 +735,7 @@ export function getBrowserCommandContracts() {
         BROWSER_ERROR_CODES.OK,
         BROWSER_ERROR_CODES.BAD_ARGS,
         BROWSER_ERROR_CODES.TAB_NOT_FOUND,
+        BROWSER_ERROR_CODES.REF_NOT_FOUND,
         ...COMMON_BROWSER_ERRORS,
       ],
     },

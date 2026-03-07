@@ -416,17 +416,16 @@ export async function startBot(): Promise<void> {
   }
 
   try {
-    const { ensurePinchtabReady } = await import("./browser/pinchtab-runtime.js");
-    const pinchtab = await ensurePinchtabReady();
-    logger.info("PinchTab 已就绪", {
+    const { ensureChromeRoot } = await import("./browser/chrome-root.js");
+    const chrome = await ensureChromeRoot();
+    logger.info("共享工作 Chrome 根目录已就绪", {
       module: "commands",
-      baseUrl: pinchtab.baseUrl,
-      binaryPath: pinchtab.binaryPath,
-      startedByMsgcode: pinchtab.startedByMsgcode,
-      isLocal: pinchtab.isLocal,
+      chromeRoot: chrome.chromeRoot,
+      profilesRoot: chrome.profilesRoot,
+      remoteDebuggingPort: chrome.remoteDebuggingPort,
     });
   } catch (error) {
-    logger.warn("PinchTab 预启动失败，browser 主链暂不可用", {
+    logger.warn("共享工作 Chrome 根目录初始化失败，browser 主链暂不可用", {
       module: "commands",
       error: error instanceof Error ? error.message : String(error),
     });

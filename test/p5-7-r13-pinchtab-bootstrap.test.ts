@@ -1,104 +1,54 @@
 /**
- * msgcode: P5.7-R13 PinchTab 预启动回归锁
+ * msgcode: P5.7-R13 browser bootstrap 回归锁
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { chmodSync, mkdirSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { randomUUID } from "node:crypto";
-import {
-  ensurePinchtabReady,
-  PinchtabBootstrapError,
-} from "../src/browser/pinchtab-runtime.js";
+import { ensureChromeRoot, getChromeRootInfo } from "../src/browser/chrome-root.js";
 
-function jsonResponse(data: unknown, status = 200): Response {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
+describe("P5.7-R13: browser bootstrap", () => {
+  const originalWorkspaceRoot = process.env.WORKSPACE_ROOT;
+  let tempWorkspaceRoot = "";
 
-describe("P5.7-R13: pinchtab bootstrap", () => {
-  const originalBaseUrl = process.env.PINCHTAB_BASE_URL;
-  const originalBinaryPath = process.env.PINCHTAB_BINARY_PATH;
-  let tempDir = "";
-
-  beforeEach(() => {
-    tempDir = join(tmpdir(), `msgcode-pinchtab-${randomUUID()}`);
-    mkdirSync(tempDir, { recursive: true });
+  beforeEach(async () => {
+    tempWorkspaceRoot = await mkdtemp(join(tmpdir(), "msgcode-browser-bootstrap-"));
+    process.env.WORKSPACE_ROOT = tempWorkspaceRoot;
   });
 
-  afterEach(() => {
-    if (originalBaseUrl === undefined) {
-      delete process.env.PINCHTAB_BASE_URL;
+  afterEach(async () => {
+    if (originalWorkspaceRoot === undefined) {
+      delete process.env.WORKSPACE_ROOT;
     } else {
-      process.env.PINCHTAB_BASE_URL = originalBaseUrl;
+      process.env.WORKSPACE_ROOT = originalWorkspaceRoot;
     }
-    if (originalBinaryPath === undefined) {
-      delete process.env.PINCHTAB_BINARY_PATH;
-    } else {
-      process.env.PINCHTAB_BINARY_PATH = originalBinaryPath;
-    }
-    if (tempDir && existsSync(tempDir)) {
-      rmSync(tempDir, { recursive: true, force: true });
+
+    if (tempWorkspaceRoot) {
+      await rm(tempWorkspaceRoot, { recursive: true, force: true });
     }
   });
 
-  it("本地 orchestrator 未启动时应自动拉起 PinchTab", async () => {
-    const binaryPath = join(tempDir, "pinchtab-test");
-    writeFileSync(binaryPath, "#!/bin/sh\nexit 0\n", "utf-8");
-    chmodSync(binaryPath, 0o755);
-
-    process.env.PINCHTAB_BASE_URL = "http://127.0.0.1:9987";
-    process.env.PINCHTAB_BINARY_PATH = binaryPath;
-
-    let healthCalls = 0;
-    const spawns: Array<{ command: string; args: string[] }> = [];
-
-    const result = await ensurePinchtabReady({
-      timeoutMs: 1200,
-      fetchImpl: (async () => {
-        healthCalls += 1;
-        if (healthCalls < 3) {
-          throw new Error("connect ECONNREFUSED 127.0.0.1:9987");
-        }
-        return jsonResponse({ status: "ok", mode: "dashboard" });
-      }) as typeof fetch,
-      spawnProcess: ((command, args) => {
-        spawns.push({ command, args });
-        return { unref() {} } as any;
-      }) as NonNullable<Parameters<typeof ensurePinchtabReady>[0]>["spawnProcess"],
+  it("应初始化共享工作 Chrome 根目录并保持 launchCommand 合同", async () => {
+    const info = await ensureChromeRoot({
+      name: "work-default",
+      port: 9222,
     });
 
-    expect(result.startedByMsgcode).toBe(true);
-    expect(result.baseUrl).toBe("http://127.0.0.1:9987");
-    expect(spawns).toHaveLength(1);
-    expect(spawns[0]).toEqual({
-      command: binaryPath,
-      args: ["serve", "--port=9987"],
-    });
+    expect(info.chromeRoot).toBe(join(tempWorkspaceRoot, ".msgcode", "chrome-profiles", "work-default"));
+    expect(info.launchCommand).toContain("--remote-debugging-port=9222");
+    expect(info.launchCommand).toContain(info.chromeRoot);
   });
 
-  it("远端 baseUrl 不应尝试本地拉起 PinchTab", async () => {
-    process.env.PINCHTAB_BASE_URL = "http://10.0.0.8:9867";
-    process.env.PINCHTAB_BINARY_PATH = join(tempDir, "does-not-matter");
+  it("getChromeRootInfo 不应暴露 PinchTab runtime 字段", async () => {
+    const info = getChromeRootInfo({
+      name: "work-default",
+      port: 9333,
+    }) as Record<string, unknown>;
 
-    let spawnCalled = false;
-
-    await expect(
-      ensurePinchtabReady({
-        timeoutMs: 500,
-        fetchImpl: (async () => {
-          throw new Error("connect ETIMEDOUT 10.0.0.8:9867");
-        }) as typeof fetch,
-        spawnProcess: ((..._args) => {
-          spawnCalled = true;
-          return { unref() {} } as any;
-        }) as NonNullable<Parameters<typeof ensurePinchtabReady>[0]>["spawnProcess"],
-      })
-    ).rejects.toBeInstanceOf(PinchtabBootstrapError);
-
-    expect(spawnCalled).toBe(false);
+    expect(info.chromeRoot).toBe(join(tempWorkspaceRoot, ".msgcode", "chrome-profiles", "work-default"));
+    expect(info.launchCommand).toContain("--remote-debugging-port=9333");
+    expect(info.baseUrl).toBeUndefined();
+    expect(info.binaryPath).toBeUndefined();
   });
 });

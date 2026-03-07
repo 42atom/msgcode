@@ -7,7 +7,7 @@ import { execSync } from "node:child_process";
 
 describe("P5.7-R7A: browser CLI 合同", () => {
   it("BROWSER 错误码应保持 BROWSER_ 前缀", async () => {
-    const { BROWSER_ERROR_CODES } = await import("../src/runners/browser-pinchtab.js");
+    const { BROWSER_ERROR_CODES } = await import("../src/runners/browser-patchright.js");
     const codes = Object.values(BROWSER_ERROR_CODES).filter((code) => code !== "OK");
 
     for (const code of codes) {
@@ -65,7 +65,7 @@ describe("P5.7-R7A: browser CLI 合同", () => {
     expect(action).toBeDefined();
     expect(action?.errorCodes).toContain("BROWSER_BAD_ARGS");
     expect(profiles).toBeDefined();
-    expect(profiles?.errorCodes).toContain("BROWSER_ORCHESTRATOR_URL_REQUIRED");
+    expect(profiles?.errorCodes).toContain("BROWSER_RUNTIME_UNAVAILABLE");
     expect(root).toBeDefined();
     expect(root?.errorCodes).toContain("BROWSER_ROOT_CREATE_FAILED");
   });
@@ -82,5 +82,6 @@ describe("P5.7-R7A: browser CLI 合同", () => {
     expect(output).toContain("snapshot");
     expect(output).toContain("eval");
     expect(output).toContain("root");
+    expect(output).toContain("Patchright");
   });
 });
