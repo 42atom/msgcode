@@ -24,6 +24,13 @@ import { selectModelByDegrade, getDegradeState } from "../slo-degrade.js";
 import { getToolsForLlm, runAgentToolLoop } from "./tool-loop.js";
 import { runLmStudioChat } from "./chat.js";
 
+function buildToolSequence(actionJournal: AgentRoutedChatResult["actionJournal"]): string {
+    return actionJournal
+        .filter((entry) => entry.phase === "act")
+        .map((entry) => `${entry.ok ? "ok" : "fail"}:${entry.tool}`)
+        .join(" -> ");
+}
+
 // ============================================
 // 主函数：runAgentRoutedChat
 // ============================================
@@ -207,6 +214,7 @@ export async function runAgentRoutedChat(options: AgentRoutedChatOptions): Promi
             model: usedModel,
             toolCallCount: toolLoopResult.toolCall ? 1 : 0,
             toolName: toolLoopResult.toolCall?.name,
+            toolSequence: buildToolSequence(toolLoopResult.actionJournal),
         });
 
         const summaryPrompt = `任务已完成。请总结执行结果：${toolLoopResult.answer}`;
@@ -345,6 +353,8 @@ export async function runAgentRoutedChat(options: AgentRoutedChatOptions): Promi
         temperature: usedTemperature,
         model: usedModel,
         toolCallCount: toolLoopResult.actionJournal.length,
+        toolName: toolLoopResult.toolCall?.name,
+        toolSequence: buildToolSequence(toolLoopResult.actionJournal),
         responseLength: toolLoopResult.answer.length,
     });
 

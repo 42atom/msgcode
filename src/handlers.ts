@@ -773,6 +773,10 @@ export class RuntimeRouterHandler implements CommandHandler {
                 // P5.6.2-R1: ToolLoop 观测字段
                 toolCallCount: routedResult.toolCall ? 1 : 0,
                 toolName: routedResult.toolCall?.name,
+                toolSequence: routedResult.actionJournal
+                    .filter((entry) => entry.phase === "act")
+                    .map((entry) => `${entry.ok ? "ok" : "fail"}:${entry.tool}`)
+                    .join(" -> "),
                 // P5.6.8-R4e: SOUL 注入观测字段
                 soulInjected: !!soulContext?.content,
                 soulSource: soulContext?.source || "none",

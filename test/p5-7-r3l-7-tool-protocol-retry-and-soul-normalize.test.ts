@@ -488,4 +488,54 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
             await rm(workspacePath, { recursive: true, force: true });
         }
     });
+
+    it("模型若调用本轮未暴露工具，应在执行前直接拒绝", async () => {
+        const originalFetch = globalThis.fetch;
+        const workspacePath = await createToolEnabledWorkspace();
+        let callCount = 0;
+
+        globalThis.fetch = (async () => {
+            callCount += 1;
+            return asJsonResponse({
+                choices: [{
+                    message: {
+                        role: "assistant",
+                        content: "",
+                        tool_calls: [{
+                            id: "call_unexpected_edit",
+                            type: "function",
+                            function: {
+                                name: "edit_file",
+                                arguments: JSON.stringify({
+                                    path: ".msgcode/toolcheck.txt",
+                                    oldText: "alpha",
+                                    newText: "beta",
+                                }),
+                            },
+                        }],
+                    },
+                    finish_reason: "tool_calls",
+                }],
+            });
+        }) as typeof fetch;
+
+        try {
+            const result = await runLmStudioToolLoop({
+                baseUrl: "http://127.0.0.1:1234",
+                model: "test-model",
+                prompt: "把 toolcheck.txt 里的 alpha 改成 beta",
+                workspacePath,
+                timeoutMs: 10_000,
+                backendRuntime: localOpenAiRuntime,
+            });
+
+            expect(callCount).toBe(1);
+            expect(result.answer).toContain("未暴露工具");
+            expect(result.answer).toContain("edit_file");
+            expect(result.actionJournal).toEqual([]);
+        } finally {
+            globalThis.fetch = originalFetch;
+            await rm(workspacePath, { recursive: true, force: true });
+        }
+    });
 });

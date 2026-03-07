@@ -145,6 +145,17 @@ describe("Tool Bus", () => {
       expect(gate.ok).toBe(true);
     });
 
+    test("旧工作区即使 allow 包含 edit_file，llm-tool-call 也不应允许执行它", async () => {
+      const gate = canExecuteTool(
+        { mode: "autonomous", allow: ["bash", "read_file", "edit_file"], requireConfirm: [] },
+        "edit_file",
+        "llm-tool-call"
+      );
+
+      expect(gate.ok).toBe(false);
+      expect(gate.code).toBe("TOOL_NOT_ALLOWED");
+    });
+
     test("应该读取默认配置为 autonomous（P5.5 测试期）", async () => {
       const policy = await getToolPolicy(tempWorkspace);
 

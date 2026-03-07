@@ -27,6 +27,7 @@ import {
 } from "../runners/browser-pinchtab.js";
 import { logger } from "../logger/index.js";
 import { recordToolEvent } from "./telemetry.js";
+import { filterDefaultLlmTools } from "./manifest.js";
 
 const TOOL_META: Record<ToolName, { sideEffect: SideEffectLevel }> = {
   tts: { sideEffect: "message-send" },
@@ -72,8 +73,12 @@ export function canExecuteTool(
   tool: ToolName,
   source: ToolSource
 ): { ok: boolean; code?: NonNullable<ToolResult["error"]>["code"]; message?: string } {
+  const effectiveAllow = source === "llm-tool-call"
+    ? filterDefaultLlmTools(policy.allow)
+    : policy.allow;
+
   // 检查工具是否在允许列表中
-  if (!policy.allow.includes(tool)) {
+  if (!effectiveAllow.includes(tool)) {
     return { ok: false, code: "TOOL_NOT_ALLOWED", message: `tool not allowed: ${tool}` };
   }
 

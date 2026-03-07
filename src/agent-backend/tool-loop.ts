@@ -461,6 +461,33 @@ function hasDisallowedPreferredToolMismatch(
     return calls.some((tc) => tc.function.name !== preferredToolName && (!bashFallbackAllowed || tc.function.name !== "bash"));
 }
 
+function findUnexpectedToolNames(
+    calls: ToolCall[],
+    activeToolNames: readonly string[]
+): string[] {
+    const allowed = new Set(activeToolNames);
+    const unexpected = new Set<string>();
+    for (const tc of calls) {
+        const name = tc.function?.name;
+        if (name && !allowed.has(name)) {
+            unexpected.add(name);
+        }
+    }
+    return [...unexpected];
+}
+
+function buildUnexpectedToolAnswer(
+    unexpectedToolNames: string[],
+    activeToolNames: readonly string[]
+): string {
+    return [
+        "工具协议失败：模型调用了本轮未暴露的工具",
+        `- 未暴露工具：${unexpectedToolNames.join(", ")}`,
+        `- 本轮允许工具：${activeToolNames.join(", ") || "<无>"}`,
+        "- 错误码：MODEL_PROTOCOL_FAILED",
+    ].join("\n");
+}
+
 function selectToolsByName(
     tools: readonly unknown[],
     toolName: string
@@ -879,6 +906,17 @@ async function runMiniMaxAnthropicToolLoop(params: {
         };
     }
 
+    const miniMaxActiveToolNames = params.activeToolSchemas
+        .map((tool) => getToolNameFromDef(tool) || "")
+        .filter(Boolean);
+    const initialUnexpectedToolNames = findUnexpectedToolNames(toolCalls, miniMaxActiveToolNames);
+    if (initialUnexpectedToolNames.length > 0) {
+        return {
+            answer: buildUnexpectedToolAnswer(initialUnexpectedToolNames, miniMaxActiveToolNames),
+            actionJournal: [],
+        };
+    }
+
     if (hasDisallowedPreferredToolMismatch(toolCalls, params.preferredToolName, bashFallbackAllowed)) {
         return {
             answer: `工具协议失败：模型未按要求调用工具\n- 期望工具：${params.preferredToolName}\n- 错误码：MODEL_PROTOCOL_FAILED\n\n请重试并明确要求调用正确工具。`,
@@ -892,6 +930,14 @@ async function runMiniMaxAnthropicToolLoop(params: {
     let finalAssistantContent = "";
 
     while (true) {
+        const unexpectedToolNames = findUnexpectedToolNames(currentToolCalls, miniMaxActiveToolNames);
+        if (unexpectedToolNames.length > 0) {
+            return {
+                answer: buildUnexpectedToolAnswer(unexpectedToolNames, miniMaxActiveToolNames),
+                actionJournal,
+            };
+        }
+
         if (currentToolCalls.length > params.perTurnToolCallLimit) {
             const isHardCapExceeded = currentToolCalls.length > HARD_CAP_TOOL_CALLS;
             const lastExecutedCall = executedToolCalls[executedToolCalls.length - 1];
@@ -1378,6 +1424,14 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
         };
     }
 
+    const initialUnexpectedToolNames = findUnexpectedToolNames(toolCalls, activeToolNames);
+    if (initialUnexpectedToolNames.length > 0) {
+        return {
+            answer: buildUnexpectedToolAnswer(initialUnexpectedToolNames, activeToolNames),
+            actionJournal: [],
+        };
+    }
+
     // 纠偏后仍不匹配：拒绝执行错误工具
     if (hasDisallowedPreferredToolMismatch(toolCalls, preferredToolName, bashFallbackAllowed)) {
         return {
@@ -1394,6 +1448,14 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     let finalAssistantContent = "";
 
     while (true) {
+        const unexpectedToolNames = findUnexpectedToolNames(currentToolCalls, activeToolNames);
+        if (unexpectedToolNames.length > 0) {
+            return {
+                answer: buildUnexpectedToolAnswer(unexpectedToolNames, activeToolNames),
+                actionJournal,
+            };
+        }
+
         // P5.7-R12-T8: 单轮工具调用数检查
         if (currentToolCalls.length > perTurnToolCallLimit) {
             // P5.7-R12-T8: 达到档位上限时，标记为可续跑（除非超过硬上限）
