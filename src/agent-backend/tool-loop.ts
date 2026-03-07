@@ -510,10 +510,19 @@ function selectToolsByName(
  * 不再使用 PI_ON_TOOLS 硬编码白名单
  */
 export async function getToolsForLlm(workspacePath?: string): Promise<ToolName[]> {
-    // P5.7-R15: skill 场景默认允许 read_file
-    // 当没有 workspace 配置时，至少允许读文件能力（skill 读取需要）
+    // P5.7-R15 + P5.7-R16: skill 场景默认暴露完整工具
+    // 当没有 workspace 配置时，暴露全部基础工具（skill 读取 + 后续执行需要）
     if (!workspacePath) {
-        return ["read_file"];
+        return filterDefaultLlmTools([
+            "read_file",
+            "bash",
+            "browser",
+            "mem",
+            "tts",
+            "asr",
+            "vision",
+            "desktop",
+        ]);
     }
     try {
         const { loadWorkspaceConfig } = await import("../config/workspace.js");
@@ -523,9 +532,18 @@ export async function getToolsForLlm(workspacePath?: string): Promise<ToolName[]
             ? cfg["pi.enabled"]
             : false;
         if (!piEnabled) {
-            // P5.7-R15: skill 场景默认允许 read_file
-            // 即使未启用 pi，也至少允许读文件能力（skill 读取需要）
-            return ["read_file"];
+            // P5.7-R15 + P5.7-R16: skill 场景默认暴露完整工具
+            // 即使未启用 pi，也允许 skill 读取 + 后续执行
+            return filterDefaultLlmTools([
+                "read_file",
+                "bash",
+                "browser",
+                "mem",
+                "tts",
+                "asr",
+                "vision",
+                "desktop",
+            ]);
         }
 
         // P5.7-R8c: 从单一真相源派生工具列表
