@@ -285,6 +285,36 @@ function asRecord(value: unknown): Record<string, unknown> {
   return {};
 }
 
+/**
+ * 对“打开网页”做最小 happy path 桥接：
+ * - 若调用方已显式提供 instanceId，则保持原协议
+ * - 若未提供，则自动拉起一个默认实例，再继续 open
+ */
+async function resolveInstanceIdForTabsOpen(
+  input: BrowserOperationInput
+): Promise<{ instanceId: string; autoLaunched: boolean }> {
+  if (typeof input.instanceId === "string" && input.instanceId.trim()) {
+    return { instanceId: input.instanceId.trim(), autoLaunched: false };
+  }
+
+  const mode = normalizeMode(input.mode ?? "headless");
+  const body: Record<string, unknown> = { mode };
+  if (typeof input.profileId === "string" && input.profileId.trim()) {
+    body.profileId = input.profileId.trim();
+  }
+  if (input.port !== undefined && String(input.port).trim()) {
+    body.port = String(input.port).trim();
+  }
+
+  const launched = await requestPinchtab<PinchtabInstance>("/instances/launch", {
+    method: "POST",
+    body,
+    timeoutMs: input.timeoutMs,
+  });
+  const instanceId = requireNonEmptyString(asRecord(launched).id, "instanceId");
+  return { instanceId, autoLaunched: true };
+}
+
 async function ensureOrchestratorBaseUrl(timeoutMs?: number): Promise<void> {
   try {
     await ensurePinchtabReady({ timeoutMs });
@@ -384,7 +414,7 @@ export async function executeBrowserOperation(
       };
     }
     case "tabs.open": {
-      const instanceId = requireNonEmptyString(input.instanceId, "instanceId");
+      const { instanceId, autoLaunched } = await resolveInstanceIdForTabsOpen(input);
       const url = requireNonEmptyString(input.url, "url");
       const opened = await requestPinchtab<Record<string, unknown>>(
         `/instances/${instanceId}/tabs/open`,
@@ -396,7 +426,11 @@ export async function executeBrowserOperation(
       );
       return {
         operation: input.operation,
-        data: asRecord(opened),
+        data: {
+          ...asRecord(opened),
+          instanceId,
+          autoLaunched,
+        },
       };
     }
     case "tabs.list": {

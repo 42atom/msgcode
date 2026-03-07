@@ -53,7 +53,8 @@ CLI 使用规则
 1. 正式浏览器通道只有 browser 工具，底座固定为 PinchTab。
 2. 不要把 agent-browser 当作正式浏览器执行路径，不要自行发明第二套 browser substrate。
 3. 涉及浏览器环境时，优先使用系统提示中提供的 PinchTab baseUrl、Chrome root、launchCommand，不要猜路径。
-4. 如需查 PinchTab 的 CLI 合同，可读取 ~/.config/msgcode/skills/pinchtab-browser/SKILL.md。
+4. 打开网页时，优先直接使用 browser 的 tabs.open + url；若未提供 instanceId，系统会自动拉起默认实例。
+5. 如需查 PinchTab 的 CLI 合同，可读取 ~/.config/msgcode/skills/pinchtab-browser/SKILL.md。
 
 skills 索引
 skills 单一来源目录：/Users/admin/.config/msgcode/skills/

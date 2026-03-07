@@ -114,6 +114,57 @@ describe("P5.7-R7A: browser runner", () => {
     });
   });
 
+  it("tabs.open 缺少 instanceId 时应自动 launch 默认实例后继续打开", async () => {
+    const requests: Array<{ url: string; method: string; body?: string }> = [];
+
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      requests.push({
+        url,
+        method: init?.method ?? "GET",
+        body: typeof init?.body === "string" ? init.body : undefined,
+      });
+      if (url.endsWith("/health")) {
+        return jsonResponse({ status: "ok", mode: "dashboard" });
+      }
+      if (url.endsWith("/instances/launch")) {
+        return jsonResponse({
+          id: "inst_auto_1",
+          profileId: "default",
+          profileName: "default",
+          port: "9999",
+          headless: true,
+          status: "running",
+        });
+      }
+      return jsonResponse({
+        tabId: "tab_auto_1",
+        url: "https://github.com/",
+      });
+    }) as typeof globalThis.fetch;
+
+    const result = await executeBrowserOperation({
+      operation: "tabs.open",
+      url: "https://github.com/",
+    });
+
+    expect(result.data.instanceId).toBe("inst_auto_1");
+    expect(result.data.autoLaunched).toBe(true);
+    expect(result.data.tabId).toBe("tab_auto_1");
+    expect(requests).toHaveLength(3);
+    expect(requests[0].url).toBe("http://127.0.0.1:9988/health");
+    expect(requests[1].url).toBe("http://127.0.0.1:9988/instances/launch");
+    expect(requests[1].method).toBe("POST");
+    expect(JSON.parse(requests[1].body ?? "{}")).toEqual({
+      mode: "headless",
+    });
+    expect(requests[2].url).toBe("http://127.0.0.1:9988/instances/inst_auto_1/tabs/open");
+    expect(requests[2].method).toBe("POST");
+    expect(JSON.parse(requests[2].body ?? "{}")).toEqual({
+      url: "https://github.com/",
+    });
+  });
+
   it("tabs.snapshot 应该请求 GET /tabs/{id}/snapshot 并返回文本", async () => {
     const requests: string[] = [];
 

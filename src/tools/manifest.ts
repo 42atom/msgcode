@@ -119,7 +119,7 @@ export const TOOL_MANIFESTS: Record<ToolName, ToolManifest> = {
         },
         instanceId: {
           type: "string",
-          description: "浏览器实例 ID（大部分操作需要）",
+          description: "浏览器实例 ID（大部分操作需要；tabs.open 可省略，系统会自动拉起默认实例）",
         },
         tabId: {
           type: "string",
@@ -127,7 +127,7 @@ export const TOOL_MANIFESTS: Record<ToolName, ToolManifest> = {
         },
         url: {
           type: "string",
-          description: "目标 URL（仅 tabs.open 需要）",
+          description: "目标 URL（仅 tabs.open 需要；可直接用 tabs.open + url 打开网页）",
         },
         ref: {
           type: "string",
