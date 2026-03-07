@@ -62,11 +62,12 @@ describe("P5.6.8-R3d: 彻底去耦回归锁", () => {
                 const tools = await getToolsForLlm(tmpDir);
                 const toolNames = tools.map(t => t.name);
 
-                // 验证核心工具存在
+                // 验证核心工具存在（write_file/edit_file 被 filterDefaultLlmTools 过滤）
                 expect(toolNames.length).toBeGreaterThan(0);
                 expect(toolNames).toContain("read_file");
-                expect(toolNames).toContain("write_file");
-                expect(toolNames).toContain("edit_file");
+                // 注意：write_file 和 edit_file 被 LLM_DEFAULT_SUPPRESSED_TOOLS 过滤
+                expect(toolNames).not.toContain("write_file");
+                expect(toolNames).not.toContain("edit_file");
                 expect(toolNames).toContain("bash");
 
                 // 确保不包含 run_skill
@@ -76,7 +77,7 @@ describe("P5.6.8-R3d: 彻底去耦回归锁", () => {
             }
         });
 
-        it("pi.off 必须返回空数组", async () => {
+        it("pi.off 必须返回完整工具列表（skill 场景）", async () => {
             const { getToolsForLlm } = await import("../src/lmstudio.js");
 
             // 创建临时工作区
@@ -91,7 +92,12 @@ describe("P5.6.8-R3d: 彻底去耦回归锁", () => {
 
             try {
                 const tools = await getToolsForLlm(tmpDir);
-                expect(tools).toHaveLength(0);
+                const toolNames = tools.map(t => t.name);
+
+                // P5.7-R15 + R16: pi.enabled=false 时返回完整工具列表（skill 场景）
+                expect(toolNames.length).toBeGreaterThan(0);
+                expect(toolNames).toContain("read_file");
+                expect(toolNames).toContain("bash");
             } finally {
                 fs.rmSync(tmpDir, { recursive: true, force: true });
             }

@@ -200,7 +200,25 @@ export function parseToolCallBestEffortFromText(params: {
 }
 
 export async function getToolsForLlm(workspacePath?: string): Promise<readonly AidocsToolDefFromBackend[]> {
-    if (!workspacePath) return [];
+    // P5.7-R15 + R16: skill 场景默认暴露完整工具（与 tool-loop.ts 对齐）
+    // 当没有 workspace 配置时，暴露全部基础工具
+    if (!workspacePath) {
+        const { filterDefaultLlmTools, TOOL_MANIFESTS } = await import("./tools/manifest.js");
+        const defaultTools = filterDefaultLlmTools([
+            "read_file",
+            "bash",
+            "browser",
+            "mem",
+            "tts",
+            "asr",
+            "vision",
+            "desktop",
+        ]);
+        return defaultTools.map((name) => ({
+            name,
+            description: "", // 描述在 toOpenAiToolSchemas 中填充
+        }));
+    }
     try {
         const { loadWorkspaceConfig } = await import("./config/workspace.js");
         const cfg = await loadWorkspaceConfig(workspacePath);
@@ -208,7 +226,22 @@ export async function getToolsForLlm(workspacePath?: string): Promise<readonly A
             ? cfg["pi.enabled"]
             : false;
         if (!piEnabled) {
-            return [];
+            // P5.7-R15 + R16: skill 场景默认暴露完整工具（与 tool-loop.ts 对齐）
+            const { filterDefaultLlmTools } = await import("./tools/manifest.js");
+            const defaultTools = filterDefaultLlmTools([
+                "read_file",
+                "bash",
+                "browser",
+                "mem",
+                "tts",
+                "asr",
+                "vision",
+                "desktop",
+            ]);
+            return defaultTools.map((name) => ({
+                name,
+                description: "",
+            }));
         }
 
         // P5.7-R8c: 从单一真相源派生工具列表
