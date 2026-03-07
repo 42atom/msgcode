@@ -117,6 +117,20 @@ interface ValidationError {
   message: string;
 }
 
+function normalizeEditFileEdits(
+  args: Record<string, unknown>
+): Array<{ oldText: string; newText: string }> | null {
+  if (Array.isArray(args.edits) && args.edits.length > 0) {
+    return args.edits as Array<{ oldText: string; newText: string }>;
+  }
+
+  if (typeof args.oldText === "string" && typeof args.newText === "string") {
+    return [{ oldText: args.oldText, newText: args.newText }];
+  }
+
+  return null;
+}
+
 /**
  * 校验四核心工具参数
  * 校验失败返回结构化错误，不进入工具执行体
@@ -145,11 +159,16 @@ function validateToolArgs(
       if (!args.path || typeof args.path !== "string" || !args.path.trim()) {
         return { code: "TOOL_BAD_ARGS", message: "edit_file: 'path' must be a non-empty string" };
       }
-      if (!Array.isArray(args.edits) || args.edits.length === 0) {
-        return { code: "TOOL_BAD_ARGS", message: "edit_file: 'edits' must be a non-empty array" };
+      const edits = normalizeEditFileEdits(args);
+      if (!edits || edits.length === 0) {
+        return {
+          code: "TOOL_BAD_ARGS",
+          message: "edit_file: provide either 'edits' or the shorthand pair 'oldText' + 'newText'",
+        };
       }
-      for (let i = 0; i < args.edits.length; i++) {
-        const edit = args.edits[i] as Record<string, unknown>;
+      args.edits = edits;
+      for (let i = 0; i < edits.length; i++) {
+        const edit = edits[i] as Record<string, unknown>;
         if (typeof edit.oldText !== "string") {
           return { code: "TOOL_BAD_ARGS", message: `edit_file: edits[${i}].oldText must be a string` };
         }
@@ -837,7 +856,7 @@ export async function executeTool(
         // P5.7-R3i: 应用 fs_scope 策略
         const { resolve, isAbsolute } = await import("node:path");
         const inputPath = String(args.path || "");
-        const edits = args.edits as Array<{ oldText: string; newText: string }> | undefined;
+        const edits = normalizeEditFileEdits(args) ?? undefined;
 
         // 获取 fs_scope 策略
         const fsScope = await getFsScope(ctx.workspacePath);

@@ -414,6 +414,52 @@ function detectPreferredToolName(
     return undefined;
 }
 
+function allowsBashFallback(
+    preferredToolName: string | undefined,
+    toolNames: readonly string[]
+): boolean {
+    if (!preferredToolName) return false;
+    if (!toolNames.includes("bash")) return false;
+    return preferredToolName === "edit_file"
+        || preferredToolName === "write_file"
+        || preferredToolName === "browser";
+}
+
+function selectActiveToolNames(
+    toolNames: ToolName[],
+    preferredToolName: string | undefined
+): ToolName[] {
+    if (!preferredToolName) {
+        return toolNames;
+    }
+
+    if (allowsBashFallback(preferredToolName, toolNames)) {
+        return toolNames.filter((name) => name === preferredToolName || name === "bash");
+    }
+
+    return toolNames.filter((name) => name === preferredToolName);
+}
+
+function buildToolFallbackInstruction(preferredToolName: string | undefined): string {
+    if (!preferredToolName) return "";
+    if (preferredToolName === "edit_file" || preferredToolName === "write_file") {
+        return `优先使用 ${preferredToolName}；如果参数难以稳定构造，可直接改用 bash 完成文件修改。`;
+    }
+    if (preferredToolName === "browser") {
+        return "优先使用 browser；如果 browser 不稳且任务可由命令行完成，可直接改用 bash。";
+    }
+    return "";
+}
+
+function hasDisallowedPreferredToolMismatch(
+    calls: ToolCall[],
+    preferredToolName: string | undefined,
+    bashFallbackAllowed: boolean
+): boolean {
+    if (!preferredToolName) return false;
+    return calls.some((tc) => tc.function.name !== preferredToolName && (!bashFallbackAllowed || tc.function.name !== "bash"));
+}
+
 function selectToolsByName(
     tools: readonly unknown[],
     toolName: string
@@ -732,7 +778,13 @@ async function runMiniMaxAnthropicToolLoop(params: {
 
     const anthropicContext = splitSystemFromMessages(params.baseMessages);
     let conversationMessages = anthropicContext.messages;
-    const initialToolChoice: MiniMaxAnthropicToolChoice | undefined = params.preferredToolName
+    const bashFallbackAllowed = allowsBashFallback(
+        params.preferredToolName,
+        params.activeToolSchemas.map((tool) => getToolNameFromDef(tool) || "").filter(Boolean)
+    );
+    const fallbackInstruction = buildToolFallbackInstruction(params.preferredToolName);
+
+    const initialToolChoice: MiniMaxAnthropicToolChoice | undefined = params.preferredToolName && !bashFallbackAllowed
         ? { type: "tool", name: params.preferredToolName }
         : params.activeToolSchemas.length > 0
             ? { type: "auto" }
@@ -764,7 +816,12 @@ async function runMiniMaxAnthropicToolLoop(params: {
     if (toolCalls.length === 0 && params.activeToolSchemas.length > 0) {
         const retryMessages: MiniMaxAnthropicMessage[] = [
             ...conversationMessages,
-            { role: "user", content: "请严格返回 tool_use；不要输出自然语言。" },
+            {
+                role: "user",
+                content: fallbackInstruction
+                    ? `请严格返回 tool_use；不要输出自然语言。${fallbackInstruction}`
+                    : "请严格返回 tool_use；不要输出自然语言。",
+            },
         ];
         response = await callMiniMaxAnthropicRaw({
             baseUrl: params.baseUrl,
@@ -772,7 +829,7 @@ async function runMiniMaxAnthropicToolLoop(params: {
             messages: retryMessages,
             system: anthropicContext.system,
             tools: params.activeToolSchemas,
-            toolChoice: params.preferredToolName
+            toolChoice: params.preferredToolName && !bashFallbackAllowed
                 ? { type: "tool", name: params.preferredToolName }
                 : { type: "any" },
             temperature: 0,
@@ -789,7 +846,9 @@ async function runMiniMaxAnthropicToolLoop(params: {
             ...conversationMessages,
             {
                 role: "user",
-                content: `你必须调用工具 ${params.preferredToolName}，并仅返回 tool_use。禁止任何自然语言。`,
+                content: fallbackInstruction
+                    ? `你必须调用一个可执行工具，并仅返回 tool_use。优先工具：${params.preferredToolName}。${fallbackInstruction} 禁止任何自然语言。`
+                    : `你必须调用工具 ${params.preferredToolName}，并仅返回 tool_use。禁止任何自然语言。`,
             },
         ];
         response = await callMiniMaxAnthropicRaw({
@@ -798,7 +857,9 @@ async function runMiniMaxAnthropicToolLoop(params: {
             messages: strictRetryMessages,
             system: anthropicContext.system,
             tools: params.activeToolSchemas,
-            toolChoice: { type: "tool", name: params.preferredToolName },
+            toolChoice: bashFallbackAllowed
+                ? { type: "any" }
+                : { type: "tool", name: params.preferredToolName },
             temperature: 0,
             maxTokens: 800,
             timeoutMs: params.timeoutMs,
@@ -808,11 +869,6 @@ async function runMiniMaxAnthropicToolLoop(params: {
         conversationMessages = strictRetryMessages;
     }
 
-    const hasPreferredToolMismatch = (calls: ToolCall[]): boolean => {
-        if (!params.preferredToolName) return false;
-        return calls.some((tc) => tc.function.name !== params.preferredToolName);
-    };
-
     if (toolCalls.length === 0) {
         return {
             answer: "协议失败：未收到工具调用指令\n- 错误码：MODEL_PROTOCOL_FAILED\n\n这通常意味着模型无法调用工具。请重试或切换到对话模式。",
@@ -820,7 +876,7 @@ async function runMiniMaxAnthropicToolLoop(params: {
         };
     }
 
-    if (hasPreferredToolMismatch(toolCalls)) {
+    if (hasDisallowedPreferredToolMismatch(toolCalls, params.preferredToolName, bashFallbackAllowed)) {
         return {
             answer: `工具协议失败：模型未按要求调用工具\n- 期望工具：${params.preferredToolName}\n- 错误码：MODEL_PROTOCOL_FAILED\n\n请重试并明确要求调用正确工具。`,
             actionJournal: [],
@@ -985,7 +1041,7 @@ async function runMiniMaxAnthropicToolLoop(params: {
             messages: conversationMessages,
             system: anthropicContext.system,
             tools: params.activeToolSchemas,
-            toolChoice: params.preferredToolName
+            toolChoice: params.preferredToolName && !bashFallbackAllowed
                 ? { type: "tool", name: params.preferredToolName }
                 : { type: "auto" },
             temperature: 0,
@@ -995,7 +1051,7 @@ async function runMiniMaxAnthropicToolLoop(params: {
         });
 
         currentToolCalls = currentResponse.toolCalls;
-        if (hasPreferredToolMismatch(currentToolCalls)) {
+        if (hasDisallowedPreferredToolMismatch(currentToolCalls, params.preferredToolName, bashFallbackAllowed)) {
             return {
                 answer: `工具协议失败：模型未按要求调用工具\n- 期望工具：${params.preferredToolName}\n- 错误码：MODEL_PROTOCOL_FAILED\n\n请重试并明确要求调用正确工具。`,
                 actionJournal,
@@ -1184,12 +1240,12 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     // 把 ToolName[] 转换为工具对象格式（供 detectPreferredToolName 使用）
     const tools = toolNames.map((name) => ({ name }));
     const preferredToolName = detectPreferredToolName(options.prompt, tools);
+    const bashFallbackAllowed = allowsBashFallback(preferredToolName, toolNames);
+    const fallbackInstruction = buildToolFallbackInstruction(preferredToolName);
     const preferredToolChoice: ToolChoice | undefined = preferredToolName
         ? "required"
         : undefined;
-    const constrainedToolNames = preferredToolName
-        ? toolNames.filter((n) => n === preferredToolName)
-        : toolNames;
+    const constrainedToolNames = selectActiveToolNames(toolNames, preferredToolName);
     const activeToolNames = constrainedToolNames.length > 0 ? constrainedToolNames : toolNames;
 
     // P5.7-R8c: 使用 manifest 的 toOpenAiToolSchemas 生成完整说明书
@@ -1246,7 +1302,12 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     if (toolCalls.length === 0 && activeToolNames.length > 0) {
         const retryMessages = [
             ...messages,
-            { role: "user" as const, content: "请严格返回 tool_calls；不要输出自然语言。" },
+            {
+                role: "user" as const,
+                content: fallbackInstruction
+                    ? `请严格返回 tool_calls；不要输出自然语言。${fallbackInstruction}`
+                    : "请严格返回 tool_calls；不要输出自然语言。",
+            },
         ];
         const retry = await callChatCompletionsRaw({
             baseUrl,
@@ -1269,7 +1330,9 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
             ...messages,
             {
                 role: "user" as const,
-                content: `你必须调用工具 ${preferredToolName}，并仅返回 tool_calls。禁止任何自然语言。`,
+                content: fallbackInstruction
+                    ? `你必须调用一个可执行工具，并仅返回 tool_calls。优先工具：${preferredToolName}。${fallbackInstruction} 禁止任何自然语言。`
+                    : `你必须调用工具 ${preferredToolName}，并仅返回 tool_calls。禁止任何自然语言。`,
             },
         ];
         const strictRetry = await callChatCompletionsRaw({
@@ -1287,13 +1350,8 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
         toolCalls = msg1?.tool_calls ?? [];
     }
 
-    const hasPreferredToolMismatch = (calls: ToolCall[]): boolean => {
-        if (!preferredToolName) return false;
-        return calls.some((tc) => tc.function.name !== preferredToolName);
-    };
-
     // 显式工具名纠偏：首轮返回错误工具时，强制再请求一次
-    if (toolCalls.length > 0 && hasPreferredToolMismatch(toolCalls) && activeToolNames.length > 0) {
+    if (toolCalls.length > 0 && hasDisallowedPreferredToolMismatch(toolCalls, preferredToolName, bashFallbackAllowed) && activeToolNames.length > 0) {
         const strictRetry = await callChatCompletionsRaw({
             baseUrl,
             model: usedModel,
@@ -1318,7 +1376,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     }
 
     // 纠偏后仍不匹配：拒绝执行错误工具
-    if (hasPreferredToolMismatch(toolCalls)) {
+    if (hasDisallowedPreferredToolMismatch(toolCalls, preferredToolName, bashFallbackAllowed)) {
         return {
             answer: `工具协议失败：模型未按要求调用工具\n- 期望工具：${preferredToolName}\n- 错误码：MODEL_PROTOCOL_FAILED\n\n请重试并明确要求调用正确工具。`,
             actionJournal: [],

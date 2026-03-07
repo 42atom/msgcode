@@ -210,16 +210,20 @@ export const TOOL_MANIFESTS: Record<ToolName, ToolManifest> = {
           type: "string",
           description: "文件路径",
         },
+        edits: {
+          type: "array",
+          description: "补丁数组。每项包含 oldText/newText。适合多处替换。",
+        },
         oldText: {
           type: "string",
-          description: "要替换的旧文本",
+          description: "单次替换的旧文本。若只改一处，可与 newText 一起作为简写传入。",
         },
         newText: {
           type: "string",
-          description: "新文本",
+          description: "单次替换的新文本。若只改一处，可与 oldText 一起作为简写传入。",
         },
       },
-      required: ["path", "oldText", "newText"],
+      required: ["path"],
       additionalProperties: true,
     },
     riskLevel: "medium",

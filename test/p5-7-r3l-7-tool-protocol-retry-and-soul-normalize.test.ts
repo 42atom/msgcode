@@ -209,6 +209,90 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
         }
     });
 
+    it("显式 edit_file 失败时应允许退回 bash 完成任务", async () => {
+        const originalFetch = globalThis.fetch;
+        const workspacePath = await createToolEnabledWorkspace();
+        const targetFile = join(workspacePath, ".msgcode", "toolcheck.txt");
+        await writeFile(targetFile, "alpha\n", "utf-8");
+        let callCount = 0;
+
+        globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+            callCount += 1;
+            const body = typeof init?.body === "string"
+                ? JSON.parse(init.body) as { tools?: Array<{ function?: { name?: string } }> }
+                : {};
+
+            if (callCount <= 2) {
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: "我会先试试 edit_file。",
+                        },
+                        finish_reason: "stop",
+                    }],
+                });
+            }
+
+            if (callCount === 3) {
+                const toolNames = Array.isArray(body.tools)
+                    ? body.tools.map((tool) => tool.function?.name).filter(Boolean)
+                    : [];
+                expect(toolNames).toContain("edit_file");
+                expect(toolNames).toContain("bash");
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: "",
+                            tool_calls: [{
+                                id: "call_bash_fallback",
+                                type: "function",
+                                function: {
+                                    name: "bash",
+                                    arguments: JSON.stringify({
+                                        command: `perl -0pi -e 's/alpha/beta/g' "${targetFile}"`,
+                                    }),
+                                },
+                            }],
+                        },
+                        finish_reason: "tool_calls",
+                    }],
+                });
+            }
+
+            return asJsonResponse({
+                choices: [{
+                    message: {
+                        role: "assistant",
+                        content: "ok",
+                    },
+                    finish_reason: "stop",
+                }],
+            });
+        }) as typeof fetch;
+
+        try {
+            const result = await runLmStudioToolLoop({
+                baseUrl: "http://127.0.0.1:1234",
+                model: "test-model",
+                prompt: "请使用 edit_file 工具把 .msgcode/toolcheck.txt 里的 alpha 改成 beta",
+                workspacePath,
+                timeoutMs: 10_000,
+                backendRuntime: localOpenAiRuntime,
+            });
+
+            expect(callCount).toBe(4);
+            expect(result.toolCall?.name).toBe("bash");
+            expect(result.answer).toContain("ok");
+            const updated = await Bun.file(targetFile).text();
+            expect(updated).toContain("beta");
+        } finally {
+            globalThis.fetch = originalFetch;
+            await rm(workspacePath, { recursive: true, force: true });
+        }
+    });
+
     it("总结阶段返回 minimax tool_call 协议片段时，应回退为可展示文本", async () => {
         const originalFetch = globalThis.fetch;
         const workspacePath = await createToolEnabledWorkspace();
@@ -344,7 +428,8 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
             const firstToolNames = firstTools
                 .map((t) => (t as { function?: { name?: unknown } })?.function?.name)
                 .filter((name): name is string => typeof name === "string");
-            expect(firstToolNames).toEqual(["edit_file"]);
+            expect(firstToolNames).toContain("edit_file");
+            expect(firstToolNames).toContain("bash");
             expect(firstToolChoice === "required" || (
                 typeof firstToolChoice === "object"
                 && firstToolChoice !== null

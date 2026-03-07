@@ -91,6 +91,45 @@ describe("P5.6.8-R3b: edit_file 补丁语义回归锁", () => {
             }
         });
 
+        it("edit_file 应兼容 oldText/newText 简写参数", async () => {
+            const { executeTool } = await import("../src/tools/bus.js");
+
+            const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "msgcode-test-"));
+            const testFile = path.join(tmpDir, "test.txt");
+            fs.writeFileSync(testFile, "alpha\nbeta\n", "utf-8");
+
+            const msgcodeDir = path.join(tmpDir, ".msgcode");
+            fs.mkdirSync(msgcodeDir, { recursive: true });
+            fs.writeFileSync(
+                path.join(msgcodeDir, "config.json"),
+                JSON.stringify({
+                    "tooling.mode": "autonomous",
+                    "tooling.allow": ["read_file", "write_file", "edit_file", "bash"]
+                }),
+                "utf-8"
+            );
+
+            try {
+                const result = await executeTool("edit_file", {
+                    path: testFile,
+                    oldText: "alpha",
+                    newText: "gamma",
+                }, {
+                    workspacePath: tmpDir,
+                    source: "slash-command",
+                    requestId: "test-shorthand-edit"
+                });
+
+                expect(result.ok).toBe(true);
+                expect(result.data?.editsApplied).toBe(1);
+                const content = fs.readFileSync(testFile, "utf-8");
+                expect(content).toContain("gamma");
+                expect(content).not.toContain("alpha");
+            } finally {
+                fs.rmSync(tmpDir, { recursive: true, force: true });
+            }
+        });
+
         it("edit_file 执行失败：oldText 不存在", async () => {
             const { executeTool } = await import("../src/tools/bus.js");
 
