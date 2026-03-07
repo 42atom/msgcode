@@ -158,4 +158,15 @@ feat(skills): 收口 skill 双真相源，runtime 为唯一正式真相源
 
 ---
 
-**评审意见**：[留空，用户将给出反馈]
+**评审意见**：[已完成 - 2026-03-08]
+
+### 正式真相源 vs 历史/占位模块
+
+| 模块 | 类型 | 说明 |
+|------|------|------|
+| `src/skills/runtime/` | ✅ 正式真相源 | scheduler, patchright-browser |
+| `~/.config/msgcode/skills/` | 运行时目录 | 同步自 runtime |
+| `src/skills/registry.ts` | ⚠️ 历史占位 | 已退役，不再作为执行主链 |
+| `runSkill()` | ⚠️ 退役占位 | 返回 "skill not implemented" |
+
+**结论**：runtime skills 为唯一正式真相源，builtin registry 已退役现役语义。

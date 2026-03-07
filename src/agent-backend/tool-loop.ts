@@ -523,7 +523,9 @@ export async function getToolsForLlm(workspacePath?: string): Promise<ToolName[]
             ? cfg["pi.enabled"]
             : false;
         if (!piEnabled) {
-            return [];
+            // P5.7-R15: skill 场景默认允许 read_file
+            // 即使未启用 pi，也至少允许读文件能力（skill 读取需要）
+            return ["read_file"];
         }
 
         // P5.7-R8c: 从单一真相源派生工具列表

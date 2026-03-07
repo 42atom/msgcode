@@ -71,28 +71,27 @@
 - CLI `help-docs --json` 正确输出 5 个 schedule 命令
 - 没有破坏现有功能
 
-### 步骤 4：提交 - 待执行
+### 步骤 4：提交 - ✅ 已完成
 
-**Commit message**：
-```
-feat(schedule): 统一双入口合同，/schedule 补齐 add/remove 能力
-```
+**Commit**：
+- 7d89d15 - feat(schedule): 统一双入口合同，/schedule 补齐 add/remove 能力
+- d3bb696 - fix(schedule): 修复聊天命令 /schedule add/remove 的 job 结构不一致问题
 
-## Risks
+## Risks - ✅ 已验证
 
-### 主要风险
+### 主要风险（已修复）
 
-1. **代码复用方式**
-   - 风险：直接 import CLI 函数可能导致循环依赖
-   - 缓解：CLI 函数应该是纯函数，不依赖 commander 上下文
+1. **代码复用方式** - ✅ 已修复
+   - 问题：初版手写了 job 结构，与 `scheduleToJob` 不一致
+   - 修复：改用 `mapSchedulesToJobs`，确保 job 结构与 CLI 一致
 
-2. **参数口径不一致**
-   - 风险：聊天命令和 CLI 参数格式不同
-   - 缓解：保持 CLI 参数格式，聊天命令适配
+2. **参数口径不一致** - ✅ 已修复
+   - 问题：workspace 相对路径解析逻辑偏离 CLI
+   - 修复：复用 CLI 的 `resolveWorkspacePathParam` 逻辑（`getWorkspaceRootForDisplay` + 越界检查）
 
-3. **错误处理不一致**
-   - 风险：聊天命令和 CLI 错误返回格式不同
-   - 缓解：聊天命令封装成 `CommandResult`，CLI 输出 `Envelope`
+3. **错误处理不一致** - ✅ 已控制
+   - 聊天命令封装成 `CommandResult`，CLI 输出 `Envelope`
+   - 错误码语义保持一致（`validateCronExpression` 复用同一逻辑）
 
 ## Alternatives
 
@@ -119,10 +118,37 @@ feat(schedule): 统一双入口合同，/schedule 补齐 add/remove 能力
 2. CLI 测试（已有，确保不受影响）：
    - `msgcode schedule add/remove` 行为不变
 
+3. 回归测试：
+   - 62 个测试全部通过
+
 ## Observability
 
 无运行时行为变化，不需要额外日志
 
 ---
 
-**评审意见**：[留空，用户将给出反馈]
+**评审意见**：[已完成 - 2026-03-08]
+
+### 评审发现与修复
+
+**P0: job 结构不一致**
+- 发现：初版 `/schedule add` 手写的 job 结构与 `CronJob` 合同不一致
+- 修复：改用 `mapSchedulesToJobs`，确保 job 结构与 `scheduleToJob()` 一致
+
+**P1: workspace 相对路径解析语义偏离**
+- 发现：聊天命令对相对路径解析为 `join(route.workspacePath, input)`，与 CLI 的 `resolve(getWorkspaceRootForDisplay(), input)` 不一致
+- 修复：复用 CLI 的 `resolveWorkspacePathParam` 逻辑
+
+### 能力矩阵（统一后）
+
+| 命令 | CLI | 聊天 | 说明 |
+|------|-----|------|------|
+| add | ✅ | ✅ | 核心能力 |
+| list | ✅ | ✅ | 核心能力 |
+| remove | ✅ | ✅ | 核心能力 |
+| enable | ✅ | ✅ | 核心能力 |
+| disable | ✅ | ✅ | 核心能力 |
+| validate | ❌ | ✅ | 聊天运维辅助 |
+| reload | ❌ | ✅ | 聊天运维辅助 |
+
+**结论**：CLI 作为真相源，聊天命令补齐 add/remove 能力，双入口合同统一。P0/P1 问题已修复。

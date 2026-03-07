@@ -1,7 +1,7 @@
 ---
 id: 0024
 title: Skill 单真相源收口 - runtime 为唯一正式真相源
-status: doing
+status: done
 owner: agent
 labels: [refactoring, skills, architecture]
 risk: medium
