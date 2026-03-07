@@ -78,3 +78,7 @@ mac/msgcode-desktopctl/test*.swift
 # Desktop dev binaries (build from sources instead)
 scripts/desktop/test-t8.6-token
 scripts/desktop/test-t8.6.2-desktopctl
+
+# Local AIDOCS runtime/media artifacts
+AIDOCS/audio/
+AIDOCS/media/
