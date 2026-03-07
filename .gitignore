@@ -35,6 +35,7 @@ vendor/imsg/
 # Temp files
 *.tmp
 *.bak
+.trash/
 
 # Release / pack artifacts
 *.tgz
