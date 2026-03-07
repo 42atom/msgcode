@@ -261,56 +261,9 @@ export async function runAgentRoutedChat(options: AgentRoutedChatOptions): Promi
         };
     }
 
-    if (!toolsAvailable) {
-        const usedModel = responderModel || executorModel || selectedModel;
-        const usedTemperature = options.temperature ?? 0.2;
-
-        logger.info("agent-first chat fallback: no tools exposed", {
-            module: "agent-backend",
-            traceId,
-            phase: "route",
-            kernel: "dialog",
-            decisionSource: "router",
-            soulInjected: dialogSoulInjected,
-            model: usedModel,
-            workspacePath,
-        });
-
-        const answer = await runLmStudioChat({
-            prompt: options.prompt,
-            system: options.system,
-            workspace: options.workspacePath,
-            model: usedModel,
-            temperature: usedTemperature,
-            backendRuntime,
-            windowMessages: options.windowMessages,
-            summaryContext: options.summaryContext,
-            soulContext: options.soulContext,
-        });
-
-        logger.info("agent-first chat completed", {
-            module: "agent-backend",
-            traceId,
-            route: "no-tool",
-            phase: "complete",
-            kernel: "dialog",
-            decisionSource: "router",
-            soulInjected: dialogSoulInjected,
-            temperature: usedTemperature,
-            responseLength: answer.length,
-            model: usedModel,
-        });
-
-        return {
-            answer,
-            route: "no-tool",
-            decisionSource: "router",
-            temperature: usedTemperature,
-            actionJournal: [],
-        };
-    }
-
     // P5.7-R12-T10: 默认路径 - 直接调用 tool-loop，让模型自己决定是否调用工具
+    // P0 松绑：移除 toolsAvailable 前置检查，默认强制进入 tool-loop
+    // 即使工具面为空，也让模型自己决定（allowNoTool 会在 tool-loop 里生效）
     const usedModel = executorModel;
     const usedTemperature = 0;
 

@@ -832,11 +832,11 @@ async function runMiniMaxAnthropicToolLoop(params: {
     );
     const fallbackInstruction = buildToolFallbackInstruction(params.preferredToolName);
 
-    const initialToolChoice: MiniMaxAnthropicToolChoice | undefined = params.preferredToolName && !bashFallbackAllowed
-        ? { type: "tool", name: params.preferredToolName }
-        : params.activeToolSchemas.length > 0
-            ? { type: "auto" }
-            : undefined;
+    // P0 松绑：不再强制要求 preferredToolName，让 LLM 自由选择工具
+    // 改为使用 auto 模式，让模型自己决定
+    const initialToolChoice: MiniMaxAnthropicToolChoice | undefined = params.activeToolSchemas.length > 0
+        ? { type: "auto" }
+        : undefined;
 
     let response = await callMiniMaxAnthropicRaw({
         baseUrl: params.baseUrl,
@@ -877,9 +877,8 @@ async function runMiniMaxAnthropicToolLoop(params: {
             messages: retryMessages,
             system: anthropicContext.system,
             tools: params.activeToolSchemas,
-            toolChoice: params.preferredToolName && !bashFallbackAllowed
-                ? { type: "tool", name: params.preferredToolName }
-                : { type: "any" },
+            // P0 松绑：使用 auto 让模型自由选择
+            toolChoice: { type: "auto" },
             temperature: 0,
             maxTokens: 800,
             timeoutMs: params.timeoutMs,
@@ -927,20 +926,23 @@ async function runMiniMaxAnthropicToolLoop(params: {
     const miniMaxActiveToolNames = params.activeToolSchemas
         .map((tool) => getToolNameFromDef(tool) || "")
         .filter(Boolean);
-    const initialUnexpectedToolNames = findUnexpectedToolNames(toolCalls, miniMaxActiveToolNames);
-    if (initialUnexpectedToolNames.length > 0) {
-        return {
-            answer: buildUnexpectedToolAnswer(initialUnexpectedToolNames, miniMaxActiveToolNames),
-            actionJournal: [],
-        };
-    }
 
-    if (hasDisallowedPreferredToolMismatch(toolCalls, params.preferredToolName, bashFallbackAllowed)) {
-        return {
-            answer: `工具协议失败：模型未按要求调用工具\n- 期望工具：${params.preferredToolName}\n- 错误码：MODEL_PROTOCOL_FAILED\n\n请重试并明确要求调用正确工具。`,
-            actionJournal: [],
-        };
-    }
+    // P0 松绑：移除"未暴露工具直接判死"逻辑（MiniMax 风格-首次检查）
+    // const initialUnexpectedToolNames = findUnexpectedToolNames(toolCalls, miniMaxActiveToolNames);
+    // if (initialUnexpectedToolNames.length > 0) {
+    //     return {
+    //         answer: buildUnexpectedToolAnswer(initialUnexpectedToolNames, miniMaxActiveToolNames),
+    //         actionJournal: [],
+    //     };
+    // }
+
+    // P0 松绑：移除 preferredToolMismatch 直接判死逻辑（MiniMax 风格-首次检查）
+    // if (hasDisallowedPreferredToolMismatch(toolCalls, params.preferredToolName, bashFallbackAllowed)) {
+    //     return {
+    //         answer: `工具协议失败：模型未按要求调用工具\n- 期望工具：${params.preferredToolName}\n- 错误码：MODEL_PROTOCOL_FAILED\n\n请重试并明确要求调用正确工具。`,
+    //         actionJournal: [],
+    //     };
+    // }
 
     const executedToolCalls: ExecutedToolCall[] = [];
     let currentResponse = response;
@@ -948,13 +950,14 @@ async function runMiniMaxAnthropicToolLoop(params: {
     let finalAssistantContent = "";
 
     while (true) {
-        const unexpectedToolNames = findUnexpectedToolNames(currentToolCalls, miniMaxActiveToolNames);
-        if (unexpectedToolNames.length > 0) {
-            return {
-                answer: buildUnexpectedToolAnswer(unexpectedToolNames, miniMaxActiveToolNames),
-                actionJournal,
-            };
-        }
+        // P0 松绑：移除循环中"未暴露工具直接判死"逻辑（MiniMax 风格）
+        // const unexpectedToolNames = findUnexpectedToolNames(currentToolCalls, miniMaxActiveToolNames);
+        // if (unexpectedToolNames.length > 0) {
+        //     return {
+        //         answer: buildUnexpectedToolAnswer(unexpectedToolNames, miniMaxActiveToolNames),
+        //         actionJournal,
+        //     };
+        // }
 
         if (currentToolCalls.length > params.perTurnToolCallLimit) {
             const isHardCapExceeded = currentToolCalls.length > HARD_CAP_TOOL_CALLS;
@@ -1108,9 +1111,8 @@ async function runMiniMaxAnthropicToolLoop(params: {
             messages: conversationMessages,
             system: anthropicContext.system,
             tools: params.activeToolSchemas,
-            toolChoice: params.preferredToolName && !bashFallbackAllowed
-                ? { type: "tool", name: params.preferredToolName }
-                : { type: "auto" },
+            // P0 松绑：使用 auto 让模型自由选择
+            toolChoice: { type: "auto" },
             temperature: 0,
             maxTokens: 800,
             timeoutMs: params.timeoutMs,
@@ -1118,12 +1120,13 @@ async function runMiniMaxAnthropicToolLoop(params: {
         });
 
         currentToolCalls = currentResponse.toolCalls;
-        if (hasDisallowedPreferredToolMismatch(currentToolCalls, params.preferredToolName, bashFallbackAllowed)) {
-            return {
-                answer: `工具协议失败：模型未按要求调用工具\n- 期望工具：${params.preferredToolName}\n- 错误码：MODEL_PROTOCOL_FAILED\n\n请重试并明确要求调用正确工具。`,
-                actionJournal,
-            };
-        }
+        // P0 松绑：移除循环中 preferredToolMismatch 直接判死逻辑（MiniMax 风格）
+        // if (hasDisallowedPreferredToolMismatch(currentToolCalls, params.preferredToolName, bashFallbackAllowed)) {
+        //     return {
+        //         answer: `工具协议失败：模型未按要求调用工具\n- 期望工具：${params.preferredToolName}\n- 错误码：MODEL_PROTOCOL_FAILED\n\n请重试并明确要求调用正确工具。`,
+        //         actionJournal,
+        //     };
+        // }
 
         if (currentToolCalls.length === 0) {
             finalAssistantContent = currentResponse.content || "";
@@ -1309,11 +1312,14 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     const preferredToolName = detectPreferredToolName(options.prompt, tools);
     const bashFallbackAllowed = allowsBashFallback(preferredToolName, toolNames);
     const fallbackInstruction = buildToolFallbackInstruction(preferredToolName);
-    const preferredToolChoice: ToolChoice | undefined = preferredToolName
-        ? "required"
-        : undefined;
-    const constrainedToolNames = selectActiveToolNames(toolNames, preferredToolName);
-    const activeToolNames = constrainedToolNames.length > 0 ? constrainedToolNames : toolNames;
+    // P0 松绑：不再强制要求特定工具，让 LLM 自由选择
+    const preferredToolChoice: ToolChoice | undefined = undefined;
+
+    // P0 松绑：不再根据 preferredToolName 收窄工具面
+    // 让 LLM 可以自由选择它认为合适的工具（read_file + bash 组合场景需要）
+    // const constrainedToolNames = selectActiveToolNames(toolNames, preferredToolName);
+    // const activeToolNames = constrainedToolNames.length > 0 ? constrainedToolNames : toolNames;
+    const activeToolNames = toolNames;
 
     // P5.7-R8c: 使用 manifest 的 toOpenAiToolSchemas 生成完整说明书
     const activeToolSchemas = toOpenAiToolSchemas(activeToolNames);
@@ -1442,21 +1448,24 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
         };
     }
 
-    const initialUnexpectedToolNames = findUnexpectedToolNames(toolCalls, activeToolNames);
-    if (initialUnexpectedToolNames.length > 0) {
-        return {
-            answer: buildUnexpectedToolAnswer(initialUnexpectedToolNames, activeToolNames),
-            actionJournal: [],
-        };
-    }
+    // P0 松绑：移除"未暴露工具直接判死"逻辑
+    // 让 LLM 可以调用它认为合适的工具，不因为工具不在 activeToolNames 就阻断
+    // const initialUnexpectedToolNames = findUnexpectedToolNames(toolCalls, activeToolNames);
+    // if (initialUnexpectedToolNames.length > 0) {
+    //     return {
+    //         answer: buildUnexpectedToolAnswer(initialUnexpectedToolNames, activeToolNames),
+    //         actionJournal: [],
+    //     };
+    // }
 
-    // 纠偏后仍不匹配：拒绝执行错误工具
-    if (hasDisallowedPreferredToolMismatch(toolCalls, preferredToolName, bashFallbackAllowed)) {
-        return {
-            answer: `工具协议失败：模型未按要求调用工具\n- 期望工具：${preferredToolName}\n- 错误码：MODEL_PROTOCOL_FAILED\n\n请重试并明确要求调用正确工具。`,
-            actionJournal: [],
-        };
-    }
+    // P0 松绑：移除 preferredToolMismatch 直接判死逻辑
+    // 让 LLM 可以选择更合适的工具，不因为没按 preferred 工具调用就阻断
+    // if (hasDisallowedPreferredToolMismatch(toolCalls, preferredToolName, bashFallbackAllowed)) {
+    //     return {
+    //         answer: `工具协议失败：模型未按要求调用工具\n- 期望工具：${preferredToolName}\n- 错误码：MODEL_PROTOCOL_FAILED\n\n请重试并明确要求调用正确工具。`,
+    //         actionJournal: [],
+    //     };
+    // }
 
     const executedToolCalls: ExecutedToolCall[] = [];
     let currentAssistantRole = msg1?.role || "assistant";
@@ -1466,13 +1475,14 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     let finalAssistantContent = "";
 
     while (true) {
-        const unexpectedToolNames = findUnexpectedToolNames(currentToolCalls, activeToolNames);
-        if (unexpectedToolNames.length > 0) {
-            return {
-                answer: buildUnexpectedToolAnswer(unexpectedToolNames, activeToolNames),
-                actionJournal,
-            };
-        }
+        // P0 松绑：移除循环中"未暴露工具直接判死"逻辑（OpenAI 风格）
+        // const unexpectedToolNames = findUnexpectedToolNames(currentToolCalls, activeToolNames);
+        // if (unexpectedToolNames.length > 0) {
+        //     return {
+        //         answer: buildUnexpectedToolAnswer(unexpectedToolNames, activeToolNames),
+        //         actionJournal,
+        //     };
+        // }
 
         // P5.7-R12-T8: 单轮工具调用数检查
         if (currentToolCalls.length > perTurnToolCallLimit) {
