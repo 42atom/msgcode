@@ -26,6 +26,8 @@
 16. `P5.7-R5`：编排与调度域（`todo *` + `schedule *`）
 17. `P5.7-R6`：多模态域（`media *` + `gen *`）
 18. `P5.7-R7`：浏览器域（`browser *`）
+19. `P5.7-R7B`：Gmail 只读验收（首条真实浏览器业务流）
+20. `P5.7-R7C`：非默认 Chrome 数据根 + CDP 验证
 19. `P5.7-R8`：代理域（`agent run/status`）
 20. `P5.7-R8b`：Agent Backend 语义收敛与 MiniMax 2.5 切换（`lmstudio` -> `agent-backend`）
 21. `P5.7-R8d`：模型切换全链路同步（后端模型单源绑定）
@@ -38,6 +40,19 @@
 28. `P5.7-R9-T6`：`lmstudio` 硬编码语义清理（配置/路由/类型主语收敛）
 29. `P5.7-R9-T7`：`lmstudio.ts` 兼容壳化与 agent-backend 核心拆分
 30. `P5.7-R9-T8`：仓库文档协议目录对齐（issues/design/notes/adr/changelog）
+31. `P5.7-R10`：可用性稳定化派单包（memory/thread/gen image 可用性阻断收口）
+32. `P5.7-R10-1`：memory 零手工索引召回（add 后可直接 search）
+33. `P5.7-R10-2`：thread workspace 作用域一致性（补齐 `--workspace`）
+34. `P5.7-R10-3`：gen image 提供方降级与诊断（区域限制可恢复）
+35. `P5.7-R11`：无子代理执行框架落地（单代理阶段机 + 先读后改 + 先验后交）
+36. `P5.7-R12`：硬前提补齐派单包（常驻唤醒/调度自愈/verify/队列持久化/预算统一/secrets 单源/模型服务生命周期）
+37. `P5.7-R12-T1`：Heartbeat 常驻唤醒与事件唤醒底座
+38. `P5.7-R12-T2`：Scheduler 自愈与热加载（去 `/reload` 依赖）
+39. `P5.7-R12-T3`：`verify` 阶段入主链（plan->act->verify->report）
+40. `P5.7-R12-T4`：事件队列持久化与重启恢复
+41. `P5.7-R12-T5`：上下文预算单源化与跨后端一致性
+42. `P5.7-R12-T6`：Secrets 单源化与 preflight 闭环
+43. `P5.7-R12-T7`：Whisper/本地模型服务空闲 10 分钟释放策略与验收
 
 ## P5 当前唯一执行主线（冻结）
 
@@ -116,6 +131,19 @@
 23. `P5.7-R9-T6`：lmstudio 硬编码语义清理（配置/路由/类型主语收敛）
 24. `P5.7-R9-T7`：agent-backend 核心拆分（`lmstudio.ts` 降级为兼容壳）
 25. `P5.7-R9-T8`：CLAUDE 文档协议目录对齐（目录 + 模板 + docs:check）
+26. `P5.7-R10`：可用性稳定化派单包（真实冒烟阻断收口）
+27. `P5.7-R10-1`：memory 零手工索引召回（`add -> search` 可直接命中）
+28. `P5.7-R10-2`：thread workspace 作用域一致性（参数与行为对齐）
+29. `P5.7-R10-3`：gen image 提供方降级与诊断（主备切换 + 错误码）
+30. `P5.7-R11`：无子代理执行框架落地（规则提炼 + 阶段机 + 验证策略）
+31. `P5.7-R12`：硬前提补齐派单包（连续运行、可验证交付、配置单源）
+32. `P5.7-R12-T1`：Heartbeat 常驻唤醒与事件唤醒底座
+33. `P5.7-R12-T2`：Scheduler 自愈与热加载
+34. `P5.7-R12-T3`：`verify` 阶段入主链
+35. `P5.7-R12-T4`：事件队列持久化与重启恢复
+36. `P5.7-R12-T5`：上下文预算单源化与跨后端一致性
+37. `P5.7-R12-T6`：Secrets 单源化与 preflight 闭环
+38. `P5.7-R12-T7`：Whisper/本地模型服务生命周期验收与 10 分钟空闲释放
 
 ### 派单顺序（冻结）
 
@@ -194,6 +222,8 @@
 - `p5-7-r6-media-gen-domain.md`：P5.7-R6（多模态域任务单）
 - `p5-7-r6b-image-read-lmstudio-lifecycle.md`：P5.7-R6b（`image read` + LM Studio 按需加载/1h 自动卸载）
 - `p5-7-r7-browser-domain.md`：P5.7-R7（浏览器域任务单）
+- `p5-7-r7b-gmail-readonly-acceptance.md`：P5.7-R7B（Gmail 只读验收）
+- `p5-7-r7c-nondefault-chrome-root-cdp.md`：P5.7-R7C（非默认 Chrome 数据根 + CDP 验证）
 - `p5-7-r8-agent-domain.md`：P5.7-R8（代理域任务单）
 - `p5-7-r8b-agent-backend-switch-minimax-2-5.md`：P5.7-R8b（Agent Backend 切换与 `lmstudio` 语义退场）
 - `p5-7-r8d-model-switch-chain-sync.md`：P5.7-R8d（后端模型切换全链路同步，单源绑定）
@@ -206,6 +236,21 @@
 - `p5-7-r9-t6-lmstudio-hardcode-purge.md`：P5.7-R9-T6（`lmstudio` 硬编码语义清理专项）
 - `p5-7-r9-t7-agent-backend-core-extraction.md`：P5.7-R9-T7（`lmstudio.ts` 兼容壳化 + agent-backend 核心拆分）
 - `p5-7-r9-t8-repo-protocol-alignment.md`：P5.7-R9-T8（CLAUDE 协议目录落地与兼容迁移）
+- `p5-7-r10-usability-stabilization-pack.md`：P5.7-R10（可用性稳定化派单包）
+- `p5-7-r10-1-memory-zero-touch-recall.md`：P5.7-R10-1（memory 零手工索引召回）
+- `p5-7-r10-2-thread-workspace-scope-parity.md`：P5.7-R10-2（thread workspace 作用域一致性）
+- `p5-7-r10-3-gen-image-provider-fallback-diagnostics.md`：P5.7-R10-3（gen image 提供方降级与诊断）
+- `p5-7-r11-no-subagent-execution-playbook.md`：P5.7-R11（无子代理执行框架落地）
+- `p5-7-r12-hard-prerequisites-dispatch-pack.md`：P5.7-R12（硬前提补齐派单包）
+- `p5-7-r12-t1-heartbeat-event-wake.md`：P5.7-R12-T1（Heartbeat 常驻唤醒与事件唤醒底座）
+- `p5-7-r12-t1-heartbeat-event-wake-dispatch.md`：P5.7-R12-T1 派单执行单（Opus）
+- `p5-7-r12-t2-scheduler-self-heal-hot-reload.md`：P5.7-R12-T2（Scheduler 自愈与热加载）
+- `p5-7-r12-t2-scheduler-self-heal-hot-reload-dispatch.md`：P5.7-R12-T2 派单执行单（Opus）
+- `p5-7-r12-t3-verify-phase-mainline.md`：P5.7-R12-T3（`verify` 阶段入主链）
+- `p5-7-r12-t4-event-queue-persistence.md`：P5.7-R12-T4（事件队列持久化与重启恢复）
+- `p5-7-r12-t5-context-budget-single-source.md`：P5.7-R12-T5（上下文预算单源化）
+- `p5-7-r12-t6-secrets-single-source-preflight.md`：P5.7-R12-T6（Secrets 单源化与 preflight 闭环）
+- `p5-7-r12-t7-model-service-idle-release.md`：P5.7-R12-T7（Whisper/本地模型服务生命周期验收与 10 分钟空闲释放）
 - `p5-7-r3d-lmstudio-glm-toolcall-temperature-lock.md`：P5.7-R3d（LM Studio GLM ToolCall 温度锁定）
 - `p5-7-r3f-r3k-tool-loop-best-practice-pack.md`：P5.7-R3f~R3k（Tool Loop 最佳实践改造派单包）
 - `p5-7-r3f-bash-runner-engineering.md`：P5.7-R3f（Bash Runner 工程化）

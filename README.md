@@ -32,6 +32,7 @@ msgcode 的目标是把「个人智能体」做成可长期运行的基础设施
 - Node.js + npm
 - `tmux`
 - iMessage 可用账号
+- Chrome/Chromium（供浏览器自动化底座使用）
 
 ### 2. 安装依赖
 
@@ -39,6 +40,11 @@ msgcode 的目标是把「个人智能体」做成可长期运行的基础设施
 cd <msgcode-dir>
 npm install
 ```
+
+说明：
+- `npm install` 现在会同时安装 `pinchtab` npm 依赖，并自动下载对应平台的 PinchTab 二进制。
+- 默认二进制落在：`~/.pinchtab/bin/<version>/`
+- 当前验证版本：`0.7.7`
 
 ### 3. 初始化配置
 
@@ -61,7 +67,18 @@ npm exec msgcode -- init
 MY_EMAIL=me@icloud.com
 IMSG_PATH=/Users/<you>/msgcode/vendor/imsg/v0.4.0/imsg
 WORKSPACE_ROOT=/Users/<you>/msgcode-workspaces
+PINCHTAB_BASE_URL=http://127.0.0.1:9867
 ```
+
+Browser Core 配置口径：
+- `PINCHTAB_BASE_URL` / `PINCHTAB_URL` 当前只支持指向 **PinchTab orchestrator/dashboard** 地址。
+- 不要把 `pinchtab connect` 返回的实例 URL 填到这里；那类 URL 不支持 `profiles.*` / `instances.*` 管理接口。
+- `PINCHTAB_TOKEN` 可选；如果服务启用了鉴权，再显式配置。
+- Chrome 工作数据根默认放在：`$WORKSPACE_ROOT/.msgcode/chrome-profiles/<name>`
+- 默认工作根名：`work-default`
+- 如需查看或创建默认路径，可执行：
+  - `npx tsx src/cli.ts browser root --json`
+  - `npx tsx src/cli.ts browser root --ensure --json`
 
 ### 5. 启动服务
 

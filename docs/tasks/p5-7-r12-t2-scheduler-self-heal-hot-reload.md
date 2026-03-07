@@ -2,6 +2,11 @@
 
 优先级：P0
 
+## 回链
+
+- Issue: [0006](../../issues/0006-agent-relentless-task-closure.md)
+- Plan: docs/design/plan-260306-agent-relentless-task-closure.md
+
 ## 目标（冻结）
 
 1. 消除“无到期任务即停摆”的调度风险。  
