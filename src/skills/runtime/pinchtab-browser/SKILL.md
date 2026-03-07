@@ -1,9 +1,14 @@
+> RETIRED / HISTORICAL / ROLLBACK ONLY
+>
+> 已被 `patchright-browser` 取代，不再是正式 runtime skill 真相源。
+> 保留本文件仅作历史参考与回滚说明，正式浏览器通道请看 `~/.config/msgcode/skills/patchright-browser/`。
+
 # pinchtab-browser skill
 
 触发：浏览器自动化、PinchTab CLI、profile/instance/tab 操作、共享工作 Chrome 根目录。
 
-正式浏览器通道：`browser` 工具（PinchTab）。
-本 skill 作用：提供 PinchTab CLI 合同与最小命令壳，不替代正式 `browser` 工具。
+历史浏览器通道：`browser` 工具（PinchTab，已退役）。
+本 skill 作用：保留 PinchTab CLI 合同与最小命令壳，供历史追溯或回滚参考。
 
 优先入口：`~/.config/msgcode/skills/pinchtab-browser/main.sh`
 

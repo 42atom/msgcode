@@ -1,4 +1,8 @@
 /**
+ * RETIRED / HISTORICAL / ROLLBACK ONLY
+ * 当前正式浏览器主链已切到 src/runners/browser-patchright.ts。
+ * 本文件保留仅作历史参考与回滚锚点，不得重新接回正式运行时。
+ *
  * msgcode: PinchTab 运行时真相源
  *
  * 目标：

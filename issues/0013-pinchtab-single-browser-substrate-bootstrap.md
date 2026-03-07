@@ -14,6 +14,9 @@ created: 2026-03-07
 due:
 ---
 
+> 状态：已被 `issues/0016-patchright-browser-cutover.md` 取代。
+> 保留仅作历史决策与回滚记录，不再作为正式执行真相源。
+
 ## Context
 
 - 当前 `msgcode` 的浏览器主链已经冻结为 PinchTab，但实际运行仍然缺两块前提：

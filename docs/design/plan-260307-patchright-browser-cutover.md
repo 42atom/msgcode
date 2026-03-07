@@ -42,6 +42,25 @@ Phase A 已经证明 Patchright 在直启和 `connectOverCDP` 模式下都能通
 
 推荐：方案 B。
 
+## Current Truth Source
+
+正式口径（现役）：
+
+- `src/runners/browser-patchright.ts`
+- `src/skills/runtime/patchright-browser/SKILL.md`
+- `prompts/agents-prompt.md`
+- `src/agent-backend/tool-loop.ts`
+- `src/commands.ts`
+
+历史档案 / 回滚锚点（保留，但不再作为正式执行真相源）：
+
+- `src/runners/browser-pinchtab.ts`
+- `src/browser/pinchtab-runtime.ts`
+- `src/skills/runtime/pinchtab-browser/`
+- `issues/0013-pinchtab-single-browser-substrate-bootstrap.md`
+- `docs/design/plan-260307-pinchtab-single-browser-substrate-bootstrap.md`
+- `docs/design/plan-260307-runtime-skill-source-sync.md`
+
 ## 方法解释
 
 ### 1. Instance 模型

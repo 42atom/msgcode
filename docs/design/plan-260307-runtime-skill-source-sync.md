@@ -1,5 +1,8 @@
 # Plan: Runtime skill 仓库源与安装目录单一真相源
 
+> 状态：原方案中的 `pinchtab-browser` 已被 `patchright-browser` 取代。
+> 保留仅作历史安装链记录，不再作为正式 runtime skill 真相源。
+
 Issue: 0014
 
 ## Problem

@@ -75,6 +75,19 @@ due:
 - Restart：
   - `./bin/msgcode restart`
   - `/Users/admin/.config/msgcode/log/msgcode.log` 出现：`共享工作 Chrome 根目录已就绪`
+- 正式真相源：
+  - `src/runners/browser-patchright.ts`
+  - `src/skills/runtime/patchright-browser/SKILL.md`
+  - `prompts/agents-prompt.md`
+  - `src/agent-backend/tool-loop.ts`
+  - `src/commands.ts`
+- 历史档案 / 回滚锚点：
+  - `src/runners/browser-pinchtab.ts`
+  - `src/browser/pinchtab-runtime.ts`
+  - `src/skills/runtime/pinchtab-browser/`
+  - `issues/0013-pinchtab-single-browser-substrate-bootstrap.md`
+  - `docs/design/plan-260307-pinchtab-single-browser-substrate-bootstrap.md`
+  - `docs/design/plan-260307-runtime-skill-source-sync.md`
 - TypeScript：
   - `PATH="$HOME/.bun/bin:$PATH" bun x tsc --noEmit`
   - 当前仍被仓库既有问题阻塞：`src/feishu/transport.ts` 与 `src/routes/cmd-model.ts`

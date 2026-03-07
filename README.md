@@ -42,9 +42,9 @@ npm install
 ```
 
 说明：
-- `npm install` 现在会同时安装 `pinchtab` npm 依赖，并自动下载对应平台的 PinchTab 二进制。
-- 默认二进制落在：`~/.pinchtab/bin/<version>/`
-- 当前验证版本：`0.7.7`
+- `npm install` 现在会安装 `patchright` 依赖，正式浏览器主链通过 `connectOverCDP` 连接共享工作 Chrome。
+- 共享工作 Chrome 数据根默认落在：`$WORKSPACE_ROOT/.msgcode/chrome-profiles/<name>`
+- 当前正式浏览器主链：Patchright + Chrome-as-State
 
 ### 3. 初始化配置
 
@@ -67,13 +67,11 @@ npm exec msgcode -- init
 MY_EMAIL=me@icloud.com
 IMSG_PATH=/Users/<you>/msgcode/vendor/imsg/v0.4.0/imsg
 WORKSPACE_ROOT=/Users/<you>/msgcode-workspaces
-PINCHTAB_BASE_URL=http://127.0.0.1:9867
 ```
 
 Browser Core 配置口径：
-- `PINCHTAB_BASE_URL` / `PINCHTAB_URL` 当前只支持指向 **PinchTab orchestrator/dashboard** 地址。
-- 不要把 `pinchtab connect` 返回的实例 URL 填到这里；那类 URL 不支持 `profiles.*` / `instances.*` 管理接口。
-- `PINCHTAB_TOKEN` 可选；如果服务启用了鉴权，再显式配置。
+- 正式浏览器主链不再依赖 PinchTab orchestrator/baseUrl/binary 环境变量。
+- 正式连接方式固定为 Patchright `connectOverCDP` + 共享工作 Chrome root。
 - Chrome 工作数据根默认放在：`$WORKSPACE_ROOT/.msgcode/chrome-profiles/<name>`
 - 默认工作根名：`work-default`
 - 如需查看或创建默认路径，可执行：

@@ -1,5 +1,8 @@
 # Plan: PinchTab 单一浏览器底座预启动与路径注入
 
+> 状态：已被 `docs/design/plan-260307-patchright-browser-cutover.md` 与 `issues/0016-patchright-browser-cutover.md` 取代。
+> 保留仅作历史决策与回滚记录，不再作为正式执行真相源。
+
 Issue: 0013
 
 ## Problem
