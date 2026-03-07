@@ -70,6 +70,16 @@ describe("P5.7-R5-2: Schedule 命令合同", () => {
       expect(SCHEDULE_ERROR_CODES.REMOVE_FAILED).toBe("SCHEDULE_REMOVE_FAILED");
     });
 
+    it("SCHEDULE_ENABLE_FAILED 应该存在于错误码枚举中", async () => {
+      const { SCHEDULE_ERROR_CODES } = await import("../src/cli/schedule.js");
+      expect(SCHEDULE_ERROR_CODES.ENABLE_FAILED).toBe("SCHEDULE_ENABLE_FAILED");
+    });
+
+    it("SCHEDULE_DISABLE_FAILED 应该存在于错误码枚举中", async () => {
+      const { SCHEDULE_ERROR_CODES } = await import("../src/cli/schedule.js");
+      expect(SCHEDULE_ERROR_CODES.DISABLE_FAILED).toBe("SCHEDULE_DISABLE_FAILED");
+    });
+
     it("所有 SCHEDULE 错误码应该有 SCHEDULE_ 前缀", async () => {
       const { SCHEDULE_ERROR_CODES } = await import("../src/cli/schedule.js");
       const codes = Object.values(SCHEDULE_ERROR_CODES);
@@ -141,6 +151,30 @@ describe("P5.7-R5-2: Schedule 命令合同", () => {
       expect(contract.errorCodes).toContain("SCHEDULE_WORKSPACE_NOT_FOUND");
       expect(contract.errorCodes).toContain("SCHEDULE_REMOVE_FAILED");
     });
+
+    it("getScheduleEnableContract 应该返回正确的合同结构", async () => {
+      const { getScheduleEnableContract } = await import("../src/cli/schedule.js");
+      const contract = getScheduleEnableContract();
+
+      expect(contract.name).toBe("msgcode schedule enable");
+      expect(contract.description).toContain("启用");
+      expect(contract.options?.required).toHaveProperty("--workspace");
+      expect(contract.options?.optional).toHaveProperty("--json");
+      expect(contract.errorCodes).toContain("SCHEDULE_NOT_FOUND");
+      expect(contract.errorCodes).toContain("SCHEDULE_ENABLE_FAILED");
+    });
+
+    it("getScheduleDisableContract 应该返回正确的合同结构", async () => {
+      const { getScheduleDisableContract } = await import("../src/cli/schedule.js");
+      const contract = getScheduleDisableContract();
+
+      expect(contract.name).toBe("msgcode schedule disable");
+      expect(contract.description).toContain("禁用");
+      expect(contract.options?.required).toHaveProperty("--workspace");
+      expect(contract.options?.optional).toHaveProperty("--json");
+      expect(contract.errorCodes).toContain("SCHEDULE_NOT_FOUND");
+      expect(contract.errorCodes).toContain("SCHEDULE_DISABLE_FAILED");
+    });
   });
 
   describe("命令创建验证", () => {
@@ -177,6 +211,8 @@ describe("P5.7-R5-2: Schedule 命令合同", () => {
       expect(subCommands).toContain("add");
       expect(subCommands).toContain("list");
       expect(subCommands).toContain("remove");
+      expect(subCommands).toContain("enable");
+      expect(subCommands).toContain("disable");
     });
   });
 
@@ -335,6 +371,8 @@ describe("P5.7-R5-2: Schedule 命令合同", () => {
       expect(helpContent).toContain("getScheduleAddContract");
       expect(helpContent).toContain("getScheduleListContract");
       expect(helpContent).toContain("getScheduleRemoveContract");
+      expect(helpContent).toContain("getScheduleEnableContract");
+      expect(helpContent).toContain("getScheduleDisableContract");
     });
   });
 

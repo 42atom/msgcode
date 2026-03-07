@@ -113,6 +113,24 @@ describe("P5.7-R5-3: Help-Docs 回归锁", () => {
       expect(cmd?.description).toContain("删除");
       expect(cmd?.options?.required).toHaveProperty("--workspace");
     });
+
+    it("help-docs --json 必须包含 msgcode schedule enable 合同", () => {
+      const { commands } = getHelpDocsOutput();
+      const cmd = findCommand(commands, "msgcode schedule enable");
+
+      expect(cmd).toBeDefined();
+      expect(cmd?.description).toContain("启用");
+      expect(cmd?.options?.required).toHaveProperty("--workspace");
+    });
+
+    it("help-docs --json 必须包含 msgcode schedule disable 合同", () => {
+      const { commands } = getHelpDocsOutput();
+      const cmd = findCommand(commands, "msgcode schedule disable");
+
+      expect(cmd).toBeDefined();
+      expect(cmd?.description).toContain("禁用");
+      expect(cmd?.options?.required).toHaveProperty("--workspace");
+    });
   });
 
   describe("Todo 错误码枚举锁", () => {
@@ -190,6 +208,32 @@ describe("P5.7-R5-3: Help-Docs 回归锁", () => {
       expect(cmd?.errorCodes).toContain("SCHEDULE_NOT_FOUND");
       expect(cmd?.errorCodes).toContain("SCHEDULE_WORKSPACE_NOT_FOUND");
       expect(cmd?.errorCodes).toContain("SCHEDULE_REMOVE_FAILED");
+
+      // 锁定数量
+      expect(cmd?.errorCodes?.length).toBe(3);
+    });
+
+    it("schedule enable 错误码必须冻结为固定集合", () => {
+      const { commands } = getHelpDocsOutput();
+      const cmd = findCommand(commands, "msgcode schedule enable");
+
+      expect(cmd?.errorCodes).toBeDefined();
+      expect(cmd?.errorCodes).toContain("SCHEDULE_NOT_FOUND");
+      expect(cmd?.errorCodes).toContain("SCHEDULE_WORKSPACE_NOT_FOUND");
+      expect(cmd?.errorCodes).toContain("SCHEDULE_ENABLE_FAILED");
+
+      // 锁定数量
+      expect(cmd?.errorCodes?.length).toBe(3);
+    });
+
+    it("schedule disable 错误码必须冻结为固定集合", () => {
+      const { commands } = getHelpDocsOutput();
+      const cmd = findCommand(commands, "msgcode schedule disable");
+
+      expect(cmd?.errorCodes).toBeDefined();
+      expect(cmd?.errorCodes).toContain("SCHEDULE_NOT_FOUND");
+      expect(cmd?.errorCodes).toContain("SCHEDULE_WORKSPACE_NOT_FOUND");
+      expect(cmd?.errorCodes).toContain("SCHEDULE_DISABLE_FAILED");
 
       // 锁定数量
       expect(cmd?.errorCodes?.length).toBe(3);
@@ -308,14 +352,14 @@ describe("P5.7-R5-3: Help-Docs 回归锁", () => {
   });
 
   describe("命令数量回归锁", () => {
-    it("help-docs 必须包含至少 6 个 todo/schedule 命令", () => {
+    it("help-docs 必须包含至少 8 个 todo/schedule 命令", () => {
       const { commands } = getHelpDocsOutput();
 
       const todoCommands = commands.filter((cmd) => cmd.name.startsWith("msgcode todo"));
       const scheduleCommands = commands.filter((cmd) => cmd.name.startsWith("msgcode schedule"));
 
       expect(todoCommands.length).toBe(3); // add, list, done
-      expect(scheduleCommands.length).toBe(3); // add, list, remove
+      expect(scheduleCommands.length).toBe(5); // add, list, remove, enable, disable
     });
   });
 });

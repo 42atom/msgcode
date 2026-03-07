@@ -15,7 +15,7 @@ import { getSystemCommandContract } from "./system.js";
 import { getMemoryAddContract, getMemorySearchContract, getMemoryStatsContract } from "./memory.js";
 import { getThreadListContract, getThreadMessagesContract, getThreadActiveContract, getThreadSwitchContract } from "./thread.js";
 import { getTodoAddContract, getTodoListContract, getTodoDoneContract } from "./todo.js";
-import { getScheduleAddContract, getScheduleListContract, getScheduleRemoveContract } from "./schedule.js";
+import { getScheduleAddContract, getScheduleListContract, getScheduleRemoveContract, getScheduleEnableContract, getScheduleDisableContract } from "./schedule.js";
 import { getMediaScreenContract } from "./media.js";
 import { getGenImageContract, getGenSelfieContract } from "./gen-image.js";
 import { getGenTtsContract, getGenMusicContract } from "./gen-audio.js";
@@ -132,6 +132,8 @@ export function createHelpDocsCommand(): Command {
           getScheduleAddContract() as Record<string, unknown>,
           getScheduleListContract() as Record<string, unknown>,
           getScheduleRemoveContract() as Record<string, unknown>,
+          getScheduleEnableContract() as Record<string, unknown>,
+          getScheduleDisableContract() as Record<string, unknown>,
           // Media 命令组（P5.7-R6-1）
           getMediaScreenContract() as Record<string, unknown>,
           // Gen Image 命令组（P5.7-R6-2）

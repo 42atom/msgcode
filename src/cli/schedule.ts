@@ -42,6 +42,8 @@ export const SCHEDULE_ERROR_CODES = {
   ADD_FAILED: "SCHEDULE_ADD_FAILED",
   LIST_FAILED: "SCHEDULE_LIST_FAILED",
   REMOVE_FAILED: "SCHEDULE_REMOVE_FAILED",
+  ENABLE_FAILED: "SCHEDULE_ENABLE_FAILED",
+  DISABLE_FAILED: "SCHEDULE_DISABLE_FAILED",
 } as const;
 
 // ============================================
@@ -901,6 +903,58 @@ export function getScheduleRemoveContract() {
       "SCHEDULE_NOT_FOUND",
       "SCHEDULE_WORKSPACE_NOT_FOUND",
       "SCHEDULE_REMOVE_FAILED",
+    ],
+  };
+}
+
+/**
+ * 获取 schedule enable 命令合同
+ */
+export function getScheduleEnableContract() {
+  return {
+    name: "msgcode schedule enable",
+    description: "启用定时调度",
+    options: {
+      required: {
+        "--workspace": "Workspace ID、相对路径或绝对路径",
+      },
+      optional: {
+        "--json": "JSON 格式输出",
+      },
+    },
+    output: {
+      scheduleId: "Schedule ID",
+    },
+    errorCodes: [
+      "SCHEDULE_NOT_FOUND",
+      "SCHEDULE_WORKSPACE_NOT_FOUND",
+      "SCHEDULE_ENABLE_FAILED",
+    ],
+  };
+}
+
+/**
+ * 获取 schedule disable 命令合同
+ */
+export function getScheduleDisableContract() {
+  return {
+    name: "msgcode schedule disable",
+    description: "禁用定时调度",
+    options: {
+      required: {
+        "--workspace": "Workspace ID、相对路径或绝对路径",
+      },
+      optional: {
+        "--json": "JSON 格式输出",
+      },
+    },
+    output: {
+      scheduleId: "Schedule ID",
+    },
+    errorCodes: [
+      "SCHEDULE_NOT_FOUND",
+      "SCHEDULE_WORKSPACE_NOT_FOUND",
+      "SCHEDULE_DISABLE_FAILED",
     ],
   };
 }
