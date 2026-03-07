@@ -153,12 +153,12 @@ describe("Tool Bus", () => {
       expect(policy.allow).toContain("tts");
       expect(policy.allow).toContain("asr");
       expect(policy.allow).toContain("vision");
-      // P5.7-R6 HOTFIX: 默认工具策略与 workspace 默认配置保持一致（PI 四工具可用）
+      // 默认工具策略与 workspace 默认配置保持一致（文件主链收口为 read_file + bash）
       expect(policy.allow).toContain("bash");
       expect(policy.allow).toContain("browser");
       expect(policy.allow).toContain("read_file");
-      expect(policy.allow).toContain("write_file");
-      expect(policy.allow).toContain("edit_file");
+      expect(policy.allow).not.toContain("write_file");
+      expect(policy.allow).not.toContain("edit_file");
     });
 
     test("应该从 workspace config.json 读取配置", () => {
@@ -588,8 +588,8 @@ describe("Tool Bus", () => {
       expect(policy.allow).toContain("bash");
       expect(policy.allow).toContain("browser");
       expect(policy.allow).toContain("read_file");
-      expect(policy.allow).toContain("write_file");
-      expect(policy.allow).toContain("edit_file");
+      expect(policy.allow).not.toContain("write_file");
+      expect(policy.allow).not.toContain("edit_file");
     });
 
     test("autonomous 模式下应该允许 llm-tool-call 来源", async () => {

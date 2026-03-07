@@ -50,7 +50,7 @@ async function createToolEnabledWorkspace(): Promise<string> {
         JSON.stringify({
             "pi.enabled": true,
             "tooling.mode": "autonomous",
-            "tooling.allow": ["bash", "read_file", "write_file", "edit_file"],
+            "tooling.allow": ["bash", "read_file"],
             "tooling.require_confirm": [],
         }, null, 2),
         "utf-8"
@@ -209,7 +209,7 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
         }
     });
 
-    it("显式 edit_file 失败时应允许退回 bash 完成任务", async () => {
+    it("即使用户点名 edit_file，也不应再向模型暴露该工具，最终应改走 bash", async () => {
         const originalFetch = globalThis.fetch;
         const workspacePath = await createToolEnabledWorkspace();
         const targetFile = join(workspacePath, ".msgcode", "toolcheck.txt");
@@ -222,24 +222,13 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
                 ? JSON.parse(init.body) as { tools?: Array<{ function?: { name?: string } }> }
                 : {};
 
-            if (callCount <= 2) {
-                return asJsonResponse({
-                    choices: [{
-                        message: {
-                            role: "assistant",
-                            content: "我会先试试 edit_file。",
-                        },
-                        finish_reason: "stop",
-                    }],
-                });
-            }
-
-            if (callCount === 3) {
+            if (callCount === 1) {
                 const toolNames = Array.isArray(body.tools)
                     ? body.tools.map((tool) => tool.function?.name).filter(Boolean)
                     : [];
-                expect(toolNames).toContain("edit_file");
                 expect(toolNames).toContain("bash");
+                expect(toolNames).toContain("read_file");
+                expect(toolNames).not.toContain("edit_file");
                 return asJsonResponse({
                     choices: [{
                         message: {
@@ -282,7 +271,7 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
                 backendRuntime: localOpenAiRuntime,
             });
 
-            expect(callCount).toBe(4);
+            expect(callCount).toBe(2);
             expect(result.toolCall?.name).toBe("bash");
             expect(result.answer).toContain("ok");
             const updated = await Bun.file(targetFile).text();
@@ -367,7 +356,7 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
         }
     });
 
-    it("用户显式指定 edit_file 工具时，首轮应绑定该工具并完成编辑", async () => {
+    it("用户显式指定 edit_file 工具时，首轮不应再绑定 edit_file，而应改走 bash", async () => {
         const originalFetch = globalThis.fetch;
         const workspacePath = await createToolEnabledWorkspace();
         await writeFile(join(workspacePath, ".msgcode", "toolcheck.txt"), "alpha", "utf-8");
@@ -390,10 +379,9 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
                                 id: "call_edit_preferred_1",
                                 type: "function",
                                 function: {
-                                    name: "edit_file",
+                                    name: "bash",
                                     arguments: JSON.stringify({
-                                        path: ".msgcode/toolcheck.txt",
-                                        edits: [{ oldText: "alpha", newText: "beta" }],
+                                        command: `perl -0pi -e 's/alpha/beta/g' "${join(workspacePath, ".msgcode", "toolcheck.txt")}"`,
                                     }),
                                 },
                             }],
@@ -428,14 +416,11 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
             const firstToolNames = firstTools
                 .map((t) => (t as { function?: { name?: unknown } })?.function?.name)
                 .filter((name): name is string => typeof name === "string");
-            expect(firstToolNames).toContain("edit_file");
             expect(firstToolNames).toContain("bash");
-            expect(firstToolChoice === "required" || (
-                typeof firstToolChoice === "object"
-                && firstToolChoice !== null
-                && (firstToolChoice as { function?: { name?: unknown } }).function?.name === "edit_file"
-            )).toBe(true);
-            expect(result.toolCall?.name).toBe("edit_file");
+            expect(firstToolNames).toContain("read_file");
+            expect(firstToolNames).not.toContain("edit_file");
+            expect(firstToolChoice === "required" || firstToolChoice === "auto" || firstToolChoice === undefined).toBe(true);
+            expect(result.toolCall?.name).toBe("bash");
 
             const content = await (await import("node:fs/promises")).readFile(
                 join(workspacePath, ".msgcode", "toolcheck.txt"),
@@ -448,14 +433,14 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
         }
     });
 
-    it("显式工具名纠偏后仍不匹配时，应拒绝执行错误工具", async () => {
+    it("显式要求 read_file 但模型持续调用错误工具时，应拒绝执行错误工具", async () => {
         const originalFetch = globalThis.fetch;
         const workspacePath = await createToolEnabledWorkspace();
         let callCount = 0;
 
         globalThis.fetch = (async () => {
             callCount += 1;
-            // 首轮 + 纠偏轮都返回错误工具 read_file
+            // 首轮 + 纠偏轮都返回错误工具 bash
             if (callCount === 1 || callCount === 2) {
                 return asJsonResponse({
                     choices: [{
@@ -466,8 +451,8 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
                                 id: `call_wrong_${callCount}`,
                                 type: "function",
                                 function: {
-                                    name: "read_file",
-                                    arguments: JSON.stringify({ path: ".msgcode/toolcheck.txt" }),
+                                    name: "bash",
+                                    arguments: JSON.stringify({ command: "pwd" }),
                                 },
                             }],
                         },
@@ -488,7 +473,7 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
             const result = await runLmStudioToolLoop({
                 baseUrl: "http://127.0.0.1:1234",
                 model: "test-model",
-                prompt: "请使用 edit_file 工具把 .msgcode/toolcheck.txt 里的 alpha 改成 beta",
+                prompt: "请使用 read_file 工具读取 .msgcode/toolcheck.txt",
                 workspacePath,
                 timeoutMs: 10_000,
                 backendRuntime: localOpenAiRuntime,
@@ -496,7 +481,7 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
 
             expect(callCount).toBe(2);
             expect(result.answer).toContain("工具协议失败");
-            expect(result.answer).toContain("edit_file");
+            expect(result.answer).toContain("read_file");
             expect(result.actionJournal).toEqual([]);
         } finally {
             globalThis.fetch = originalFetch;

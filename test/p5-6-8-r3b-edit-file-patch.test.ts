@@ -191,7 +191,7 @@ describe("P5.6.8-R3b: edit_file 补丁语义回归锁", () => {
             expect(code).not.toContain('name: "run_skill"');
         });
 
-        it("getToolsForLlm pi.on 返回 PI 工具", async () => {
+        it("getToolsForLlm pi.on 默认只返回 read_file 与 bash", async () => {
             const { getToolsForLlm } = await import("../src/lmstudio.js");
 
             // 创建临时工作区
@@ -206,14 +206,14 @@ describe("P5.6.8-R3b: edit_file 补丁语义回归锁", () => {
 
             try {
                 const tools = await getToolsForLlm(tmpDir);
-                // PI_ON_TOOLS 包含核心工具，验证结构
+                // 默认文件主链只暴露 read_file + bash
                 expect(tools.length).toBeGreaterThan(0);
                 const toolNames = tools.map(t => t.name);
 
                 expect(toolNames).toContain("read_file");
-                expect(toolNames).toContain("write_file");
-                expect(toolNames).toContain("edit_file");
                 expect(toolNames).toContain("bash");
+                expect(toolNames).not.toContain("write_file");
+                expect(toolNames).not.toContain("edit_file");
             } finally {
                 fs.rmSync(tmpDir, { recursive: true, force: true });
             }

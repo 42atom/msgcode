@@ -423,10 +423,10 @@ export async function handlePiCommand(options: CommandHandlerOptions): Promise<C
       };
     }
 
-    // P5.6.8-R4g: 自动添加 PI 四工具到 allow 列表
+    // 自动补最小文件主链工具，避免把脆弱写工具重新暴露给模型
     const { getToolPolicy, setToolingAllow } = await import("../config/workspace.js");
     const policy = await getToolPolicy(projectDir);
-    const piTools = ["read_file", "write_file", "edit_file", "bash"] as const;
+    const piTools = ["read_file", "bash"] as const;
 
     // 确保 PI 四工具在 allow 列表中
     const missingTools = piTools.filter(t => !policy.allow.includes(t));

@@ -61,11 +61,11 @@ async function createToolEnabledWorkspace(root: string): Promise<string> {
   await mkdir(join(workspacePath, ".msgcode"), { recursive: true });
   await writeFile(
     join(workspacePath, ".msgcode", "config.json"),
-    JSON.stringify(
+        JSON.stringify(
       {
         "pi.enabled": true,
         "tooling.mode": "autonomous",
-        "tooling.allow": ["bash", "read_file", "write_file", "edit_file"],
+        "tooling.allow": ["bash", "read_file"],
         "tooling.require_confirm": [],
       },
       null,

@@ -130,6 +130,28 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     expect(tools).toContain("browser");
   });
 
+  it("旧工作区即使 allow 包含 write_file/edit_file，getToolsForLlm() 也不应再暴露它们", async () => {
+    const workspacePath = await createTempWorkspace();
+    const configPath = join(workspacePath, ".msgcode", "config.json");
+
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        "pi.enabled": true,
+        "tooling.allow": ["bash", "read_file", "write_file", "edit_file"],
+      }),
+      "utf-8"
+    );
+
+    const toolLoopModule = await import("../src/agent-backend/tool-loop.js");
+    const tools = await toolLoopModule.getToolsForLlm(workspacePath);
+
+    expect(tools).toContain("bash");
+    expect(tools).toContain("read_file");
+    expect(tools).not.toContain("write_file");
+    expect(tools).not.toContain("edit_file");
+  });
+
   it("workspace tooling.allow 不包含 browser 时，getToolsForLlm() 不应返回 browser", async () => {
     const workspacePath = await createTempWorkspace();
     const configPath = join(workspacePath, ".msgcode", "config.json");

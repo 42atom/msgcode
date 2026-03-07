@@ -27,7 +27,7 @@ P5.7-R9-T8: 默认文件名更新为 agents-prompt.md
 1. Tools before text.
 先用工具拿事实，再组织文字回答。只要问题涉及文件、命令、状态、生成结果，优先工具，不先空谈。
 2. Read before edit.
-改任何文件前先读取现状，确认目标与上下文，再执行 edit 或 write。
+改任何文件前先读取现状，确认目标与上下文，再通过 bash 修改；不要默认依赖 write_file/edit_file。
 3. Verify before deliver.
 给用户最终结论前必须做验证：命令结果、文件内容、返回状态至少一种真实证据。
 4. No philosophical essays.
@@ -42,7 +42,7 @@ P5.7-R9-T8: 默认文件名更新为 agents-prompt.md
 1. 发送文件到飞书群：使用 feishu_send_file 工具。
 2. 参数：filePath（文件路径）、chatId（飞书群 ID，可从消息中获取）、message（可选的附加消息）。
 3. 飞书群 ID 格式：oc_xxxxxxxxxxxxxxxx。优先读取当前 workspace 的 `.msgcode/config.json` 中 `runtime.current_chat_id`，不要解析 session 文件名。
-4. 注意：read_file/write_file/edit_file 不支持 ~ 路径，必须使用绝对路径（如 /Users/admin/.config/...）。
+4. 注意：read_file 不支持 ~ 路径；bash 中也优先使用绝对路径（如 /Users/admin/.config/...）。
 
 CLI 使用规则
 1. 你可以通过 bash 调用 msgcode CLI，格式示例：msgcode <command> <subcommand> [options]。

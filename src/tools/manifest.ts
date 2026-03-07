@@ -59,6 +59,16 @@ export interface LlmToolExposureResult {
   missingManifests: ToolName[];
 }
 
+/**
+ * 默认不再暴露给 LLM 的历史文件写工具。
+ * 保留执行实现，仅退出默认模型主链。
+ */
+export const LLM_DEFAULT_SUPPRESSED_TOOLS: ToolName[] = ["write_file", "edit_file"];
+
+export function filterDefaultLlmTools(toolNames: ToolName[]): ToolName[] {
+  return toolNames.filter((tool) => !LLM_DEFAULT_SUPPRESSED_TOOLS.includes(tool));
+}
+
 // ============================================
 // 工具说明书注册表
 // ============================================
@@ -483,7 +493,7 @@ export function renderLlmToolIndex(toolNames: ToolName[]): string {
   }
 
   lines.push("重要边界：skill 名不是工具名。禁止把 file、memory、thread、todo、cron、media、gen、banana-pro-image-gen 当作工具名。");
-  lines.push("常见映射：读文件用 read_file，写文件用 write_file，改文件用 edit_file，查记忆用 mem，浏览器操作用 browser。");
+  lines.push("常见映射：读文件用 read_file，写改文件优先用 bash，查记忆用 mem，浏览器操作用 browser。");
   lines.push("如果上面列表里没有某个工具名，就表示你本轮不能调用它。");
 
   return lines.join("\n");

@@ -21,6 +21,7 @@ import {
     type ActionJournalEntry as ActionJournalEntryFromBackend,
     type ParsedToolCall as ParsedToolCallFromBackend,
 } from "./agent-backend/index.js";
+import { filterDefaultLlmTools } from "./tools/manifest.js";
 
 export const LMSTUDIO_DEFAULT_CHAT_MODEL = "huihui-glm-4.7-flash-abliterated-mlx";
 
@@ -81,7 +82,7 @@ export { sanitizeLmStudioOutput } from "./agent-backend/index.js";
 export const getToolsForAgent = getToolsForLlm;
 
 // 工具名称白名单（用于 parseToolCallBestEffortFromText）
-const DEFAULT_ALLOWED_TOOL_NAMES = new Set(["read_file", "write_file", "edit_file", "bash"]);
+const DEFAULT_ALLOWED_TOOL_NAMES = new Set(["read_file", "bash"]);
 
 function escapeRegExp(s: string): string { return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }
 
@@ -215,7 +216,7 @@ export async function getToolsForLlm(workspacePath?: string): Promise<readonly A
         const { resolveLlmToolExposure } = await import("./tools/manifest.js");
 
         // 读取 workspace tooling.allow（使用默认值）
-        const allowedTools = (cfg["tooling.allow"] as any) || ["bash", "read_file", "write_file", "edit_file"];
+        const allowedTools = filterDefaultLlmTools(((cfg["tooling.allow"] as any) || ["bash", "read_file"]));
 
         // 解析 LLM 工具暴露结果
         const exposure = resolveLlmToolExposure(allowedTools);

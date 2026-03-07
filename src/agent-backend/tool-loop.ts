@@ -36,6 +36,7 @@ import {
     normalizeModelOverride,
 } from "./config.js";
 import {
+    filterDefaultLlmTools,
     renderLlmToolIndex,
     resolveLlmToolExposure,
     toAnthropicToolSchemas,
@@ -401,7 +402,7 @@ function detectPreferredToolName(
         if (!name) continue;
         available.add(name);
     }
-    const candidates = ["read_file", "write_file", "edit_file", "bash"] as const;
+    const candidates = ["read_file", "bash"] as const;
     for (const name of candidates) {
         if (!available.has(name)) continue;
         if (new RegExp(`\\b${name}\\b`, "i").test(input)) {
@@ -499,7 +500,9 @@ export async function getToolsForLlm(workspacePath?: string): Promise<ToolName[]
 
         // P5.7-R8c: 从单一真相源派生工具列表
         // 读取 workspace tooling.allow（使用默认值）
-        const allowedTools = (cfg["tooling.allow"] as ToolName[]) || ["bash", "read_file", "write_file", "edit_file"];
+        const allowedTools = filterDefaultLlmTools(
+            ((cfg["tooling.allow"] as ToolName[]) || ["bash", "read_file"])
+        );
 
         // 解析 LLM 工具暴露结果，返回 exposedTools
         const exposure = resolveLlmToolExposure(allowedTools);
