@@ -5,11 +5,9 @@
 import { join } from "node:path";
 import type { CommandHandlerOptions, CommandResult } from "./cmd-types.js";
 import { resolveCommandRoute } from "./workspace-resolver.js";
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { Cron } from "croner";
-import { getDefaultJobsPathSync } from "../jobs/store.js";
 import { getRouteByChatId } from "../routes/store.js";
 
 export async function handleScheduleListCommand(options: CommandHandlerOptions): Promise<CommandResult> {
@@ -61,9 +59,10 @@ export async function handleScheduleListCommand(options: CommandHandlerOptions):
 // ============================================
 // P5.7-R13: Schedule 双入口统一（add/remove）
 // ============================================
+// 核心原则：复用 CLI 同一套逻辑，不另起炉灶
 
 /**
- * 验证 cron 表达式和时区
+ * 验证 cron 表达式和时区（复用 CLI 逻辑）
  */
 function validateCronExpression(cron: string, tz: string): { valid: boolean; error?: string } {
   try {
@@ -84,62 +83,46 @@ function validateCronExpression(cron: string, tz: string): { valid: boolean; err
 }
 
 /**
- * 生成稳定的 jobId（与 CLI 保持一致）
+ * 解析 workspace 参数为绝对路径（复用 CLI 逻辑）
  */
-function generateJobId(projectDir: string, scheduleId: string): string {
-  const workspaceHash = createHash("sha256").update(projectDir).digest("hex").slice(0, 12);
-  return `schedule:${workspaceHash}:${scheduleId}`;
-}
+async function resolveWorkspacePathParam(input: string): Promise<string> {
+  const { parseWorkspaceParam, getWorkspaceRootForDisplay } = await import("../memory/types.js");
+  const path = await import("node:path");
+  const param = parseWorkspaceParam(input);
 
-/**
- * 原子写入文件
- */
-function atomicWrite(filePath: string, content: string): void {
-  const tmpPath = `${filePath}.${Date.now()}.tmp`;
-  try {
-    writeFileSync(tmpPath, content, "utf-8");
-    renameSync(tmpPath, filePath);
-  } catch (err) {
-    try {
-      unlinkSync(tmpPath);
-    } catch {}
-    throw err;
+  if (param.kind === "id") {
+    const route = getRouteByChatId(param.value);
+    if (!route) {
+      throw new Error("SCHEDULE_WORKSPACE_NOT_FOUND");
+    }
+    return route.workspacePath;
+  } else {
+    if (path.default.isAbsolute(param.value)) {
+      return path.default.resolve(param.value);
+    }
+
+    const workspaceRoot = getWorkspaceRootForDisplay();
+    const resolved = path.default.resolve(workspaceRoot, param.value);
+
+    const relative = path.default.relative(workspaceRoot, resolved);
+    if (relative.startsWith("..") || path.default.isAbsolute(relative)) {
+      throw new Error("PATH_TRAVERSAL");
+    }
+
+    return resolved;
   }
 }
 
 /**
- * 从 jobs.json 删除 schedule 投影
+ * 复用 CLI 的 syncScheduleToJobs（使用 mapSchedulesToJobs）
  */
-function removeScheduleFromJobs(workspacePath: string, scheduleId: string): void {
-  const jobsPath = getDefaultJobsPathSync();
-  if (!existsSync(jobsPath)) {
-    return;
-  }
-
-  try {
-    const content = readFileSync(jobsPath, "utf-8");
-    const store = JSON.parse(content);
-    const jobId = generateJobId(workspacePath, scheduleId);
-    store.jobs = store.jobs.filter((j: unknown) => (j as { id: string }).id !== jobId);
-    atomicWrite(jobsPath, JSON.stringify(store, null, 2));
-  } catch {
-    // 忽略删除失败
-  }
-}
-
-/**
- * 同步 schedule 到 jobs.json
- */
-function syncScheduleToJobs(
+async function syncScheduleToJobs(
   workspacePath: string,
-  scheduleId: string,
-  cron: string,
-  tz: string,
-  message: string,
-  chatGuid: string,
-  enabled: boolean
-): { success: boolean; warning?: string } {
-  const jobsPath = getDefaultJobsPathSync();
+  chatGuid: string
+): Promise<{ success: boolean; warning?: string }> {
+  const { mapSchedulesToJobs } = await import("../config/schedules.js");
+  const { createJobStore } = await import("../jobs/store.js");
+
   const route = getRouteByChatId(chatGuid);
   if (!route) {
     return {
@@ -148,79 +131,49 @@ function syncScheduleToJobs(
     };
   }
 
-  let store: { version: number; jobs: unknown[] };
-  if (existsSync(jobsPath)) {
-    try {
-      const content = readFileSync(jobsPath, "utf-8");
-      store = JSON.parse(content);
-    } catch {
-      store = { version: 1, jobs: [] };
-    }
+  const scheduleJobs = await mapSchedulesToJobs(workspacePath, chatGuid);
+  const store = createJobStore();
+  const existingStore = store.loadJobs();
+
+  if (existingStore) {
+    const nonScheduleJobs = existingStore.jobs.filter(j => !j.id.startsWith("schedule:"));
+    const mergedJobs = [...nonScheduleJobs, ...scheduleJobs];
+    store.saveJobs({ version: 1, jobs: mergedJobs });
   } else {
-    store = { version: 1, jobs: [] };
+    store.saveJobs({ version: 1, jobs: scheduleJobs });
   }
 
-  const jobId = generateJobId(workspacePath, scheduleId);
-  const existingIndex = store.jobs.findIndex(
-    (j: unknown) => (j as { id: string }).id === jobId
-  );
-
-  const job = {
-    id: jobId,
-    type: "schedule" as const,
-    enabled,
-    route: route.chatGuid,
-    workspace: workspacePath,
-    schedule: {
-      id: scheduleId,
-      cron,
-      tz,
-      message,
-      delivery: { mode: "reply-to-same-chat" as const, maxChars: 2000 },
-    },
-  };
-
-  if (existingIndex >= 0) {
-    (store.jobs as unknown[])[existingIndex] = job;
-  } else {
-    (store.jobs as unknown[]).push(job);
-  }
-
-  try {
-    atomicWrite(jobsPath, JSON.stringify(store, null, 2));
-    return { success: true };
-  } catch (err) {
-    return {
-      success: false,
-      warning: `同步到 jobs.json 失败：${err instanceof Error ? err.message : String(err)}`,
-    };
-  }
+  return { success: true };
 }
 
 /**
- * 解析 workspace 参数（支持 ID/相对路径/绝对路径）
+ * 复用 CLI 的 removeScheduleFromJobs
  */
-async function resolveWorkspacePathParam(input: string, chatGuid: string): Promise<string> {
-  // 尝试作为 workspace ID 解析
-  const route = getRouteByChatId(chatGuid);
-  if (route && route.workspacePath === input) {
-    return route.workspacePath;
+async function removeScheduleFromJobs(workspacePath: string, scheduleId: string): Promise<void> {
+  const { createHash } = await import("node:crypto");
+  const { readFileSync, writeFileSync, renameSync, unlinkSync } = await import("node:fs");
+  const { getDefaultJobsPathSync } = await import("../jobs/store.js");
+
+  const jobsPath = getDefaultJobsPathSync();
+  if (!existsSync(jobsPath)) {
+    return;
   }
 
-  // 尝试作为相对路径
-  if (!input.startsWith("/")) {
-    const route = getRouteByChatId(chatGuid);
-    if (route) {
-      return join(route.workspacePath, input);
-    }
-  }
+  const workspaceHash = createHash("sha256").update(workspacePath).digest("hex").slice(0, 12);
+  const jobId = `schedule:${workspaceHash}:${scheduleId}`;
 
-  // 绝对路径
-  if (input.startsWith("/")) {
-    return input;
-  }
+  try {
+    const content = readFileSync(jobsPath, "utf-8");
+    const store = JSON.parse(content);
+    store.jobs = store.jobs.filter((j: { id: string }) => j.id !== jobId);
 
-  throw new Error("SCHEDULE_WORKSPACE_NOT_FOUND");
+    // 原子写入
+    const tmpPath = `${jobsPath}.${Date.now()}.tmp`;
+    writeFileSync(tmpPath, JSON.stringify(store, null, 2), "utf-8");
+    renameSync(tmpPath, jobsPath);
+  } catch {
+    // 忽略删除失败
+  }
 }
 
 export async function handleScheduleAddCommand(options: CommandHandlerOptions): Promise<CommandResult> {
@@ -279,7 +232,7 @@ export async function handleScheduleAddCommand(options: CommandHandlerOptions): 
   }
 
   try {
-    const workspacePath = await resolveWorkspacePathParam(workspaceInput, options.chatId);
+    const workspacePath = await resolveWorkspacePathParam(workspaceInput);
 
     // 验证 cron 表达式和时区
     const cronValidation = validateCronExpression(cron, tz);
@@ -325,16 +278,8 @@ export async function handleScheduleAddCommand(options: CommandHandlerOptions): 
     const schedulePath = join(schedulesDir, `${scheduleId}.json`);
     writeFileSync(schedulePath, JSON.stringify(schedule, null, 2), "utf-8");
 
-    // 同步到 jobs.json
-    const syncResult = syncScheduleToJobs(
-      workspacePath,
-      scheduleId,
-      cron,
-      tz,
-      message,
-      options.chatId,
-      true
-    );
+    // 同步到 jobs.json（使用 mapSchedulesToJobs 统一逻辑）
+    const syncResult = await syncScheduleToJobs(workspacePath, options.chatId);
 
     let resultMessage = `已添加 schedule: ${scheduleId}\n` +
       `  Cron: ${cron}\n` +
@@ -405,7 +350,7 @@ export async function handleScheduleRemoveCommand(options: CommandHandlerOptions
   }
 
   try {
-    const workspacePath = await resolveWorkspacePathParam(workspaceInput, options.chatId);
+    const workspacePath = await resolveWorkspacePathParam(workspaceInput);
 
     // 检查 schedule 是否存在
     const { getSchedule } = await import("../config/schedules.js");
@@ -421,10 +366,10 @@ export async function handleScheduleRemoveCommand(options: CommandHandlerOptions
 
     // 删除文件
     const schedulePath = join(workspacePath, ".msgcode", "schedules", `${scheduleId}.json`);
-    unlink(schedulePath);
+    await unlink(schedulePath);
 
     // 同步从 jobs.json 删除
-    removeScheduleFromJobs(workspacePath, scheduleId);
+    await removeScheduleFromJobs(workspacePath, scheduleId);
 
     return {
       success: true,
