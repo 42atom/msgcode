@@ -151,6 +151,55 @@ describe("P5.7-R20: minimal finish supervisor", () => {
         }
     });
 
+    it("首轮无 tool_calls 的直答也必须先经过 supervisor", async () => {
+        const workspacePath = await createToolEnabledWorkspace();
+        let callCount = 0;
+
+        globalThis.fetch = (async () => {
+            callCount += 1;
+
+            if (callCount === 1) {
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: "这是一个无需工具的直接回答。",
+                        },
+                        finish_reason: "stop",
+                    }],
+                });
+            }
+
+            return asJsonResponse({
+                choices: [{
+                    message: {
+                        role: "assistant",
+                        content: "PASS",
+                    },
+                    finish_reason: "stop",
+                }],
+            });
+        }) as typeof fetch;
+
+        try {
+            const result = await runLmStudioToolLoop({
+                prompt: "直接回答，不需要工具",
+                workspacePath,
+                backendRuntime: localOpenAiRuntime,
+                timeoutMs: 10_000,
+                allowNoTool: true,
+            });
+
+            expect(callCount).toBe(2);
+            expect(result.answer).toBe("这是一个无需工具的直接回答。");
+            expect(result.decisionSource).toBe("model");
+            expect(result.actionJournal.map((entry) => entry.tool)).toEqual(["finish-supervisor"]);
+            expect(result.actionJournal[0]?.ok).toBe(true);
+        } finally {
+            await rm(workspacePath, { recursive: true, force: true });
+        }
+    });
+
     it("假完成应被拦下并继续执行到有证据再结束", async () => {
         const workspacePath = await createToolEnabledWorkspace();
         let callCount = 0;
