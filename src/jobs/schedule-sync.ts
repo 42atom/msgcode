@@ -48,8 +48,8 @@ export async function removeWorkspaceScheduleFromJobs(
   return store.deleteJob(getWorkspaceScheduleJobId(workspacePath, scheduleId));
 }
 
-export async function requestSchedulerRefresh(): Promise<SchedulerRefreshMode> {
-  const localRefreshed = await refreshActiveJobScheduler();
+export async function requestSchedulerRefresh(reason: string): Promise<SchedulerRefreshMode> {
+  const localRefreshed = await refreshActiveJobScheduler(reason);
   if (localRefreshed) {
     return "local";
   }

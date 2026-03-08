@@ -268,7 +268,7 @@ export function createScheduleAddCommand(): Command {
 
         // 同步到 jobs.json（Schedule 是真相源，Jobs 是执行投影）
         await syncWorkspaceSchedulesToJobs(workspacePath, route.chatGuid);
-        const refreshMode = await requestSchedulerRefresh();
+        const refreshMode = await requestSchedulerRefresh("schedule-sync:add:cli");
         if (refreshMode === "none") {
           warnings.push(
             createScheduleDiagnostic("SCHEDULE_REFRESH_WARNING", "scheduler 未运行，本次仅完成 jobs 投影写入")
@@ -469,7 +469,7 @@ export function createScheduleRemoveCommand(): Command {
 
         // 同步从 jobs.json 删除
         await removeWorkspaceScheduleFromJobs(workspacePath, scheduleId);
-        const refreshMode = await requestSchedulerRefresh();
+        const refreshMode = await requestSchedulerRefresh("schedule-sync:remove:cli");
         if (refreshMode === "none") {
           warnings.push(
             createScheduleDiagnostic("SCHEDULE_REFRESH_WARNING", "scheduler 未运行，本次仅完成 jobs 投影删除")
@@ -580,7 +580,7 @@ export function createScheduleEnableCommand(): Command {
         }
 
         await syncWorkspaceSchedulesToJobs(workspacePath, route.chatGuid);
-        const refreshMode = await requestSchedulerRefresh();
+        const refreshMode = await requestSchedulerRefresh("schedule-sync:enable:cli");
         if (refreshMode === "none") {
           warnings.push(
             createScheduleDiagnostic("SCHEDULE_REFRESH_WARNING", "scheduler 未运行，本次仅完成 jobs 投影写入")
@@ -656,7 +656,7 @@ export function createScheduleDisableCommand(): Command {
 
         // 同步到 jobs.json
         await removeWorkspaceScheduleFromJobs(workspacePath, scheduleId);
-        const refreshMode = await requestSchedulerRefresh();
+        const refreshMode = await requestSchedulerRefresh("schedule-sync:disable:cli");
         if (refreshMode === "none") {
           warnings.push(
             createScheduleDiagnostic("SCHEDULE_REFRESH_WARNING", "scheduler 未运行，本次仅完成 jobs 投影删除")

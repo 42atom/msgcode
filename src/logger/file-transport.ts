@@ -176,6 +176,14 @@ export class FileTransport implements Transport {
             // Phase 6: 添加常用错误字段输出（P1 日志可观测性）
             if (meta.error) parts.push(`error=${String(meta.error).slice(0, 200)}`);
             if (meta.reason) parts.push(`reason=${String(meta.reason)}`);
+            if (meta.jobCount !== undefined) parts.push(`jobCount=${meta.jobCount}`);
+            if (meta.running !== undefined) parts.push(`running=${meta.running}`);
+            if (meta.rearmed !== undefined) parts.push(`rearmed=${meta.rearmed}`);
+            if (meta.jobsPath !== undefined) parts.push(`jobsPath=${meta.jobsPath}`);
+            if (meta.nextWakeAt !== undefined) parts.push(`nextWakeAt=${meta.nextWakeAt}`);
+            if (meta.nextWakeAtMs !== undefined) parts.push(`nextWakeAtMs=${meta.nextWakeAtMs}`);
+            if (meta.dueJobsCount !== undefined) parts.push(`dueJobsCount=${meta.dueJobsCount}`);
+            if (meta.idlePoll !== undefined) parts.push(`idlePoll=${meta.idlePoll}`);
             if (meta.retry !== undefined) parts.push(`retry=${meta.retry}`);
             if (meta.status !== undefined) parts.push(`status=${meta.status}`);
 

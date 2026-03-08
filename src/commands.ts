@@ -750,7 +750,7 @@ export async function startBot(): Promise<void> {
       return;
     }
 
-    void jobScheduler.refresh().catch((error) => {
+    void jobScheduler.refresh("signal:SIGUSR2").catch((error) => {
       logger.error("JobScheduler refresh signal 失败", {
         module: "commands",
         error: error instanceof Error ? error.message : String(error),

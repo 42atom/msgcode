@@ -247,7 +247,7 @@ export async function handleScheduleAddCommand(options: CommandHandlerOptions): 
 
     // 同步到 jobs.json（使用 mapSchedulesToJobs 统一逻辑）
     await syncWorkspaceSchedulesToJobs(workspacePath, route.chatGuid);
-    const refreshMode = await requestSchedulerRefresh();
+    const refreshMode = await requestSchedulerRefresh("schedule-sync:add:chat");
 
     const resultMessage = `已添加 schedule: ${scheduleId}\n` +
       `  Cron: ${cron}\n` +
@@ -335,7 +335,7 @@ export async function handleScheduleRemoveCommand(options: CommandHandlerOptions
 
     // 同步从 jobs.json 删除
     await removeWorkspaceScheduleFromJobs(workspacePath, scheduleId);
-    const refreshMode = await requestSchedulerRefresh();
+    const refreshMode = await requestSchedulerRefresh("schedule-sync:remove:chat");
 
     return {
       success: true,
@@ -419,7 +419,7 @@ export async function handleScheduleEnableCommand(options: CommandHandlerOptions
 
   // P5.7-R12-T2: 自动同步 schedules 到 jobs（无需 /reload）
   await syncWorkspaceSchedulesToJobs(entry.workspacePath, entry.chatGuid);
-  const refreshMode = await requestSchedulerRefresh();
+  const refreshMode = await requestSchedulerRefresh("schedule-sync:enable:chat");
 
   return {
     success: true,
@@ -460,7 +460,7 @@ export async function handleScheduleDisableCommand(options: CommandHandlerOption
 
   // P5.7-R12-T2: 自动同步 schedules 到 jobs（无需 /reload）
   await syncWorkspaceSchedulesToJobs(entry.workspacePath, entry.chatGuid);
-  const refreshMode = await requestSchedulerRefresh();
+  const refreshMode = await requestSchedulerRefresh("schedule-sync:disable:chat");
 
   return {
     success: true,
@@ -492,7 +492,7 @@ export async function handleReloadCommand(options: CommandHandlerOptions): Promi
   }
 
   const scheduleJobs = await syncWorkspaceSchedulesToJobs(entry.workspacePath, entry.chatGuid);
-  const refreshMode = await requestSchedulerRefresh();
+  const refreshMode = await requestSchedulerRefresh("schedule-sync:reload:chat");
   results.push(`Jobs: 已同步 ${scheduleJobs.length} 个 schedule jobs`);
   results.push(`Scheduler Refresh: ${refreshMode}`);
 

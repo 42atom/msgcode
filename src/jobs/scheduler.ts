@@ -79,17 +79,21 @@ export class JobScheduler {
     } as typeof this.config;
   }
 
-  async refresh(): Promise<void> {
+  async refresh(reason: string = "unknown"): Promise<void> {
     const jobs = await this.reloadJobsAndState();
+    const rearmed = this.running;
 
     if (this.running) {
-      this.armTimer();
+      this.armTimer(`refresh:${reason}`);
     }
 
     logger.info("[Scheduler] 已刷新", {
       module: "jobs/scheduler",
+      reason,
       jobCount: jobs.length,
+      jobsPath: this.config.jobsPath,
       running: this.running,
+      rearmed,
     });
   }
 
@@ -106,7 +110,7 @@ export class JobScheduler {
     }
 
     this.running = true;
-    await this.refresh();
+    await this.refresh("start");
 
     logger.info("[Scheduler] 已启动", { module: "jobs/scheduler" });
   }
@@ -242,7 +246,7 @@ export class JobScheduler {
    *
    * P5.7-R12-T2: 无任务时改为 idle poll，不再静默停摆
    */
-  private armTimer(): void {
+  private armTimer(reason: string = "unknown"): void {
     if (!this.running) {
       return;
     }
@@ -259,8 +263,10 @@ export class JobScheduler {
     if (nextWakeAtMs === null) {
       logger.info("[Scheduler] 进入 idle poll 模式", {
         module: "jobs/scheduler",
+        reason,
         idlePoll: true,
         intervalMs: IDLE_POLL_INTERVAL_MS,
+        jobsPath: this.config.jobsPath,
       });
       this.timerId = setTimeout(() => {
         this.tick().catch((err) => {
@@ -296,10 +302,12 @@ export class JobScheduler {
     // P5.7-R12-T2: 结构化日志包含 nextWakeAtMs、dueJobs
     logger.info("[Scheduler] 下次唤醒", {
       module: "jobs/scheduler",
+      reason,
       nextWakeAtMs,
       nextWakeAt: new Date(nextWakeAtMs).toISOString(),
       dueJobsCount: dueJobs.length,
       idlePoll: false,
+      jobsPath: this.config.jobsPath,
     });
   }
 
@@ -394,7 +402,7 @@ export class JobScheduler {
         module: "jobs/scheduler",
         rearmedBy,
       });
-      this.armTimer();
+      this.armTimer(`tick:${rearmedBy}`);
     }
   }
 
@@ -494,11 +502,11 @@ export function registerActiveJobScheduler(scheduler: JobScheduler | null): void
   activeScheduler = scheduler;
 }
 
-export async function refreshActiveJobScheduler(): Promise<boolean> {
+export async function refreshActiveJobScheduler(reason: string = "unknown"): Promise<boolean> {
   if (!activeScheduler) {
     return false;
   }
 
-  await activeScheduler.refresh();
+  await activeScheduler.refresh(reason);
   return true;
 }
