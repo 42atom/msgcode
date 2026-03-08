@@ -13,6 +13,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import type { CronJob, Schedule, Delivery } from "../jobs/types.js";
+import { computeNextRunAtMs } from "../jobs/cron.js";
 
 // ============================================
 // Schema（v1）
@@ -213,7 +214,7 @@ export function scheduleToJob(
     } as Delivery,
     state: {
       routeStatus: "valid",
-      nextRunAtMs: null, // 由 scheduler 计算
+      nextRunAtMs: null,
       runningAtMs: null,
       lastRunAtMs: null,
       lastStatus: "pending",
@@ -224,6 +225,8 @@ export function scheduleToJob(
     createdAtMs: now,
     updatedAtMs: now,
   };
+
+  job.state.nextRunAtMs = computeNextRunAtMs(job, now);
 
   return job;
 }
@@ -248,13 +251,8 @@ export async function mapSchedulesToJobs(
       continue;
     }
 
-    try {
-      const job = scheduleToJob(schedule, chatGuid, projectDir);
-      jobs.push(job);
-    } catch {
-      // 映射失败，跳过
-      continue;
-    }
+    const job = scheduleToJob(schedule, chatGuid, projectDir);
+    jobs.push(job);
   }
 
   return jobs;

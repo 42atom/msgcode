@@ -9,6 +9,11 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { Cron } from "croner";
 import { getRouteByChatId, getActiveRoutes } from "../routes/store.js";
+import {
+  syncWorkspaceSchedulesToJobs,
+  removeWorkspaceScheduleFromJobs,
+  requestSchedulerRefresh,
+} from "../jobs/schedule-sync.js";
 
 export async function handleScheduleListCommand(options: CommandHandlerOptions): Promise<CommandResult> {
   const entry = resolveCommandRoute(options.chatId)?.route;
@@ -126,63 +131,6 @@ function findRouteByWorkspace(workspacePath: string): { workspacePath: string; c
   return null;
 }
 
-/**
- * 复用 CLI 的 syncScheduleToJobs（使用 mapSchedulesToJobs）
- *
- * ⚠️ P5.7-R14：route 检查已在写入前完成，此处不再检查
- */
-async function syncScheduleToJobs(
-  workspacePath: string,
-  chatGuid: string
-): Promise<{ success: boolean }> {
-  const { mapSchedulesToJobs } = await import("../config/schedules.js");
-  const { createJobStore } = await import("../jobs/store.js");
-
-  const scheduleJobs = await mapSchedulesToJobs(workspacePath, chatGuid);
-  const store = createJobStore();
-  const existingStore = store.loadJobs();
-
-  if (existingStore) {
-    const nonScheduleJobs = existingStore.jobs.filter(j => !j.id.startsWith("schedule:"));
-    const mergedJobs = [...nonScheduleJobs, ...scheduleJobs];
-    store.saveJobs({ version: 1, jobs: mergedJobs });
-  } else {
-    store.saveJobs({ version: 1, jobs: scheduleJobs });
-  }
-
-  return { success: true };
-}
-
-/**
- * 复用 CLI 的 removeScheduleFromJobs
- */
-async function removeScheduleFromJobs(workspacePath: string, scheduleId: string): Promise<void> {
-  const { createHash } = await import("node:crypto");
-  const { readFileSync, writeFileSync, renameSync, unlinkSync } = await import("node:fs");
-  const { getDefaultJobsPathSync } = await import("../jobs/store.js");
-
-  const jobsPath = getDefaultJobsPathSync();
-  if (!existsSync(jobsPath)) {
-    return;
-  }
-
-  const workspaceHash = createHash("sha256").update(workspacePath).digest("hex").slice(0, 12);
-  const jobId = `schedule:${workspaceHash}:${scheduleId}`;
-
-  try {
-    const content = readFileSync(jobsPath, "utf-8");
-    const store = JSON.parse(content);
-    store.jobs = store.jobs.filter((j: { id: string }) => j.id !== jobId);
-
-    // 原子写入
-    const tmpPath = `${jobsPath}.${Date.now()}.tmp`;
-    writeFileSync(tmpPath, JSON.stringify(store, null, 2), "utf-8");
-    renameSync(tmpPath, jobsPath);
-  } catch {
-    // 忽略删除失败
-  }
-}
-
 export async function handleScheduleAddCommand(options: CommandHandlerOptions): Promise<CommandResult> {
   const args = options.args;
   if (args.length < 5) {
@@ -298,12 +246,14 @@ export async function handleScheduleAddCommand(options: CommandHandlerOptions): 
     writeFileSync(schedulePath, JSON.stringify(schedule, null, 2), "utf-8");
 
     // 同步到 jobs.json（使用 mapSchedulesToJobs 统一逻辑）
-    await syncScheduleToJobs(workspacePath, options.chatId);
+    await syncWorkspaceSchedulesToJobs(workspacePath, route.chatGuid);
+    const refreshMode = await requestSchedulerRefresh();
 
     const resultMessage = `已添加 schedule: ${scheduleId}\n` +
       `  Cron: ${cron}\n` +
       `  时区：${tz}\n` +
-      `  消息：${message.slice(0, 50)}${message.length > 50 ? "..." : ""}`;
+      `  消息：${message.slice(0, 50)}${message.length > 50 ? "..." : ""}\n` +
+      `  调度刷新：${refreshMode}`;
 
     return {
       success: true,
@@ -384,11 +334,12 @@ export async function handleScheduleRemoveCommand(options: CommandHandlerOptions
     await unlink(schedulePath);
 
     // 同步从 jobs.json 删除
-    await removeScheduleFromJobs(workspacePath, scheduleId);
+    await removeWorkspaceScheduleFromJobs(workspacePath, scheduleId);
+    const refreshMode = await requestSchedulerRefresh();
 
     return {
       success: true,
-      message: `已删除 schedule: ${scheduleId}`,
+      message: `已删除 schedule: ${scheduleId}\n  调度刷新：${refreshMode}`,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -454,7 +405,7 @@ export async function handleScheduleEnableCommand(options: CommandHandlerOptions
     };
   }
 
-  const { setScheduleEnabled, mapSchedulesToJobs } = await import("../config/schedules.js");
+  const { setScheduleEnabled } = await import("../config/schedules.js");
   const success = await setScheduleEnabled(entry.workspacePath, scheduleId, true);
 
   if (!success) {
@@ -467,11 +418,12 @@ export async function handleScheduleEnableCommand(options: CommandHandlerOptions
   }
 
   // P5.7-R12-T2: 自动同步 schedules 到 jobs（无需 /reload）
-  await syncSchedulesToJobs(entry.workspacePath, options.chatId);
+  await syncWorkspaceSchedulesToJobs(entry.workspacePath, entry.chatGuid);
+  const refreshMode = await requestSchedulerRefresh();
 
   return {
     success: true,
-    message: `已启用 schedule: ${scheduleId}`,
+    message: `已启用 schedule: ${scheduleId}\n调度刷新：${refreshMode}`,
   };
 }
 
@@ -494,7 +446,7 @@ export async function handleScheduleDisableCommand(options: CommandHandlerOption
     };
   }
 
-  const { setScheduleEnabled, mapSchedulesToJobs } = await import("../config/schedules.js");
+  const { setScheduleEnabled } = await import("../config/schedules.js");
   const success = await setScheduleEnabled(entry.workspacePath, scheduleId, false);
 
   if (!success) {
@@ -507,11 +459,12 @@ export async function handleScheduleDisableCommand(options: CommandHandlerOption
   }
 
   // P5.7-R12-T2: 自动同步 schedules 到 jobs（无需 /reload）
-  await syncSchedulesToJobs(entry.workspacePath, options.chatId);
+  await syncWorkspaceSchedulesToJobs(entry.workspacePath, entry.chatGuid);
+  const refreshMode = await requestSchedulerRefresh();
 
   return {
     success: true,
-    message: `已禁用 schedule: ${scheduleId}`,
+    message: `已禁用 schedule: ${scheduleId}\n调度刷新：${refreshMode}`,
   };
 }
 
@@ -525,8 +478,7 @@ export async function handleReloadCommand(options: CommandHandlerOptions): Promi
   }
 
   const results: string[] = [];
-  const { listSchedules, validateAllSchedules, mapSchedulesToJobs } = await import("../config/schedules.js");
-  const { createJobStore } = await import("../jobs/store.js");
+  const { listSchedules, validateAllSchedules } = await import("../config/schedules.js");
 
   const schedules = await listSchedules(entry.workspacePath);
   const scheduleValidation = await validateAllSchedules(entry.workspacePath);
@@ -539,19 +491,10 @@ export async function handleReloadCommand(options: CommandHandlerOptions): Promi
     results.push(`  使用 /schedule validate 查看详情`);
   }
 
-  const scheduleJobs = await mapSchedulesToJobs(entry.workspacePath, options.chatId);
-  const store = createJobStore();
-  const existingStore = store.loadJobs();
-
-  if (existingStore) {
-    const nonScheduleJobs = existingStore.jobs.filter(j => !j.id.startsWith("schedule:"));
-    const mergedJobs = [...nonScheduleJobs, ...scheduleJobs];
-    store.saveJobs({ version: 1, jobs: mergedJobs });
-    results.push(`Jobs: 已更新 ${scheduleJobs.length} 个 schedule jobs (共 ${mergedJobs.length} 个 jobs)`);
-  } else {
-    store.saveJobs({ version: 1, jobs: scheduleJobs });
-    results.push(`Jobs: 已创建 ${scheduleJobs.length} 个 schedule jobs`);
-  }
+  const scheduleJobs = await syncWorkspaceSchedulesToJobs(entry.workspacePath, entry.chatGuid);
+  const refreshMode = await requestSchedulerRefresh();
+  results.push(`Jobs: 已同步 ${scheduleJobs.length} 个 schedule jobs`);
+  results.push(`Scheduler Refresh: ${refreshMode}`);
 
   const { existsSync } = await import("node:fs");
   const skillsDir = join(process.env.HOME || "", ".config", "msgcode", "skills");
@@ -578,31 +521,4 @@ export async function handleReloadCommand(options: CommandHandlerOptions): Promi
     success: true,
     message: results.join("\n"),
   };
-}
-
-// ============================================
-// P5.7-R12-T2: 辅助函数
-// ============================================
-
-/**
- * 同步 schedules 到 jobs（热加载）
- *
- * 用于 enable/disable 命令后自动生效，无需用户手动 /reload
- */
-async function syncSchedulesToJobs(workspacePath: string, chatGuid: string): Promise<void> {
-  const { mapSchedulesToJobs } = await import("../config/schedules.js");
-  const { createJobStore } = await import("../jobs/store.js");
-
-  const scheduleJobs = await mapSchedulesToJobs(workspacePath, chatGuid);
-  const store = createJobStore();
-  const existingStore = store.loadJobs();
-
-  if (existingStore) {
-    // 保留非 schedule jobs，合并新的 schedule jobs
-    const nonScheduleJobs = existingStore.jobs.filter(j => !j.id.startsWith("schedule:"));
-    const mergedJobs = [...nonScheduleJobs, ...scheduleJobs];
-    store.saveJobs({ version: 1, jobs: mergedJobs });
-  } else {
-    store.saveJobs({ version: 1, jobs: scheduleJobs });
-  }
 }

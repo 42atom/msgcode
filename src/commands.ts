@@ -503,7 +503,7 @@ export async function startBot(): Promise<void> {
   }
 
   // M3.2-2: 初始化 JobScheduler（daemon 自动调度）
-  const { createJobScheduler } = await import("./jobs/scheduler.js");
+  const { createJobScheduler, registerActiveJobScheduler } = await import("./jobs/scheduler.js");
   const { getRouteByChatId } = await import("./routes/store.js");
   const { executeJob } = await import("./jobs/runner.js");
 
@@ -544,6 +544,7 @@ export async function startBot(): Promise<void> {
       logger.info("Scheduler tick", { module: "commands", dueJobs: info.dueJobs.length });
     },
   });
+  registerActiveJobScheduler(jobScheduler);
 
   await jobScheduler.start();
   logger.info("JobScheduler 已启动", { module: "commands" });
@@ -744,6 +745,18 @@ export async function startBot(): Promise<void> {
     await stopBot();
     process.exit(0);
   });
+  process.on("SIGUSR2", () => {
+    if (!jobScheduler) {
+      return;
+    }
+
+    void jobScheduler.refresh().catch((error) => {
+      logger.error("JobScheduler refresh signal 失败", {
+        module: "commands",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
+  });
 
   await keepAlive();
 }
@@ -767,6 +780,8 @@ export async function stopBot(): Promise<void> {
 
   // M3.2-2: 先停止 JobScheduler（优雅停止，等待当前执行完成）
   if (jobScheduler) {
+    const { registerActiveJobScheduler } = await import("./jobs/scheduler.js");
+    registerActiveJobScheduler(null);
     jobScheduler.stop();
     jobScheduler = null;
     logger.info("JobScheduler 已停止", { module: "commands" });

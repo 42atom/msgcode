@@ -19,6 +19,7 @@ import { logger } from "../logger/index.js";
 
 // P5.7-R12-T2: Idle 状态保活轮询间隔（60s）
 const IDLE_POLL_INTERVAL_MS = 60_000;
+let activeScheduler: JobScheduler | null = null;
 
 // ============================================
 // 配置
@@ -78,6 +79,20 @@ export class JobScheduler {
     } as typeof this.config;
   }
 
+  async refresh(): Promise<void> {
+    const jobs = await this.reloadJobsAndState();
+
+    if (this.running) {
+      this.armTimer();
+    }
+
+    logger.info("[Scheduler] 已刷新", {
+      module: "jobs/scheduler",
+      jobCount: jobs.length,
+      running: this.running,
+    });
+  }
+
   // ============================================
   // 启动/停止
   // ============================================
@@ -91,35 +106,7 @@ export class JobScheduler {
     }
 
     this.running = true;
-
-    // 1) 加载 jobs
-    const store = this.store.loadJobs();
-    if (!store) {
-      logger.info("[Scheduler] jobs.json 不存在，创建新文件", {
-        module: "jobs/scheduler",
-      });
-      this.store.saveJobs({ version: 1, jobs: [] });
-      // P5.7-R12-T2: 空 store 也要启动 timer（idle 保活）
-      this.armTimer();
-    } else {
-      // 2) 校验并更新 routeStatus（对齐点 2）
-      await this.validateAllRoutes();
-
-      // 3) 清理 stuck jobs（启动恢复）
-      await this.cleanupStuckJobs();
-
-      // 4) 计算所有 jobs 的 nextRunAtMs（#8.2）
-      const jobs = this.store.listJobs();
-      computeNextRunAtMsForJobs(jobs);
-      for (const job of jobs) {
-        if (job.state.nextRunAtMs !== null) {
-          this.store.upsertJob(job);
-        }
-      }
-
-      // 5) 启动 timer
-      this.armTimer();
-    }
+    await this.refresh();
 
     logger.info("[Scheduler] 已启动", { module: "jobs/scheduler" });
   }
@@ -225,6 +212,25 @@ export class JobScheduler {
     if (cleaned > 0) {
       console.log(`[Scheduler] 已清理 ${cleaned} 个卡死任务`);
     }
+  }
+
+  private async reloadJobsAndState(): Promise<CronJob[]> {
+    const store = this.store.loadJobs();
+    if (!store) {
+      logger.info("[Scheduler] jobs.json 不存在，创建新文件", {
+        module: "jobs/scheduler",
+      });
+      this.store.saveJobs({ version: 1, jobs: [] });
+      return [];
+    }
+
+    await this.validateAllRoutes();
+    await this.cleanupStuckJobs();
+
+    const jobs = this.store.listJobs();
+    computeNextRunAtMsForJobs(jobs);
+    this.store.saveJobs({ version: 1, jobs });
+    return jobs;
   }
 
   // ============================================
@@ -482,4 +488,17 @@ export class JobScheduler {
  */
 export function createJobScheduler(config: SchedulerConfig): JobScheduler {
   return new JobScheduler(config);
+}
+
+export function registerActiveJobScheduler(scheduler: JobScheduler | null): void {
+  activeScheduler = scheduler;
+}
+
+export async function refreshActiveJobScheduler(): Promise<boolean> {
+  if (!activeScheduler) {
+    return false;
+  }
+
+  await activeScheduler.refresh();
+  return true;
 }

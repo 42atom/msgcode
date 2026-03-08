@@ -2,6 +2,8 @@
 
 ## Protocol Entries（CLAUDE.md 约束格式）
 
+- 2026-03-08
+  - schedule: `schedule -> jobs -> scheduler` 主链收口为单一路径；新建/启用 schedule 会立即写出 `nextRunAtMs`，CLI 与聊天命令在 add/remove/enable/disable 后都会主动 refresh/rearm scheduler，不再依赖重启或人工清理 (Issue: 0038, Plan: docs/design/plan-260308-schedule-scheduler-refresh-on-mutation.md) [risk: high] [rollback: 回退 `src/jobs/schedule-sync.ts`、`src/jobs/scheduler.ts`、`src/config/schedules.ts`、`src/cli/schedule.ts`、`src/routes/cmd-schedule.ts` 与 `src/commands.ts` 本轮改动]
 - 2026-03-07
   - browser: 正式浏览器主链从 PinchTab 切到 Patchright `connectOverCDP`，实例真相源改为共享工作 Chrome，`snapshot/action` 改用无状态 `role + name + index` ref，并把 runtime skill、prompt、CLI/manifest 一并切到 Chrome-as-State 口径 (Issue: 0016, Plan: docs/design/plan-260307-patchright-browser-cutover.md) [risk: high] [rollback: 回退 `src/runners/browser-patchright.ts` 与 browser CLI/tool-loop/skills/prompt 本轮改动，恢复 PinchTab 接线]
   - browser: `[historical, superseded by Issue 0016]` `tabs.open` 缺失 `instanceId` 时会自动拉起默认 PinchTab 实例；若传入不存在的 `profileId` 也会自动忽略并退回默认 launch，并在结果中回传 `instanceId`，让“打开网页”类请求可以走通单次 browser happy path (Issue: 0020, Plan: docs/design/plan-260307-browser-open-happy-path.md) [risk: medium] [rollback: 回退 `src/runners/browser-pinchtab.ts`、`src/tools/manifest.ts`、`prompts/agents-prompt.md` 与对应测试]
