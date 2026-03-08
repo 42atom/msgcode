@@ -15,6 +15,7 @@ import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { resolveMlxWhisper } from "./utils.js";
 import { getModelServiceLeaseManager } from "../runtime/model-service-lease.js";
+import { resolveAsrPaths, expandHome } from "../media/model-paths.js";
 
 const execAsync = promisify(exec);
 
@@ -75,27 +76,6 @@ interface AsrMetadata {
 // ============================================
 
 /**
- * 展开路径中的 ~
- */
-function expandPath(path: string): string {
-  if (path.startsWith("~/")) {
-    return process.env.HOME + path.slice(1);
-  }
-  return path;
-}
-
-/**
- * 获取默认模型路径
- */
-function getDefaultModelPath(): string {
-  const envModel = process.env.MODEL_ROOT;
-  if (envModel) {
-    return join(envModel, "whisper-large-v3-mlx");
-  }
-  return join(process.env.HOME || "", "Models", "whisper-large-v3-mlx");
-}
-
-/**
  * 获取产物目录
  */
 function getArtifactDir(workspacePath: string): string {
@@ -119,9 +99,10 @@ export async function runAsr(options: AsrOptions): Promise<AsrResult> {
   } = options;
 
   const artifactId = randomUUID();
-  const modelPath = customModelPath || getDefaultModelPath();
-  const expandedInputPath = expandPath(inputPath);
-  const expandedModelPath = expandPath(modelPath);
+  const asrPaths = resolveAsrPaths();
+  const modelPath = customModelPath || asrPaths.modelDir;
+  const expandedInputPath = expandHome(inputPath);
+  const expandedModelPath = expandHome(modelPath);
   const artifactDir = getArtifactDir(workspacePath);
   const txtPath = join(artifactDir, `${artifactId}.txt`);
   const jsonPath = join(artifactDir, `${artifactId}.json`);

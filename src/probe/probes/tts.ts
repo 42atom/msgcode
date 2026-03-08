@@ -16,65 +16,13 @@ import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { ProbeOptions, ProbeResult } from "../types.js";
 import { withTimeout } from "../types.js";
+import {
+  expandHome,
+  resolveQwenTtsPaths,
+  resolveIndexTtsPaths,
+} from "../../media/model-paths.js";
 
 const execAsync = promisify(exec);
-
-function expandHome(p: string): string {
-  const home = process.env.HOME;
-  if (!home) return p;
-  if (p === "~") return home;
-  if (p.startsWith("~/")) return join(home, p.slice(2));
-  return p;
-}
-
-function resolveIndexTtsRoot(): string {
-  const root = (process.env.INDEX_TTS_ROOT || "").trim();
-  if (root) return resolve(expandHome(root));
-  return resolve(process.env.HOME || "~", "Models", "index-tts");
-}
-
-function resolveIndexTtsPython(root: string): string {
-  const raw = (process.env.INDEX_TTS_PYTHON || "").trim();
-  if (raw) return expandHome(raw);
-  return join(root, ".venv/bin/python");
-}
-
-function resolveIndexTtsModelDir(root: string): string {
-  const raw = (process.env.INDEX_TTS_MODEL_DIR || "").trim();
-  if (raw) return resolve(expandHome(raw.replaceAll("$INDEX_TTS_ROOT", root)));
-  return join(root, "checkpoints");
-}
-
-function resolveIndexTtsConfig(root: string): string {
-  const raw = (process.env.INDEX_TTS_CONFIG || "").trim();
-  if (raw) return resolve(expandHome(raw.replaceAll("$INDEX_TTS_ROOT", root)));
-  return join(root, "checkpoints", "config.yaml");
-}
-
-function resolveQwenRoot(): string {
-  const raw = (process.env.QWEN_TTS_ROOT || "").trim();
-  if (raw) return resolve(expandHome(raw));
-  const fallback = "/Users/admin/GitProjects/GithubDown/qwen3-tts-apple-silicon";
-  return resolve(fallback);
-}
-
-function resolveQwenPython(root: string): string {
-  const raw = (process.env.QWEN_TTS_PYTHON || "").trim();
-  if (raw) return resolve(expandHome(raw));
-  return join(root, ".venv", "bin", "python");
-}
-
-function resolveQwenCustomModel(root: string): string {
-  const raw = (process.env.QWEN_TTS_MODEL_CUSTOM || "").trim();
-  if (raw) return resolve(expandHome(raw));
-  return join(root, "models", "Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit");
-}
-
-function resolveQwenCloneModel(root: string): string {
-  const raw = (process.env.QWEN_TTS_MODEL_CLONE || "").trim();
-  if (raw) return resolve(expandHome(raw));
-  return join(root, "models", "Qwen3-TTS-12Hz-0.6B-Base-8bit");
-}
 
 function parseWorkerPids(psOutput: string): number[] {
   const pids: number[] = [];
@@ -122,26 +70,24 @@ export async function probeTts(options?: ProbeOptions): Promise<ProbeResult> {
 
   // Qwen backend probe
   if (backend === "qwen") {
-    const root = resolveQwenRoot();
-    const python = resolveQwenPython(root);
-    const customModel = resolveQwenCustomModel(root);
-    const cloneModel = resolveQwenCloneModel(root);
+    const qwenPaths = resolveQwenTtsPaths();
     const refAudio = (process.env.QWEN_TTS_REF_AUDIO || "").trim();
 
     details.qwen = {
-      root,
-      python,
-      customModel,
-      cloneModel,
+      source: qwenPaths.source,
+      root: qwenPaths.root,
+      python: qwenPaths.python,
+      customModel: qwenPaths.customModel,
+      cloneModel: qwenPaths.cloneModel,
       refAudio: refAudio || undefined,
       voice: process.env.QWEN_TTS_VOICE || "Vivian",
       instruct: process.env.QWEN_TTS_INSTRUCT || "Normal tone",
     };
 
-    const rootOk = existsSync(root);
-    const pythonOk = existsSync(python);
-    const customModelOk = existsSync(customModel);
-    const cloneModelOk = existsSync(cloneModel);
+    const rootOk = existsSync(qwenPaths.root);
+    const pythonOk = existsSync(qwenPaths.python);
+    const customModelOk = existsSync(qwenPaths.customModel);
+    const cloneModelOk = existsSync(qwenPaths.cloneModel);
     const refAudioOk = !refAudio || existsSync(expandHome(refAudio));
 
     details.qwenHealth = {
@@ -187,15 +133,15 @@ export async function probeTts(options?: ProbeOptions): Promise<ProbeResult> {
   };
   details.effective = effective;
 
-  const root = resolveIndexTtsRoot();
-  const python = resolveIndexTtsPython(root);
-  const modelDir = resolveIndexTtsModelDir(root);
-  const config = resolveIndexTtsConfig(root);
+  const indexPaths = resolveIndexTtsPaths();
 
-  details.indexTtsRoot = root;
-  details.indexTtsPython = python;
-  details.indexTtsModelDir = modelDir;
-  details.indexTtsConfig = config;
+  details.indexTts = {
+    source: indexPaths.source,
+    root: indexPaths.root,
+    python: indexPaths.python,
+    modelDir: indexPaths.modelDir,
+    config: indexPaths.config,
+  };
   // 配置值（原样展示，便于排查“用户以为设置了但实际没生效”）
   details.configured = {
     indexTtsDevice: process.env.INDEX_TTS_DEVICE || "",
@@ -218,10 +164,10 @@ export async function probeTts(options?: ProbeOptions): Promise<ProbeResult> {
     ttsLongTextChunkMaxChars: process.env.TTS_LONG_TEXT_CHUNK_MAX_CHARS || "",
   };
 
-  const rootOk = existsSync(root);
-  const pythonOk = existsSync(python);
-  const modelOk = existsSync(modelDir);
-  const configOk = existsSync(config);
+  const rootOk = existsSync(indexPaths.root);
+  const pythonOk = existsSync(indexPaths.python);
+  const modelOk = existsSync(indexPaths.modelDir);
+  const configOk = existsSync(indexPaths.config);
 
   details.rootOk = rootOk;
   details.pythonOk = pythonOk;

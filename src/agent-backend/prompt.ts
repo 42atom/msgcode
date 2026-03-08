@@ -12,6 +12,7 @@
 import * as path from "node:path";
 import * as fs from "node:fs";
 import * as fsPromises from "node:fs/promises";
+import * as os from "node:os";
 import { fileURLToPath } from "node:url";
 import { config } from "../config.js";
 import { logger } from "../logger/index.js";
@@ -130,7 +131,9 @@ export function resolvePromptFilePath(filePath?: string): string {
 export async function loadSystemPromptFromFile(filePath?: string): Promise<string> {
     const resolvedPath = resolvePromptFilePath(filePath);
     try {
-        const content = await fsPromises.readFile(resolvedPath, "utf-8");
+        let content = await fsPromises.readFile(resolvedPath, "utf-8");
+        // 注入运行时路径占位符
+        content = injectRuntimePaths(content);
         return content.trim();
     } catch (error) {
         if (!PROMPT_FILE_WARNED.has(resolvedPath)) {
@@ -143,6 +146,23 @@ export async function loadSystemPromptFromFile(filePath?: string): Promise<strin
         }
         return "";
     }
+}
+
+/**
+ * 注入运行时路径到提示词模板
+ *
+ * 占位符规则：
+ * - {{MSGCODE_CONFIG_DIR}} -> ~/.config/msgcode 展开为真实绝对路径
+ * - {{MSGCODE_SKILLS_DIR}} -> ~/.config/msgcode/skills 展开为真实绝对路径
+ */
+function injectRuntimePaths(content: string): string {
+    // 复用配置目录主链 (与 src/runtime/singleton.ts 一致)
+    const configDir = process.env.MSGCODE_CONFIG_DIR ?? path.join(os.homedir(), ".config", "msgcode");
+    const skillsDir = path.join(configDir, "skills");
+
+    return content
+        .replace(/\{\{MSGCODE_CONFIG_DIR\}\}/g, configDir)
+        .replace(/\{\{MSGCODE_SKILLS_DIR\}\}/g, skillsDir);
 }
 
 /**

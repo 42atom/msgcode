@@ -14,6 +14,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import dotenv from "dotenv";
 import type { Dependency, DependencyManifest, PreflightResult, DependencyCheckResult } from "./types.js";
+import { resolveQwenTtsPaths, resolveIndexTtsPaths } from "../media/model-paths.js";
 
 const execAsync = promisify(exec);
 
@@ -23,13 +24,14 @@ const execAsync = promisify(exec);
 
 /**
  * 展开路径中的 ~
+ * 使用 model-paths.ts 的 shared resolver 获取默认路径
  */
 function expandPath(path: string): string {
   // 支持少量 env 占位符（P0：IndexTTS 用得最多）
   if (path.includes("$INDEX_TTS_ROOT")) {
     const root = process.env.INDEX_TTS_ROOT
       ? expandPath(process.env.INDEX_TTS_ROOT)
-      : (process.env.HOME ? join(process.env.HOME, "Models", "index-tts") : "");
+      : resolveIndexTtsPaths().root;
     if (root) {
       path = path.replaceAll("$INDEX_TTS_ROOT", root);
     }
@@ -37,7 +39,7 @@ function expandPath(path: string): string {
   if (path.includes("$QWEN_TTS_ROOT")) {
     const root = process.env.QWEN_TTS_ROOT
       ? expandPath(process.env.QWEN_TTS_ROOT)
-      : "/Users/admin/GitProjects/GithubDown/qwen3-tts-apple-silicon";
+      : resolveQwenTtsPaths().root;
     if (root) {
       path = path.replaceAll("$QWEN_TTS_ROOT", root);
     }
@@ -110,7 +112,7 @@ async function checkBinDependency(dep: Dependency): Promise<DependencyCheckResul
         if (dep.id === "qwen_tts_python") {
           const root = process.env.QWEN_TTS_ROOT
             ? expandPath(process.env.QWEN_TTS_ROOT)
-            : "/Users/admin/GitProjects/GithubDown/qwen3-tts-apple-silicon";
+            : resolveQwenTtsPaths().root;
           binPath = join(root, ".venv", "bin", "python");
         } else {
           result.error = `环境变量 ${dep.pathEnv} 未设置`;

@@ -15,52 +15,12 @@ import { join, parse, resolve } from "node:path";
 
 import type { TtsBackendContext, TtsOptions, TtsResult } from "./types.js";
 import { convertWavToM4a, normalizeTtsText, runCmdCapture } from "../utils.js";
+import { resolveQwenTtsPaths } from "../../../media/model-paths.js";
 
-type QwenPaths = {
-  root: string;
-  python: string;
-  customModel: string;
-  cloneModel: string;
-};
-
-function resolveQwenRoot(): string {
-  const envRoot = (process.env.QWEN_TTS_ROOT || "").trim();
-  if (envRoot) return resolve(envRoot);
-
-  const candidates = [
-    "/Users/admin/GitProjects/GithubDown/qwen3-tts-apple-silicon",
-    process.env.HOME ? join(process.env.HOME, "GitProjects", "GithubDown", "qwen3-tts-apple-silicon") : "",
-  ].filter(Boolean);
-
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) return resolve(candidate);
-  }
-
-  // Fallback: keep deterministic path even if missing (error will explain missing files)
-  return resolve(candidates[0] || "qwen3-tts-apple-silicon");
-}
+type QwenPaths = ReturnType<typeof resolveQwenTtsPaths>;
 
 function resolveQwenPaths(): QwenPaths {
-  const root = resolveQwenRoot();
-
-  const python = (process.env.QWEN_TTS_PYTHON || "").trim()
-    ? resolve(process.env.QWEN_TTS_PYTHON as string)
-    : join(root, ".venv", "bin", "python");
-
-  const customModel = (process.env.QWEN_TTS_MODEL_CUSTOM || "").trim()
-    ? resolve(process.env.QWEN_TTS_MODEL_CUSTOM as string)
-    : join(root, "models", "Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit");
-
-  const cloneModel = (process.env.QWEN_TTS_MODEL_CLONE || "").trim()
-    ? resolve(process.env.QWEN_TTS_MODEL_CLONE as string)
-    : join(root, "models", "Qwen3-TTS-12Hz-0.6B-Base-8bit");
-
-  return {
-    root,
-    python,
-    customModel,
-    cloneModel,
-  };
+  return resolveQwenTtsPaths();
 }
 
 async function readOptionalTextFile(path: string | null): Promise<string | null> {

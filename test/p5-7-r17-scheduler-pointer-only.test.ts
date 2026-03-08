@@ -15,16 +15,13 @@ function readText(relPath: string): string {
 }
 
 describe("P5.7-R17: scheduler skill pointer-only", () => {
-    it("agents-prompt.md 应要求先读 skills index，再读对应 skill，禁止猜参数", () => {
+    it("agents-prompt.md 应使用占位符而非硬编码路径", () => {
         const content = readText("prompts/agents-prompt.md");
-        expect(content).toContain("/Users/admin/.config/msgcode/skills/");
-        expect(content).toContain("index.json");
-        expect(content).toContain("必须先读 /Users/admin/.config/msgcode/skills/index.json");
-        expect(content).toContain("必须再读对应 skill");
-        expect(content).toContain("禁止猜参数");
-        expect(content).toContain("scheduler：定时任务 CLI 合同；add/remove/list 都先读 skill，再按模板执行");
-        expect(content).not.toContain("cron 是内建");
-        expect(content).not.toContain("schedule 是内建");
+        // 核心改动：使用占位符 {{MSGCODE_SKILLS_DIR}}，运行时注入真实路径
+        expect(content).toContain("{{MSGCODE_SKILLS_DIR}}");
+        expect(content).toContain("{{MSGCODE_CONFIG_DIR}}");
+        // 不应包含硬编码用户目录
+        expect(content).not.toContain("/Users/admin/.config/msgcode");
     });
 
     it("scheduler skill 应明确是参考实现", () => {

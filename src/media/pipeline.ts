@@ -16,6 +16,7 @@ import { isAudioAttachment, isImageAttachment } from "../attachments/vault.js";
 import { resolveMlxWhisper } from "../runners/utils.js";
 import { executeTool } from "../tools/bus.js";
 import { getModelServiceLeaseManager } from "../runtime/model-service-lease.js";
+import { resolveAsrPaths } from "./model-paths.js";
 
 // ============================================
 // 配置常量
@@ -177,8 +178,9 @@ async function processAudio(
     return result;
   }
 
-  // 检查模型是否存在
-  const modelPath = join(process.env.HOME || "", "Models", "whisper-large-v3-mlx");
+  // 使用 shared resolver 获取 ASR 模型路径
+  const asrPaths = resolveAsrPaths();
+  const modelPath = asrPaths.modelDir;
   if (!existsSync(modelPath)) {
     result.reason = "Whisper 模型不存在";
     return result;
