@@ -38,6 +38,20 @@ describe("P5.7-R17: scheduler skill pointer-only", () => {
         expect(content).toContain("一次性任务");
     });
 
+    it("scheduler skill 应明确 scheduleId 是位置参数，不能写成 --scheduleId", () => {
+        const content = readText("src/skills/runtime/scheduler/SKILL.md");
+        expect(content).toContain("不是 `--schedule-id`");
+        expect(content).toContain("不要发明 --scheduleId");
+        expect(content).toContain("只能是位置参数");
+    });
+
+    it("scheduler skill 应明确 add 的 --tz 是必填参数", () => {
+        const content = readText("src/skills/runtime/scheduler/SKILL.md");
+        expect(content).toContain("--tz <IANA 时区>");
+        expect(content).toContain("`--tz` 是 **add 必填参数**");
+        expect(content).toContain("漏 `--tz`");
+    });
+
     it("index.json 中 scheduler 描述应符合 pointer-only", () => {
         const content = readText("src/skills/runtime/index.json");
         expect(content).toContain("LLM 自行决定实现");

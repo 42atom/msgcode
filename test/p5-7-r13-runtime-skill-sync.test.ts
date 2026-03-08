@@ -74,7 +74,8 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(mainSh).toContain('exec msgcode browser "$@"');
     expect(schedulerDoc).toContain("scheduler skill");
     expect(schedulerDoc).toContain("不要发明 `cron_add`");
-    expect(schedulerSh).toContain('exec msgcode schedule "$@"');
+    expect(schedulerSh).toContain('resolve_default_tz()');
+    expect(schedulerSh).toContain('exec msgcode schedule "${normalized_command[@]}"');
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("custom-skill");
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("patchright-browser");
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("scheduler");
