@@ -4,7 +4,7 @@
  * 目标：
  * - 非零退出码/超时语义
  * - stderr/stdout 诊断字段保真
- * - 三类失败语义：MODEL_PROTOCOL_FAILED / TOOL_EXEC_FAILED / TOOL_LOOP_LIMIT_EXCEEDED
+ * - 失败语义：TOOL_EXEC_FAILED / TOOL_LOOP_LIMIT_EXCEEDED
  */
 
 import { describe, it, expect } from "bun:test";
@@ -124,8 +124,8 @@ describe("P5.7-R3h: Tool Failure Diagnostics (Behavior Lock)", () => {
         });
     });
 
-    describe("失败类型三分", () => {
-        it("无 tool_calls 时应返回 MODEL_PROTOCOL_FAILED", async () => {
+    describe("失败类型回归", () => {
+        it("无 tool_calls 时应返回模型真实响应，不再协议失败重试", async () => {
             const originalFetch = globalThis.fetch;
             const workspacePath = await createToolEnabledWorkspace();
             let callCount = 0;
@@ -153,10 +153,10 @@ describe("P5.7-R3h: Tool Failure Diagnostics (Behavior Lock)", () => {
                     backendRuntime: localOpenAiRuntime,
                 });
 
-                // 首轮 + required-retry + strict-retry
-                expect(callCount).toBe(3);
-                expect(result.answer).toContain("MODEL_PROTOCOL_FAILED");
+                expect(callCount).toBe(1);
+                expect(result.answer).toContain("我来帮你处理。");
                 expect(result.actionJournal).toEqual([]);
+                expect(result.decisionSource).toBe("model");
             } finally {
                 globalThis.fetch = originalFetch;
                 await rm(workspacePath, { recursive: true, force: true });
@@ -240,8 +240,7 @@ describe("P5.7-R3h: Tool Failure Diagnostics (Behavior Lock)", () => {
                     prompt: "执行超多工具",
                     workspacePath,
                     timeoutMs: 10_000,
-                    // P5.7-R12-T8: 显式设置 conservative 档位，确保 9 次调用触发超限
-                    quotaProfile: "conservative",
+                    perTurnToolCallLimit: 8,
                     backendRuntime: localOpenAiRuntime,
                 });
 

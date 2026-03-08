@@ -282,8 +282,7 @@ describe("P5.7-R3g: Tool Loop Multi-Tool (Behavior Lock)", () => {
                 prompt: "执行超多工具",
                 workspacePath,
                 timeoutMs: 10_000,
-                // P5.7-R12-T8: 显式设置 conservative 档位，确保 9 次调用触发超限
-                quotaProfile: "conservative",
+                perTurnToolCallLimit: 8,
                 backendRuntime: localOpenAiRuntime,
             });
 

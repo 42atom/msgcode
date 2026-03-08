@@ -380,9 +380,9 @@ describe("P5.7-R9-T7 Step 4: Prompt 构建函数行为", () => {
         const { EXEC_TOOL_PROTOCOL_CONSTRAINT } = await import("../src/agent-backend/index.js");
 
         expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).toContain("执行核");
-        expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).toContain("tool_calls");
-        expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).toContain("网页");
-        expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).toContain("至少必须发出一次相关 tool_calls");
+        expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).toContain("访问网页或获取实时信息时，用工具拿真实结果");
+        expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).not.toContain("第一轮必须优先产出 tool_calls");
+        expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).not.toContain("没有 tool_calls 前");
     });
 });
 
