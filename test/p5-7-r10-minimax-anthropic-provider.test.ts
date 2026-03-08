@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 
 import { runAgentChat } from "../src/agent-backend.js";
 import { runAgentRoutedChat } from "../src/agent-backend/routed-chat.js";
+import { config } from "../src/config.js";
 import { runLmStudioToolLoop } from "../src/lmstudio.js";
 
 type MiniMaxMessagesResponse = {
@@ -267,6 +268,69 @@ describe("P5.7-R10: MiniMax Anthropic provider", () => {
             expect(result.actionJournal[1].tool).toBe("read_file");
         } finally {
             globalThis.fetch = originalFetch;
+            await rm(workspacePath, { recursive: true, force: true });
+        }
+    });
+
+    it("runLmStudioToolLoop 在 minimax 下工具失败也应经过 finish supervisor", async () => {
+        const originalFetch = globalThis.fetch;
+        const originalSupervisorConfig = { ...config.supervisor };
+        const workspacePath = await createToolEnabledWorkspace();
+        let callCount = 0;
+
+        config.supervisor.enabled = true;
+        config.supervisor.temperature = 0;
+        config.supervisor.maxTokens = 200;
+
+        globalThis.fetch = (async () => {
+            callCount += 1;
+
+            if (callCount === 1) {
+                return asJsonResponse({
+                    role: "assistant",
+                    content: [
+                        {
+                            type: "tool_use",
+                            id: "toolu_bash_fail_1",
+                            name: "bash",
+                            input: { command: "sh -c \"echo anthropic-fail >&2; exit 6\"" },
+                        },
+                    ],
+                    stop_reason: "tool_use",
+                } satisfies MiniMaxMessagesResponse);
+            }
+
+            return asJsonResponse({
+                role: "assistant",
+                content: [
+                    { type: "text", text: "PASS" },
+                ],
+                stop_reason: "end_turn",
+            } satisfies MiniMaxMessagesResponse);
+        }) as typeof fetch;
+
+        try {
+            const result = await runLmStudioToolLoop({
+                prompt: "执行一个会失败的命令",
+                workspacePath,
+                backendRuntime: minimaxRuntime,
+                timeoutMs: 10_000,
+            });
+
+            expect(callCount).toBe(2);
+            expect(result.answer).toContain("TOOL_EXEC_FAILED");
+            expect(result.answer).toContain("退出码：6");
+            expect(result.verifyResult?.ok).toBe(false);
+            expect(result.verifyResult?.errorCode).toBe("TOOL_EXEC_FAILED");
+            expect(result.actionJournal.map((entry) => `${entry.phase}:${entry.tool}:${entry.ok}`)).toEqual([
+                "act:bash:false",
+                "report:finish-supervisor:true",
+            ]);
+        } finally {
+            globalThis.fetch = originalFetch;
+            config.supervisor.enabled = originalSupervisorConfig.enabled;
+            config.supervisor.temperature = originalSupervisorConfig.temperature;
+            config.supervisor.maxTokens = originalSupervisorConfig.maxTokens;
             await rm(workspacePath, { recursive: true, force: true });
         }
     });

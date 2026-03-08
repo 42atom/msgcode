@@ -403,4 +403,168 @@ describe("P5.7-R20: minimal finish supervisor", () => {
             await rm(workspacePath, { recursive: true, force: true });
         }
     });
+
+    it("ok -> fail 的工具链也应经过 finish supervisor 再结束", async () => {
+        const workspacePath = await createToolEnabledWorkspace();
+        await writeFile(join(workspacePath, ".msgcode", "evidence.txt"), "verified-evidence", "utf-8");
+        let callCount = 0;
+
+        globalThis.fetch = (async () => {
+            callCount += 1;
+
+            if (callCount === 1) {
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: "",
+                            tool_calls: [{
+                                id: "call_read_ok",
+                                type: "function",
+                                function: {
+                                    name: "read_file",
+                                    arguments: JSON.stringify({ path: ".msgcode/evidence.txt" }),
+                                },
+                            }],
+                        },
+                        finish_reason: "tool_calls",
+                    }],
+                });
+            }
+
+            if (callCount === 2) {
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: "",
+                            tool_calls: [{
+                                id: "call_bash_fail_after_ok",
+                                type: "function",
+                                function: {
+                                    name: "bash",
+                                    arguments: JSON.stringify({ command: "sh -c \"echo boom >&2; exit 7\"" }),
+                                },
+                            }],
+                        },
+                        finish_reason: "tool_calls",
+                    }],
+                });
+            }
+
+            return asJsonResponse({
+                choices: [{
+                    message: {
+                        role: "assistant",
+                        content: "PASS",
+                    },
+                    finish_reason: "stop",
+                }],
+            });
+        }) as typeof fetch;
+
+        try {
+            const result = await runLmStudioToolLoop({
+                prompt: "先读证据，再执行一个会失败的命令",
+                workspacePath,
+                backendRuntime: localOpenAiRuntime,
+                timeoutMs: 10_000,
+            });
+
+            expect(callCount).toBe(3);
+            expect(result.answer).toContain("TOOL_EXEC_FAILED");
+            expect(result.answer).toContain("退出码：7");
+            expect(result.verifyResult?.ok).toBe(false);
+            expect(result.verifyResult?.errorCode).toBe("TOOL_EXEC_FAILED");
+            expect(result.actionJournal.map((entry) => `${entry.phase}:${entry.tool}:${entry.ok}`)).toEqual([
+                "act:read_file:true",
+                "act:bash:false",
+                "report:finish-supervisor:true",
+            ]);
+        } finally {
+            await rm(workspacePath, { recursive: true, force: true });
+        }
+    });
+
+    it("工具失败后若 supervisor 连续 3 次 CONTINUE 应阻塞退出", async () => {
+        const workspacePath = await createToolEnabledWorkspace();
+        let callCount = 0;
+
+        globalThis.fetch = (async () => {
+            callCount += 1;
+
+            if (callCount === 1) {
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: "",
+                            tool_calls: [{
+                                id: "call_bash_fail_blocked",
+                                type: "function",
+                                function: {
+                                    name: "bash",
+                                    arguments: JSON.stringify({ command: "sh -c \"echo fail >&2; exit 9\"" }),
+                                },
+                            }],
+                        },
+                        finish_reason: "tool_calls",
+                    }],
+                });
+            }
+
+            if (callCount === 2 || callCount === 4) {
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: `CONTINUE: 第 ${callCount === 2 ? "一" : "二"} 次失败仍未解释清楚`,
+                        },
+                        finish_reason: "stop",
+                    }],
+                });
+            }
+
+            if (callCount === 3 || callCount === 5) {
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: "我还是直接结束。",
+                        },
+                        finish_reason: "stop",
+                    }],
+                });
+            }
+
+            return asJsonResponse({
+                choices: [{
+                    message: {
+                        role: "assistant",
+                        content: "CONTINUE: 第三次失败仍未解释清楚",
+                    },
+                    finish_reason: "stop",
+                }],
+            });
+        }) as typeof fetch;
+
+        try {
+            const result = await runLmStudioToolLoop({
+                prompt: "执行一个会失败的命令，并正确收尾",
+                workspacePath,
+                backendRuntime: localOpenAiRuntime,
+                timeoutMs: 10_000,
+            });
+
+            expect(callCount).toBe(6);
+            expect(result.answer).toContain("FINISH_SUPERVISOR_BLOCKED");
+            expect(result.answer).toContain("第三次失败仍未解释清楚");
+            expect(result.verifyResult?.ok).toBe(false);
+            expect(result.actionJournal.filter((entry) => entry.tool === "finish-supervisor").length).toBe(3);
+            expect(result.actionJournal[0]?.tool).toBe("bash");
+            expect(result.actionJournal[0]?.ok).toBe(false);
+        } finally {
+            await rm(workspacePath, { recursive: true, force: true });
+        }
+    });
 });

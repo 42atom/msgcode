@@ -197,6 +197,12 @@ type ToolRunResult = {
     durationMs: number;
 };
 
+type ForcedFinalState = {
+    answer: string;
+    toolCall: { name: string; args: Record<string, unknown>; result: unknown };
+    verifyResult: VerifyResult;
+};
+
 /**
  * 统一后端 URL 归一化：
  * - 去掉尾部 `/`
@@ -629,6 +635,36 @@ function buildToolLoopFallbackAnswer(
     return `工具执行成功：${toolName}`;
 }
 
+function buildToolFailureAnswer(toolName: string, toolResult: ToolRunResult): string {
+    const toolErrorCode = toolResult.errorCode || "TOOL_EXEC_FAILED";
+    const toolErrorMessage = toolResult.error || "工具执行失败";
+    let answerText = `工具执行失败\n- 工具：${toolName}\n- 错误码：${toolErrorCode}\n- 错误：${toolErrorMessage}`;
+    if (toolResult.exitCode !== undefined && toolResult.exitCode !== null) {
+        answerText += `\n- 退出码：${toolResult.exitCode}`;
+    }
+    if (toolResult.stderrTail) {
+        answerText += `\n- stderr 尾部：${toolResult.stderrTail.slice(-200)}`;
+    }
+    if (toolResult.fullOutputPath) {
+        answerText += `\n- 完整日志：${toolResult.fullOutputPath}`;
+    }
+    return answerText;
+}
+
+function buildToolFailureVerifyResult(toolName: string, toolResult: ToolRunResult): VerifyResult {
+    return {
+        ok: false,
+        evidence: JSON.stringify({
+            tool: toolName,
+            exitCode: toolResult.exitCode ?? null,
+            stderrTail: toolResult.stderrTail ?? "",
+            fullOutputPath: toolResult.fullOutputPath ?? null,
+        }),
+        failureReason: toolResult.error || "工具执行失败",
+        errorCode: toolResult.errorCode || "TOOL_EXEC_FAILED",
+    };
+}
+
 /**
  * 获取暴露给 LLM 的工具列表（从单一真相源派生）
  *
@@ -984,6 +1020,8 @@ async function runMiniMaxAnthropicToolLoop(params: {
     let supervisorContinueCount = 0;
     let currentResponse = response;
     let currentToolCalls = toolCalls;
+    let forcedFinalState: ForcedFinalState | undefined;
+    let lastFailureState: ForcedFinalState | undefined;
 
     while (true) {
         if (currentToolCalls.length > params.perTurnToolCallLimit) {
@@ -1014,6 +1052,7 @@ async function runMiniMaxAnthropicToolLoop(params: {
 
         if (currentToolCalls.length > 0) {
             const roundExecutedToolCalls: ExecutedToolCall[] = [];
+            let toolFailureTriggered = false;
 
             for (const tc of currentToolCalls) {
                 let args: Record<string, unknown> = {};
@@ -1037,7 +1076,6 @@ async function runMiniMaxAnthropicToolLoop(params: {
 
                 if (toolResult.error) {
                     const toolErrorCode = toolResult.errorCode || "TOOL_EXEC_FAILED";
-                    const toolErrorMessage = toolResult.error || "工具执行失败";
 
                     stepId++;
                     actionJournal.push({
@@ -1056,22 +1094,14 @@ async function runMiniMaxAnthropicToolLoop(params: {
                         durationMs: toolResult.durationMs,
                     });
 
-                    let answerText = `工具执行失败\n- 工具：${tc.function.name}\n- 错误码：${toolErrorCode}\n- 错误：${toolErrorMessage}`;
-                    if (toolResult.exitCode !== undefined && toolResult.exitCode !== null) {
-                        answerText += `\n- 退出码：${toolResult.exitCode}`;
-                    }
-                    if (toolResult.stderrTail) {
-                        answerText += `\n- stderr 尾部：${toolResult.stderrTail.slice(-200)}`;
-                    }
-                    if (toolResult.fullOutputPath) {
-                        answerText += `\n- 完整日志：${toolResult.fullOutputPath}`;
-                    }
-
-                    return {
-                        answer: answerText,
+                    forcedFinalState = {
+                        answer: buildToolFailureAnswer(tc.function.name, toolResult),
                         toolCall: { name: tc.function.name, args, result: toolResult },
-                        actionJournal,
+                        verifyResult: buildToolFailureVerifyResult(tc.function.name, toolResult),
                     };
+                    lastFailureState = forcedFinalState;
+                    toolFailureTriggered = true;
+                    break;
                 }
 
                 const executed: ExecutedToolCall = { tc, args, result: toolResult.data };
@@ -1118,62 +1148,75 @@ async function runMiniMaxAnthropicToolLoop(params: {
                 }
             }
 
-            const assistantMessage: MiniMaxAnthropicMessage = {
-                role: "assistant",
-                content: currentResponse.contentBlocks,
-            };
-            const toolResultMessage: MiniMaxAnthropicMessage = {
-                role: "user",
-                content: roundExecutedToolCalls.map(({ tc, result }) => ({
-                    type: "tool_result" as const,
-                    tool_use_id: tc.id,
-                    content: typeof result === "string" ? result : JSON.stringify(result),
-                })),
-            };
+            if (toolFailureTriggered) {
+                currentToolCalls = [];
+            } else {
+                const assistantMessage: MiniMaxAnthropicMessage = {
+                    role: "assistant",
+                    content: currentResponse.contentBlocks,
+                };
+                const toolResultMessage: MiniMaxAnthropicMessage = {
+                    role: "user",
+                    content: roundExecutedToolCalls.map(({ tc, result }) => ({
+                        type: "tool_result" as const,
+                        tool_use_id: tc.id,
+                        content: typeof result === "string" ? result : JSON.stringify(result),
+                    })),
+                };
 
-            conversationMessages = [...conversationMessages, assistantMessage, toolResultMessage];
+                conversationMessages = [...conversationMessages, assistantMessage, toolResultMessage];
 
-            currentResponse = await callMiniMaxAnthropicRaw({
-                baseUrl: params.baseUrl,
-                model: params.model,
-                messages: conversationMessages,
-                system: anthropicContext.system,
-                tools: params.activeToolSchemas,
-                // P0 松绑：使用 auto 让模型自由选择
-                toolChoice: { type: "auto" },
-                temperature: 0,
-                maxTokens: 800,
-                timeoutMs: params.timeoutMs,
-                apiKey: params.apiKey,
-            });
+                currentResponse = await callMiniMaxAnthropicRaw({
+                    baseUrl: params.baseUrl,
+                    model: params.model,
+                    messages: conversationMessages,
+                    system: anthropicContext.system,
+                    tools: params.activeToolSchemas,
+                    // P0 松绑：使用 auto 让模型自由选择
+                    toolChoice: { type: "auto" },
+                    temperature: 0,
+                    maxTokens: 800,
+                    timeoutMs: params.timeoutMs,
+                    apiKey: params.apiKey,
+                });
 
-            currentToolCalls = currentResponse.toolCalls;
+                currentToolCalls = currentResponse.toolCalls;
+            }
         }
         if (currentToolCalls.length > 0) {
             continue;
         }
 
-        const cleanedAnswer = sanitizeLmStudioOutput(currentResponse.content || "");
-        let finalAnswer = cleanedAnswer;
+        let finalAnswer: string;
+        let verifyResult: VerifyResult | undefined;
 
-        if (!cleanedAnswer || hasToolProtocolArtifacts(cleanedAnswer)) {
-            const fallbackAnswer = buildToolLoopFallbackAnswer(executedToolCalls, params.options.prompt);
-            if (fallbackAnswer) {
-                finalAnswer = fallbackAnswer;
+        if (forcedFinalState) {
+            finalAnswer = forcedFinalState.answer;
+            verifyResult = forcedFinalState.verifyResult;
+        } else {
+            const cleanedAnswer = sanitizeLmStudioOutput(currentResponse.content || "");
+            finalAnswer = cleanedAnswer;
+
+            if (!cleanedAnswer || hasToolProtocolArtifacts(cleanedAnswer)) {
+                const fallbackAnswer = buildToolLoopFallbackAnswer(executedToolCalls, params.options.prompt);
+                if (fallbackAnswer) {
+                    finalAnswer = fallbackAnswer;
+                }
             }
-        }
 
-        finalAnswer = hardenFeishuDeliveryClaim(finalAnswer, executedToolCalls, params.options.prompt);
+            finalAnswer = hardenFeishuDeliveryClaim(finalAnswer, executedToolCalls, params.options.prompt);
 
-        const { verifyResult, verifyJournal } = await runVerifyPhase(
-            executedToolCalls,
-            actionJournal,
-            params.traceId,
-            params.route
-        );
+            const verifyOutcome = await runVerifyPhase(
+                executedToolCalls,
+                actionJournal,
+                params.traceId,
+                params.route
+            );
+            verifyResult = verifyOutcome.verifyResult;
 
-        if (verifyJournal) {
-            actionJournal.push(verifyJournal);
+            if (verifyOutcome.verifyJournal) {
+                actionJournal.push(verifyOutcome.verifyJournal);
+            }
         }
 
         if (supervisorSettings.enabled) {
@@ -1226,14 +1269,16 @@ async function runMiniMaxAnthropicToolLoop(params: {
                         continueCount: supervisorContinueCount,
                         reason: continueReason,
                     });
-                    const firstBlockedCall = executedToolCalls[0];
+                    const firstBlockedCall = forcedFinalState?.toolCall
+                        ?? lastFailureState?.toolCall
+                        ?? (executedToolCalls[0]
+                            ? { name: executedToolCalls[0].tc.function.name, args: executedToolCalls[0].args, result: executedToolCalls[0].result }
+                            : undefined);
                     return {
                         answer: buildFinishSupervisorBlockedAnswer(continueReason, supervisorContinueCount),
-                        toolCall: firstBlockedCall
-                            ? { name: firstBlockedCall.tc.function.name, args: firstBlockedCall.args, result: firstBlockedCall.result }
-                            : undefined,
+                        toolCall: firstBlockedCall,
                         actionJournal,
-                        verifyResult,
+                        verifyResult: verifyResult ?? lastFailureState?.verifyResult,
                         decisionSource: executedToolCalls.length === 0 ? "model" : undefined,
                         quotaProfile: params.quotaProfile,
                         perTurnToolCallLimit: params.perTurnToolCallLimit,
@@ -1245,7 +1290,8 @@ async function runMiniMaxAnthropicToolLoop(params: {
 
                 const assistantMessage: MiniMaxAnthropicMessage = {
                     role: "assistant",
-                    content: currentResponse.contentBlocks.length > 0 ? currentResponse.contentBlocks : currentResponse.content || "",
+                    content: forcedFinalState?.answer
+                        ?? (currentResponse.contentBlocks.length > 0 ? currentResponse.contentBlocks : currentResponse.content || ""),
                 };
                 const supervisorFeedback: MiniMaxAnthropicMessage = {
                     role: "user",
@@ -1257,6 +1303,7 @@ async function runMiniMaxAnthropicToolLoop(params: {
                 };
 
                 conversationMessages = [...conversationMessages, assistantMessage, supervisorFeedback];
+                forcedFinalState = undefined;
                 currentResponse = await callMiniMaxAnthropicRaw({
                     baseUrl: params.baseUrl,
                     model: params.model,
@@ -1274,12 +1321,13 @@ async function runMiniMaxAnthropicToolLoop(params: {
             }
         }
 
-        const firstCall = executedToolCalls[0];
+        const firstCall = forcedFinalState?.toolCall
+            ?? (executedToolCalls[0]
+                ? { name: executedToolCalls[0].tc.function.name, args: executedToolCalls[0].args, result: executedToolCalls[0].result }
+                : undefined);
         return {
             answer: finalAnswer,
-            toolCall: firstCall
-                ? { name: firstCall.tc.function.name, args: firstCall.args, result: firstCall.result }
-                : undefined,
+            toolCall: firstCall,
             actionJournal,
             verifyResult,
             decisionSource: executedToolCalls.length === 0 ? "model" : undefined,
@@ -1476,6 +1524,8 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     let currentAssistantContent = msg1?.content;
     let currentToolCalls = toolCalls;
     let conversationMessages = [...messages];
+    let forcedFinalState: ForcedFinalState | undefined;
+    let lastFailureState: ForcedFinalState | undefined;
 
     while (true) {
         // P5.7-R12-T8: 单轮工具调用数检查
@@ -1528,6 +1578,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
 
         if (currentToolCalls.length > 0) {
             const roundExecutedToolCalls: ExecutedToolCall[] = [];
+            let toolFailureTriggered = false;
 
             for (const tc of currentToolCalls) {
                 let args: Record<string, unknown> = {};
@@ -1551,7 +1602,6 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
 
                 if (toolResult.error) {
                     const toolErrorCode = toolResult.errorCode || "TOOL_EXEC_FAILED";
-                    const toolErrorMessage = toolResult.error || "工具执行失败";
 
                     stepId++;
                     actionJournal.push({
@@ -1570,22 +1620,16 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                         durationMs: toolResult.durationMs,
                     });
 
-                    let answerText = `工具执行失败\n- 工具：${tc.function.name}\n- 错误码：${toolErrorCode}\n- 错误：${toolErrorMessage}`;
-                    if (toolResult.exitCode !== undefined && toolResult.exitCode !== null) {
-                        answerText += `\n- 退出码：${toolResult.exitCode}`;
-                    }
-                    if (toolResult.stderrTail) {
-                        answerText += `\n- stderr 尾部：${toolResult.stderrTail.slice(-200)}`;
-                    }
-                    if (toolResult.fullOutputPath) {
-                        answerText += `\n- 完整日志：${toolResult.fullOutputPath}`;
-                    }
-
-                    return {
-                        answer: answerText,
+                    forcedFinalState = {
+                        answer: buildToolFailureAnswer(tc.function.name, toolResult),
                         toolCall: { name: tc.function.name, args, result: toolResult },
-                        actionJournal,
+                        verifyResult: buildToolFailureVerifyResult(tc.function.name, toolResult),
                     };
+                    lastFailureState = forcedFinalState;
+                    currentAssistantRole = "assistant";
+                    currentAssistantContent = forcedFinalState.answer;
+                    toolFailureTriggered = true;
+                    break;
                 }
 
                 const executed: ExecutedToolCall = { tc, args, result: toolResult.data };
@@ -1654,67 +1698,80 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                 }
             }
 
-            const assistantMsg: { role: string; content?: string; tool_calls?: ToolCall[] } = {
-                role: currentAssistantRole,
-                tool_calls: currentToolCalls,
-            };
-            if (currentAssistantContent !== undefined) {
-                assistantMsg.content = currentAssistantContent;
+            if (toolFailureTriggered) {
+                currentToolCalls = [];
+            } else {
+                const assistantMsg: { role: string; content?: string; tool_calls?: ToolCall[] } = {
+                    role: currentAssistantRole,
+                    tool_calls: currentToolCalls,
+                };
+                if (currentAssistantContent !== undefined) {
+                    assistantMsg.content = currentAssistantContent;
+                }
+
+                const toolResultMessages = roundExecutedToolCalls.map(({ tc, result }) => ({
+                    role: "tool" as const,
+                    tool_call_id: tc.id,
+                    content: typeof result === "string" ? result : JSON.stringify(result)
+                }));
+
+                conversationMessages = [...conversationMessages, assistantMsg, ...toolResultMessages];
+
+                const nextRound = await callChatCompletionsRaw({
+                    baseUrl,
+                    model: usedModel,
+                    messages: conversationMessages,
+                    tools: activeToolSchemas,
+                    toolChoice: preferredToolChoice ?? "auto",
+                    temperature: 0,
+                    maxTokens: 800,
+                    timeoutMs,
+                    apiKey: backendRuntime.apiKey,
+                });
+
+                const nextMsg = nextRound.choices[0]?.message;
+                currentAssistantRole = nextMsg?.role || "assistant";
+                currentAssistantContent = nextMsg?.content;
+                currentToolCalls = nextMsg?.tool_calls ?? [];
             }
-
-            const toolResultMessages = roundExecutedToolCalls.map(({ tc, result }) => ({
-                role: "tool" as const,
-                tool_call_id: tc.id,
-                content: typeof result === "string" ? result : JSON.stringify(result)
-            }));
-
-            conversationMessages = [...conversationMessages, assistantMsg, ...toolResultMessages];
-
-            const nextRound = await callChatCompletionsRaw({
-                baseUrl,
-                model: usedModel,
-                messages: conversationMessages,
-                tools: activeToolSchemas,
-                toolChoice: preferredToolChoice ?? "auto",
-                temperature: 0,
-                maxTokens: 800,
-                timeoutMs,
-                apiKey: backendRuntime.apiKey,
-            });
-
-            const nextMsg = nextRound.choices[0]?.message;
-            currentAssistantRole = nextMsg?.role || "assistant";
-            currentAssistantContent = nextMsg?.content;
-            currentToolCalls = nextMsg?.tool_calls ?? [];
         }
 
         if (currentToolCalls.length > 0) {
             continue;
         }
 
-        const cleanedAnswer = sanitizeLmStudioOutput(currentAssistantContent ?? "");
-        let finalAnswer = cleanedAnswer;
+        let finalAnswer: string;
+        let verifyResult: VerifyResult | undefined;
 
-        if (!cleanedAnswer || hasToolProtocolArtifacts(cleanedAnswer)) {
-            const fallbackAnswer = buildToolLoopFallbackAnswer(executedToolCalls, options.prompt);
-            if (fallbackAnswer) {
-                finalAnswer = fallbackAnswer;
+        if (forcedFinalState) {
+            finalAnswer = forcedFinalState.answer;
+            verifyResult = forcedFinalState.verifyResult;
+        } else {
+            const cleanedAnswer = sanitizeLmStudioOutput(currentAssistantContent ?? "");
+            finalAnswer = cleanedAnswer;
+
+            if (!cleanedAnswer || hasToolProtocolArtifacts(cleanedAnswer)) {
+                const fallbackAnswer = buildToolLoopFallbackAnswer(executedToolCalls, options.prompt);
+                if (fallbackAnswer) {
+                    finalAnswer = fallbackAnswer;
+                }
             }
-        }
 
-        finalAnswer = hardenFeishuDeliveryClaim(finalAnswer, executedToolCalls, options.prompt);
+            finalAnswer = hardenFeishuDeliveryClaim(finalAnswer, executedToolCalls, options.prompt);
 
-        // P5.7-R12-T3: 在返回前执行 verify phase
-        const { verifyResult, verifyJournal } = await runVerifyPhase(
-            executedToolCalls,
-            actionJournal,
-            traceId,
-            route
-        );
+            // P5.7-R12-T3: 在返回前执行 verify phase
+            const verifyOutcome = await runVerifyPhase(
+                executedToolCalls,
+                actionJournal,
+                traceId,
+                route
+            );
+            verifyResult = verifyOutcome.verifyResult;
 
-        // 如果有 verify journal，添加到 actionJournal
-        if (verifyJournal) {
-            actionJournal.push(verifyJournal);
+            // 如果有 verify journal，添加到 actionJournal
+            if (verifyOutcome.verifyJournal) {
+                actionJournal.push(verifyOutcome.verifyJournal);
+            }
         }
 
         if (supervisorSettings.enabled) {
@@ -1760,14 +1817,16 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                         continueCount: supervisorContinueCount,
                         reason: continueReason,
                     });
-                    const firstBlockedCall = executedToolCalls[0];
+                    const firstBlockedCall = forcedFinalState?.toolCall
+                        ?? lastFailureState?.toolCall
+                        ?? (executedToolCalls[0]
+                            ? { name: executedToolCalls[0].tc.function.name, args: executedToolCalls[0].args, result: executedToolCalls[0].result }
+                            : undefined);
                     return {
                         answer: buildFinishSupervisorBlockedAnswer(continueReason, supervisorContinueCount),
-                        toolCall: firstBlockedCall
-                            ? { name: firstBlockedCall.tc.function.name, args: firstBlockedCall.args, result: firstBlockedCall.result }
-                            : undefined,
+                        toolCall: firstBlockedCall,
                         actionJournal,
-                        verifyResult,
+                        verifyResult: verifyResult ?? lastFailureState?.verifyResult,
                         decisionSource: executedToolCalls.length === 0 ? "model" : undefined,
                         quotaProfile,
                         perTurnToolCallLimit,
@@ -1794,6 +1853,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                 } else {
                     conversationMessages = [...conversationMessages, supervisorFeedback];
                 }
+                forcedFinalState = undefined;
 
                 const nextRound = await callChatCompletionsRaw({
                     baseUrl,
@@ -1815,12 +1875,13 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
             }
         }
 
-        const firstCall = executedToolCalls[0];
+        const firstCall = forcedFinalState?.toolCall
+            ?? (executedToolCalls[0]
+                ? { name: executedToolCalls[0].tc.function.name, args: executedToolCalls[0].args, result: executedToolCalls[0].result }
+                : undefined);
         return {
             answer: finalAnswer,
-            toolCall: firstCall
-                ? { name: firstCall.tc.function.name, args: firstCall.args, result: firstCall.result }
-                : undefined,
+            toolCall: firstCall,
             actionJournal,
             verifyResult,
             decisionSource: executedToolCalls.length === 0 ? "model" : undefined,
