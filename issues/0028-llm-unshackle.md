@@ -60,11 +60,13 @@ links: []
 ### 后续落地
 
 1. `0041` 已完成 prompt/tool-loop Phase 2 清理，删除剩余流程裁判器并抬高默认 quota。
-2. 真实日志已出现：
+2. `0042` 已完成 routed-chat Phase 3 清理，删除入口层 `degrade no-tool`、`forceComplexTool` 和相关契约残影，默认入口只剩 `runAgentToolLoop()`。
+3. 真实日志已出现：
    - `03:56:50.055 Tool Bus: SUCCESS read_file`
    - `03:56:51.545 Tool Bus: SUCCESS bash`
    - `03:57:02.388 消息处理完成`
-3. 新时间窗内未再出现新的 `MODEL_PROTOCOL_FAILED`。
+4. 新时间窗内未再出现新的 `MODEL_PROTOCOL_FAILED`。
+5. 目前剩余问题已经下沉到具体 skill / 参数生成层，例如自然语言 schedule add 仍可能漏掉 `--tz` / `--cron` 参数；不再是路由层提前挡路。
 
 ## Links
 

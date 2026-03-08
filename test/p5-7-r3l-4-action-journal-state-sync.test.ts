@@ -4,7 +4,7 @@
  * 目标：
  * - 验证 journal 顺序锁（stepId 单调递增）
  * - 验证失败保真锁（ok=false 时 errorCode/exitCode 不丢失）
- * - 验证结构一致锁（tool/no-tool/complex-tool 三路返回一致结构）
+ * - 验证结构一致锁（tool/no-tool 两路返回一致结构）
  *
  * 断言口径：行为断言优先，禁止源码字符串匹配
  */
@@ -238,27 +238,27 @@ describe("P5.7-R3l-4: Action Journal 状态回写", () => {
             expect(result.actionJournal[0].tool).toBe("bash");
         });
 
-        it("complex-tool 路由应该返回 toolLoopResult.actionJournal", () => {
+        it("tool 路由在多步骤场景下应返回 toolLoopResult.actionJournal", () => {
             const journalEntry: ActionJournalEntry = {
                 traceId: "test-456",
                 stepId: 1,
                 phase: "act",
                 timestamp: Date.now(),
-                route: "complex-tool",
+                route: "tool",
                 tool: "bash",
                 ok: true,
                 durationMs: 200,
             };
 
             const result: RoutedChatResult = {
-                answer: "complex answer",
-                route: "complex-tool",
+                answer: "tool answer 2",
+                route: "tool",
                 temperature: 0,
                 toolCall: { name: "bash", args: { command: "ls" }, result: "output" },
                 actionJournal: [journalEntry],
             };
 
-            expect(result.route).toBe("complex-tool");
+            expect(result.route).toBe("tool");
             expect(result.actionJournal.length).toBe(1);
         });
 

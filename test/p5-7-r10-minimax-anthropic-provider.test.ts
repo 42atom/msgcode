@@ -46,9 +46,20 @@ async function createToolEnabledWorkspace(): Promise<string> {
 }
 
 describe("P5.7-R10: MiniMax Anthropic provider", () => {
-    it("workspace 未暴露工具时，应退回 dialog chat 而不是产出伪工具调用文本", async () => {
+    it("workspace 显式禁用工具时，仍应走统一 tool-loop 并返回模型真实 no-tool 结果", async () => {
         const originalFetch = globalThis.fetch;
         const workspacePath = await mkdtemp(join(tmpdir(), "msgcode-minimax-no-tools-"));
+        await mkdir(join(workspacePath, ".msgcode"), { recursive: true });
+        await writeFile(
+            join(workspacePath, ".msgcode", "config.json"),
+            JSON.stringify({
+                "pi.enabled": true,
+                "tooling.mode": "autonomous",
+                "tooling.allow": [],
+                "tooling.require_confirm": [],
+            }, null, 2),
+            "utf-8"
+        );
         let capturedUrl = "";
         let capturedBody: Record<string, unknown> = {};
 
@@ -72,7 +83,7 @@ describe("P5.7-R10: MiniMax Anthropic provider", () => {
             });
 
             expect(result.route).toBe("no-tool");
-            expect(result.decisionSource).toBe("router");
+            expect(result.decisionSource).toBe("model");
             expect(result.answer).toBe("我是纯聊天回复，没有工具。");
             expect(result.answer).not.toContain("<minimax:tool_call>");
             expect(capturedUrl).toBe("https://api.minimax.chat/anthropic/v1/messages");

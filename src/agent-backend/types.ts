@@ -198,8 +198,7 @@ export interface AgentToolLoopResult {
     remainingToolCalls?: number;  // 剩余工具调用数
     remainingSteps?: number;  // 剩余步骤数
     continuationReason?: string;  // 续跑原因（触顶时填写）
-    // P5.7-R12-T10: agent-first 改造 - 决策来源
-    decisionSource?: "model" | "router" | "degrade";  // 决策来源
+    decisionSource?: "model";  // 决策来源
 }
 
 // ============================================
@@ -217,10 +216,7 @@ export interface AgentRoutedChatOptions {
     windowMessages?: Array<{ role: string; content?: string }>;
     summaryContext?: string;
     soulContext?: { content: string; source: string; path: string; chars: number };
-    hasToolsAvailable?: boolean;
     temperature?: number; // 可选覆盖温度
-    // P5.7-R12-T10: agent-first 改造 - 显式强制 complex-tool 模式
-    forceComplexTool?: boolean; // 如果为 true，强制使用 plan/act/report 流程
 }
 
 /**
@@ -231,8 +227,8 @@ export interface AgentRoutedChatOptions {
  */
 export interface AgentRoutedChatResult {
     answer: string;
-    route: "no-tool" | "tool" | "complex-tool";  // 最终执行结果语义
-    decisionSource?: "model" | "router" | "degrade";  // P5.7-R12-T10: 决策来源（agent-first 改造）
+    route: "no-tool" | "tool";  // 最终执行结果语义
+    decisionSource?: "model";  // P5.7-R12-T10: 决策来源（agent-first 改造）
     temperature: number;
     toolCall?: { name: string; args: Record<string, unknown>; result: unknown };
     actionJournal: ActionJournalEntry[];  // P5.7-R3l-4: 必有，无工具时为空数组

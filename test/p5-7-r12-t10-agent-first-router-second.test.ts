@@ -3,7 +3,7 @@
  *
  * 验收标准：
  * 1. 用户发自然语言请求时，默认先进入"看得见工具的主智能体"
- * 2. 模型可自行决定不调用工具，直接回答
+     * 2. 模型可自行决定不调用工具，直接回答
  * 3. 模型也可自行决定调用 browser/bash/read_file/...
  * 4. 不再存在"先被判成 no-tool，再靠 fake tool marker recover"的主流程
  */
@@ -36,7 +36,7 @@ describe("P5.7-R12-T10: Agent-First / Router-Second 改造", () => {
     });
 
     describe("代码结构验证", () => {
-        it("routed-chat.ts 应该不再调用 classifyRouteModelFirst 作为默认路径", async () => {
+        it("routed-chat.ts 应该只保留统一 tool-loop 默认路径", async () => {
             // 读取源代码，验证不再有前置分类器调用
             const fs = await import("node:fs");
             const content = fs.readFileSync(
@@ -44,25 +44,21 @@ describe("P5.7-R12-T10: Agent-First / Router-Second 改造", () => {
                 "utf-8"
             );
 
-            // 关键验证：
-            // 1. classifyRouteModelFirst 不应该再作为默认主路径被调用
-            // 2. 应该调用 runAgentToolLoop 并传入 allowNoTool: true
-
-            // 注意：这个测试只验证代码结构，不验证运行时行为
-            expect(content.includes("allowNoTool: true")).toBe(true);
+            expect(content.includes("runAgentToolLoop({")).toBe(true);
+            expect(content.includes("allowNoTool")).toBe(false);
             expect(content.includes("agent-first")).toBe(true);
+            expect(content.includes("forceComplexTool")).toBe(false);
+            expect(content.includes("degrade mode: forcing no-tool")).toBe(false);
         });
 
-        it("tool-loop.ts 应该在无 tool_calls 时返回 no-tool 结果", async () => {
-            // 读取源代码，验证 allowNoTool 逻辑
+        it("tool-loop.ts 应该在无 tool_calls 时保留模型真实决策", async () => {
             const fs = await import("node:fs");
             const content = fs.readFileSync(
                 "./src/agent-backend/tool-loop.ts",
                 "utf-8"
             );
 
-            // 验证 allowNoTool 处理逻辑存在
-            expect(content.includes("allowNoTool && toolCalls.length === 0")).toBe(true);
+            expect(content.includes('decisionSource: executedToolCalls.length === 0 ? "model" : undefined')).toBe(true);
         });
     });
 
@@ -78,15 +74,16 @@ describe("P5.7-R12-T10: Agent-First / Router-Second 改造", () => {
             expect(content.includes("decisionSource")).toBe(true);
         });
 
-        it("日志应该区分 agent-first 和 router/degrade", async () => {
+        it("日志应该不再保留 router/degrade 决策来源残影", async () => {
             const fs = await import("node:fs");
             const content = fs.readFileSync(
                 "./src/agent-backend/routed-chat.ts",
                 "utf-8"
             );
 
-            // 验证不同决策来源的日志
             expect(content.includes("decisionSource")).toBe(true);
+            expect(content.includes('decisionSource: "router"')).toBe(false);
+            expect(content.includes('decisionSource: "degrade"')).toBe(false);
         });
     });
 });

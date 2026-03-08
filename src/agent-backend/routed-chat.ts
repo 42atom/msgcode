@@ -4,10 +4,10 @@
  * P5.7-R9-T7: 从 lmstudio.ts 迁移出的路由聊天逻辑
  * 主实现已迁出到本文件。
  *
- * 目标：保留单一 agent 执行主链，只负责少量显式分支：
- * - degrade 强制 no-tool
- * - forceComplexTool 显式 plan/act/report
- * - 默认 agent-first tool-loop
+ * 目标：保留单一 agent 执行主链：
+ * - 组织上下文
+ * - 调起 agent-first tool-loop
+ * - 返回真实结果
  */
 
 import * as crypto from "node:crypto";
@@ -21,8 +21,7 @@ import {
     normalizeModelOverride,
 } from "./config.js";
 import { selectModelByDegrade, getDegradeState } from "../slo-degrade.js";
-import { getToolsForLlm, runAgentToolLoop } from "./tool-loop.js";
-import { runLmStudioChat } from "./chat.js";
+import { runAgentToolLoop } from "./tool-loop.js";
 
 function buildToolSequence(actionJournal: AgentRoutedChatResult["actionJournal"]): string {
     return actionJournal
@@ -64,16 +63,18 @@ export async function runAgentRoutedChat(options: AgentRoutedChatOptions): Promi
         }
     }
 
-    const { model: selectedModel, level: selectedLevel } = selectModelByDegrade(
-        executorModel || "default-executor",
-        responderModel || "default-responder"
-    );
-    const toolsAvailable = options.hasToolsAvailable ?? (
-        !!workspacePath && (await getToolsForLlm(workspacePath)).length > 0
-    );
+    let selectedLevel = degradeState.level;
+    let selectedModel = executorModel;
+    if (executorModel && responderModel) {
+        const selected = selectModelByDegrade(executorModel, responderModel);
+        selectedLevel = selected.level;
+        selectedModel = selected.model;
+    } else if (selectedLevel !== "LEVEL_0") {
+        selectedModel = responderModel || executorModel;
+    }
 
     const dialogSoulInjected = !!(options.soulContext && options.soulContext.content);
-    const execSoulInjected = false;
+    const execSoulInjected = dialogSoulInjected;
 
     // P5.7-R12-T10: agent-first 改造 - 不再前置分类，直接进入统一 agent 主链
     logger.info("agent-first chat started", {
@@ -91,180 +92,9 @@ export async function runAgentRoutedChat(options: AgentRoutedChatOptions): Promi
         modelBindingMode,
     });
 
-    // P5.7-R12-T10: 保留 degrade 模式的强制 no-tool
-    if (selectedLevel === "LEVEL_2") {
-        const usedModel = selectedModel;
-        const usedTemperature = 0.2;
-
-        logger.info("degrade mode: forcing no-tool", {
-            module: "agent-backend",
-            traceId,
-            phase: "degrade",
-            kernel: "dialog",
-            soulInjected: dialogSoulInjected,
-            degradeLevel: selectedLevel,
-        });
-
-        const answer = await runLmStudioChat({
-            prompt: options.prompt,
-            system: options.system,
-            workspace: options.workspacePath,
-            model: usedModel,
-            temperature: usedTemperature,
-            backendRuntime,
-            windowMessages: options.windowMessages,
-            summaryContext: options.summaryContext,
-            soulContext: options.soulContext,
-        });
-
-        logger.info("agent-first chat completed", {
-            module: "agent-backend",
-            traceId,
-            route: "no-tool",
-            phase: "complete",
-            kernel: "dialog",
-            decisionSource: "degrade",
-            soulInjected: dialogSoulInjected,
-            temperature: usedTemperature,
-            responseLength: answer.length,
-            model: usedModel,
-            degradeLevel: selectedLevel,
-        });
-
-        return {
-            answer,
-            route: "no-tool",
-            decisionSource: "degrade",
-            temperature: usedTemperature,
-            actionJournal: [],
-        };
-    }
-
-    // P5.7-R12-T10: 保留 complex-tool 的 plan/act/report 流程（需要显式标记）
-    if (options.forceComplexTool) {
-        const usedModel = executorModel;
-        const usedTemperature = 0;
-
-        logger.info("complex-tool pipeline started", {
-            module: "agent-backend",
-            traceId,
-            route: "complex-tool",
-            phase: "plan",
-            kernel: "dialog",
-            soulInjected: dialogSoulInjected,
-            decisionSource: "router",
-        });
-
-        const planPrompt = `请先分析这个任务并制定执行计划，不需要执行具体操作：${options.prompt}`;
-        const planResult = await runLmStudioChat({
-            prompt: planPrompt,
-            system: options.system,
-            workspace: options.workspacePath,
-            model: usedModel,
-            temperature: usedTemperature,
-            backendRuntime,
-            windowMessages: options.windowMessages,
-            summaryContext: options.summaryContext,
-            soulContext: options.soulContext,
-        });
-
-        logger.info("complex-tool pipeline completed", {
-            module: "agent-backend",
-            traceId,
-            route: "complex-tool",
-            phase: "plan",
-            kernel: "dialog",
-            soulInjected: dialogSoulInjected,
-            temperature: usedTemperature,
-            model: usedModel,
-            planLength: planResult.length,
-        });
-
-        logger.info("complex-tool pipeline started", {
-            module: "agent-backend",
-            traceId,
-            route: "complex-tool",
-            phase: "act",
-            kernel: "exec",
-            soulInjected: execSoulInjected,
-        });
-
-        const execPrompt = `${options.prompt}\n\n执行计划：${planResult}`;
-        const toolLoopResult = await runAgentToolLoop({
-            prompt: execPrompt,
-            system: options.system,
-            workspacePath: options.workspacePath,
-            windowMessages: undefined,
-            summaryContext: options.summaryContext,
-            soulContext: undefined,
-            model: usedModel,
-            backendRuntime,
-            traceId,
-            route: "complex-tool",
-        });
-
-        logger.info("complex-tool pipeline completed", {
-            module: "agent-backend",
-            traceId,
-            route: "complex-tool",
-            phase: "act",
-            kernel: "exec",
-            soulInjected: execSoulInjected,
-            temperature: usedTemperature,
-            model: usedModel,
-            toolCallCount: toolLoopResult.toolCall ? 1 : 0,
-            toolName: toolLoopResult.toolCall?.name,
-            toolSequence: buildToolSequence(toolLoopResult.actionJournal),
-        });
-
-        const summaryPrompt = `任务已完成。请总结执行结果：${toolLoopResult.answer}`;
-        const summaryResult = await runLmStudioChat({
-            prompt: summaryPrompt,
-            system: options.system,
-            workspace: options.workspacePath,
-            model: usedModel,
-            temperature: usedTemperature,
-            backendRuntime,
-            windowMessages: options.windowMessages,
-            summaryContext: options.summaryContext,
-            soulContext: options.soulContext,
-        });
-
-        logger.info("complex-tool pipeline completed", {
-            module: "agent-backend",
-            traceId,
-            route: "complex-tool",
-            phase: "report",
-            kernel: "dialog",
-            soulInjected: dialogSoulInjected,
-            temperature: usedTemperature,
-            model: usedModel,
-            responseLength: summaryResult.length,
-        });
-
-        return {
-            answer: summaryResult,
-            route: "complex-tool",
-            decisionSource: "router",
-            temperature: usedTemperature,
-            toolCall: toolLoopResult.toolCall,
-            actionJournal: toolLoopResult.actionJournal,
-            // P5.7-R12-T8: 透传配额与续跑信息
-            verifyResult: toolLoopResult.verifyResult,
-            continuable: toolLoopResult.continuable,
-            quotaProfile: toolLoopResult.quotaProfile,
-            perTurnToolCallLimit: toolLoopResult.perTurnToolCallLimit,
-            perTurnToolStepLimit: toolLoopResult.perTurnToolStepLimit,
-            remainingToolCalls: toolLoopResult.remainingToolCalls,
-            remainingSteps: toolLoopResult.remainingSteps,
-            continuationReason: toolLoopResult.continuationReason,
-        };
-    }
-
-    // P5.7-R12-T10: 默认路径 - 直接调用 tool-loop，让模型自己决定是否调用工具
-    // P0 松绑：移除 toolsAvailable 前置检查，默认强制进入 tool-loop
-    // 即使工具面为空，也让模型自己决定（allowNoTool 会在 tool-loop 里生效）
-    const usedModel = executorModel;
+    // OpenClaw 风格：默认路径直接进入 tool-loop。
+    // 路由层不再替模型预判“这轮是否应该用工具”。
+    const usedModel = selectedModel;
     const usedTemperature = 0;
 
     logger.info("agent-first tool-loop started", {
@@ -288,12 +118,10 @@ export async function runAgentRoutedChat(options: AgentRoutedChatOptions): Promi
         backendRuntime,
         traceId,
         route: "tool",
-        allowNoTool: true,  // 关键：允许模型自己决定是否调用工具
     });
 
-    // P5.7-R12-T10: 根据 tool-loop 的返回结果决定最终 route
-    const finalRoute = toolLoopResult.toolCall === undefined ? "no-tool" : "tool";
-    const decisionSource = "model";  // 模型自己决策
+    const finalRoute = toolLoopResult.toolCall !== undefined ? "tool" : "no-tool";
+    const decisionSource = toolLoopResult.decisionSource ?? "model";
 
     logger.info("agent-first chat completed", {
         module: "agent-backend",

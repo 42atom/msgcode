@@ -45,11 +45,11 @@ export interface LmStudioRoutedChatOptions {
     prompt: string; system?: string; workspacePath?: string; agentProvider?: string;
     windowMessages?: Array<{ role: string; content?: string }>; summaryContext?: string;
     soulContext?: { content: string; source: string; path: string; chars: number };
-    hasToolsAvailable?: boolean; temperature?: number;
+    temperature?: number;
 }
 
 export interface RoutedChatResult {
-    answer: string; route: "no-tool" | "tool" | "complex-tool"; temperature: number;
+    answer: string; route: "no-tool" | "tool"; temperature: number;
     toolCall?: { name: string; args: Record<string, unknown>; result: unknown };
     actionJournal: ActionJournalEntry[];
 }
