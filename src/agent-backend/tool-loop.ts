@@ -1096,19 +1096,12 @@ async function runMiniMaxAnthropicToolLoop(params: {
     });
 
     let toolCalls = response.toolCalls;
-
-    if (toolCalls.length === 0 && params.options.allowNoTool) {
-        return {
-            answer: sanitizeLmStudioOutput(response.content || "（模型未调用工具，已返回原始响应）"),
-            actionJournal: [],
-            decisionSource: "model",
-        };
-    }
+    const allowDirectNoTool = toolCalls.length === 0 && params.options.allowNoTool;
 
     // OpenClaw 风格：默认进入工具链，不基于消息内容判断意图
 
     // 假成功防护：对于执行型请求，强制要求工具调用
-    if (toolCalls.length === 0 && params.activeToolSchemas.length > 0) {
+    if (!allowDirectNoTool && toolCalls.length === 0 && params.activeToolSchemas.length > 0) {
         const retryMessages: MiniMaxAnthropicMessage[] = [
             ...conversationMessages,
             {
@@ -1137,7 +1130,7 @@ async function runMiniMaxAnthropicToolLoop(params: {
         conversationMessages = retryMessages;
     }
 
-    if (toolCalls.length === 0 && params.preferredToolName && params.activeToolSchemas.length > 0) {
+    if (!allowDirectNoTool && toolCalls.length === 0 && params.preferredToolName && params.activeToolSchemas.length > 0) {
         const strictRetryMessages: MiniMaxAnthropicMessage[] = [
             ...conversationMessages,
             {
@@ -1163,14 +1156,6 @@ async function runMiniMaxAnthropicToolLoop(params: {
         });
         toolCalls = response.toolCalls;
         conversationMessages = strictRetryMessages;
-    }
-
-    // OpenClaw 风格：如果模型仍未返回工具，不判死，返回真实未完成状态
-    if (toolCalls.length === 0) {
-        return {
-            answer: response.content || "（模型未调用工具，已返回原始响应）",
-            actionJournal: [],
-        };
     }
 
     const miniMaxActiveToolNames = params.activeToolSchemas
@@ -1466,6 +1451,7 @@ async function runMiniMaxAnthropicToolLoop(params: {
                             : undefined,
                         actionJournal,
                         verifyResult,
+                        decisionSource: executedToolCalls.length === 0 ? "model" : undefined,
                         quotaProfile: params.quotaProfile,
                         perTurnToolCallLimit: params.perTurnToolCallLimit,
                         perTurnToolStepLimit: params.perTurnToolStepLimit,
@@ -1513,6 +1499,7 @@ async function runMiniMaxAnthropicToolLoop(params: {
                 : undefined,
             actionJournal,
             verifyResult,
+            decisionSource: executedToolCalls.length === 0 ? "model" : undefined,
             quotaProfile: params.quotaProfile,
             perTurnToolCallLimit: params.perTurnToolCallLimit,
             perTurnToolStepLimit: params.perTurnToolStepLimit,
@@ -1709,19 +1696,12 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
 
     let msg1 = r1.choices[0]?.message;
     let toolCalls = msg1?.tool_calls ?? [];
-
-    if (toolCalls.length === 0 && options.allowNoTool) {
-        return {
-            answer: sanitizeLmStudioOutput(msg1?.content || "（模型未调用工具，已返回原始响应）"),
-            actionJournal: [],
-            decisionSource: "model",
-        };
-    }
+    const allowDirectNoTool = toolCalls.length === 0 && options.allowNoTool;
 
     // OpenClaw 风格：默认进入工具链，不基于消息内容判断意图
 
     // 无 tool_calls：重试一次（required 模式）
-    if (toolCalls.length === 0 && activeToolNames.length > 0) {
+    if (!allowDirectNoTool && toolCalls.length === 0 && activeToolNames.length > 0) {
         const retryMessages = [
             ...messages,
             {
@@ -1749,7 +1729,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     }
 
     // 二次强约束重试：显式工具场景下，若 required 仍未返回 tool_calls，再尝试一次
-    if (toolCalls.length === 0 && preferredToolName && activeToolNames.length > 0) {
+    if (!allowDirectNoTool && toolCalls.length === 0 && preferredToolName && activeToolNames.length > 0) {
         const strictRetryMessages = [
             ...messages,
             {
@@ -1789,14 +1769,6 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
         });
         msg1 = strictRetry.choices[0]?.message;
         toolCalls = msg1?.tool_calls ?? [];
-    }
-
-    // OpenClaw 风格：如果模型仍未返回工具，不判死，返回真实未完成状态
-    if (toolCalls.length === 0) {
-        return {
-            answer: msg1?.content || "（模型未调用工具，已返回原始响应）",
-            actionJournal: [],
-        };
     }
 
     // P0 松绑：移除"未暴露工具直接判死"逻辑
@@ -2126,6 +2098,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                             : undefined,
                         actionJournal,
                         verifyResult,
+                        decisionSource: executedToolCalls.length === 0 ? "model" : undefined,
                         quotaProfile,
                         perTurnToolCallLimit,
                         perTurnToolStepLimit,
@@ -2180,6 +2153,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                 : undefined,
             actionJournal,
             verifyResult,
+            decisionSource: executedToolCalls.length === 0 ? "model" : undefined,
             // P5.7-R12-T8: 正常结束时也返回配额信息
             quotaProfile,
             perTurnToolCallLimit,

@@ -70,6 +70,10 @@ links: []
 - 结束挂点结论：
   - 唯一挂点选择 `runAgentToolLoop` / `runMiniMaxAnthropicToolLoop` 末尾的 `finalAssistantContent -> finalAnswer -> return`
   - 不在 `routed-chat.ts` 额外新增第二触发点，避免多处结束判定
+  - `allowNoTool` 仅保留“允许直答”的输入语义，不再允许函数级直接 `return` 绕过结束前监督
+- 发布决策：
+  - 运行态默认开启 supervisor，测试环境默认关闭
+  - 这是有意决策，目的是先在真实主链验证机制；如需回滚可设 `SUPERVISOR_ENABLED=0`
 - 验证命令：
   - `PATH="$HOME/.bun/bin:$PATH" NODE_ENV=test bun test test/p5-7-r20-minimal-finish-supervisor.test.ts`
   - `PATH="$HOME/.bun/bin:$PATH" NODE_ENV=test bun test test/p5-7-r3g-multi-tool-loop.test.ts`
