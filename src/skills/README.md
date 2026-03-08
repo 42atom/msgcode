@@ -8,6 +8,14 @@
 - 执行主链：runtime skill -> bash -> CLI 命令
 - builtin registry（`registry.ts`）为历史占位，不再作为技能执行的正式主链
 
+**runtime skill 文案格式统一为能力卡**：
+
+- `YAML frontmatter`：`name` + `description`
+- `能力`：这项 skill 解决什么问题
+- `何时使用`：触发条件
+- `唯一入口`：应优先走的 wrapper / CLI
+- `命令模板 / 验证 / 常见错误`：让 LLM 读完就能执行，不靠猜参数
+
 **builtin registry 退役说明**：
 
 - `registry.ts` 保留仅为向后兼容

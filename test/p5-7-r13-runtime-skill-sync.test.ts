@@ -71,8 +71,14 @@ describe("P5.7-R13: runtime skill sync", () => {
     const schedulerStat = await stat(join(userSkillsDir, "scheduler", "main.sh"));
 
     expect(skillDoc).toContain("patchright-browser skill");
+    expect(skillDoc).toContain("name: patchright-browser");
+    expect(skillDoc).toContain("## 能力");
+    expect(skillDoc).toContain("## 唯一入口");
     expect(mainSh).toContain('exec msgcode browser "$@"');
     expect(schedulerDoc).toContain("scheduler skill");
+    expect(schedulerDoc).toContain("name: scheduler");
+    expect(schedulerDoc).toContain("## 能力");
+    expect(schedulerDoc).toContain("## 命令模板");
     expect(schedulerDoc).toContain("不要发明 `cron_add`");
     expect(schedulerSh).toContain('resolve_default_tz()');
     expect(schedulerSh).toContain('exec msgcode schedule "${normalized_command[@]}"');

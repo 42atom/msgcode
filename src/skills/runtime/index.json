@@ -6,13 +6,13 @@
       "id": "scheduler",
       "name": "Scheduler",
       "entry": "~/.config/msgcode/skills/scheduler/main.sh",
-      "description": "定时任务 skill 参考实现，周期任务走 msgcode schedule CLI，一次性任务由 LLM 自行决定实现"
+      "description": "周期定时任务能力说明书。先读本 skill，再通过 scheduler wrapper 调用 msgcode schedule CLI；一次性任务由 LLM 自行决定实现"
     },
     {
       "id": "patchright-browser",
       "name": "Patchright Browser",
       "entry": "~/.config/msgcode/skills/patchright-browser/main.sh",
-      "description": "Patchright 浏览器底座 CLI 合同与共享工作 Chrome 路径"
+      "description": "Patchright 浏览器能力说明书。先读本 skill，再通过 wrapper 调用 msgcode browser CLI 检查 root、instances、tabs"
     }
   ]
 }

@@ -47,7 +47,10 @@ P5.7-R9-T8: 默认文件名更新为 agents-prompt.md
 CLI 使用规则
 1. 你可以通过 bash 调用 msgcode CLI，格式示例：msgcode <command> <subcommand> [options]。
 2. 需要系统能力时优先使用 msgcode CLI 或已注册工具，不自行虚构命令。
-3. 命令执行前先确认参数完整，执行后基于真实 stdout 和 stderr 总结结论。
+3. 只要任务需要通过 bash 调用 msgcode CLI，必须先读 /Users/admin/.config/msgcode/skills/index.json。
+4. 读完 skills index 后，必须再读对应 skill（如 scheduler、patchright-browser）的 SKILL.md，再执行 bash。
+5. 禁止在未读 skill 合同前直接拼接 msgcode CLI 参数，禁止猜参数、补参数、改参数名。
+6. 命令执行前先确认参数完整，执行后基于真实 stdout 和 stderr 总结结论。
 
 浏览器规则
 1. 正式浏览器通道只有 browser 工具，底座固定为 Patchright + Chrome-as-State。
@@ -61,6 +64,7 @@ CLI 使用规则
 skills 索引
 skills 单一来源目录：/Users/admin/.config/msgcode/skills/
 先读：/Users/admin/.config/msgcode/skills/index.json
+凡是需要用 bash 调 msgcode CLI，先读 index.json，再读对应 skill，再执行命令；禁止跳过 skill 直接猜参数。
 注意：read_file 不支持 ~ 路径，必须使用绝对路径。
 可用 skill 概览：
 file：文件查找、读取、写入、复制、移动、发送
@@ -72,6 +76,7 @@ gen：图片、自拍、语音、音乐生成
 banana-pro-image-gen：Banana Pro 图片生成、编辑、描述
 feishu-send-file：从当前 workspace 的 `.msgcode/config.json` 读取 `runtime.current_chat_id`，并指导调用 feishu_send_file 回传文件
 patchright-browser：Patchright 浏览器底座 CLI 合同与最小工作流
+scheduler：定时任务 CLI 合同；add/remove/list 都先读 skill，再按模板执行
 
 SOUL 角色规则
 1. 若工作区存在 <workspace>/.msgcode/SOUL.md，必须先读取并按其中设定扮演角色。

@@ -2,8 +2,8 @@
  * msgcode: P5.7-R17 定时任务 skill pointer-only 回归锁
  *
  * 目标：
- * - 验证 prompt 只指向 skills 目录，不再暗示 schedule/cron 为系统内建能力
- * - 验证 scheduler skill 明确是参考实现
+ * - 验证 prompt 明确要求先读 skills index，再读对应 skill，禁止猜 CLI 参数
+ * - 验证 scheduler skill 明确 add/remove/list 的最短正确合同
  */
 
 import { describe, it, expect } from "bun:test";
@@ -15,15 +15,14 @@ function readText(relPath: string): string {
 }
 
 describe("P5.7-R17: scheduler skill pointer-only", () => {
-    it("agents-prompt.md 应指向 skills 目录和 index.json，而非特定 skill 注入", () => {
+    it("agents-prompt.md 应要求先读 skills index，再读对应 skill，禁止猜参数", () => {
         const content = readText("prompts/agents-prompt.md");
-        // 必须指向 skills 目录
         expect(content).toContain("/Users/admin/.config/msgcode/skills/");
-        // 必须指向 index.json
         expect(content).toContain("index.json");
-        // 不能对特定 skill（scheduler）做注入说明
-        expect(content).not.toContain("scheduler：定时任务");
-        // 不能暗示 cron 是内建能力
+        expect(content).toContain("必须先读 /Users/admin/.config/msgcode/skills/index.json");
+        expect(content).toContain("必须再读对应 skill");
+        expect(content).toContain("禁止猜参数");
+        expect(content).toContain("scheduler：定时任务 CLI 合同；add/remove/list 都先读 skill，再按模板执行");
         expect(content).not.toContain("cron 是内建");
         expect(content).not.toContain("schedule 是内建");
     });
@@ -40,16 +39,20 @@ describe("P5.7-R17: scheduler skill pointer-only", () => {
 
     it("scheduler skill 应明确 scheduleId 是位置参数，不能写成 --scheduleId", () => {
         const content = readText("src/skills/runtime/scheduler/SKILL.md");
-        expect(content).toContain("不是 `--schedule-id`");
-        expect(content).toContain("不要发明 --scheduleId");
-        expect(content).toContain("只能是位置参数");
+        expect(content).toContain("`<schedule-id>` 是位置参数，不是 `--scheduleId`");
+        expect(content).toContain("不要发明 `cron_add`、`schedule_add`");
     });
 
     it("scheduler skill 应明确 add 的 --tz 是必填参数", () => {
         const content = readText("src/skills/runtime/scheduler/SKILL.md");
-        expect(content).toContain("--tz <IANA 时区>");
-        expect(content).toContain("`--tz` 是 **add 必填参数**");
-        expect(content).toContain("漏 `--tz`");
+        expect(content).toContain("bash ~/.config/msgcode/skills/scheduler/main.sh add <schedule-id> --workspace <workspace-abs-path> --cron '<expr>' --tz <iana> --message '<text>'");
+        expect(content).toContain("bash ~/.config/msgcode/skills/scheduler/main.sh remove <schedule-id> --workspace <workspace-abs-path>");
+        expect(content).toContain("bash ~/.config/msgcode/skills/scheduler/main.sh list --workspace <workspace-abs-path>");
+        expect(content).toContain("禁止省略 `--cron` / `--tz` / `--message`");
+        expect(content).toContain("漏 --tz");
+        expect(content).toContain("漏 --cron 或漏 --message");
+        expect(content).toContain("先读 `~/.config/msgcode/skills/index.json`");
+        expect(content).toContain("禁止跳过本 skill 直接猜");
     });
 
     it("index.json 中 scheduler 描述应符合 pointer-only", () => {

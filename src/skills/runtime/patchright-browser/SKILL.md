@@ -1,29 +1,69 @@
+---
+name: patchright-browser
+description: This skill should be used when the model needs to inspect or drive the Patchright browser CLI wrapper, verify Chrome root state, or diagnose browser instances and tabs in msgcode.
+---
+
 # patchright-browser skill
 
-触发：浏览器自动化、Patchright browser CLI、Chrome root / instance / tab 操作。
+## 能力
 
-正式浏览器通道：`browser` 工具（Patchright + Chrome-as-State）。
-本 skill 作用：提供 `msgcode browser` CLI 合同与最小命令壳，不替代正式 `browser` 工具。
+本 skill 是 Patchright 浏览器能力说明书，用来说明 `msgcode browser` CLI wrapper 的正确入口和参数合同。
+
+- 正式浏览器通道：`browser` 工具（Patchright + Chrome-as-State）
+- 本 skill 作用：提供 CLI 合同、状态检查路径、最小命令模板
+- 本 skill 不替代正式 `browser` 工具，也不重新发明第二套浏览器底座
+
+## 何时使用
+
+在以下场景读取并使用本 skill：
+
+- 浏览器自动化排障
+- Patchright browser CLI 合同确认
+- Chrome root / profiles / instances / tabs 状态检查
+- 需要显式通过 bash 调 `msgcode browser` CLI wrapper
+
+## 唯一入口
 
 优先入口：`~/.config/msgcode/skills/patchright-browser/main.sh`
 
-规则：
-- 先把 Patchright 当成唯一正式浏览器底座，不要使用 agent-browser。
-- 共享工作 Chrome 根目录信息，先执行：
+先把 Patchright 当成唯一正式浏览器底座，不要使用 `agent-browser`。先读 `~/.config/msgcode/skills/index.json`，再读本 skill，再走 wrapper。
+
+## 核心规则
+
+- 共享工作 Chrome 根目录信息时，先执行：
   - `bash ~/.config/msgcode/skills/patchright-browser/main.sh root --ensure --json`
-- 需要查看 roots / instances / tabs 时，显式调用对应子命令，不猜默认 instance/tab。
+- 需要查看 roots / instances / tabs 时，显式调用对应子命令，不猜默认 instance / tab。
+- 需要真实网页交互时，优先走正式 `browser` 工具；需要排障、查看状态或验证 CLI 合同时，再走本 skill。
 
-常用：
-- `bash ~/.config/msgcode/skills/patchright-browser/main.sh root --ensure --json`
-- `bash ~/.config/msgcode/skills/patchright-browser/main.sh profiles list --json`
-- `bash ~/.config/msgcode/skills/patchright-browser/main.sh instances list --json`
-- `bash ~/.config/msgcode/skills/patchright-browser/main.sh instances launch --mode headed --root-name work-default --json`
-- `bash ~/.config/msgcode/skills/patchright-browser/main.sh tabs open --url https://example.com --json`
-- `bash ~/.config/msgcode/skills/patchright-browser/main.sh snapshot --tab-id <id> --compact --json`
-- `bash ~/.config/msgcode/skills/patchright-browser/main.sh action --tab-id <id> --kind click --ref '{"role":"link","name":"More info","index":0}' --json`
+## 常用模板
 
-参数速查：
-- tabs.action 必填 kind（click/type/press），ref 为 JSON：{"role":"...","name":"...","index":N}
-- kind=type 时带 text，kind=press 时带 key（Enter/Tab/Escape 等）
-- tabs.snapshot 可带 --interactive 只返回可交互节点
-- instances.launch 可带 --port 指定 Chrome 调试端口（默认 9222）
+```bash
+bash ~/.config/msgcode/skills/patchright-browser/main.sh root --ensure --json
+bash ~/.config/msgcode/skills/patchright-browser/main.sh profiles list --json
+bash ~/.config/msgcode/skills/patchright-browser/main.sh instances list --json
+bash ~/.config/msgcode/skills/patchright-browser/main.sh instances launch --mode headed --root-name work-default --json
+bash ~/.config/msgcode/skills/patchright-browser/main.sh tabs open --url https://example.com --json
+bash ~/.config/msgcode/skills/patchright-browser/main.sh snapshot --tab-id <id> --compact --json
+bash ~/.config/msgcode/skills/patchright-browser/main.sh action --tab-id <id> --kind click --ref '{"role":"link","name":"More info","index":0}' --json
+```
+
+## 参数速查
+
+- `tabs.action` 必填 `kind`（`click` / `type` / `press`）
+- `ref` 为 JSON：`{"role":"...","name":"...","index":N}`
+- `kind=type` 时带 `text`
+- `kind=press` 时带 `key`（如 `Enter` / `Tab` / `Escape`）
+- `tabs.snapshot` 可带 `--interactive`
+- `instances.launch` 可带 `--port` 指定调试端口（默认 `9222`）
+
+## 验证与排障
+
+推荐顺序：
+
+1. `root --ensure`
+2. `profiles list`
+3. `instances list` / `instances launch`
+4. `tabs open`
+5. `snapshot` / `action`
+
+需要排障时，先看 root、instances、tabs 的结构化 JSON，不要直接猜当前浏览器状态。
