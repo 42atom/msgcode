@@ -74,6 +74,8 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(skillDoc).toContain("name: patchright-browser");
     expect(skillDoc).toContain("## 能力");
     expect(skillDoc).toContain("## 唯一入口");
+    expect(skillDoc).toContain("不要直接写死 `tabId=1`");
+    expect(skillDoc).toContain("`tabId` 必须来自真实返回值");
     expect(mainSh).toContain('exec msgcode browser "$@"');
     expect(schedulerDoc).toContain("scheduler skill");
     expect(schedulerDoc).toContain("name: scheduler");

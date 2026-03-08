@@ -12,7 +12,7 @@
       "id": "patchright-browser",
       "name": "Patchright Browser",
       "entry": "~/.config/msgcode/skills/patchright-browser/main.sh",
-      "description": "Patchright 浏览器能力说明书。先读本 skill，再通过 wrapper 调用 msgcode browser CLI 检查 root、instances、tabs"
+      "description": "Patchright 浏览器能力说明书。先读本 skill，再通过 wrapper 调用 msgcode browser CLI 检查 root、instances、tabs；tabId 必须使用真实返回值，不能猜 1、2、3"
     }
   ]
 }

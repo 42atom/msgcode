@@ -2,7 +2,7 @@
  * msgcode: P5.7-R20 结束前最小监督闭环回归锁
  *
  * 验收：
- * 1. 证据足够时 supervisor 放行
+ * 1. 只读/摘要任务不应触发 supervisor
  * 2. 假完成会被 supervisor 拦下并推动继续执行
  * 3. 连续 3 次 CONTINUE 后停止并返回阻塞原因
  */
@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { config } from "../src/config.js";
+import { logger } from "../src/logger/index.js";
 import { runLmStudioToolLoop } from "../src/lmstudio.js";
 
 const localOpenAiRuntime = {
@@ -80,7 +81,7 @@ describe("P5.7-R20: minimal finish supervisor", () => {
         config.supervisor.maxTokens = originalSupervisorConfig.maxTokens;
     });
 
-    it("证据足够时应返回 PASS 并正常结束", async () => {
+    it("只读任务应直接结束，不触发 finish supervisor", async () => {
         const workspacePath = await createToolEnabledWorkspace();
         let callCount = 0;
 
@@ -123,7 +124,7 @@ describe("P5.7-R20: minimal finish supervisor", () => {
                 choices: [{
                     message: {
                         role: "assistant",
-                        content: "PASS",
+                        content: "读取完成，证据已拿到：verified-evidence",
                     },
                     finish_reason: "stop",
                 }],
@@ -138,22 +139,23 @@ describe("P5.7-R20: minimal finish supervisor", () => {
                 timeoutMs: 10_000,
             });
 
-            expect(callCount).toBe(3);
+            expect(callCount).toBe(2);
             expect(result.answer).toContain("verified-evidence");
             expect(result.actionJournal.map((entry) => entry.tool)).toEqual([
                 "read_file",
                 "read_file",
-                "finish-supervisor",
             ]);
-            expect(result.actionJournal[2]?.ok).toBe(true);
+            expect(result.actionJournal.some((entry) => entry.tool === "finish-supervisor")).toBe(false);
         } finally {
             await rm(workspacePath, { recursive: true, force: true });
         }
     });
 
-    it("首轮无 tool_calls 的直答也必须先经过 supervisor", async () => {
+    it("首轮无 tool_calls 的普通直答不应触发 supervisor", async () => {
         const workspacePath = await createToolEnabledWorkspace();
         let callCount = 0;
+        const originalLoggerInfo = logger.info.bind(logger);
+        const metadataRoutes: string[] = [];
 
         globalThis.fetch = (async () => {
             callCount += 1;
@@ -180,6 +182,12 @@ describe("P5.7-R20: minimal finish supervisor", () => {
                 }],
             });
         }) as typeof fetch;
+        logger.info = ((message: string, meta?: Record<string, any>, traceId?: string) => {
+            if (message === "agent final response metadata" && typeof meta?.route === "string") {
+                metadataRoutes.push(meta.route);
+            }
+            return originalLoggerInfo(message, meta, traceId);
+        }) as typeof logger.info;
 
         try {
             const result = await runLmStudioToolLoop({
@@ -190,12 +198,13 @@ describe("P5.7-R20: minimal finish supervisor", () => {
                 allowNoTool: true,
             });
 
-            expect(callCount).toBe(2);
+            expect(callCount).toBe(1);
             expect(result.answer).toBe("这是一个无需工具的直接回答。");
             expect(result.decisionSource).toBe("model");
-            expect(result.actionJournal.map((entry) => entry.tool)).toEqual(["finish-supervisor"]);
-            expect(result.actionJournal[0]?.ok).toBe(true);
+            expect(result.actionJournal.length).toBe(0);
+            expect(metadataRoutes).toEqual(["no-tool"]);
         } finally {
+            logger.info = originalLoggerInfo;
             await rm(workspacePath, { recursive: true, force: true });
         }
     });
@@ -218,7 +227,7 @@ describe("P5.7-R20: minimal finish supervisor", () => {
                                 type: "function",
                                 function: {
                                     name: "bash",
-                                    arguments: JSON.stringify({ command: "printf 'draft'" }),
+                                    arguments: JSON.stringify({ command: "touch .msgcode/draft.marker" }),
                                 },
                             }],
                         },
@@ -330,7 +339,7 @@ describe("P5.7-R20: minimal finish supervisor", () => {
                                 type: "function",
                                 function: {
                                     name: "bash",
-                                    arguments: JSON.stringify({ command: "printf 'draft'" }),
+                                    arguments: JSON.stringify({ command: "touch .msgcode/draft.marker" }),
                                 },
                             }],
                         },
@@ -443,7 +452,7 @@ describe("P5.7-R20: minimal finish supervisor", () => {
                                 type: "function",
                                 function: {
                                     name: "bash",
-                                    arguments: JSON.stringify({ command: "sh -c \"echo boom >&2; exit 7\"" }),
+                                    arguments: JSON.stringify({ command: "touch .msgcode/mutate-before-fail && sh -c \"echo boom >&2; exit 7\"" }),
                                 },
                             }],
                         },
@@ -504,7 +513,7 @@ describe("P5.7-R20: minimal finish supervisor", () => {
                                 type: "function",
                                 function: {
                                     name: "bash",
-                                    arguments: JSON.stringify({ command: "sh -c \"echo fail >&2; exit 9\"" }),
+                                    arguments: JSON.stringify({ command: "touch .msgcode/fail-before-block && sh -c \"echo fail >&2; exit 9\"" }),
                                 },
                             }],
                         },
@@ -530,7 +539,7 @@ describe("P5.7-R20: minimal finish supervisor", () => {
                     choices: [{
                         message: {
                             role: "assistant",
-                            content: "我还是直接结束。",
+                            content: "已删除，我还是直接结束。",
                         },
                         finish_reason: "stop",
                     }],

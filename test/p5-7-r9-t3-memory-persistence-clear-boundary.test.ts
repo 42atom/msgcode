@@ -115,9 +115,11 @@ describe("P5.7-R9-T3: 系统提示词文件化", () => {
 
     it("agent-backend/prompt.ts 应包含完整路径定义", () => {
         const code = readFileSync(resolve(process.cwd(), "src/agent-backend/prompt.ts"), "utf-8");
-        // 路径由 path.resolve(process.cwd(), "prompts", "agents-prompt.md") 组成
+        // 路径应锚定仓库源码位置，而不是 process.cwd()
+        expect(code).toContain("fileURLToPath(import.meta.url)");
         expect(code).toContain('"prompts"');
         expect(code).toContain('"agents-prompt.md"');
+        expect(code).not.toContain('path.resolve(process.cwd(), "prompts", "agents-prompt.md")');
     });
 
     it("agent-backend/prompt.ts 应仅支持 AGENT_SYSTEM_PROMPT_FILE 环境变量覆盖", () => {

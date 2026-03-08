@@ -10,7 +10,9 @@
  */
 
 import * as path from "node:path";
+import * as fs from "node:fs";
 import * as fsPromises from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import { config } from "../config.js";
 import { logger } from "../logger/index.js";
 import { MODEL_ALIAS_SET } from "./config.js";
@@ -19,61 +21,22 @@ import { MODEL_ALIAS_SET } from "./config.js";
 // 提示词常量
 // ============================================
 
-/**
- * MCP 防循环规则（硬约束）
- */
-export const MCP_ANTI_LOOP_RULES = `
-你是一个会使用工具的助手。你可以通过 MCP 插件 filesystem 访问被授权的目录与文件。
+const MODULE_DIR = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(MODULE_DIR, "..", "..");
 
-核心规则：
-1. 涉及目录内容、文件读写时，必须调用 filesystem 工具获取真实结果，禁止猜测。
-2. 工具返回已经包含所需信息时，立刻生成最终回答，不要重复调用同一个工具获取相同信息。
-3. 最终输出只给用户需要的结果与结论，避免输出工具调用的中间文本或代码块。
-
-输出格式要求：
-- 列出文件时：每行一个文件名，用简单列表格式
-- 不要添加额外的计数说明（如"共 X 个文件"）
-- 不要重复相同的条目
-- 区分文件和目录时用简洁标记（如 文件：/ 目录：）
-`.trim();
-
-/**
- * 快速回答规则（E17：默认启用，避免模型思考太长时间）
- */
-export const QUICK_ANSWER_CONSTRAINT = `
-Tools before text.
-Read before edit.
-Verify before deliver.
-No philosophical essays.
-直接回答用户的问题，用中文纯文本输出。
-先用工具拿事实，再组织文字回答。
-改任何文件前先读取现状再编辑。
-给出最终结论前必须核验关键证据。
-禁止空泛说教和长篇抽象讨论。
-不要解释你在做什么，也不要复述用户消息或任何方括号块（如 [attachment]/[图片文字]/[语音转写]）。
-如需引用证据，只摘录最关键的 1-3 句。
-`.trim();
-
-/**
- * Exec Kernel 工具协议硬约束
- *
- * 目标：
- * - 执行核只负责产出 tool_calls，不输出"我将执行/我可以"等自然语言。
- * - 降低模型在工具路由里回到闲聊文本的概率。
- */
-export const EXEC_TOOL_PROTOCOL_CONSTRAINT = `
-Tools before text.
-Read before edit.
-Verify before deliver.
-No philosophical essays.
-你是执行核（Exec Kernel）。
-执行原则：
-1. 需要读取文件、执行命令、查询状态、访问网页或获取实时信息时，用工具拿真实结果，不要猜测。
-2. 涉及文件修改前，先读取目标内容或状态，再执行 edit/write。
-3. 返回最终结论前，基于已拿到的工具结果完成核验；如果尚未执行，就明确说尚未执行。
-4. 最终输出保持简短、可验证，不伪造已经完成的动作或结果。
-5. 不要输出空泛长文和哲学化表达。
-`.trim();
+export const DEFAULT_PROMPT_FRAGMENT_DIR = path.resolve(REPO_ROOT, "prompts", "fragments");
+export const MCP_ANTI_LOOP_RULES_FILE = path.resolve(
+    DEFAULT_PROMPT_FRAGMENT_DIR,
+    "mcp-anti-loop.md"
+);
+export const QUICK_ANSWER_CONSTRAINT_FILE = path.resolve(
+    DEFAULT_PROMPT_FRAGMENT_DIR,
+    "quick-answer-constraint.md"
+);
+export const EXEC_TOOL_PROTOCOL_CONSTRAINT_FILE = path.resolve(
+    DEFAULT_PROMPT_FRAGMENT_DIR,
+    "exec-tool-protocol-constraint.md"
+);
 
 /**
  * Agent Backend 文本默认模型（缺省配置时优先尝试）
@@ -89,7 +52,7 @@ export const LMSTUDIO_DEFAULT_CHAT_MODEL = AGENT_BACKEND_DEFAULT_CHAT_MODEL;
  * 系统提示词文件默认路径（可热调试）
  */
 export const DEFAULT_SYSTEM_PROMPT_FILE = path.resolve(
-    process.cwd(),
+    REPO_ROOT,
     "prompts",
     "agents-prompt.md"
 );
@@ -102,6 +65,43 @@ export const DEFAULT_SYSTEM_PROMPT_FILE = path.resolve(
  * 防止系统提示词文件加载失败日志刷屏
  */
 const PROMPT_FILE_WARNED = new Set<string>();
+
+function loadPromptFragmentSync(filePath: string): string {
+    try {
+        return fs.readFileSync(filePath, "utf-8").trim();
+    } catch (error) {
+        if (!PROMPT_FILE_WARNED.has(filePath)) {
+            logger.warn("Agent backend prompt fragment load failed", {
+                module: "agent-backend/prompt",
+                promptFragmentPath: filePath,
+                error: error instanceof Error ? error.message : String(error),
+            });
+            PROMPT_FILE_WARNED.add(filePath);
+        }
+        return "";
+    }
+}
+
+/**
+ * MCP 防循环规则（硬约束）
+ */
+export const MCP_ANTI_LOOP_RULES = loadPromptFragmentSync(MCP_ANTI_LOOP_RULES_FILE);
+
+/**
+ * 快速回答规则（E17：默认启用，避免模型思考太长时间）
+ */
+export const QUICK_ANSWER_CONSTRAINT = loadPromptFragmentSync(QUICK_ANSWER_CONSTRAINT_FILE);
+
+/**
+ * Exec Kernel 工具协议硬约束
+ *
+ * 目标：
+ * - 执行核只负责产出 tool_calls，不输出"我将执行/我可以"等自然语言。
+ * - 降低模型在工具路由里回到闲聊文本的概率。
+ */
+export const EXEC_TOOL_PROTOCOL_CONSTRAINT = loadPromptFragmentSync(
+    EXEC_TOOL_PROTOCOL_CONSTRAINT_FILE
+);
 
 /**
  * 归一化模型覆盖值：
@@ -121,7 +121,7 @@ export function normalizeModelOverride(model?: string): string | undefined {
 export function resolvePromptFilePath(filePath?: string): string {
     const normalized = (filePath || "").trim();
     const candidate = normalized || DEFAULT_SYSTEM_PROMPT_FILE;
-    return path.isAbsolute(candidate) ? candidate : path.resolve(process.cwd(), candidate);
+    return path.isAbsolute(candidate) ? candidate : path.resolve(REPO_ROOT, candidate);
 }
 
 /**

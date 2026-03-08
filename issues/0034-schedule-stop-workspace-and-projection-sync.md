@@ -1,0 +1,55 @@
+---
+id: 0034
+title: 修复 schedule 停止链的 workspace 参数和投影同步断裂
+status: open
+owner: agent
+labels: [bug, scheduler, agent]
+risk: high
+scope: scheduler 删除链、workspace 参数注入、jobs 投影同步
+plan_doc: docs/design/plan-260308-schedule-stop-workspace-and-projection-sync.md
+links: []
+---
+
+## Context
+
+修复 schedule 停止链的两个剩余断裂：
+
+### 问题 1: workspace 参数缺失
+- 2026-03-07 18:36:25 用户发停止类请求
+- `route=tool`, `toolName=bash`
+- 失败原因：`required option '--workspace <id|path>' not specified`
+
+### 问题 2: 投影同步断裂
+- `/Users/admin/msgcode-workspaces/smoke/ws-a/.msgcode/schedules/` 已空
+- 但 `/Users/admin/.config/msgcode/cron/jobs.json` 仍有 `schedule:246a7f78356b:cron-live`
+- `/Users/admin/.config/msgcode/cron/runs.jsonl` 在 18:37 仍继续 `status=ok`
+
+## Goal / Non-Goals
+
+### Goal
+- 保证自然语言 schedule 删除链始终带上当前 workspace 绝对路径
+- 保证删除 schedule 文件后，jobs 投影同步删除
+
+### Non-Goals
+- 不回滚前面的松绑
+- 不新增 parser 去替模型拼命令
+- 不重构整个 scheduler 引擎
+
+## Plan
+
+- [ ] 创建 issue 和 plan
+- [ ] 修 workspace 参数注入
+- [ ] 修删除同步
+- [ ] 补测试
+- [ ] 真机验证
+- [ ] 提交 commit
+
+## Acceptance Criteria
+
+1. 停止类请求生成的 bash 命令带有正确 `--workspace`
+2. 删除 schedule 后 jobs.json 投影同步删除
+3. 删除后 cron 不再继续跑
+
+## Links
+
+- /Users/admin/GitProjects/msgcode/docs/design/plan-260308-schedule-stop-workspace-and-projection-sync.md

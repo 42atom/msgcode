@@ -370,19 +370,34 @@ describe("P5.7-R9-T7 Step 4: Prompt 构建函数行为", () => {
     });
 
     it("QUICK_ANSWER_CONSTRAINT 应包含直接回答规则", async () => {
-        const { QUICK_ANSWER_CONSTRAINT } = await import("../src/agent-backend/index.js");
+        const { QUICK_ANSWER_CONSTRAINT, QUICK_ANSWER_CONSTRAINT_FILE } = await import("../src/agent-backend/index.js");
 
         expect(QUICK_ANSWER_CONSTRAINT).toContain("直接回答");
         expect(QUICK_ANSWER_CONSTRAINT).toContain("不要解释");
+        expect(QUICK_ANSWER_CONSTRAINT).toContain("不要使用任何 Markdown 符号或格式");
+        expect(QUICK_ANSWER_CONSTRAINT).toContain("不要使用任何 Markdown 符号或格式");
+        expect(QUICK_ANSWER_CONSTRAINT).toContain("草稿里如果已经出现这些标记");
+        expect(QUICK_ANSWER_CONSTRAINT).toContain("ABCD 或 1、2、3");
+        expect(fs.readFileSync(QUICK_ANSWER_CONSTRAINT_FILE, "utf-8")).toContain("提示用户可直接回复编号");
     });
 
     it("EXEC_TOOL_PROTOCOL_CONSTRAINT 应包含执行核协议", async () => {
-        const { EXEC_TOOL_PROTOCOL_CONSTRAINT } = await import("../src/agent-backend/index.js");
+        const {
+            EXEC_TOOL_PROTOCOL_CONSTRAINT,
+            EXEC_TOOL_PROTOCOL_CONSTRAINT_FILE,
+            MCP_ANTI_LOOP_RULES_FILE,
+        } = await import("../src/agent-backend/index.js");
 
         expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).toContain("执行核");
         expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).toContain("访问网页或获取实时信息时，用工具拿真实结果");
+        expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).toContain("不要使用任何 Markdown 符号或格式");
+        expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).toContain("不要使用任何 Markdown 符号或格式");
+        expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).toContain("草稿里如果出现加粗");
         expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).not.toContain("第一轮必须优先产出 tool_calls");
         expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).not.toContain("没有 tool_calls 前");
+        expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).toContain("ABCD 或 1、2、3");
+        expect(fs.readFileSync(EXEC_TOOL_PROTOCOL_CONSTRAINT_FILE, "utf-8")).toContain("ABCD 或 1、2、3");
+        expect(fs.readFileSync(MCP_ANTI_LOOP_RULES_FILE, "utf-8")).toContain("必须调用 filesystem 工具");
     });
 });
 

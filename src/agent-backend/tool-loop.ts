@@ -224,10 +224,18 @@ type ChatResponse = {
             tool_calls?: ToolCall[];
         };
     }>;
+    finishReason?: string | null;
 };
 
 const AIDOCS_ROOT = process.env.AIDOCS_ROOT || "AIDOCS";
 const FINISH_SUPERVISOR_MAX_CONTINUES = 3;
+const MAIN_AGENT_MAX_TOKENS = 8192;
+const FINISH_SUPERVISOR_MUTATING_TOOLS = new Set<ToolName>([
+    "write_file",
+    "edit_file",
+    "feishu_send_file",
+    "desktop",
+]);
 
 type FinishSupervisorDecision = {
     decision: "PASS" | "CONTINUE";
@@ -474,6 +482,58 @@ function appendFinishSupervisorJournalEntry(params: {
         stdoutTail: clipText(params.decision.raw, 200),
         durationMs: params.decision.durationMs,
     });
+}
+
+function bashCommandLooksMutating(command: string): boolean {
+    const input = (command || "").trim();
+    if (!input) return false;
+
+    return [
+        /\bmsgcode\s+schedule\s+(add|remove|enable|disable)\b/i,
+        /(^|[;&|]\s*)(rm|mv|cp|mkdir|touch|chmod|chown)\b/,
+        /\bsed\s+-i\b/,
+        /\bperl\s+-i\b/,
+        /\bapply_patch\b/,
+        /\bgit\s+(commit|push|tag|merge|rebase|cherry-pick|am|apply)\b/i,
+        /(^|[;&|]\s*)bash\s+.*\/skills\/scheduler\/main\.sh\s+(add|remove|enable|disable)\b/i,
+        /(^|[;&|]\s*)bash\s+.*\/skills\/patchright-browser\/main\.sh\b/i,
+    ].some((pattern) => pattern.test(input));
+}
+
+function answerClaimsSideEffect(answer: string): boolean {
+    const input = (answer || "").trim();
+    if (!input) return false;
+    return /(已|已经).{0,8}(创建|删除|移除|停止|停用|禁用|启用|发送|上传|修复|修改|更新|写入|清理|部署|绑定|取消|保存|提交|添加)/.test(input)
+        || /(创建成功|删除成功|发送成功|上传成功|修复完成|更新完成)/.test(input);
+}
+
+function shouldRunFinishSupervisor(params: {
+    finalAnswer: string;
+    executedToolCalls: ExecutedToolCall[];
+    forcedFinalState?: ForcedFinalState;
+}): boolean {
+    const hasMutatingToolCall = (toolCall: { name: string; args: Record<string, unknown> }): boolean => {
+        if (FINISH_SUPERVISOR_MUTATING_TOOLS.has(toolCall.name as ToolName)) {
+            return true;
+        }
+        if (toolCall.name !== "bash") {
+            return false;
+        }
+        return bashCommandLooksMutating(typeof toolCall.args.command === "string" ? toolCall.args.command : "");
+    };
+
+    if (params.executedToolCalls.some(({ tc, args }) => hasMutatingToolCall({ name: tc.function.name, args }))) {
+        return true;
+    }
+
+    if (params.forcedFinalState && hasMutatingToolCall({
+        name: params.forcedFinalState.toolCall.name,
+        args: params.forcedFinalState.toolCall.args,
+    })) {
+        return true;
+    }
+
+    return answerClaimsSideEffect(params.finalAnswer);
 }
 
 async function runFinishSupervisorReview(params: {
@@ -882,6 +942,7 @@ async function callChatCompletionsRaw(params: {
                     : undefined,
             },
         }],
+        finishReason: parsed.finishReason,
     };
 
     return json;
@@ -1008,7 +1069,7 @@ async function runMiniMaxAnthropicToolLoop(params: {
         tools: params.activeToolSchemas,
         toolChoice: initialToolChoice,
         temperature: 0,
-        maxTokens: 800,
+        maxTokens: MAIN_AGENT_MAX_TOKENS,
         timeoutMs: params.timeoutMs,
         apiKey: params.apiKey,
     });
@@ -1175,7 +1236,7 @@ async function runMiniMaxAnthropicToolLoop(params: {
                     // P0 松绑：使用 auto 让模型自由选择
                     toolChoice: { type: "auto" },
                     temperature: 0,
-                    maxTokens: 800,
+                    maxTokens: MAIN_AGENT_MAX_TOKENS,
                     timeoutMs: params.timeoutMs,
                     apiKey: params.apiKey,
                 });
@@ -1219,7 +1280,13 @@ async function runMiniMaxAnthropicToolLoop(params: {
             }
         }
 
-        if (supervisorSettings.enabled) {
+        const shouldReviewWithSupervisor = supervisorSettings.enabled && shouldRunFinishSupervisor({
+            finalAnswer,
+            executedToolCalls,
+            forcedFinalState,
+        });
+
+        if (shouldReviewWithSupervisor) {
             const supervisorDecision = await runFinishSupervisorReview({
                 backendRuntime: {
                     id: "minimax",
@@ -1312,7 +1379,7 @@ async function runMiniMaxAnthropicToolLoop(params: {
                     tools: params.activeToolSchemas,
                     toolChoice: { type: "auto" },
                     temperature: 0,
-                    maxTokens: 800,
+                    maxTokens: MAIN_AGENT_MAX_TOKENS,
                     timeoutMs: params.timeoutMs,
                     apiKey: params.apiKey,
                 });
@@ -1325,6 +1392,15 @@ async function runMiniMaxAnthropicToolLoop(params: {
             ?? (executedToolCalls[0]
                 ? { name: executedToolCalls[0].tc.function.name, args: executedToolCalls[0].args, result: executedToolCalls[0].result }
                 : undefined);
+        const metadataRoute = firstCall !== undefined ? "tool" : "no-tool";
+        logger.info("agent final response metadata", {
+            module: "agent-backend/tool-loop",
+            traceId: params.traceId,
+            route: metadataRoute,
+            provider: "minimax",
+            stopReason: currentResponse.stopReason,
+            maxTokens: MAIN_AGENT_MAX_TOKENS,
+        });
         return {
             answer: finalAnswer,
             toolCall: firstCall,
@@ -1509,13 +1585,14 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
         tools: activeToolSchemas,
         toolChoice: preferredToolChoice ?? "auto",
         temperature: 0,
-        maxTokens: 800,
+        maxTokens: MAIN_AGENT_MAX_TOKENS,
         timeoutMs,
         apiKey: backendRuntime.apiKey,
     });
 
     let msg1 = r1.choices[0]?.message;
     let toolCalls = msg1?.tool_calls ?? [];
+    let currentFinishReason = r1.finishReason ?? null;
 
     const executedToolCalls: ExecutedToolCall[] = [];
     const supervisorSettings = getFinishSupervisorSettings();
@@ -1724,7 +1801,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                     tools: activeToolSchemas,
                     toolChoice: preferredToolChoice ?? "auto",
                     temperature: 0,
-                    maxTokens: 800,
+                    maxTokens: MAIN_AGENT_MAX_TOKENS,
                     timeoutMs,
                     apiKey: backendRuntime.apiKey,
                 });
@@ -1733,6 +1810,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                 currentAssistantRole = nextMsg?.role || "assistant";
                 currentAssistantContent = nextMsg?.content;
                 currentToolCalls = nextMsg?.tool_calls ?? [];
+                currentFinishReason = nextRound.finishReason ?? null;
             }
         }
 
@@ -1774,7 +1852,13 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
             }
         }
 
-        if (supervisorSettings.enabled) {
+        const shouldReviewWithSupervisor = supervisorSettings.enabled && shouldRunFinishSupervisor({
+            finalAnswer,
+            executedToolCalls,
+            forcedFinalState,
+        });
+
+        if (shouldReviewWithSupervisor) {
             const supervisorDecision = await runFinishSupervisorReview({
                 backendRuntime,
                 baseUrl,
@@ -1862,7 +1946,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                     tools: activeToolSchemas,
                     toolChoice: preferredToolChoice ?? "auto",
                     temperature: 0,
-                    maxTokens: 800,
+                    maxTokens: MAIN_AGENT_MAX_TOKENS,
                     timeoutMs,
                     apiKey: backendRuntime.apiKey,
                 });
@@ -1871,6 +1955,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                 currentAssistantRole = nextMsg?.role || "assistant";
                 currentAssistantContent = nextMsg?.content;
                 currentToolCalls = nextMsg?.tool_calls ?? [];
+                currentFinishReason = nextRound.finishReason ?? null;
                 continue;
             }
         }
@@ -1879,6 +1964,15 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
             ?? (executedToolCalls[0]
                 ? { name: executedToolCalls[0].tc.function.name, args: executedToolCalls[0].args, result: executedToolCalls[0].result }
                 : undefined);
+        const metadataRoute = firstCall !== undefined ? "tool" : "no-tool";
+        logger.info("agent final response metadata", {
+            module: "agent-backend/tool-loop",
+            traceId,
+            route: metadataRoute,
+            provider: backendRuntime.id,
+            finishReason: currentFinishReason,
+            maxTokens: MAIN_AGENT_MAX_TOKENS,
+        });
         return {
             answer: finalAnswer,
             toolCall: firstCall,

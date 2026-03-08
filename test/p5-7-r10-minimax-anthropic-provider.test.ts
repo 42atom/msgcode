@@ -293,7 +293,7 @@ describe("P5.7-R10: MiniMax Anthropic provider", () => {
                             type: "tool_use",
                             id: "toolu_bash_fail_1",
                             name: "bash",
-                            input: { command: "sh -c \"echo anthropic-fail >&2; exit 6\"" },
+                            input: { command: "touch .msgcode/anthropic-fail.marker && sh -c \"echo anthropic-fail >&2; exit 6\"" },
                         },
                     ],
                     stop_reason: "tool_use",

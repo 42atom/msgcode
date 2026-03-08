@@ -33,6 +33,8 @@ description: This skill should be used when the model needs to inspect or drive 
 - 共享工作 Chrome 根目录信息时，先执行：
   - `bash ~/.config/msgcode/skills/patchright-browser/main.sh root --ensure --json`
 - 需要查看 roots / instances / tabs 时，显式调用对应子命令，不猜默认 instance / tab。
+- `tabId` 不是人工编号，不是 1、2、3 这种顺序号。`tabId` 必须来自真实返回值，通常来自 `tabs open --json`、`tabs list --json`、`snapshot --json`、`text --json` 等结构化结果里的 `tabId`。
+- 读取页面内容、截图、点击或执行脚本前，先确认当前真实 `tabId`。不要猜旧页签，更不要直接写死 `tabId=1`。
 - 需要真实网页交互时，优先走正式 `browser` 工具；需要排障、查看状态或验证 CLI 合同时，再走本 skill。
 
 ## 常用模板
@@ -43,9 +45,23 @@ bash ~/.config/msgcode/skills/patchright-browser/main.sh profiles list --json
 bash ~/.config/msgcode/skills/patchright-browser/main.sh instances list --json
 bash ~/.config/msgcode/skills/patchright-browser/main.sh instances launch --mode headed --root-name work-default --json
 bash ~/.config/msgcode/skills/patchright-browser/main.sh tabs open --url https://example.com --json
-bash ~/.config/msgcode/skills/patchright-browser/main.sh snapshot --tab-id <id> --compact --json
-bash ~/.config/msgcode/skills/patchright-browser/main.sh action --tab-id <id> --kind click --ref '{"role":"link","name":"More info","index":0}' --json
+bash ~/.config/msgcode/skills/patchright-browser/main.sh tabs list --json
+bash ~/.config/msgcode/skills/patchright-browser/main.sh snapshot --tab-id <real-tab-id> --compact --json
+bash ~/.config/msgcode/skills/patchright-browser/main.sh action --tab-id <real-tab-id> --kind click --ref '{"role":"link","name":"More info","index":0}' --json
 ```
+
+正确示例：
+
+1. 先执行 `tabs open --json`
+2. 从返回 JSON 中读取真实 `tabId`
+3. 再把这个真实 `tabId` 传给 `snapshot`、`text`、`action`、`eval`
+
+错误示例：
+
+- `snapshot --tab-id 1`
+- `text --tab-id 1`
+- `action --tab-id 1 --kind click ...`
+- 复用上一轮已经失效的旧 `tabId`
 
 ## 参数速查
 
@@ -66,4 +82,4 @@ bash ~/.config/msgcode/skills/patchright-browser/main.sh action --tab-id <id> --
 4. `tabs open`
 5. `snapshot` / `action`
 
-需要排障时，先看 root、instances、tabs 的结构化 JSON，不要直接猜当前浏览器状态。
+需要排障时，先看 root、instances、tabs 的结构化 JSON，不要直接猜当前浏览器状态，不要猜 `tabId`。

@@ -376,7 +376,8 @@ export async function executeTool(
         break;
       }
       case "asr": {
-        const inputPath = String(args.inputPath ?? "");
+        // 兼容旧入参 inputPath，并对齐当前 manifest 的 audioPath。
+        const inputPath = String(args.audioPath ?? args.inputPath ?? "");
         const out = await withTimeout(
           runAsr({ workspacePath: ctx.workspacePath, inputPath }),
           ctx.timeoutMs ?? 300000
