@@ -99,6 +99,12 @@ export interface Config {
     lmstudioMaxTokens?: number;
     // LM Studio API Key（可选，服务端需要授权时使用）
     lmstudioApiKey?: string;
+    // 结束前最小监督闭环配置
+    supervisor: {
+        enabled: boolean;
+        temperature: number;
+        maxTokens: number;
+    };
     // 群聊安全：仅允许 owner 触发（可选，默认 false）
     ownerOnlyInGroup: boolean;
     // owner 身份标识（电话/邮箱 handle），用于群聊收口信任边界
@@ -126,6 +132,13 @@ function parseCsv(value: string | undefined): string[] {
 function parseBool(value: string | undefined): boolean {
     if (!value) return false;
     return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
+}
+
+function parseNumber(value: string | undefined, fallback: number): number {
+    if (!value) return fallback;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return parsed;
 }
 
 function parseTransports(): ("imsg" | "feishu")[] {
@@ -220,6 +233,11 @@ export function loadConfig(): Config {
     const emails = parseEmails(process.env.MY_EMAIL);
     const ownerOnlyInGroup = parseBool(process.env.MSGCODE_OWNER_ONLY_IN_GROUP);
     const ownerIdentifiers = parseCsv(process.env.MSGCODE_OWNER);
+    const supervisorEnabled = process.env.SUPERVISOR_ENABLED
+        ? parseBool(process.env.SUPERVISOR_ENABLED)
+        : !isTest;
+    const supervisorTemperature = parseNumber(process.env.SUPERVISOR_TEMPERATURE, 0.1);
+    const supervisorMaxTokens = Math.max(32, Math.floor(parseNumber(process.env.SUPERVISOR_MAX_TOKENS, 300)));
 
     const groupRoutes = parseGroupRoutes();
 
@@ -273,6 +291,11 @@ export function loadConfig(): Config {
         lmstudioTimeoutMs: process.env.LMSTUDIO_TIMEOUT_MS ? Number(process.env.LMSTUDIO_TIMEOUT_MS) : undefined,
         lmstudioMaxTokens: process.env.LMSTUDIO_MAX_TOKENS ? Number(process.env.LMSTUDIO_MAX_TOKENS) : undefined,
         lmstudioApiKey: process.env.LMSTUDIO_API_KEY,
+        supervisor: {
+            enabled: supervisorEnabled,
+            temperature: supervisorTemperature,
+            maxTokens: supervisorMaxTokens,
+        },
         ownerOnlyInGroup: isTest ? false : ownerOnlyInGroup,
         ownerIdentifiers: isTest ? ["test@example.com"] : ownerIdentifiers,
         ...(enableFeishu

@@ -21,6 +21,7 @@ import {
 import {
     type AgentToolLoopOptions,
     type AgentToolLoopResult,
+    type AgentBackendRuntime,
     type ActionJournalEntry,
     type AidocsToolDef,
     type ParsedToolCall,
@@ -220,6 +221,14 @@ type ChatResponse = {
 };
 
 const AIDOCS_ROOT = process.env.AIDOCS_ROOT || "AIDOCS";
+const FINISH_SUPERVISOR_MAX_CONTINUES = 3;
+
+type FinishSupervisorDecision = {
+    decision: "PASS" | "CONTINUE";
+    reason?: string;
+    raw: string;
+    durationMs: number;
+};
 
 function getToolNameFromDef(tool: unknown): string | undefined {
     if (!tool || typeof tool !== "object") return undefined;
@@ -288,6 +297,237 @@ function clipText(text: string, maxChars: number): string {
     return `${text.slice(0, maxChars)}...`;
 }
 
+function getFinishSupervisorSettings(): {
+    enabled: boolean;
+    temperature: number;
+    maxTokens: number;
+    maxContinues: number;
+} {
+    const temperature = Number.isFinite(config.supervisor.temperature)
+        ? Math.max(0, config.supervisor.temperature)
+        : 0.1;
+    const maxTokens = Number.isFinite(config.supervisor.maxTokens)
+        ? Math.max(32, Math.floor(config.supervisor.maxTokens))
+        : 300;
+
+    return {
+        enabled: config.supervisor.enabled !== false,
+        temperature,
+        maxTokens,
+        maxContinues: FINISH_SUPERVISOR_MAX_CONTINUES,
+    };
+}
+
+function stringifyForSupervisor(value: unknown, maxChars: number): string {
+    if (typeof value === "string") {
+        return clipText(value, maxChars);
+    }
+    try {
+        return clipText(JSON.stringify(value), maxChars);
+    } catch {
+        return clipText(String(value), maxChars);
+    }
+}
+
+function buildFinishSupervisorPrompt(params: {
+    prompt: string;
+    finalAnswer: string;
+    windowMessages?: Array<{ role: string; content?: string }>;
+    actionJournal: ActionJournalEntry[];
+    executedToolCalls: ExecutedToolCall[];
+    verifyResult?: VerifyResult;
+    continueCount: number;
+}): string {
+    const sections: string[] = [
+        "请判断这个任务现在是否可以结束。",
+        "只能输出两种格式之一：",
+        "PASS",
+        "CONTINUE: <简短原因>",
+        "",
+        "[用户任务]",
+        clipText(params.prompt.trim(), 4000),
+        "",
+        "[候选最终回复]",
+        clipText((params.finalAnswer || "").trim() || "（空）", 2000),
+    ];
+
+    if (params.windowMessages && params.windowMessages.length > 0) {
+        const recent = params.windowMessages
+            .slice(-6)
+            .map((msg) => `${msg.role}: ${clipText((msg.content || "").trim(), 400)}`)
+            .join("\n");
+        if (recent.trim()) {
+            sections.push("", "[最近对话]", recent);
+        }
+    }
+
+    const recentJournal = params.actionJournal
+        .slice(-10)
+        .map((entry) => {
+            const parts = [
+                `phase=${entry.phase}`,
+                `tool=${entry.tool}`,
+                `ok=${entry.ok}`,
+            ];
+            if (entry.errorCode) parts.push(`error=${entry.errorCode}`);
+            if (typeof entry.exitCode === "number") parts.push(`exit=${entry.exitCode}`);
+            return parts.join(" ");
+        })
+        .join("\n");
+    if (recentJournal.trim()) {
+        sections.push("", "[执行记录]", recentJournal);
+    }
+
+    const recentResults = params.executedToolCalls
+        .slice(-4)
+        .map(({ tc, args, result }) => [
+            `tool=${tc.function.name}`,
+            `args=${stringifyForSupervisor(args, 300)}`,
+            `result=${stringifyForSupervisor(result, 500)}`,
+        ].join("\n"))
+        .join("\n---\n");
+    if (recentResults.trim()) {
+        sections.push("", "[最近工具结果]", recentResults);
+    }
+
+    if (params.verifyResult) {
+        sections.push(
+            "",
+            "[verify]",
+            stringifyForSupervisor(params.verifyResult, 800)
+        );
+    }
+
+    sections.push("", `[已被要求继续次数] ${params.continueCount}`);
+    return sections.join("\n");
+}
+
+function parseFinishSupervisorDecision(rawInput: string, durationMs: number): FinishSupervisorDecision {
+    const raw = sanitizeLmStudioOutput(rawInput || "").trim();
+    if (/^PASS\b/i.test(raw)) {
+        return {
+            decision: "PASS",
+            raw: raw || "PASS",
+            durationMs,
+        };
+    }
+
+    const continueMatch = raw.match(/^CONTINUE\s*[:：-]?\s*(.*)$/is);
+    if (continueMatch) {
+        const reason = continueMatch[1]?.trim() || "结束前证据不足";
+        return {
+            decision: "CONTINUE",
+            reason,
+            raw: raw || `CONTINUE: ${reason}`,
+            durationMs,
+        };
+    }
+
+    return {
+        decision: "CONTINUE",
+        reason: clipText(raw || "监督员未明确放行", 200),
+        raw: raw || "CONTINUE: 监督员未明确放行",
+        durationMs,
+    };
+}
+
+function buildFinishSupervisorContinuationMessage(reason: string, continueCount: number, maxContinues: number): string {
+    return [
+        `结束前复核未通过（${continueCount}/${maxContinues}）：${reason}`,
+        "你还不能结束。",
+        "请继续完成缺失动作，必要时调用工具拿到证据；准备结束时再给出最终结果。",
+    ].join("\n");
+}
+
+function buildFinishSupervisorBlockedAnswer(reason: string, continueCount: number): string {
+    return [
+        "任务已停止：结束前监督连续要求继续，未能通过。",
+        `- 连续 CONTINUE 次数：${continueCount}`,
+        `- 阻塞原因：${reason}`,
+        "- 错误码：FINISH_SUPERVISOR_BLOCKED",
+    ].join("\n");
+}
+
+function appendFinishSupervisorJournalEntry(params: {
+    actionJournal: ActionJournalEntry[];
+    traceId: string;
+    route: "tool" | "complex-tool";
+    model: string;
+    decision: FinishSupervisorDecision;
+}): void {
+    params.actionJournal.push({
+        traceId: params.traceId,
+        stepId: params.actionJournal.length + 1,
+        phase: "report",
+        timestamp: Date.now(),
+        route: params.route,
+        model: params.model,
+        tool: "finish-supervisor",
+        ok: params.decision.decision === "PASS",
+        errorCode: params.decision.decision === "PASS" ? undefined : "FINISH_SUPERVISOR_CONTINUE",
+        stdoutTail: clipText(params.decision.raw, 200),
+        durationMs: params.decision.durationMs,
+    });
+}
+
+async function runFinishSupervisorReview(params: {
+    backendRuntime: AgentBackendRuntime;
+    baseUrl: string;
+    model: string;
+    timeoutMs: number;
+    prompt: string;
+    finalAnswer: string;
+    windowMessages?: Array<{ role: string; content?: string }>;
+    actionJournal: ActionJournalEntry[];
+    executedToolCalls: ExecutedToolCall[];
+    verifyResult?: VerifyResult;
+    continueCount: number;
+}): Promise<FinishSupervisorDecision> {
+    const reviewPrompt = buildFinishSupervisorPrompt({
+        prompt: params.prompt,
+        finalAnswer: params.finalAnswer,
+        windowMessages: params.windowMessages,
+        actionJournal: params.actionJournal,
+        executedToolCalls: params.executedToolCalls,
+        verifyResult: params.verifyResult,
+        continueCount: params.continueCount,
+    });
+    const supervisorSettings = getFinishSupervisorSettings();
+    const startedAt = Date.now();
+    const supervisorSystem = "你现在只做结束前复核，不调用工具。只输出 PASS 或 CONTINUE: <简短原因>。";
+
+    if (params.backendRuntime.id === "minimax") {
+        const response = await callMiniMaxAnthropicRaw({
+            baseUrl: params.baseUrl,
+            model: params.model,
+            messages: [{ role: "user", content: reviewPrompt }],
+            system: supervisorSystem,
+            tools: [],
+            temperature: supervisorSettings.temperature,
+            maxTokens: supervisorSettings.maxTokens,
+            timeoutMs: params.timeoutMs,
+            apiKey: params.backendRuntime.apiKey,
+        });
+        return parseFinishSupervisorDecision(response.content, Date.now() - startedAt);
+    }
+
+    const response = await callChatCompletionsRaw({
+        baseUrl: params.baseUrl,
+        model: params.model,
+        messages: [
+            { role: "system", content: supervisorSystem },
+            { role: "user", content: reviewPrompt },
+        ],
+        tools: [],
+        toolChoice: "none",
+        temperature: supervisorSettings.temperature,
+        maxTokens: supervisorSettings.maxTokens,
+        timeoutMs: params.timeoutMs,
+        apiKey: params.backendRuntime.apiKey,
+    });
+    return parseFinishSupervisorDecision(response.choices[0]?.message?.content || "", Date.now() - startedAt);
+}
+
 function hasToolProtocolArtifacts(text: string): boolean {
     const input = (text || "").trim();
     if (!input) return false;
@@ -302,52 +542,6 @@ function hasToolProtocolArtifacts(text: string): boolean {
     );
 }
 
-/**
- * 检测 prompt 是否为执行型请求
- *
- * 当用户要求执行操作（删除/停止/创建/修改等）时，模型应该调用工具
- * 如果模型没有调用工具就返回"已完成"，这是假成功
- */
-function looksLikeExecutionRequest(prompt: string): boolean {
-    const input = (prompt || "").toLowerCase();
-    if (!input) return false;
-
-    // 执行型关键词
-    // 注意：中文不使用 \b 词边界，使用宽松匹配
-    const executionPatterns = [
-        // 删除/停止类 - 中文无需 \b
-        /(删除|停止|取消|移除|删掉|关掉|终止|清掉)/,
-        /\b(delete|stop|cancel|remove|terminate|disable)\b/,
-        // 创建/执行类
-        /(创建|执行|运行|启动|新建|添加|设置|部署)/,
-        /\b(create|execute|run|start|new|add|set|deploy|install)\b/,
-        // 修改类
-        /(修改|编辑|更新|改动|调整|修复|重写)/,
-        /\b(edit|modify|update|change|fix|rewrite)\b/,
-    ];
-
-    return executionPatterns.some((pattern) => pattern.test(input));
-}
-
-/**
- * 检测模型回复是否像是"已完成"的响应
- *
- * 如果模型说"已删除/已完成/成功了"，但没有执行工具，这就是假成功
- */
-function looksLikeCompletionResponse(text: string): boolean {
-    const input = (text || "").toLowerCase();
-    if (!input) return false;
-
-    // 完成型关键词（表示任务已完成）
-    // 中文部分不使用 \b
-    const completionPatterns = [
-        /(已|已经|成功|完成|搞定|处理好|执行完)/,
-        /\b(already|success|completed|done|finished|executed)\b/,
-    ];
-
-    // 如果同时包含"已"和执行结果描述，可能是假成功
-    return completionPatterns.some((pattern) => pattern.test(input));
-}
 
 function promptLooksLikeFeishuAttachmentSend(prompt: string): boolean {
     const input = (prompt || "").trim();
@@ -903,34 +1097,17 @@ async function runMiniMaxAnthropicToolLoop(params: {
 
     let toolCalls = response.toolCalls;
 
-    // 假成功防护：检测执行型请求但模型没有执行工具的场景
-    if (params.options.allowNoTool && toolCalls.length === 0) {
-        const content = response.content || "";
-
-        // 情况 1: 模型输出包含伪工具文本，如 [TOOL_CALL]
-        // 这说明模型想调用工具但没成功，不应直接返回伪文本给用户
-        if (hasToolProtocolArtifacts(content)) {
-            // 有工具意图但未执行，继续推进一轮
-            // 不直接返回，让下面的重试逻辑处理
-        }
-        // 情况 2: 执行型请求但模型说"已完成"而没有执行工具
-        // 这说明模型在假完成，需要继续推进
-        else if (looksLikeExecutionRequest(params.options.prompt) && looksLikeCompletionResponse(content)) {
-            // 执行型请求但未执行工具，继续推进
-        }
-        // 情况 3: 真正的 no-tool 请求，可以直接返回
-        else {
-            return {
-                answer: sanitizeLmStudioOutput(content),
-                actionJournal: [],
-                decisionSource: "model",
-            };
-        }
+    if (toolCalls.length === 0 && params.options.allowNoTool) {
+        return {
+            answer: sanitizeLmStudioOutput(response.content || "（模型未调用工具，已返回原始响应）"),
+            actionJournal: [],
+            decisionSource: "model",
+        };
     }
 
-    // 假成功防护：对于执行型请求，强制要求工具调用
-    const isExecutionRequest = looksLikeExecutionRequest(params.options.prompt);
+    // OpenClaw 风格：默认进入工具链，不基于消息内容判断意图
 
+    // 假成功防护：对于执行型请求，强制要求工具调用
     if (toolCalls.length === 0 && params.activeToolSchemas.length > 0) {
         const retryMessages: MiniMaxAnthropicMessage[] = [
             ...conversationMessages,
@@ -941,10 +1118,8 @@ async function runMiniMaxAnthropicToolLoop(params: {
                     : "请严格返回 tool_use；不要输出自然语言。",
             },
         ];
-        // 对于执行型请求，强制要求工具调用
-        const toolChoice = isExecutionRequest
-            ? { type: "any" } as const
-            : ({ type: "auto" } as const);
+        // OpenClaw 风格：默认要求工具调用
+        const toolChoice = { type: "any" } as const;
         response = await callMiniMaxAnthropicRaw({
             baseUrl: params.baseUrl,
             model: params.model,
@@ -990,9 +1165,10 @@ async function runMiniMaxAnthropicToolLoop(params: {
         conversationMessages = strictRetryMessages;
     }
 
+    // OpenClaw 风格：如果模型仍未返回工具，不判死，返回真实未完成状态
     if (toolCalls.length === 0) {
         return {
-            answer: "协议失败：未收到工具调用指令\n- 错误码：MODEL_PROTOCOL_FAILED\n\n这通常意味着模型无法调用工具。请重试或切换到对话模式。",
+            answer: response.content || "（模型未调用工具，已返回原始响应）",
             actionJournal: [],
         };
     }
@@ -1019,9 +1195,10 @@ async function runMiniMaxAnthropicToolLoop(params: {
     // }
 
     const executedToolCalls: ExecutedToolCall[] = [];
+    const supervisorSettings = getFinishSupervisorSettings();
+    let supervisorContinueCount = 0;
     let currentResponse = response;
     let currentToolCalls = toolCalls;
-    let finalAssistantContent = "";
 
     while (true) {
         // P0 松绑：移除循环中"未暴露工具直接判死"逻辑（MiniMax 风格）
@@ -1059,31 +1236,71 @@ async function runMiniMaxAnthropicToolLoop(params: {
             };
         }
 
-        const roundExecutedToolCalls: ExecutedToolCall[] = [];
+        if (currentToolCalls.length > 0) {
+            const roundExecutedToolCalls: ExecutedToolCall[] = [];
 
-        for (const tc of currentToolCalls) {
-            let args: Record<string, unknown> = {};
-            try {
-                args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
-            } catch {
-                args = {};
-            }
-            args = normalizeSoulPathArgs(tc.function.name, args, params.workspacePath);
+            for (const tc of currentToolCalls) {
+                let args: Record<string, unknown> = {};
+                try {
+                    args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
+                } catch {
+                    args = {};
+                }
+                args = normalizeSoulPathArgs(tc.function.name, args, params.workspacePath);
 
-            let toolResult: ToolRunResult;
-            try {
-                toolResult = await runTool(tc.function.name, args, params.workspacePath);
-            } catch (e) {
-                toolResult = {
-                    error: e instanceof Error ? e.message : String(e),
-                    errorCode: "TOOL_EXEC_FAILED",
-                    durationMs: 0,
-                };
-            }
+                let toolResult: ToolRunResult;
+                try {
+                    toolResult = await runTool(tc.function.name, args, params.workspacePath);
+                } catch (e) {
+                    toolResult = {
+                        error: e instanceof Error ? e.message : String(e),
+                        errorCode: "TOOL_EXEC_FAILED",
+                        durationMs: 0,
+                    };
+                }
 
-            if (toolResult.error) {
-                const toolErrorCode = toolResult.errorCode || "TOOL_EXEC_FAILED";
-                const toolErrorMessage = toolResult.error || "工具执行失败";
+                if (toolResult.error) {
+                    const toolErrorCode = toolResult.errorCode || "TOOL_EXEC_FAILED";
+                    const toolErrorMessage = toolResult.error || "工具执行失败";
+
+                    stepId++;
+                    actionJournal.push({
+                        traceId: params.traceId,
+                        stepId,
+                        phase: "act",
+                        timestamp: Date.now(),
+                        route: params.route,
+                        model: params.model,
+                        tool: tc.function.name,
+                        ok: false,
+                        exitCode: toolResult.exitCode ?? undefined,
+                        errorCode: toolErrorCode,
+                        stdoutTail: toolResult.stdoutTail ?? undefined,
+                        fullOutputPath: toolResult.fullOutputPath ?? undefined,
+                        durationMs: toolResult.durationMs,
+                    });
+
+                    let answerText = `工具执行失败\n- 工具：${tc.function.name}\n- 错误码：${toolErrorCode}\n- 错误：${toolErrorMessage}`;
+                    if (toolResult.exitCode !== undefined && toolResult.exitCode !== null) {
+                        answerText += `\n- 退出码：${toolResult.exitCode}`;
+                    }
+                    if (toolResult.stderrTail) {
+                        answerText += `\n- stderr 尾部：${toolResult.stderrTail.slice(-200)}`;
+                    }
+                    if (toolResult.fullOutputPath) {
+                        answerText += `\n- 完整日志：${toolResult.fullOutputPath}`;
+                    }
+
+                    return {
+                        answer: answerText,
+                        toolCall: { name: tc.function.name, args, result: toolResult },
+                        actionJournal,
+                    };
+                }
+
+                const executed: ExecutedToolCall = { tc, args, result: toolResult.data };
+                executedToolCalls.push(executed);
+                roundExecutedToolCalls.push(executed);
 
                 stepId++;
                 actionJournal.push({
@@ -1094,106 +1311,68 @@ async function runMiniMaxAnthropicToolLoop(params: {
                     route: params.route,
                     model: params.model,
                     tool: tc.function.name,
-                    ok: false,
-                    exitCode: toolResult.exitCode ?? undefined,
-                    errorCode: toolErrorCode,
-                    stdoutTail: toolResult.stdoutTail ?? undefined,
-                    fullOutputPath: toolResult.fullOutputPath ?? undefined,
+                    ok: true,
                     durationMs: toolResult.durationMs,
                 });
 
-                let answerText = `工具执行失败\n- 工具：${tc.function.name}\n- 错误码：${toolErrorCode}\n- 错误：${toolErrorMessage}`;
-                if (toolResult.exitCode !== undefined && toolResult.exitCode !== null) {
-                    answerText += `\n- 退出码：${toolResult.exitCode}`;
-                }
-                if (toolResult.stderrTail) {
-                    answerText += `\n- stderr 尾部：${toolResult.stderrTail.slice(-200)}`;
-                }
-                if (toolResult.fullOutputPath) {
-                    answerText += `\n- 完整日志：${toolResult.fullOutputPath}`;
-                }
+                if (executedToolCalls.length > params.perTurnToolStepLimit) {
+                    const isHardCapExceeded = executedToolCalls.length > HARD_CAP_TOOL_STEPS;
+                    const lastExecutedCall = executedToolCalls[executedToolCalls.length - 1];
 
-                return {
-                    answer: answerText,
-                    toolCall: { name: tc.function.name, args, result: toolResult },
-                    actionJournal,
-                };
+                    return {
+                        answer: isHardCapExceeded
+                            ? `本轮工具步骤总数达到单轮硬上限\n- 本轮步骤数：${executedToolCalls.length}\n- 单轮硬上限：${HARD_CAP_TOOL_STEPS}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n任务将在下一轮 heartbeat 继续执行。`
+                            : `本轮工具步骤总数达到档位上限\n- 总步骤数：${executedToolCalls.length}\n- 档位上限：${params.perTurnToolStepLimit}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n任务将在下一轮 heartbeat 继续执行。`,
+                        actionJournal,
+                        continuable: true,
+                        quotaProfile: params.quotaProfile,
+                        perTurnToolCallLimit: params.perTurnToolCallLimit,
+                        perTurnToolStepLimit: params.perTurnToolStepLimit,
+                        remainingToolCalls: params.perTurnToolCallLimit - currentToolCalls.length,
+                        remainingSteps: 0,
+                        continuationReason: isHardCapExceeded
+                            ? `exceeded_hard_cap_tool_steps_${executedToolCalls.length}_limit_${HARD_CAP_TOOL_STEPS}`
+                            : `reached_profile_limit_tool_steps_${executedToolCalls.length}_limit_${params.perTurnToolStepLimit}`,
+                        toolCall: lastExecutedCall ? {
+                            name: lastExecutedCall.tc.function.name,
+                            args: lastExecutedCall.args,
+                            result: lastExecutedCall.result,
+                        } : undefined,
+                    };
+                }
             }
 
-            const executed: ExecutedToolCall = { tc, args, result: toolResult.data };
-            executedToolCalls.push(executed);
-            roundExecutedToolCalls.push(executed);
+            const assistantMessage: MiniMaxAnthropicMessage = {
+                role: "assistant",
+                content: currentResponse.contentBlocks,
+            };
+            const toolResultMessage: MiniMaxAnthropicMessage = {
+                role: "user",
+                content: roundExecutedToolCalls.map(({ tc, result }) => ({
+                    type: "tool_result" as const,
+                    tool_use_id: tc.id,
+                    content: typeof result === "string" ? result : JSON.stringify(result),
+                })),
+            };
 
-            stepId++;
-            actionJournal.push({
-                traceId: params.traceId,
-                stepId,
-                phase: "act",
-                timestamp: Date.now(),
-                route: params.route,
+            conversationMessages = [...conversationMessages, assistantMessage, toolResultMessage];
+
+            currentResponse = await callMiniMaxAnthropicRaw({
+                baseUrl: params.baseUrl,
                 model: params.model,
-                tool: tc.function.name,
-                ok: true,
-                durationMs: toolResult.durationMs,
+                messages: conversationMessages,
+                system: anthropicContext.system,
+                tools: params.activeToolSchemas,
+                // P0 松绑：使用 auto 让模型自由选择
+                toolChoice: { type: "auto" },
+                temperature: 0,
+                maxTokens: 800,
+                timeoutMs: params.timeoutMs,
+                apiKey: params.apiKey,
             });
 
-            if (executedToolCalls.length > params.perTurnToolStepLimit) {
-                const isHardCapExceeded = executedToolCalls.length > HARD_CAP_TOOL_STEPS;
-                const lastExecutedCall = executedToolCalls[executedToolCalls.length - 1];
-
-                return {
-                    answer: isHardCapExceeded
-                        ? `本轮工具步骤总数达到单轮硬上限\n- 本轮步骤数：${executedToolCalls.length}\n- 单轮硬上限：${HARD_CAP_TOOL_STEPS}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n任务将在下一轮 heartbeat 继续执行。`
-                        : `本轮工具步骤总数达到档位上限\n- 总步骤数：${executedToolCalls.length}\n- 档位上限：${params.perTurnToolStepLimit}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n任务将在下一轮 heartbeat 继续执行。`,
-                    actionJournal,
-                    continuable: true,
-                    quotaProfile: params.quotaProfile,
-                    perTurnToolCallLimit: params.perTurnToolCallLimit,
-                    perTurnToolStepLimit: params.perTurnToolStepLimit,
-                    remainingToolCalls: params.perTurnToolCallLimit - currentToolCalls.length,
-                    remainingSteps: 0,
-                    continuationReason: isHardCapExceeded
-                        ? `exceeded_hard_cap_tool_steps_${executedToolCalls.length}_limit_${HARD_CAP_TOOL_STEPS}`
-                        : `reached_profile_limit_tool_steps_${executedToolCalls.length}_limit_${params.perTurnToolStepLimit}`,
-                    toolCall: lastExecutedCall ? {
-                        name: lastExecutedCall.tc.function.name,
-                        args: lastExecutedCall.args,
-                        result: lastExecutedCall.result,
-                    } : undefined,
-                };
-            }
+            currentToolCalls = currentResponse.toolCalls;
         }
-
-        const assistantMessage: MiniMaxAnthropicMessage = {
-            role: "assistant",
-            content: currentResponse.contentBlocks,
-        };
-        const toolResultMessage: MiniMaxAnthropicMessage = {
-            role: "user",
-            content: roundExecutedToolCalls.map(({ tc, result }) => ({
-                type: "tool_result" as const,
-                tool_use_id: tc.id,
-                content: typeof result === "string" ? result : JSON.stringify(result),
-            })),
-        };
-
-        conversationMessages = [...conversationMessages, assistantMessage, toolResultMessage];
-
-        currentResponse = await callMiniMaxAnthropicRaw({
-            baseUrl: params.baseUrl,
-            model: params.model,
-            messages: conversationMessages,
-            system: anthropicContext.system,
-            tools: params.activeToolSchemas,
-            // P0 松绑：使用 auto 让模型自由选择
-            toolChoice: { type: "auto" },
-            temperature: 0,
-            maxTokens: 800,
-            timeoutMs: params.timeoutMs,
-            apiKey: params.apiKey,
-        });
-
-        currentToolCalls = currentResponse.toolCalls;
         // P0 松绑：移除循环中 preferredToolMismatch 直接判死逻辑（MiniMax 风格）
         // if (hasDisallowedPreferredToolMismatch(currentToolCalls, params.preferredToolName, bashFallbackAllowed)) {
         //     return {
@@ -1202,49 +1381,145 @@ async function runMiniMaxAnthropicToolLoop(params: {
         //     };
         // }
 
-        if (currentToolCalls.length === 0) {
-            finalAssistantContent = currentResponse.content || "";
-            break;
+        if (currentToolCalls.length > 0) {
+            continue;
         }
-    }
 
-    const cleanedAnswer = sanitizeLmStudioOutput(finalAssistantContent);
-    let finalAnswer = cleanedAnswer;
+        const cleanedAnswer = sanitizeLmStudioOutput(currentResponse.content || "");
+        let finalAnswer = cleanedAnswer;
 
-    if (!cleanedAnswer || hasToolProtocolArtifacts(cleanedAnswer)) {
-        const fallbackAnswer = buildToolLoopFallbackAnswer(executedToolCalls, params.options.prompt);
-        if (fallbackAnswer) {
-            finalAnswer = fallbackAnswer;
+        if (!cleanedAnswer || hasToolProtocolArtifacts(cleanedAnswer)) {
+            const fallbackAnswer = buildToolLoopFallbackAnswer(executedToolCalls, params.options.prompt);
+            if (fallbackAnswer) {
+                finalAnswer = fallbackAnswer;
+            }
         }
+
+        finalAnswer = hardenFeishuDeliveryClaim(finalAnswer, executedToolCalls, params.options.prompt);
+
+        const { verifyResult, verifyJournal } = await runVerifyPhase(
+            executedToolCalls,
+            actionJournal,
+            params.traceId,
+            params.route
+        );
+
+        if (verifyJournal) {
+            actionJournal.push(verifyJournal);
+        }
+
+        if (supervisorSettings.enabled) {
+            const supervisorDecision = await runFinishSupervisorReview({
+                backendRuntime: {
+                    id: "minimax",
+                    baseUrl: params.baseUrl,
+                    apiKey: params.apiKey,
+                    model: params.model,
+                    timeoutMs: params.timeoutMs,
+                    nativeApiEnabled: false,
+                },
+                baseUrl: params.baseUrl,
+                model: params.model,
+                timeoutMs: params.timeoutMs,
+                prompt: params.options.prompt,
+                finalAnswer,
+                windowMessages: params.options.windowMessages,
+                actionJournal,
+                executedToolCalls,
+                verifyResult,
+                continueCount: supervisorContinueCount,
+            });
+            appendFinishSupervisorJournalEntry({
+                actionJournal,
+                traceId: params.traceId,
+                route: params.route,
+                model: params.model,
+                decision: supervisorDecision,
+            });
+            logger.info("finish supervisor reviewed", {
+                module: "agent-backend/tool-loop",
+                traceId: params.traceId,
+                route: params.route,
+                provider: "minimax",
+                decision: supervisorDecision.decision,
+                continueCount: supervisorContinueCount,
+                reason: supervisorDecision.reason,
+            });
+
+            if (supervisorDecision.decision === "CONTINUE") {
+                supervisorContinueCount += 1;
+                const continueReason = supervisorDecision.reason || "结束前证据不足";
+                if (supervisorContinueCount >= supervisorSettings.maxContinues) {
+                    logger.warn("finish supervisor blocked completion", {
+                        module: "agent-backend/tool-loop",
+                        traceId: params.traceId,
+                        route: params.route,
+                        provider: "minimax",
+                        continueCount: supervisorContinueCount,
+                        reason: continueReason,
+                    });
+                    const firstBlockedCall = executedToolCalls[0];
+                    return {
+                        answer: buildFinishSupervisorBlockedAnswer(continueReason, supervisorContinueCount),
+                        toolCall: firstBlockedCall
+                            ? { name: firstBlockedCall.tc.function.name, args: firstBlockedCall.args, result: firstBlockedCall.result }
+                            : undefined,
+                        actionJournal,
+                        verifyResult,
+                        quotaProfile: params.quotaProfile,
+                        perTurnToolCallLimit: params.perTurnToolCallLimit,
+                        perTurnToolStepLimit: params.perTurnToolStepLimit,
+                        remainingToolCalls: params.perTurnToolCallLimit,
+                        remainingSteps: params.perTurnToolStepLimit - executedToolCalls.length,
+                    };
+                }
+
+                const assistantMessage: MiniMaxAnthropicMessage = {
+                    role: "assistant",
+                    content: currentResponse.contentBlocks.length > 0 ? currentResponse.contentBlocks : currentResponse.content || "",
+                };
+                const supervisorFeedback: MiniMaxAnthropicMessage = {
+                    role: "user",
+                    content: buildFinishSupervisorContinuationMessage(
+                        continueReason,
+                        supervisorContinueCount,
+                        supervisorSettings.maxContinues
+                    ),
+                };
+
+                conversationMessages = [...conversationMessages, assistantMessage, supervisorFeedback];
+                currentResponse = await callMiniMaxAnthropicRaw({
+                    baseUrl: params.baseUrl,
+                    model: params.model,
+                    messages: conversationMessages,
+                    system: anthropicContext.system,
+                    tools: params.activeToolSchemas,
+                    toolChoice: { type: "auto" },
+                    temperature: 0,
+                    maxTokens: 800,
+                    timeoutMs: params.timeoutMs,
+                    apiKey: params.apiKey,
+                });
+                currentToolCalls = currentResponse.toolCalls;
+                continue;
+            }
+        }
+
+        const firstCall = executedToolCalls[0];
+        return {
+            answer: finalAnswer,
+            toolCall: firstCall
+                ? { name: firstCall.tc.function.name, args: firstCall.args, result: firstCall.result }
+                : undefined,
+            actionJournal,
+            verifyResult,
+            quotaProfile: params.quotaProfile,
+            perTurnToolCallLimit: params.perTurnToolCallLimit,
+            perTurnToolStepLimit: params.perTurnToolStepLimit,
+            remainingToolCalls: params.perTurnToolCallLimit,
+            remainingSteps: params.perTurnToolStepLimit - executedToolCalls.length,
+        };
     }
-
-    finalAnswer = hardenFeishuDeliveryClaim(finalAnswer, executedToolCalls, params.options.prompt);
-
-    const { verifyResult, verifyJournal } = await runVerifyPhase(
-        executedToolCalls,
-        actionJournal,
-        params.traceId,
-        params.route
-    );
-
-    if (verifyJournal) {
-        actionJournal.push(verifyJournal);
-    }
-
-    const firstCall = executedToolCalls[0];
-    return {
-        answer: finalAnswer,
-        toolCall: firstCall
-            ? { name: firstCall.tc.function.name, args: firstCall.args, result: firstCall.result }
-            : undefined,
-        actionJournal,
-        verifyResult,
-        quotaProfile: params.quotaProfile,
-        perTurnToolCallLimit: params.perTurnToolCallLimit,
-        perTurnToolStepLimit: params.perTurnToolStepLimit,
-        remainingToolCalls: params.perTurnToolCallLimit,
-        remainingSteps: params.perTurnToolStepLimit - executedToolCalls.length,
-    };
 }
 
 // ============================================
@@ -1435,31 +1710,15 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     let msg1 = r1.choices[0]?.message;
     let toolCalls = msg1?.tool_calls ?? [];
 
-    // 假成功防护：检测执行型请求但模型没有执行工具的场景
-    // P5.7-R12-T10: agent-first 改造 - 如果允许 no-tool，模型可以自己决定不调用工具
-    if (options.allowNoTool && toolCalls.length === 0) {
-        const content = msg1?.content || "";
-
-        // 情况 1: 模型输出包含伪工具文本，如 [TOOL_CALL]
-        if (hasToolProtocolArtifacts(content)) {
-            // 有工具意图但未执行，继续推进
-        }
-        // 情况 2: 执行型请求但模型说"已完成"而没有执行工具
-        else if (looksLikeExecutionRequest(options.prompt) && looksLikeCompletionResponse(content)) {
-            // 执行型请求但未执行工具，继续推进
-        }
-        // 情况 3: 真正的 no-tool 请求，可以直接返回
-        else {
-            return {
-                answer: sanitizeLmStudioOutput(content),
-                actionJournal: [],
-                decisionSource: "model",
-            };
-        }
+    if (toolCalls.length === 0 && options.allowNoTool) {
+        return {
+            answer: sanitizeLmStudioOutput(msg1?.content || "（模型未调用工具，已返回原始响应）"),
+            actionJournal: [],
+            decisionSource: "model",
+        };
     }
 
-    // 假成功防护：对于执行型请求，强制要求工具调用
-    const isExecutionRequest = looksLikeExecutionRequest(options.prompt);
+    // OpenClaw 风格：默认进入工具链，不基于消息内容判断意图
 
     // 无 tool_calls：重试一次（required 模式）
     if (toolCalls.length === 0 && activeToolNames.length > 0) {
@@ -1472,10 +1731,8 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                     : "请严格返回 tool_calls；不要输出自然语言。",
             },
         ];
-        // 对于执行型请求，强制要求工具调用
-        const toolChoice = isExecutionRequest
-            ? "required"
-            : (preferredToolChoice ?? "required");
+        // OpenClaw 风格：默认要求工具调用
+        const toolChoice = preferredToolChoice ?? "required";
         const retry = await callChatCompletionsRaw({
             baseUrl,
             model: usedModel,
@@ -1534,10 +1791,10 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
         toolCalls = msg1?.tool_calls ?? [];
     }
 
-    // 仍无 tool_calls：硬失败
+    // OpenClaw 风格：如果模型仍未返回工具，不判死，返回真实未完成状态
     if (toolCalls.length === 0) {
         return {
-            answer: `协议失败：未收到工具调用指令\n- 错误码：MODEL_PROTOCOL_FAILED\n\n这通常意味着模型无法调用工具。请重试或切换到对话模式。`,
+            answer: msg1?.content || "（模型未调用工具，已返回原始响应）",
             actionJournal: [],
         };
     }
@@ -1562,11 +1819,12 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     // }
 
     const executedToolCalls: ExecutedToolCall[] = [];
+    const supervisorSettings = getFinishSupervisorSettings();
+    let supervisorContinueCount = 0;
     let currentAssistantRole = msg1?.role || "assistant";
     let currentAssistantContent = msg1?.content;
     let currentToolCalls = toolCalls;
     let conversationMessages = [...messages];
-    let finalAssistantContent = "";
 
     while (true) {
         // P0 松绑：移除循环中"未暴露工具直接判死"逻辑（OpenAI 风格）
@@ -1626,31 +1884,71 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
             };
         }
 
-        const roundExecutedToolCalls: ExecutedToolCall[] = [];
+        if (currentToolCalls.length > 0) {
+            const roundExecutedToolCalls: ExecutedToolCall[] = [];
 
-        for (const tc of currentToolCalls) {
-            let args: Record<string, unknown> = {};
-            try {
-                args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
-            } catch {
-                args = {};
-            }
-            args = normalizeSoulPathArgs(tc.function.name, args, workspacePath);
+            for (const tc of currentToolCalls) {
+                let args: Record<string, unknown> = {};
+                try {
+                    args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
+                } catch {
+                    args = {};
+                }
+                args = normalizeSoulPathArgs(tc.function.name, args, workspacePath);
 
-            let toolResult: ToolRunResult;
-            try {
-                toolResult = await runTool(tc.function.name, args, workspacePath);
-            } catch (e) {
-                toolResult = {
-                    error: e instanceof Error ? e.message : String(e),
-                    errorCode: "TOOL_EXEC_FAILED",
-                    durationMs: 0,
-                };
-            }
+                let toolResult: ToolRunResult;
+                try {
+                    toolResult = await runTool(tc.function.name, args, workspacePath);
+                } catch (e) {
+                    toolResult = {
+                        error: e instanceof Error ? e.message : String(e),
+                        errorCode: "TOOL_EXEC_FAILED",
+                        durationMs: 0,
+                    };
+                }
 
-            if (toolResult.error) {
-                const toolErrorCode = toolResult.errorCode || "TOOL_EXEC_FAILED";
-                const toolErrorMessage = toolResult.error || "工具执行失败";
+                if (toolResult.error) {
+                    const toolErrorCode = toolResult.errorCode || "TOOL_EXEC_FAILED";
+                    const toolErrorMessage = toolResult.error || "工具执行失败";
+
+                    stepId++;
+                    actionJournal.push({
+                        traceId,
+                        stepId,
+                        phase: "act",
+                        timestamp: Date.now(),
+                        route,
+                        model: usedModel,
+                        tool: tc.function.name,
+                        ok: false,
+                        exitCode: toolResult.exitCode ?? undefined,
+                        errorCode: toolErrorCode,
+                        stdoutTail: toolResult.stdoutTail ?? undefined,
+                        fullOutputPath: toolResult.fullOutputPath ?? undefined,
+                        durationMs: toolResult.durationMs,
+                    });
+
+                    let answerText = `工具执行失败\n- 工具：${tc.function.name}\n- 错误码：${toolErrorCode}\n- 错误：${toolErrorMessage}`;
+                    if (toolResult.exitCode !== undefined && toolResult.exitCode !== null) {
+                        answerText += `\n- 退出码：${toolResult.exitCode}`;
+                    }
+                    if (toolResult.stderrTail) {
+                        answerText += `\n- stderr 尾部：${toolResult.stderrTail.slice(-200)}`;
+                    }
+                    if (toolResult.fullOutputPath) {
+                        answerText += `\n- 完整日志：${toolResult.fullOutputPath}`;
+                    }
+
+                    return {
+                        answer: answerText,
+                        toolCall: { name: tc.function.name, args, result: toolResult },
+                        actionJournal,
+                    };
+                }
+
+                const executed: ExecutedToolCall = { tc, args, result: toolResult.data };
+                executedToolCalls.push(executed);
+                roundExecutedToolCalls.push(executed);
 
                 stepId++;
                 actionJournal.push({
@@ -1661,60 +1959,42 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                     route,
                     model: usedModel,
                     tool: tc.function.name,
-                    ok: false,
-                    exitCode: toolResult.exitCode ?? undefined,
-                    errorCode: toolErrorCode,
-                    stdoutTail: toolResult.stdoutTail ?? undefined,
-                    fullOutputPath: toolResult.fullOutputPath ?? undefined,
+                    ok: true,
                     durationMs: toolResult.durationMs,
                 });
 
-                let answerText = `工具执行失败\n- 工具：${tc.function.name}\n- 错误码：${toolErrorCode}\n- 错误：${toolErrorMessage}`;
-                if (toolResult.exitCode !== undefined && toolResult.exitCode !== null) {
-                    answerText += `\n- 退出码：${toolResult.exitCode}`;
-                }
-                if (toolResult.stderrTail) {
-                    answerText += `\n- stderr 尾部：${toolResult.stderrTail.slice(-200)}`;
-                }
-                if (toolResult.fullOutputPath) {
-                    answerText += `\n- 完整日志：${toolResult.fullOutputPath}`;
-                }
+                // P5.7-R12-T8: 总工具步骤数检查
+                if (executedToolCalls.length > perTurnToolStepLimit) {
+                    // P5.7-R12-T8: 达到档位上限时，标记为可续跑（除非超过硬上限）
+                    const isHardCapExceeded = executedToolCalls.length > HARD_CAP_TOOL_STEPS;
 
-                return {
-                    answer: answerText,
-                    toolCall: { name: tc.function.name, args, result: toolResult },
-                    actionJournal,
-                };
-            }
+                    if (isHardCapExceeded) {
+                        // 超过硬上限，必须移交下一轮 heartbeat
+                        // P5.7-R12-T8: 补上 toolCall，用于 sameToolSameArgsRetryLimit 检查
+                        const lastExecutedCall = executedToolCalls[executedToolCalls.length - 1];
+                        return {
+                            answer: `本轮工具步骤总数达到单轮硬上限\n- 本轮步骤数：${executedToolCalls.length}\n- 单轮硬上限：${HARD_CAP_TOOL_STEPS}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n任务将在下一轮 heartbeat 继续执行。`,
+                            actionJournal,
+                            continuable: true,
+                            quotaProfile,
+                            perTurnToolCallLimit,
+                            perTurnToolStepLimit,
+                            remainingToolCalls: perTurnToolCallLimit - currentToolCalls.length,
+                            remainingSteps: 0,
+                            continuationReason: `exceeded_hard_cap_tool_steps_${executedToolCalls.length}_limit_${HARD_CAP_TOOL_STEPS}`,
+                            toolCall: lastExecutedCall ? {
+                                name: lastExecutedCall.tc.function.name,
+                                args: lastExecutedCall.args,
+                                result: lastExecutedCall.result,
+                            } : undefined,
+                        };
+                    }
 
-            const executed: ExecutedToolCall = { tc, args, result: toolResult.data };
-            executedToolCalls.push(executed);
-            roundExecutedToolCalls.push(executed);
-
-            stepId++;
-            actionJournal.push({
-                traceId,
-                stepId,
-                phase: "act",
-                timestamp: Date.now(),
-                route,
-                model: usedModel,
-                tool: tc.function.name,
-                ok: true,
-                durationMs: toolResult.durationMs,
-            });
-
-            // P5.7-R12-T8: 总工具步骤数检查
-            if (executedToolCalls.length > perTurnToolStepLimit) {
-                // P5.7-R12-T8: 达到档位上限时，标记为可续跑（除非超过硬上限）
-                const isHardCapExceeded = executedToolCalls.length > HARD_CAP_TOOL_STEPS;
-
-                if (isHardCapExceeded) {
-                    // 超过硬上限，必须移交下一轮 heartbeat
+                    // 达到档位上限但未超过硬上限，移交下一轮 heartbeat 继续执行
                     // P5.7-R12-T8: 补上 toolCall，用于 sameToolSameArgsRetryLimit 检查
                     const lastExecutedCall = executedToolCalls[executedToolCalls.length - 1];
                     return {
-                        answer: `本轮工具步骤总数达到单轮硬上限\n- 本轮步骤数：${executedToolCalls.length}\n- 单轮硬上限：${HARD_CAP_TOOL_STEPS}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n任务将在下一轮 heartbeat 继续执行。`,
+                        answer: `本轮工具步骤总数达到档位上限\n- 总步骤数：${executedToolCalls.length}\n- 档位上限：${perTurnToolStepLimit}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n任务将在下一轮 heartbeat 继续执行。`,
                         actionJournal,
                         continuable: true,
                         quotaProfile,
@@ -1722,7 +2002,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                         perTurnToolStepLimit,
                         remainingToolCalls: perTurnToolCallLimit - currentToolCalls.length,
                         remainingSteps: 0,
-                        continuationReason: `exceeded_hard_cap_tool_steps_${executedToolCalls.length}_limit_${HARD_CAP_TOOL_STEPS}`,
+                        continuationReason: `reached_profile_limit_tool_steps_${executedToolCalls.length}_limit_${perTurnToolStepLimit}`,
                         toolCall: lastExecutedCall ? {
                             name: lastExecutedCall.tc.function.name,
                             args: lastExecutedCall.args,
@@ -1730,108 +2010,184 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                         } : undefined,
                     };
                 }
+            }
 
-                // 达到档位上限但未超过硬上限，移交下一轮 heartbeat 继续执行
-                // P5.7-R12-T8: 补上 toolCall，用于 sameToolSameArgsRetryLimit 检查
-                const lastExecutedCall = executedToolCalls[executedToolCalls.length - 1];
-                return {
-                    answer: `本轮工具步骤总数达到档位上限\n- 总步骤数：${executedToolCalls.length}\n- 档位上限：${perTurnToolStepLimit}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n任务将在下一轮 heartbeat 继续执行。`,
-                    actionJournal,
-                    continuable: true,
-                    quotaProfile,
-                    perTurnToolCallLimit,
-                    perTurnToolStepLimit,
-                    remainingToolCalls: perTurnToolCallLimit - currentToolCalls.length,
-                    remainingSteps: 0,
-                    continuationReason: `reached_profile_limit_tool_steps_${executedToolCalls.length}_limit_${perTurnToolStepLimit}`,
-                    toolCall: lastExecutedCall ? {
-                        name: lastExecutedCall.tc.function.name,
-                        args: lastExecutedCall.args,
-                        result: lastExecutedCall.result,
-                    } : undefined,
-                };
+            const assistantMsg: { role: string; content?: string; tool_calls?: ToolCall[] } = {
+                role: currentAssistantRole,
+                tool_calls: currentToolCalls,
+            };
+            if (currentAssistantContent !== undefined) {
+                assistantMsg.content = currentAssistantContent;
+            }
+
+            const toolResultMessages = roundExecutedToolCalls.map(({ tc, result }) => ({
+                role: "tool" as const,
+                tool_call_id: tc.id,
+                content: typeof result === "string" ? result : JSON.stringify(result)
+            }));
+
+            conversationMessages = [...conversationMessages, assistantMsg, ...toolResultMessages];
+
+            const nextRound = await callChatCompletionsRaw({
+                baseUrl,
+                model: usedModel,
+                messages: conversationMessages,
+                tools: activeToolSchemas,
+                toolChoice: preferredToolChoice ?? "auto",
+                temperature: 0,
+                maxTokens: 800,
+                timeoutMs,
+                apiKey: backendRuntime.apiKey,
+            });
+
+            const nextMsg = nextRound.choices[0]?.message;
+            currentAssistantRole = nextMsg?.role || "assistant";
+            currentAssistantContent = nextMsg?.content;
+            currentToolCalls = nextMsg?.tool_calls ?? [];
+        }
+
+        if (currentToolCalls.length > 0) {
+            continue;
+        }
+
+        const cleanedAnswer = sanitizeLmStudioOutput(currentAssistantContent ?? "");
+        let finalAnswer = cleanedAnswer;
+
+        if (!cleanedAnswer || hasToolProtocolArtifacts(cleanedAnswer)) {
+            const fallbackAnswer = buildToolLoopFallbackAnswer(executedToolCalls, options.prompt);
+            if (fallbackAnswer) {
+                finalAnswer = fallbackAnswer;
             }
         }
 
-        const assistantMsg: { role: string; content?: string; tool_calls?: ToolCall[] } = {
-            role: currentAssistantRole,
-            tool_calls: currentToolCalls,
+        finalAnswer = hardenFeishuDeliveryClaim(finalAnswer, executedToolCalls, options.prompt);
+
+        // P5.7-R12-T3: 在返回前执行 verify phase
+        const { verifyResult, verifyJournal } = await runVerifyPhase(
+            executedToolCalls,
+            actionJournal,
+            traceId,
+            route
+        );
+
+        // 如果有 verify journal，添加到 actionJournal
+        if (verifyJournal) {
+            actionJournal.push(verifyJournal);
+        }
+
+        if (supervisorSettings.enabled) {
+            const supervisorDecision = await runFinishSupervisorReview({
+                backendRuntime,
+                baseUrl,
+                model: usedModel,
+                timeoutMs,
+                prompt: options.prompt,
+                finalAnswer,
+                windowMessages: options.windowMessages,
+                actionJournal,
+                executedToolCalls,
+                verifyResult,
+                continueCount: supervisorContinueCount,
+            });
+            appendFinishSupervisorJournalEntry({
+                actionJournal,
+                traceId,
+                route,
+                model: usedModel,
+                decision: supervisorDecision,
+            });
+            logger.info("finish supervisor reviewed", {
+                module: "agent-backend/tool-loop",
+                traceId,
+                route,
+                provider: backendRuntime.id,
+                decision: supervisorDecision.decision,
+                continueCount: supervisorContinueCount,
+                reason: supervisorDecision.reason,
+            });
+
+            if (supervisorDecision.decision === "CONTINUE") {
+                supervisorContinueCount += 1;
+                const continueReason = supervisorDecision.reason || "结束前证据不足";
+                if (supervisorContinueCount >= supervisorSettings.maxContinues) {
+                    logger.warn("finish supervisor blocked completion", {
+                        module: "agent-backend/tool-loop",
+                        traceId,
+                        route,
+                        provider: backendRuntime.id,
+                        continueCount: supervisorContinueCount,
+                        reason: continueReason,
+                    });
+                    const firstBlockedCall = executedToolCalls[0];
+                    return {
+                        answer: buildFinishSupervisorBlockedAnswer(continueReason, supervisorContinueCount),
+                        toolCall: firstBlockedCall
+                            ? { name: firstBlockedCall.tc.function.name, args: firstBlockedCall.args, result: firstBlockedCall.result }
+                            : undefined,
+                        actionJournal,
+                        verifyResult,
+                        quotaProfile,
+                        perTurnToolCallLimit,
+                        perTurnToolStepLimit,
+                        remainingToolCalls: perTurnToolCallLimit,
+                        remainingSteps: perTurnToolStepLimit - executedToolCalls.length,
+                    };
+                }
+
+                const supervisorFeedback = {
+                    role: "user" as const,
+                    content: buildFinishSupervisorContinuationMessage(
+                        continueReason,
+                        supervisorContinueCount,
+                        supervisorSettings.maxContinues
+                    ),
+                };
+                if ((currentAssistantContent || "").trim()) {
+                    conversationMessages = [
+                        ...conversationMessages,
+                        { role: currentAssistantRole, content: currentAssistantContent },
+                        supervisorFeedback,
+                    ];
+                } else {
+                    conversationMessages = [...conversationMessages, supervisorFeedback];
+                }
+
+                const nextRound = await callChatCompletionsRaw({
+                    baseUrl,
+                    model: usedModel,
+                    messages: conversationMessages,
+                    tools: activeToolSchemas,
+                    toolChoice: preferredToolChoice ?? "auto",
+                    temperature: 0,
+                    maxTokens: 800,
+                    timeoutMs,
+                    apiKey: backendRuntime.apiKey,
+                });
+
+                const nextMsg = nextRound.choices[0]?.message;
+                currentAssistantRole = nextMsg?.role || "assistant";
+                currentAssistantContent = nextMsg?.content;
+                currentToolCalls = nextMsg?.tool_calls ?? [];
+                continue;
+            }
+        }
+
+        const firstCall = executedToolCalls[0];
+        return {
+            answer: finalAnswer,
+            toolCall: firstCall
+                ? { name: firstCall.tc.function.name, args: firstCall.args, result: firstCall.result }
+                : undefined,
+            actionJournal,
+            verifyResult,
+            // P5.7-R12-T8: 正常结束时也返回配额信息
+            quotaProfile,
+            perTurnToolCallLimit,
+            perTurnToolStepLimit,
+            remainingToolCalls: perTurnToolCallLimit,
+            remainingSteps: perTurnToolStepLimit - executedToolCalls.length,
         };
-        if (currentAssistantContent !== undefined) {
-            assistantMsg.content = currentAssistantContent;
-        }
-
-        const toolResultMessages = roundExecutedToolCalls.map(({ tc, result }) => ({
-            role: "tool" as const,
-            tool_call_id: tc.id,
-            content: typeof result === "string" ? result : JSON.stringify(result)
-        }));
-
-        conversationMessages = [...conversationMessages, assistantMsg, ...toolResultMessages];
-
-        const nextRound = await callChatCompletionsRaw({
-            baseUrl,
-            model: usedModel,
-            messages: conversationMessages,
-            tools: activeToolSchemas,
-            toolChoice: preferredToolChoice ?? "auto",
-            temperature: 0,
-            maxTokens: 800,
-            timeoutMs,
-            apiKey: backendRuntime.apiKey,
-        });
-
-        const nextMsg = nextRound.choices[0]?.message;
-        currentAssistantRole = nextMsg?.role || "assistant";
-        currentAssistantContent = nextMsg?.content;
-        currentToolCalls = nextMsg?.tool_calls ?? [];
-
-        if (currentToolCalls.length === 0) {
-            finalAssistantContent = currentAssistantContent ?? "";
-            break;
-        }
     }
-
-    const cleanedAnswer = sanitizeLmStudioOutput(finalAssistantContent);
-    let finalAnswer = cleanedAnswer;
-
-    if (!cleanedAnswer || hasToolProtocolArtifacts(cleanedAnswer)) {
-        const fallbackAnswer = buildToolLoopFallbackAnswer(executedToolCalls, options.prompt);
-        if (fallbackAnswer) {
-            finalAnswer = fallbackAnswer;
-        }
-    }
-
-    finalAnswer = hardenFeishuDeliveryClaim(finalAnswer, executedToolCalls, options.prompt);
-
-    // P5.7-R12-T3: 在返回前执行 verify phase
-    const { verifyResult, verifyJournal } = await runVerifyPhase(
-        executedToolCalls,
-        actionJournal,
-        traceId,
-        route
-    );
-
-    // 如果有 verify journal，添加到 actionJournal
-    if (verifyJournal) {
-        actionJournal.push(verifyJournal);
-    }
-
-    const firstCall = executedToolCalls[0];
-    return {
-        answer: finalAnswer,
-        toolCall: firstCall
-            ? { name: firstCall.tc.function.name, args: firstCall.args, result: firstCall.result }
-            : undefined,
-        actionJournal,
-        verifyResult,
-        // P5.7-R12-T8: 正常结束时也返回配额信息
-        quotaProfile,
-        perTurnToolCallLimit,
-        perTurnToolStepLimit,
-        remainingToolCalls: perTurnToolCallLimit,
-        remainingSteps: perTurnToolStepLimit - executedToolCalls.length,
-    };
 }
 
 // ============================================

@@ -1,0 +1,87 @@
+---
+id: 0040
+title: 实现结束前最小监督闭环
+status: done
+owner: agent
+labels: [feature, agent]
+risk: medium
+scope: agent-backend tool-loop 结束收口与最小监督配置
+plan_doc: docs/design/plan-260308-minimal-finish-supervisor.md
+links: []
+---
+
+## Context
+
+当前 agent-first 主链已经允许 LLM 读 skill、调工具、继续循环，但“准备结束”仍只有主 Agent 自己拍板。
+
+已知风险：
+
+- 主 Agent 可能“没做完就停”
+- 主 Agent 可能“没验证就说已完成”
+- `msgcode.log` 已出现过 schedule 删除类场景的假完成现象
+
+本轮只收一个最小口：
+
+- 主 Agent 准备结束时
+- 再调用一次同一个模型
+- 只返回 `PASS` 或 `CONTINUE: <原因>`
+- 连续 3 次仍 `CONTINUE` 时停止并明确报阻塞原因
+
+## Goal / Non-Goals
+
+- Goal: 在 `src/agent-backend/tool-loop.ts` 的唯一结束挂点加入结束前二次判断
+- Goal: 默认复用主模型，不新增 supervisor provider / model router / 多角色平台
+- Goal: 增加最小配置 `supervisor.enabled`、`supervisor.temperature`、`supervisor.max_tokens`
+- Goal: 补最小测试与可复现验证记录
+- Non-Goals: 不做多模型平台
+- Non-Goals: 不做过程监督
+- Non-Goals: 不做规则引擎、证据打包层、prompt 分层实验
+- Non-Goals: 不顺手修改 scheduler / browser / memory 域逻辑
+
+## Plan
+
+- [x] 读取 manifesto、README、tool-loop、routed-chat、prompt 与日志，定位唯一挂点
+- [x] 创建 issue 与 plan 文档，冻结最小方案
+- [x] 在 `src/config.ts` 增加最小 supervisor 配置入口
+- [x] 在 `src/agent-backend/tool-loop.ts` 增加结束前监督调用、`PASS/CONTINUE` 解析与 3 次边界
+- [x] 保持默认复用主模型，不新增第二套路由
+- [x] 补测试覆盖 PASS / CONTINUE / 连续 3 次阻塞
+- [x] 运行测试、记录 Notes、提交 commit、重启 msgcode
+
+## Acceptance Criteria
+
+1. 主 Agent 结束前会触发一次监督 LLM 调用
+2. 监督调用默认复用主模型，不要求配置 `supervisor.model`
+3. 监督输出只接受 `PASS` 或 `CONTINUE: <原因>`
+4. 监督返回 `CONTINUE` 时，任务不会直接结束，而是继续主循环
+5. 连续 3 次 `CONTINUE` 后，系统停止循环并返回明确阻塞原因
+6. 不新增复杂 provider 路由、第二套模型注册或 supervisor tool
+7. 测试覆盖假完成被拦下、证据足够放行、3 次 CONTINUE 阻塞
+
+## Notes
+
+- 真相源：
+  - `/Users/admin/GitProjects/msgcode/aidocs/architecture/agent-software-llm-supervision-manifesto-260308.md`
+  - `/Users/admin/GitProjects/msgcode/README.md`
+  - `/Users/admin/GitProjects/msgcode/src/agent-backend/tool-loop.ts`
+  - `/Users/admin/GitProjects/msgcode/src/agent-backend/routed-chat.ts`
+  - `/Users/admin/GitProjects/msgcode/src/agent-backend/prompt.ts`
+  - `/Users/admin/.config/msgcode/log/msgcode.log`
+- 结束挂点结论：
+  - 唯一挂点选择 `runAgentToolLoop` / `runMiniMaxAnthropicToolLoop` 末尾的 `finalAssistantContent -> finalAnswer -> return`
+  - 不在 `routed-chat.ts` 额外新增第二触发点，避免多处结束判定
+- 验证命令：
+  - `PATH="$HOME/.bun/bin:$PATH" NODE_ENV=test bun test test/p5-7-r20-minimal-finish-supervisor.test.ts`
+  - `PATH="$HOME/.bun/bin:$PATH" NODE_ENV=test bun test test/p5-7-r3g-multi-tool-loop.test.ts`
+  - `PATH="$HOME/.bun/bin:$PATH" NODE_ENV=test bun test test/p5-7-r10-minimax-anthropic-provider.test.ts --test-name-pattern "runLmStudioToolLoop"`
+- 验证结果：
+  - `p5-7-r20-minimal-finish-supervisor.test.ts` 3/3 通过
+  - `p5-7-r3g-multi-tool-loop.test.ts` 5/5 通过
+  - `p5-7-r10-minimax-anthropic-provider.test.ts --test-name-pattern "runLmStudioToolLoop"` 2/2 通过
+  - `npx tsc --noEmit` 当前失败，失败点在现有分支上的 `src/feishu/transport.ts`、`src/jobs/runner.ts`、`src/routes/cmd-model.ts`、`src/routes/cmd-schedule.ts`，不属于本轮改动
+
+## Links
+
+- Plan: /Users/admin/GitProjects/msgcode/docs/design/plan-260308-minimal-finish-supervisor.md
+- Task: docs/tasks/p6-msgcode-refactor-master-plan.md
+- Manifesto: /Users/admin/GitProjects/msgcode/AIDOCS/architecture/agent-software-llm-supervision-manifesto-260308.md

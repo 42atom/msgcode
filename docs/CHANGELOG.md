@@ -3,6 +3,7 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-08
+  - agent-backend: tool-loop 收口新增“结束前最小监督闭环”；主 Agent 准备结束时会默认复用当前模型做一次 `PASS/CONTINUE` 复核，`CONTINUE` 会回灌主链继续执行，连续 3 次仍未通过则明确阻塞返回，且只新增最小配置 `SUPERVISOR_ENABLED/SUPERVISOR_TEMPERATURE/SUPERVISOR_MAX_TOKENS` (Issue: 0040, Plan: docs/design/plan-260308-minimal-finish-supervisor.md) [risk: medium] [rollback: 回退 `src/agent-backend/tool-loop.ts`、`src/config.ts` 与 `test/p5-7-r20-minimal-finish-supervisor.test.ts` 本轮改动]
   - schedule: `schedule -> jobs -> scheduler` 主链收口为单一路径；新建/启用 schedule 会立即写出 `nextRunAtMs`，CLI 与聊天命令在 add/remove/enable/disable 后都会主动 refresh/rearm scheduler，不再依赖重启或人工清理 (Issue: 0038, Plan: docs/design/plan-260308-schedule-scheduler-refresh-on-mutation.md) [risk: high] [rollback: 回退 `src/jobs/schedule-sync.ts`、`src/jobs/scheduler.ts`、`src/config/schedules.ts`、`src/cli/schedule.ts`、`src/routes/cmd-schedule.ts` 与 `src/commands.ts` 本轮改动]
   - scheduler: `refresh` 文件日志补充 `reason/jobCount/rearmed/jobsPath` 观测，并将 `NODE_ENV=test` 下的文件日志默认隔离，避免测试 scheduler 把起停/refresh 记录污染到正式 `msgcode.log`、制造假性 refresh 风暴 (Issue: 0039, Plan: docs/design/plan-260308-scheduler-refresh-storm-diagnosis.md) [risk: low] [rollback: 回退 `src/jobs/scheduler.ts`、`src/logger/index.ts`、`src/logger/file-transport.ts`、`src/commands.ts`、`src/jobs/schedule-sync.ts` 与相关测试]
 - 2026-03-07
