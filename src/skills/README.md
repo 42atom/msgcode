@@ -8,13 +8,21 @@
 - 执行主链：runtime skill -> bash -> CLI 命令
 - builtin registry（`registry.ts`）为历史占位，不再作为技能执行的正式主链
 
-**runtime skill 文案格式统一为能力卡**：
+**runtime skill 文案格式统一为能力说明书**：
 
 - `YAML frontmatter`：`name` + `description`
 - `能力`：这项 skill 解决什么问题
 - `何时使用`：触发条件
-- `唯一入口`：应优先走的 wrapper / CLI
-- `命令模板 / 验证 / 常见错误`：让 LLM 读完就能执行，不靠猜参数
+- `调用合同`：真实 CLI / 脚本 / 接口长什么样
+- `参考调用 / 验证 / 常见错误`：让 LLM 读完就能执行，不靠猜参数
+
+补充原则：
+
+- skill 更像 API 文档，不像流程编排器
+- 优先告诉模型真实能力、真实参数、真实错误边界
+- 不要为了“更贴心”再替模型发明 wrapper、拼装层、隐藏脚本层
+- `main.sh` 只是兼容辅助物，不应默认成为所有 skill 的 canonical 入口
+- `main.sh` 不是必选项；纯文档型 skill 可以只暴露 `SKILL.md`
 
 **builtin registry 退役说明**：
 
@@ -33,8 +41,19 @@ src/skills/
 ├── auto.ts                 # 自然语言触发（向后兼容）
 ├── runtime-sync.ts         # runtime skill 安装/同步
 └── runtime/                # 仓库托管的 runtime skill 真相源
-    ├── index.json          # 托管 skill 索引（scheduler, patchright-browser）
+    ├── index.json          # 托管 skill 索引（vision-index, local-vision-lmstudio, zai-vision-mcp, scheduler, plan-files, patchright-browser）
     ├── scheduler/
+    │   ├── SKILL.md
+    │   └── main.sh
+    ├── plan-files/
+    │   └── SKILL.md
+    ├── vision-index/
+    │   ├── SKILL.md
+    │   └── main.sh
+    ├── local-vision-lmstudio/
+    │   ├── SKILL.md
+    │   └── main.sh
+    ├── zai-vision-mcp/
     │   ├── SKILL.md
     │   └── main.sh
     └── patchright-browser/
@@ -77,10 +96,11 @@ src/skills/
 
 ### 新增 runtime skill 流程
 
-1. 在 `src/skills/runtime/<skill-id>/` 新增 `SKILL.md` 与 `main.sh`
-2. 更新 `src/skills/runtime/index.json`
-3. 如有安装/同步逻辑变化，更新 `runtime-sync.ts`
-4. 通过 `msgcode init` 或 `msgcode start` 触发同步
+1. 在 `src/skills/runtime/<skill-id>/` 新增 `SKILL.md`
+2. 只有当 skill 的真实 canonical 入口就是稳定脚本 / CLI wrapper 时，才额外提供 `main.sh`
+3. 更新 `src/skills/runtime/index.json`
+4. 如有安装/同步逻辑变化，更新 `runtime-sync.ts`
+5. 通过 `msgcode init` 或 `msgcode start` 触发同步
 
 ### 技能检测扩展
 

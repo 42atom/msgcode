@@ -20,10 +20,12 @@ import {
     type TaskStatus,
     isLegalTransition,
     createTaskRecord,
+    formatTaskCheckpointAsContext,
 } from "../src/runtime/task-types.js";
 import { TaskStore } from "../src/runtime/task-store.js";
 import { EventQueueStore } from "../src/runtime/event-queue-store.js";
 import { TaskSupervisor } from "../src/runtime/task-supervisor.js";
+import { handleTaskStatus } from "../src/routes/cmd-task-impl.js";
 
 // ============================================
 // 测试工具函数
@@ -90,6 +92,8 @@ describe("P5.7-R12: Agent Relentless Task Closure", () => {
 
             const result = await taskStore.createTask(task);
             expect(result.ok).toBe(true);
+            expect(result.task.checkpoint?.summary).toBe("测试任务");
+            expect(result.task.checkpoint?.nextAction).toBe("开始执行当前任务");
 
             // 验证文件存在
             const filePath = path.join(tmpDir, "test-chat-1.json");
@@ -227,6 +231,7 @@ describe("P5.7-R12: Agent Relentless Task Closure", () => {
             expect(result.task).toBeDefined();
             expect(result.task.status).toBe("pending");
             expect(result.task.goal).toBe("测试任务");
+            expect(result.task.checkpoint?.summary).toBe("测试任务");
         });
 
         it("单 chat 单活跃任务：重复创建拒绝", async () => {
@@ -287,6 +292,12 @@ describe("P5.7-R12: Agent Relentless Task Closure", () => {
                 status: "blocked",
                 blockedReason: "需要人工确认",
                 recoveryContext: "{}",
+                checkpoint: {
+                    currentPhase: "blocked",
+                    summary: "任务卡在人工确认",
+                    nextAction: "等用户确认后继续",
+                    updatedAt: Date.now(),
+                },
             });
 
             expect(updateResult.ok).toBe(true);
@@ -298,6 +309,8 @@ describe("P5.7-R12: Agent Relentless Task Closure", () => {
             expect(resumeResult.ok).toBe(true);
             expect(resumeResult.task?.status).toBe("running");
             expect(resumeResult.task?.attemptCount).toBe(1);
+            expect(resumeResult.task?.checkpoint?.currentPhase).toBe("running");
+            expect(resumeResult.task?.checkpoint?.nextAction).toContain("继续执行");
         });
 
         it("heartbeat 会继续推进 running 任务", async () => {
@@ -376,11 +389,95 @@ describe("P5.7-R12: Agent Relentless Task Closure", () => {
                 ok: true,
                 status: "completed",
                 verifyEvidence: JSON.stringify({ exitCode: 0 }),
+                checkpoint: {
+                    currentPhase: "completed",
+                    summary: "任务已完成",
+                    nextAction: "核对交付并结束任务",
+                    updatedAt: Date.now(),
+                },
             });
 
             expect(updateResult.ok).toBe(true);
             expect(updateResult.task?.status).toBe("completed");
             expect(updateResult.task?.verifyEvidence).toBeDefined();
+            expect(updateResult.task?.checkpoint?.currentPhase).toBe("completed");
+        });
+
+        it("任务状态输出应包含 checkpoint 阶段与下一步", async () => {
+            const route = {
+                chatGuid: "test-chat-status",
+                workspacePath: "/tmp/workspace",
+                status: "active" as const,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                botType: "agent-backend" as const,
+                label: "test",
+            };
+
+            const createResult = await supervisor.createTask(
+                route.chatGuid,
+                route.workspacePath,
+                "查看 checkpoint 状态"
+            );
+            expect(createResult.ok).toBe(true);
+
+            const runningResult = await supervisor.updateTaskResult(createResult.task!.taskId, {
+                ok: true,
+                status: "running",
+            });
+            expect(runningResult.ok).toBe(true);
+
+            await supervisor.updateTaskResult(createResult.task!.taskId, {
+                ok: false,
+                status: "blocked",
+                blockedReason: "等待人工确认",
+                checkpoint: {
+                    currentPhase: "blocked",
+                    summary: "当前停在人工确认阶段",
+                    nextAction: "等用户确认后继续执行",
+                    updatedAt: Date.now(),
+                },
+            });
+
+            const statusResult = await handleTaskStatus(route, supervisor);
+            expect(statusResult.ok).toBe(true);
+            expect(statusResult.message).toContain("当前阶段: blocked");
+            expect(statusResult.message).toContain("下一步: 等用户确认后继续执行");
+            expect(statusResult.message).toContain("检查点摘要: 当前停在人工确认阶段");
+        });
+    });
+
+    describe("checkpoint 格式化", () => {
+        it("formatTaskCheckpointAsContext 应输出结构化提示块", () => {
+            const text = formatTaskCheckpointAsContext({
+                currentPhase: "running",
+                summary: "已经完成下载，准备验证结果",
+                nextAction: "读取输出文件并核对关键字段",
+                lastToolName: "read_file",
+                lastErrorCode: "TOOL_TIMEOUT",
+                verifyEvidence: '{"exitCode":0}',
+                updatedAt: Date.now(),
+            });
+
+            expect(text).toContain("[任务检查点]");
+            expect(text).toContain("当前阶段: running");
+            expect(text).toContain("状态摘要: 已经完成下载");
+            expect(text).toContain("下一步: 读取输出文件并核对关键字段");
+            expect(text).toContain("最近工具: read_file");
+            expect(text).toContain("最近错误码: TOOL_TIMEOUT");
+        });
+
+        it("commands.ts 的 executeTaskTurn 应注入 checkpoint + summary/window", () => {
+            const code = fs.readFileSync(
+                path.join(process.cwd(), "src/commands.ts"),
+                "utf-8"
+            );
+
+            expect(code).toContain("formatTaskCheckpointAsContext");
+            expect(code).toContain("const checkpointContext = formatTaskCheckpointAsContext(task.checkpoint)");
+            expect(code).toContain("loadWindow(task.workspacePath, task.chatId)");
+            expect(code).toContain("loadSummary(task.workspacePath, task.chatId)");
+            expect(code).toContain("summaryContext");
         });
     });
 });

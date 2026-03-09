@@ -557,6 +557,9 @@ export async function startBot(): Promise<void> {
   const { createTaskSupervisor } = await import("./runtime/task-supervisor.js");
   const { initializeEventQueue, restoreAllQueuesFromDisk } = await import("./steering-queue.js");
   const { executeAgentTurn } = await import("./agent-backend.js");
+  const { loadSummary, formatSummaryAsContext } = await import("./summary.js");
+  const { loadWindow } = await import("./session-window.js");
+  const { formatTaskCheckpointAsContext } = await import("./runtime/task-types.js");
   const taskDir = `${config.workspaceRoot}/.msgcode/tasks`;
   const eventQueueDir = `${config.workspaceRoot}/.msgcode/event-queue`;
   initializeEventQueue(eventQueueDir);
@@ -565,10 +568,23 @@ export async function startBot(): Promise<void> {
     taskDir,
     eventQueueDir,
     heartbeatIntervalMs: 60_000,
-    executeTaskTurn: async (task) => executeAgentTurn({
-      prompt: task.goal,
-      workspacePath: task.workspacePath,
-    }),
+    executeTaskTurn: async (task) => {
+      const checkpointContext = formatTaskCheckpointAsContext(task.checkpoint);
+      const taskPrompt = checkpointContext
+        ? `[长期任务目标]\n${task.goal}\n\n${checkpointContext}\n\n请基于上面的任务状态继续推进，优先完成“下一步”；若已满足验收标准，则完成任务并给出可验证结果。`
+        : task.goal;
+
+      const windowMessages = await loadWindow(task.workspacePath, task.chatId);
+      const summary = await loadSummary(task.workspacePath, task.chatId);
+      const summaryContext = formatSummaryAsContext(summary);
+
+      return executeAgentTurn({
+        prompt: taskPrompt,
+        workspacePath: task.workspacePath,
+        windowMessages,
+        summaryContext,
+      });
+    },
   });
 
   // 启动 Task Supervisor（heartbeat 由 commands 统一接线）

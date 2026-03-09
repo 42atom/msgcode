@@ -1,0 +1,95 @@
+---
+id: 0058
+title: 24小时长期在线智能体与上下文平滑溢出收口
+status: done
+owner: agent
+labels: [feature, refactor, design]
+risk: medium
+scope: 长任务主链、上下文装配预算与溢出策略收口
+plan_doc: docs/design/plan-260310-long-running-agent-context-smoothing.md
+links: []
+---
+
+# Context
+
+用户希望 `msgcode` 成为 24 小时长期在线的信息智能体处理中心，因此需要：
+
+1. 长期在线，不依赖短会话存活
+2. 长任务可持续推进，重启后可恢复
+3. 模型上下文足够大，但不能依赖“无限堆上下文”
+4. 窗口溢出时，策略应平滑，而不是硬截断后突然失忆
+
+当前仓库已有底座：
+
+- `HeartbeatRunner`：常驻 tick
+- `TaskSupervisor`：显式 `/task` 的持久化任务续跑
+- `summaryContext`：历史摘要注入
+- `tool_result` 与 `bash` 输出裁剪
+
+但当前缺口也很明确：
+
+- 长期任务只覆盖显式 `/task`，普通复杂任务没有统一的持久化口径
+- 上下文预算仍然分散在多个局部截断点，没有统一预算装配策略
+- 溢出时主要靠硬裁剪，缺少分层降级与 checkpoint 思维
+
+# Goal / Non-Goals
+
+## Goal
+
+- 定义 `msgcode` 的 24 小时长期在线主链
+- 定义“什么进入长期任务，什么保持普通聊天”的边界
+- 定义统一的上下文预算装配与平滑溢出策略
+- 保持系统做薄，不新增 plan mode 或厚控制面
+
+## Non-Goals
+
+- 不立刻实现新的 orchestration platform
+- 不把所有普通消息都升级成持久化任务
+- 不依赖单一模型的超长窗口作为唯一解
+- 不新增新的多层恢复/编排控制面
+
+# Plan
+
+- [x] 盘点当前长任务、摘要、裁剪、恢复相关代码与真实行为
+- [x] 给出长期在线单一主链：普通消息 / 显式长任务 / 定时唤醒三者分工
+- [x] 设计统一的上下文预算装配器与分层溢出策略
+- [x] 定义 task-local plan、summaryContext、memory、artifacts 的边界
+- [x] 制定最小实施顺序与回归验证点
+
+# Acceptance Criteria
+
+- 产出一份明确的长期在线方案，不把系统做成新控制面
+- 方案必须回答：
+  - 长任务如何进入 / 恢复 / 收尾
+  - 上下文窗口如何装配
+  - 窗口溢出如何平滑降级
+  - `plan` / `memory` / `/task` 如何分工
+- 方案包含最小实施顺序与回滚口径
+
+# Notes
+
+- Code:
+  - `src/runtime/heartbeat.ts`
+  - `src/runtime/task-supervisor.ts`
+  - `src/handlers.ts`
+  - `src/agent-backend/tool-loop.ts`
+  - `src/agent-backend/prompt.ts`
+  - `src/runners/bash-runner.ts`
+  - `src/jobs/runner.ts`
+- Implemented (Phase 1):
+  - `buildConversationContextBlocks()` 统一 summary/window 预算装配
+  - `runAgentToolLoop()` 改为复用同一 budget helper
+  - `buildDialogPromptWithContext()` 改为复用同一 budget helper
+- Implemented (Phase 2):
+  - `TaskRecord.checkpoint` 作为长期任务恢复真相源
+  - 心跳续跑通过 `commands.ts` 把 checkpoint + summary/window 一起喂回 `executeAgentTurn()`
+  - `/task status` 现在会显示当前阶段、下一步与检查点摘要
+- Tests:
+  - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r12-agent-relentless-task-closure.test.ts test/p5-7-r12-t9-mainline-quota-continuation-smoke.test.ts test/p5-7-r27-context-budget-assembler.test.ts test/p5-6-8-r4b-window-summary-injection.test.ts test/p5-7-r9-t7-step4-compatibility-lock.test.ts`
+  - `88 pass / 0 fail`
+- Runtime:
+  - `./bin/msgcode restart`
+
+# Links
+
+- [Plan](/Users/admin/GitProjects/msgcode/docs/design/plan-260310-long-running-agent-context-smoothing.md)

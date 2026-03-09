@@ -260,6 +260,103 @@ export function buildExecSystemPrompt(base: string, useMcp: boolean): string {
 // 对话上下文构建
 // ============================================
 
+export interface ConversationContextBudget {
+    maxSummaryChars: number;
+    maxWindowMessages: number;
+    maxWindowChars: number;
+    maxTotalContextChars: number;
+    maxMessageChars: number;
+}
+
+export const DEFAULT_CONVERSATION_CONTEXT_BUDGET: ConversationContextBudget = {
+    maxSummaryChars: 2400,
+    maxWindowMessages: 12,
+    maxWindowChars: 4200,
+    maxTotalContextChars: 6600,
+    maxMessageChars: 1200,
+};
+
+function clipContextText(text: string, maxChars: number): string {
+    if (!text) return "";
+    if (text.length <= maxChars) return text;
+    if (maxChars <= 16) return text.slice(0, maxChars);
+    return `${text.slice(0, maxChars - 14)}...(truncated)`;
+}
+
+type NormalizedContextMessage = {
+    role: "user" | "assistant";
+    content: string;
+};
+
+/**
+ * 统一对话上下文预算装配：
+ * - 先给 summary 固定预算
+ * - 再从最新消息往回选窗口
+ * - 单条消息也有限额，避免一条超长消息吃掉整个上下文
+ */
+export function buildConversationContextBlocks(params: {
+    summaryContext?: string;
+    windowMessages?: Array<{ role: string; content?: string }>;
+    budget?: Partial<ConversationContextBudget>;
+}): {
+    summaryText?: string;
+    windowMessages: NormalizedContextMessage[];
+    usedChars: number;
+    budget: ConversationContextBudget;
+} {
+    const budget: ConversationContextBudget = {
+        ...DEFAULT_CONVERSATION_CONTEXT_BUDGET,
+        ...(params.budget || {}),
+    };
+
+    let remainingChars = budget.maxTotalContextChars;
+    let usedChars = 0;
+    let summaryText: string | undefined;
+
+    const rawSummary = (params.summaryContext || "").trim();
+    if (rawSummary && remainingChars > 0) {
+        const summaryBudget = Math.min(budget.maxSummaryChars, remainingChars);
+        const clippedSummary = clipContextText(rawSummary, summaryBudget).trim();
+        if (clippedSummary) {
+            summaryText = clippedSummary;
+            remainingChars -= clippedSummary.length;
+            usedChars += clippedSummary.length;
+        }
+    }
+
+    const windowBudget = Math.min(budget.maxWindowChars, remainingChars);
+    const sourceMessages = (params.windowMessages || []).slice(-budget.maxWindowMessages);
+    const collected: NormalizedContextMessage[] = [];
+    let usedWindowChars = 0;
+
+    for (let i = sourceMessages.length - 1; i >= 0; i -= 1) {
+        const msg = sourceMessages[i];
+        const rawContent = (msg.content || "").trim();
+        if (!rawContent) continue;
+
+        const role: "user" | "assistant" = msg.role === "assistant" ? "assistant" : "user";
+        const remainingForMessage = windowBudget - usedWindowChars - role.length - 4;
+        if (remainingForMessage <= 0) break;
+
+        const contentBudget = Math.min(budget.maxMessageChars, remainingForMessage);
+        const clippedContent = clipContextText(rawContent, contentBudget).trim();
+        if (!clippedContent) continue;
+
+        collected.push({ role, content: clippedContent });
+        usedWindowChars += clippedContent.length + role.length + 4;
+    }
+
+    const windowMessages = collected.reverse();
+    usedChars += usedWindowChars;
+
+    return {
+        summaryText,
+        windowMessages,
+        usedChars,
+        budget,
+    };
+}
+
 /**
  * 构造对话链路输入（把历史上下文拼接到当前问题）
  *
@@ -273,32 +370,18 @@ export function buildDialogPromptWithContext(params: {
     windowMessages?: Array<{ role: string; content?: string }>;
 }): string {
     const sections: string[] = [];
+    const contextBlocks = buildConversationContextBlocks({
+        summaryContext: params.summaryContext,
+        windowMessages: params.windowMessages,
+    });
 
-    if (params.summaryContext && params.summaryContext.trim()) {
-        sections.push(`[历史对话摘要]\n${params.summaryContext.trim()}`);
+    if (contextBlocks.summaryText) {
+        sections.push(`[历史对话摘要]\n${contextBlocks.summaryText}`);
     }
 
-    if (params.windowMessages && params.windowMessages.length > 0) {
-        const MAX_WINDOW_MESSAGES = 12;
-        const MAX_CONTEXT_CHARS = 6000;
-        const lines: string[] = [];
-        let totalChars = 0;
-
-        const recentMessages = params.windowMessages.slice(-MAX_WINDOW_MESSAGES);
-        for (const msg of recentMessages) {
-            const content = (msg.content || "").trim();
-            if (!content) continue;
-
-            const role = msg.role === "assistant" ? "assistant" : "user";
-            const line = `[${role}] ${content}`;
-            if (totalChars + line.length > MAX_CONTEXT_CHARS) break;
-            lines.push(line);
-            totalChars += line.length;
-        }
-
-        if (lines.length > 0) {
-            sections.push(`[最近对话窗口]\n${lines.join("\n")}`);
-        }
+    if (contextBlocks.windowMessages.length > 0) {
+        const lines = contextBlocks.windowMessages.map((msg) => `[${msg.role}] ${msg.content}`);
+        sections.push(`[最近对话窗口]\n${lines.join("\n")}`);
     }
 
     sections.push(`[当前用户问题]\n${params.prompt}`);

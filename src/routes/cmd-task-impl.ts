@@ -137,6 +137,18 @@ export async function handleTaskStatus(
             diagnostics.push(`- 阻塞原因: ${task.blockedReason}`);
         }
 
+        if (task.checkpoint?.currentPhase) {
+            diagnostics.push(`- 当前阶段: ${task.checkpoint.currentPhase}`);
+        }
+
+        if (task.checkpoint?.nextAction) {
+            diagnostics.push(`- 下一步: ${task.checkpoint.nextAction.slice(0, 120)}`);
+        }
+
+        if (task.checkpoint?.summary) {
+            diagnostics.push(`- 检查点摘要: ${task.checkpoint.summary.slice(0, 120)}`);
+        }
+
         if (task.verifyEvidence) {
             diagnostics.push(`- 验证证据: ${task.verifyEvidence.slice(0, 100)}`);
         }

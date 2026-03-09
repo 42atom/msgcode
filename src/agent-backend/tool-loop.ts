@@ -31,6 +31,7 @@ import {
 import {
     resolveBaseSystemPrompt,
     buildExecSystemPrompt,
+    buildConversationContextBlocks,
 } from "./prompt.js";
 import {
     resolveAgentBackendRuntime,
@@ -242,6 +243,7 @@ type FinishSupervisorDecision = {
     reason?: string;
     raw: string;
     durationMs: number;
+    source: "explicit-pass" | "explicit-continue" | "heuristic-pass" | "heuristic-continue" | "verify-pass-fallback" | "invalid";
 };
 
 function getToolNameFromDef(tool: unknown): string | undefined {
@@ -311,6 +313,16 @@ function clipText(text: string, maxChars: number): string {
     return `${text.slice(0, maxChars)}...`;
 }
 
+const TOOL_RESULT_CONTEXT_MAX_CHARS = 4000;
+
+/**
+ * 回灌给模型的 tool_result 只保留可用预览，避免单次 read_file/big JSON 直接顶爆上下文。
+ */
+function serializeToolResultForConversation(result: unknown): string {
+    const raw = typeof result === "string" ? result : JSON.stringify(result);
+    return clipText(raw, TOOL_RESULT_CONTEXT_MAX_CHARS);
+}
+
 function getFinishSupervisorSettings(): {
     enabled: boolean;
     temperature: number;
@@ -341,6 +353,79 @@ function stringifyForSupervisor(value: unknown, maxChars: number): string {
     } catch {
         return clipText(String(value), maxChars);
     }
+}
+
+function normalizeFinishSupervisorRaw(rawInput: string): string {
+    let raw = sanitizeLmStudioOutput(rawInput || "").trim();
+    if (!raw) return raw;
+
+    raw = raw
+        .replace(/^```[\w-]*\s*/i, "")
+        .replace(/\s*```$/i, "")
+        .trim();
+
+    const lines = raw
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+
+    return lines.join("\n").trim();
+}
+
+function extractFinishSupervisorTextFromBlocks(blocks: MiniMaxAnthropicContentBlock[]): string {
+    const textParts: string[] = [];
+    const thinkingParts: string[] = [];
+
+    for (const block of blocks) {
+        if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
+            textParts.push(block.text.trim());
+        }
+        if (block.type === "thinking" && typeof block.thinking === "string" && block.thinking.trim()) {
+            thinkingParts.push(block.thinking.trim());
+        }
+    }
+
+    const text = textParts.join("\n").trim();
+    if (text) return text;
+    return thinkingParts.join("\n").trim();
+}
+
+function containsContinueSemantics(input: string): boolean {
+    return [
+        /不能结束/,
+        /不可结束/,
+        /还不能结束/,
+        /不要结束/,
+        /需要继续/,
+        /请继续/,
+        /未完成/,
+        /证据不足/,
+        /缺少/,
+        /仍需/,
+        /先不要结束/,
+        /不通过/,
+        /未明确放行/,
+        /继续执行/,
+    ].some((pattern) => pattern.test(input));
+}
+
+function containsPassSemantics(input: string): boolean {
+    return [
+        /可以结束/,
+        /可结束/,
+        /可以收尾/,
+        /可收尾/,
+        /可以交付/,
+        /可交付/,
+        /任务已完成/,
+        /已经完成/,
+        /结束条件已满足/,
+        /允许结束/,
+        /通过复核/,
+        /无需继续/,
+        /可以停止/,
+        /可以返回/,
+    ].some((pattern) => pattern.test(input));
 }
 
 function buildFinishSupervisorPrompt(params: {
@@ -417,12 +502,13 @@ function buildFinishSupervisorPrompt(params: {
 }
 
 function parseFinishSupervisorDecision(rawInput: string, durationMs: number): FinishSupervisorDecision {
-    const raw = sanitizeLmStudioOutput(rawInput || "").trim();
+    const raw = normalizeFinishSupervisorRaw(rawInput);
     if (/^PASS\b/i.test(raw)) {
         return {
             decision: "PASS",
             raw: raw || "PASS",
             durationMs,
+            source: "explicit-pass",
         };
     }
 
@@ -434,6 +520,26 @@ function parseFinishSupervisorDecision(rawInput: string, durationMs: number): Fi
             reason,
             raw: raw || `CONTINUE: ${reason}`,
             durationMs,
+            source: "explicit-continue",
+        };
+    }
+
+    if (raw && containsContinueSemantics(raw)) {
+        return {
+            decision: "CONTINUE",
+            reason: clipText(raw, 200),
+            raw,
+            durationMs,
+            source: "heuristic-continue",
+        };
+    }
+
+    if (raw && containsPassSemantics(raw)) {
+        return {
+            decision: "PASS",
+            raw,
+            durationMs,
+            source: "heuristic-pass",
         };
     }
 
@@ -442,6 +548,7 @@ function parseFinishSupervisorDecision(rawInput: string, durationMs: number): Fi
         reason: clipText(raw || "监督员未明确放行", 200),
         raw: raw || "CONTINUE: 监督员未明确放行",
         durationMs,
+        source: "invalid",
     };
 }
 
@@ -507,29 +614,47 @@ function answerClaimsSideEffect(answer: string): boolean {
         || /(创建成功|删除成功|发送成功|上传成功|修复完成|更新完成)/.test(input);
 }
 
+function isMutatingToolCall(name: string, args: Record<string, unknown>): boolean {
+    if (FINISH_SUPERVISOR_MUTATING_TOOLS.has(name as ToolName)) {
+        return true;
+    }
+    if (name !== "bash") {
+        return false;
+    }
+    return bashCommandLooksMutating(typeof args.command === "string" ? args.command : "");
+}
+
+function hasSuccessfulMutatingExecution(executedToolCalls: ExecutedToolCall[]): boolean {
+    for (let i = executedToolCalls.length - 1; i >= 0; i -= 1) {
+        const entry = executedToolCalls[i];
+        if (!isMutatingToolCall(entry.tc.function.name, entry.args)) {
+            continue;
+        }
+        const result = (entry.result || {}) as ToolRunResult;
+        const exitCode = typeof result.exitCode === "number" ? result.exitCode : 0;
+        if (!result.error && !result.errorCode && exitCode === 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
 function shouldRunFinishSupervisor(params: {
     finalAnswer: string;
     executedToolCalls: ExecutedToolCall[];
     forcedFinalState?: ForcedFinalState;
 }): boolean {
-    const hasMutatingToolCall = (toolCall: { name: string; args: Record<string, unknown> }): boolean => {
-        if (FINISH_SUPERVISOR_MUTATING_TOOLS.has(toolCall.name as ToolName)) {
-            return true;
-        }
-        if (toolCall.name !== "bash") {
-            return false;
-        }
-        return bashCommandLooksMutating(typeof toolCall.args.command === "string" ? toolCall.args.command : "");
-    };
-
-    if (params.executedToolCalls.some(({ tc, args }) => hasMutatingToolCall({ name: tc.function.name, args }))) {
+    if (params.executedToolCalls.some(({ tc, args }) => isMutatingToolCall(tc.function.name, args))) {
         return true;
     }
 
-    if (params.forcedFinalState && hasMutatingToolCall({
-        name: params.forcedFinalState.toolCall.name,
-        args: params.forcedFinalState.toolCall.args,
-    })) {
+    if (
+        params.forcedFinalState
+        && isMutatingToolCall(
+            params.forcedFinalState.toolCall.name,
+            params.forcedFinalState.toolCall.args,
+        )
+    ) {
         return true;
     }
 
@@ -560,7 +685,7 @@ async function runFinishSupervisorReview(params: {
     });
     const supervisorSettings = getFinishSupervisorSettings();
     const startedAt = Date.now();
-    const supervisorSystem = "你现在只做结束前复核，不调用工具。只输出 PASS 或 CONTINUE: <简短原因>。";
+    const supervisorSystem = "你现在只做结束前复核，不调用工具。只输出单行 PASS 或 CONTINUE: <简短原因>。不要输出其他文字。";
 
     if (params.backendRuntime.id === "minimax") {
         const response = await callMiniMaxAnthropicRaw({
@@ -574,7 +699,18 @@ async function runFinishSupervisorReview(params: {
             timeoutMs: params.timeoutMs,
             apiKey: params.backendRuntime.apiKey,
         });
-        return parseFinishSupervisorDecision(response.content, Date.now() - startedAt);
+        const rawDecisionText = response.content.trim()
+            || extractFinishSupervisorTextFromBlocks(response.contentBlocks);
+        const parsed = parseFinishSupervisorDecision(rawDecisionText, Date.now() - startedAt);
+        if (parsed.source === "invalid" && params.verifyResult?.ok && hasSuccessfulMutatingExecution(params.executedToolCalls)) {
+            return {
+                decision: "PASS",
+                raw: parsed.raw,
+                durationMs: parsed.durationMs,
+                source: "verify-pass-fallback",
+            };
+        }
+        return parsed;
     }
 
     const response = await callChatCompletionsRaw({
@@ -591,7 +727,16 @@ async function runFinishSupervisorReview(params: {
         timeoutMs: params.timeoutMs,
         apiKey: params.backendRuntime.apiKey,
     });
-    return parseFinishSupervisorDecision(response.choices[0]?.message?.content || "", Date.now() - startedAt);
+    const parsed = parseFinishSupervisorDecision(response.choices[0]?.message?.content || "", Date.now() - startedAt);
+    if (parsed.source === "invalid" && params.verifyResult?.ok && hasSuccessfulMutatingExecution(params.executedToolCalls)) {
+        return {
+            decision: "PASS",
+            raw: parsed.raw,
+            durationMs: parsed.durationMs,
+            source: "verify-pass-fallback",
+        };
+    }
+    return parsed;
 }
 
 function hasToolProtocolArtifacts(text: string): boolean {
@@ -745,7 +890,6 @@ export async function getToolsForLlm(workspacePath?: string): Promise<ToolName[]
             "read_file",
             "bash",
             "browser",
-            "mem",
             "tts",
             "asr",
             "vision",
@@ -766,7 +910,6 @@ export async function getToolsForLlm(workspacePath?: string): Promise<ToolName[]
                 "read_file",
                 "bash",
                 "browser",
-                "mem",
                 "tts",
                 "asr",
                 "vision",
@@ -846,6 +989,9 @@ function buildBrowserRuntimeHint(toolNames: ToolName[]): string {
             "如需人工启动共享工作 Chrome，只能使用下面这条系统提供的启动命令：",
             chrome.launchCommand,
             "不要猜测其他浏览器路径，不要使用 agent-browser 作为正式浏览器通道。",
+            "instances.stop 和 tabs.list 必须传真实 instanceId，不允许裸调。",
+            "instanceId 只能来自 instances.launch、instances.list、tabs.open 等真实返回值，不允许自己猜。",
+            "tabId 只能来自 tabs.open、tabs.list、snapshot、text 的真实返回值，不允许自己写 1、2、3。",
             "如需查看 Patchright browser CLI 合同，可读取 ~/.config/msgcode/skills/patchright-browser/SKILL.md。",
         ].join("\n");
     } catch (error) {
@@ -854,6 +1000,8 @@ function buildBrowserRuntimeHint(toolNames: ToolName[]): string {
             "唯一正式浏览器通道：browser 工具（Patchright + Chrome-as-State）。",
             `浏览器底座信息解析失败：${error instanceof Error ? error.message : String(error)}`,
             "不要猜测其他浏览器路径，不要使用 agent-browser 作为正式浏览器通道。",
+            "instances.stop 和 tabs.list 必须传真实 instanceId，不允许裸调。",
+            "instanceId 只能来自真实 browser 返回值，不允许自己猜。",
         ].join("\n");
     }
 }
@@ -1221,7 +1369,7 @@ async function runMiniMaxAnthropicToolLoop(params: {
                     content: roundExecutedToolCalls.map(({ tc, result }) => ({
                         type: "tool_result" as const,
                         tool_use_id: tc.id,
-                        content: typeof result === "string" ? result : JSON.stringify(result),
+                        content: serializeToolResultForConversation(result),
                     })),
                 };
 
@@ -1320,8 +1468,10 @@ async function runMiniMaxAnthropicToolLoop(params: {
                 route: params.route,
                 provider: "minimax",
                 decision: supervisorDecision.decision,
+                source: supervisorDecision.source,
                 continueCount: supervisorContinueCount,
                 reason: supervisorDecision.reason,
+                rawPreview: clipText(supervisorDecision.raw, 120),
             });
 
             if (supervisorDecision.decision === "CONTINUE") {
@@ -1515,7 +1665,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                     // 忽略
                 }
             }
-            skillHint += "调用方式：read_file 读取技能文件（~/.config/msgcode/skills/<id>/main.sh），bash 执行";
+            skillHint += "调用方式：read_file 先读 ~/.config/msgcode/skills/<id>/SKILL.md。把 SKILL.md 当成能力说明书 / 接口文档，按里面写明的真实调用合同执行；不要自造 wrapper，不要猜 main.sh，也不要猜 skill 目录里还有别的脚本。";
             system += skillHint;
         } catch {
             // 忽略
@@ -1527,24 +1677,22 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
         messages.push({ role: "system", content: system.trim() });
     }
 
+    const contextBlocks = buildConversationContextBlocks({
+        summaryContext: options.summaryContext,
+        windowMessages: options.windowMessages,
+    });
+
     // 注入短期记忆上下文
-    if (options.summaryContext && options.summaryContext.trim()) {
+    if (contextBlocks.summaryText) {
         messages.push({
             role: "assistant",
-            content: `[历史对话摘要]\n${options.summaryContext}`
+            content: `[历史对话摘要]\n${contextBlocks.summaryText}`
         });
     }
 
-    const MAX_WINDOW_MESSAGES = 20;
-    const MAX_CONTEXT_CHARS = 8000;
-    if (options.windowMessages && options.windowMessages.length > 0) {
-        let totalChars = 0;
-        const recentMessages = options.windowMessages.slice(-MAX_WINDOW_MESSAGES);
-        for (const msg of recentMessages) {
-            const msgChars = msg.content?.length || 0;
-            if (totalChars + msgChars > MAX_CONTEXT_CHARS) break;
+    if (contextBlocks.windowMessages.length > 0) {
+        for (const msg of contextBlocks.windowMessages) {
             messages.push({ role: msg.role, content: msg.content });
-            totalChars += msgChars;
         }
     }
 
@@ -1789,7 +1937,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                 const toolResultMessages = roundExecutedToolCalls.map(({ tc, result }) => ({
                     role: "tool" as const,
                     tool_call_id: tc.id,
-                    content: typeof result === "string" ? result : JSON.stringify(result)
+                    content: serializeToolResultForConversation(result)
                 }));
 
                 conversationMessages = [...conversationMessages, assistantMsg, ...toolResultMessages];
@@ -1885,8 +2033,10 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                 route,
                 provider: backendRuntime.id,
                 decision: supervisorDecision.decision,
+                source: supervisorDecision.source,
                 continueCount: supervisorContinueCount,
                 reason: supervisorDecision.reason,
+                rawPreview: clipText(supervisorDecision.raw, 120),
             });
 
             if (supervisorDecision.decision === "CONTINUE") {

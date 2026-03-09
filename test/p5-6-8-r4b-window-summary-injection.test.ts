@@ -91,8 +91,8 @@ describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
 
             // 验证 window messages 注入逻辑
             expect(code).toContain('options.windowMessages');
-            expect(code).toContain('MAX_WINDOW_MESSAGES');
-            expect(code).toContain('MAX_CONTEXT_CHARS');
+            expect(code).toContain('buildConversationContextBlocks');
+            expect(code).toContain('contextBlocks.windowMessages');
         });
 
         it("runAgentToolLoop 必须有预算限制", () => {
@@ -102,10 +102,9 @@ describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
             );
 
             // 验证预算限制
-            expect(code).toContain('MAX_WINDOW_MESSAGES');
-            expect(code).toContain('MAX_CONTEXT_CHARS');
-            expect(code).toContain('if (totalChars + msgChars > MAX_CONTEXT_CHARS)');
-            expect(code).toContain('totalChars');
+            expect(code).toContain('buildConversationContextBlocks');
+            expect(code).toContain('contextBlocks.summaryText');
+            expect(code).toContain('contextBlocks.windowMessages');
         });
 
         it("messages 构造顺序必须是：system -> summary -> window -> user", () => {
@@ -125,7 +124,7 @@ describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
             // 验证顺序
             const systemIndex = section.indexOf('role: "system"');
             const summaryIndex = section.indexOf('[历史对话摘要]');
-            const windowIndex = section.indexOf('options.windowMessages');
+            const windowIndex = section.indexOf('contextBlocks.windowMessages');
             const userIndex = section.indexOf('role: "user", content: options.prompt');
 
             expect(systemIndex).toBeLessThan(summaryIndex);
@@ -142,7 +141,7 @@ describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
             );
 
             // 验证 windowMessages 被实际使用（遍历并注入到 messages）
-            expect(code).toContain('for (const msg of recentMessages)');
+            expect(code).toContain('for (const msg of contextBlocks.windowMessages)');
             expect(code).toContain('messages.push({');
             expect(code).toContain('role: msg.role');
             expect(code).toContain('content: msg.content');

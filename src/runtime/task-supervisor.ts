@@ -17,6 +17,7 @@
 import type {
     TaskRecord,
     TaskStatus,
+    TaskCheckpoint,
     TaskDiagnostics,
     TaskSupervisorConfig,
     TaskExecutionResult,
@@ -190,6 +191,19 @@ export class TaskSupervisor {
             attemptCount: existing.attemptCount + 1,
             blockedReason: undefined,
             recoveryContext: undefined,
+            checkpoint: existing.checkpoint
+                ? {
+                    ...existing.checkpoint,
+                    currentPhase: "running",
+                    nextAction: "继续执行当前任务",
+                    updatedAt: Date.now(),
+                }
+                : {
+                    currentPhase: "running",
+                    summary: existing.goal,
+                    nextAction: "继续执行当前任务",
+                    updatedAt: Date.now(),
+                },
         });
 
         if (!result.ok) {
@@ -278,6 +292,10 @@ export class TaskSupervisor {
                 updates.attemptCount = existing.attemptCount + 1;
                 updates.nextWakeAtMs = Date.now() + this.config.heartbeatIntervalMs;
             }
+        }
+
+        if (result.checkpoint) {
+            updates.checkpoint = result.checkpoint;
         }
 
         // 应用状态转换
@@ -403,6 +421,14 @@ export class TaskSupervisor {
                         status: "failed",
                         errorCode: "BUDGET_EXHAUSTED",
                         errorMessage: budgetCheckResult.reason,
+                        checkpoint: {
+                            currentPhase: "failed",
+                            summary: task.checkpoint?.summary || task.goal,
+                            nextAction: "检查预算耗尽原因后决定是否重新发起任务",
+                            lastToolName: result.toolCall?.name || task.lastToolCall?.name,
+                            lastErrorCode: "BUDGET_EXHAUSTED",
+                            updatedAt: Date.now(),
+                        },
                     });
 
                     logger.info("任务总预算耗尽，进入失败状态", {
@@ -418,6 +444,7 @@ export class TaskSupervisor {
                     status: "pending",
                     attemptCount: task.attemptCount + 1,
                     nextWakeAtMs: Date.now() + this.config.heartbeatIntervalMs,
+                    checkpoint: this.buildCheckpointFromTurn(task, result, "pending"),
                 };
 
                 // P5.7-R12-T8: 检测同工具同参数
@@ -466,6 +493,7 @@ export class TaskSupervisor {
                 ok: true,
                 status: "completed",
                 verifyEvidence: result.verifyResult?.evidence,
+                checkpoint: this.buildCheckpointFromTurn(task, result, "completed"),
             };
 
             // 如果有 verify 结果且失败，标记为 blocked
@@ -474,6 +502,7 @@ export class TaskSupervisor {
                 executionResult.status = "blocked";
                 executionResult.blockedReason = result.verifyResult.failureReason;
                 executionResult.errorCode = result.verifyResult.errorCode;
+                executionResult.checkpoint = this.buildCheckpointFromTurn(task, result, "blocked");
             }
 
             // P5.7-R12-T8: 更新错误码计数（不可续跑分支）
@@ -538,8 +567,51 @@ export class TaskSupervisor {
                 status: "failed",
                 errorCode: executionFailedErrorCode,
                 errorMessage: error instanceof Error ? error.message : String(error),
+                checkpoint: this.buildFailureCheckpoint(task, executionFailedErrorCode, error),
             });
         }
+    }
+
+    private buildCheckpointFromTurn(
+        task: TaskRecord,
+        result: TaskTurnResult,
+        currentPhase: "pending" | "blocked" | "completed"
+    ): TaskCheckpoint {
+        const lastFailedEntry = [...result.actionJournal]
+            .reverse()
+            .find((entry) => entry.ok === false && entry.errorCode);
+
+        const nextAction = currentPhase === "completed"
+            ? "核对交付并结束任务"
+            : currentPhase === "blocked"
+                ? (result.verifyResult?.failureReason || result.continuationReason || "等待人工接力后继续")
+                : (result.continuationReason || "继续下一轮任务推进");
+
+        return {
+            currentPhase,
+            summary: (result.answer || "").trim() || task.goal,
+            nextAction,
+            lastToolName: result.toolCall?.name,
+            lastErrorCode: lastFailedEntry?.errorCode,
+            verifyEvidence: result.verifyResult?.evidence,
+            updatedAt: Date.now(),
+        };
+    }
+
+    private buildFailureCheckpoint(
+        task: TaskRecord,
+        errorCode: string,
+        error: unknown
+    ): TaskCheckpoint {
+        return {
+            currentPhase: "failed",
+            summary: task.checkpoint?.summary || task.goal,
+            nextAction: "检查错误后决定是否重新发起任务",
+            lastToolName: task.lastToolCall?.name,
+            lastErrorCode: errorCode,
+            updatedAt: Date.now(),
+            verifyEvidence: error instanceof Error ? error.message : String(error),
+        };
     }
 
     /**

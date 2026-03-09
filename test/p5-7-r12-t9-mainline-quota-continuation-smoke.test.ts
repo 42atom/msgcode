@@ -128,11 +128,15 @@ describe("P5.7-R12-T9: mainline quota continuation smoke", () => {
         expect(afterFirstTick?.status).toBe("pending");
         expect(afterFirstTick?.attemptCount).toBe(1);
         expect(afterFirstTick?.nextWakeAtMs).toBeDefined();
+        expect(afterFirstTick?.checkpoint?.currentPhase).toBe("pending");
+        expect(afterFirstTick?.checkpoint?.nextAction).toContain("reached_profile_limit");
+        expect(afterFirstTick?.checkpoint?.lastToolName).toBe("bash");
 
         await supervisor.handleHeartbeatTick(makeTick("manual"));
         const afterSecondTick = await supervisor.getTaskStatus(taskId);
         expect(afterSecondTick?.status).toBe("completed");
         expect(afterSecondTick?.verifyEvidence).toBeDefined();
+        expect(afterSecondTick?.checkpoint?.currentPhase).toBe("completed");
         expect(callCount).toBe(2);
     });
 
@@ -181,11 +185,13 @@ describe("P5.7-R12-T9: mainline quota continuation smoke", () => {
         const afterFirstTick = await supervisor.getTaskStatus(taskId);
         expect(afterFirstTick?.status).toBe("pending");
         expect(afterFirstTick?.attemptCount).toBe(1);
+        expect(afterFirstTick?.checkpoint?.currentPhase).toBe("pending");
 
         await supervisor.handleHeartbeatTick(makeTick("manual"));
         const afterSecondTick = await supervisor.getTaskStatus(taskId);
         expect(afterSecondTick?.status).toBe("failed");
         expect(afterSecondTick?.lastErrorCode).toBe("BUDGET_EXHAUSTED");
+        expect(afterSecondTick?.checkpoint?.currentPhase).toBe("failed");
         expect(callCount).toBe(2);
     });
 });

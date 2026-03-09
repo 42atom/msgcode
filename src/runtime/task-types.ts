@@ -112,6 +112,8 @@ export interface TaskRecord {
     blockedReason?: string;
     /** 阻塞时的恢复上下文（JSON 字符串） */
     recoveryContext?: string;
+    /** 长期任务检查点（用于恢复与平滑续跑） */
+    checkpoint?: TaskCheckpoint;
     /** 下次唤醒时间戳（毫秒） */
     nextWakeAtMs?: number;
     /** verify 证据（completed 状态时必须有） */
@@ -144,9 +146,58 @@ export function createTaskRecord(params: {
         maxAttempts: params.maxAttempts ?? 5, // P5.7-R12-T8: 默认 5
         sameToolSameArgsRetryCount: 0, // P5.7-R12-T8
         sameErrorCodeStreakCount: 0, // P5.7-R12-T8
+        checkpoint: {
+            currentPhase: "pending",
+            summary: params.goal,
+            nextAction: "开始执行当前任务",
+            updatedAt: now,
+        },
         createdAt: now,
         updatedAt: now,
     };
+}
+
+export interface TaskCheckpoint {
+    currentPhase?: string;
+    summary: string;
+    nextAction?: string;
+    lastToolName?: string;
+    lastErrorCode?: string;
+    verifyEvidence?: string;
+    updatedAt: number;
+}
+
+function clipTaskText(text: string, maxChars: number): string {
+    const normalized = (text || "").trim();
+    if (!normalized) return "";
+    if (normalized.length <= maxChars) return normalized;
+    if (maxChars <= 16) return normalized.slice(0, maxChars);
+    return `${normalized.slice(0, maxChars - 14)}...(truncated)`;
+}
+
+export function formatTaskCheckpointAsContext(checkpoint?: TaskCheckpoint): string {
+    if (!checkpoint) return "";
+
+    const lines = ["[任务检查点]"];
+    if (checkpoint.currentPhase?.trim()) {
+        lines.push(`- 当前阶段: ${checkpoint.currentPhase.trim()}`);
+    }
+    if (checkpoint.summary?.trim()) {
+        lines.push(`- 状态摘要: ${clipTaskText(checkpoint.summary, 800)}`);
+    }
+    if (checkpoint.nextAction?.trim()) {
+        lines.push(`- 下一步: ${clipTaskText(checkpoint.nextAction, 300)}`);
+    }
+    if (checkpoint.lastToolName?.trim()) {
+        lines.push(`- 最近工具: ${checkpoint.lastToolName.trim()}`);
+    }
+    if (checkpoint.lastErrorCode?.trim()) {
+        lines.push(`- 最近错误码: ${checkpoint.lastErrorCode.trim()}`);
+    }
+    if (checkpoint.verifyEvidence?.trim()) {
+        lines.push(`- 最近验证证据: ${clipTaskText(checkpoint.verifyEvidence, 300)}`);
+    }
+    return lines.join("\n");
 }
 
 // ============================================
@@ -301,6 +352,7 @@ export interface TaskDiagnostics {
     lastErrorCode?: string;
     lastErrorMessage?: string;
     blockedReason?: string;
+    checkpoint?: TaskCheckpoint;
     verifyEvidence?: string;
     createdAt: number;
     updatedAt: number;
@@ -323,6 +375,7 @@ export function toDiagnostics(record: TaskRecord): TaskDiagnostics {
         lastErrorCode: record.lastErrorCode,
         lastErrorMessage: record.lastErrorMessage,
         blockedReason: record.blockedReason,
+        checkpoint: record.checkpoint,
         verifyEvidence: record.verifyEvidence,
         createdAt: record.createdAt,
         updatedAt: record.updatedAt,
@@ -353,4 +406,6 @@ export interface TaskExecutionResult {
     blockedReason?: string;
     /** 恢复上下文（blocked 时） */
     recoveryContext?: string;
+    /** 结构化检查点（用于下一轮恢复） */
+    checkpoint?: TaskCheckpoint;
 }

@@ -76,6 +76,8 @@ export {
     resolveBaseSystemPrompt,
     buildDialogSystemPrompt,
     buildExecSystemPrompt,
+    DEFAULT_CONVERSATION_CONTEXT_BUDGET,
+    buildConversationContextBlocks,
     buildDialogPromptWithContext,
 } from "./prompt.js";
 
