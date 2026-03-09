@@ -34,6 +34,7 @@ import { loadSummary, formatSummaryAsContext, extractSummary, saveSummary, type 
 import { resolveSoulContext } from "./config/souls.js";
 // P5.6.13-R2: 导入线程存储
 import { ensureThread, appendTurn, getThreadInfo } from "./runtime/thread-store.js";
+import { renderUnknownCommandHint } from "./routes/cmd-info.js";
 
 const TMUX_STYLE_MAX_CHARS = 800;
 const TMUX_LOCAL_ONLY_BLOCK_MESSAGE = "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）";
@@ -253,7 +254,7 @@ export class DefaultHandler extends BaseHandler {
         // 处理未知命令
         return {
             success: true,
-            response: `未知命令: ${message}\n${this.getHelp()}`,
+            response: `未知命令: ${message}\n\n${renderUnknownCommandHint()}`,
         };
     }
 }

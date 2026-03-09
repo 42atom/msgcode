@@ -17,6 +17,7 @@ import {
   handleInfoCommand as handleInfoCommandImpl,
   handleChatlistCommand as handleChatlistCommandImpl,
   handleHelpCommand as handleHelpCommandImpl,
+  renderUnknownCommandHint,
 } from "./cmd-info.js";
 import {
   handleModelCommand as handleModelCommandImpl,
@@ -166,7 +167,7 @@ export async function handleRouteCommand(
         success: false,
         message: `未知命令: /${command}\n` +
           `\n` +
-          `可用命令: /bind, /where, /unbind, /info, /model, /policy, /owner, /owner-only, /chatlist, /mem, /cursor, /reset-cursor, /help, /soul, /schedule, /reload, /steer, /next`,
+          renderUnknownCommandHint(),
       };
   }
 }

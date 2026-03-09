@@ -5,7 +5,7 @@
  * 用途：确保根 README.md 与运行时 /help 命令保持一致
  *
  * 检查逻辑：
- * 1. 读取 commands.ts 中 handleHelpCommand 的命令关键字集合
+ * 1. 读取 cmd-info.ts 中的 help 元数据关键字集合
  * 2. 扫描 README.md：仅允许最小命令集出现
  * 3. 扫描 README.md：命令关键字需为 /help 子集
  * 4. 特判：禁止 README.md 出现幽灵命令
@@ -99,11 +99,7 @@ const MINIMAL_COMMAND_ALLOWLIST = new Set([
  * 忽略列表（出现在示例中的路径组件，不是命令）
  */
 const IGNORE_LIST = new Set([
-  "/ops",      // /bind acme/ops 示例
-  "/acme",     // /bind acme/ops 示例
-  "/reload",   // 文档描述中的命令提及
   "/clear",    // 文档描述中的命令提及
-  "/memory",   // 文档描述中的命令提及
 ]);
 
 /**
@@ -156,16 +152,13 @@ const REQUIRED_ISSUE_SECTIONS = [
 // ============================================
 
 /**
- * 从注册表提取命令关键字集合
+ * 从 help 元数据提取命令关键字集合
  *
- * P4.3: 现在帮助信息从注册表渲染，直接从注册表获取可见命令
+ * P4.3: 现在帮助信息从单一 help 元数据渲染，直接读取关键字集合
  */
 async function extractCommandsFromHelp(): Promise<string[]> {
-  const { handleHelpCommand } = await import("../src/routes/commands.js");
-  const result = await handleHelpCommand({ chatId: "doc-sync", args: [] });
-  const base = extractCommandsFromText(result.message || "");
-  const extras = ["/tts", "/voice", "/mode"];
-  return Array.from(new Set([...base, ...extras])).sort();
+  const { getVisibleSlashKeywords } = await import("../src/routes/cmd-info.js");
+  return getVisibleSlashKeywords();
 }
 
 /**
@@ -175,7 +168,13 @@ async function extractCommandsFromHelp(): Promise<string[]> {
  * - 命令格式：`/xxx` 后面是空格、换行、或标点符号
  * - 忽略：文件路径（如 ./AIDOCS, /Users/<you>）
  */
-function extractCommandsFromReadme(): string[] {
+function hasSlashCommandBoundary(line: string, slashIndex: number): boolean {
+  if (slashIndex <= 0) return true;
+  const previous = line[slashIndex - 1];
+  return /\s/.test(previous) || previous === "`" || previous === "|" || previous === "(" || previous === "[" || previous === ":" || previous === "：";
+}
+
+export function extractCommandsFromReadme(): string[] {
   const readmePath = path.join(process.cwd(), "README.md");
   const content = fs.readFileSync(readmePath, "utf-8");
 
@@ -200,7 +199,7 @@ function extractCommandsFromReadme(): string[] {
         line.trim().startsWith("WORKSPACE_ROOT=") ||
         line.includes("/Users/<") ||
         // 跳过 Shell 命令示例（如 npx tsx src/cli.ts /desktop）
-        line.trim().startsWith("#") && line.includes("npx") ||
+        (line.trim().startsWith("#") && line.includes("npx")) ||
         line.includes("npx tsx src/cli.ts")) {
       continue;
     }
@@ -210,31 +209,9 @@ function extractCommandsFromReadme(): string[] {
     const matches = line.matchAll(commandPattern);
 
     for (const match of matches) {
-      const cmd = `/${match[1]}`;
-      // 进一步过滤：确保不是文件路径的一部分
-      // 检查前后文，如果前面是 . 或 ]( 则跳过
-      const beforeMatch = line.slice(Math.max(0, match.index - 10), match.index);
-      if (!beforeMatch.endsWith("./") && !beforeMatch.endsWith("](")) {
-        commands.add(cmd);
+      if (match.index === undefined || !hasSlashCommandBoundary(line, match.index)) {
+        continue;
       }
-    }
-  }
-
-  return Array.from(commands).sort();
-}
-
-/**
- * 从 /help 文本提取命令关键字集合
- */
-function extractCommandsFromText(content: string): string[] {
-  const lines = content.split("\n");
-  const commands = new Set<string>();
-
-  for (const line of lines) {
-    const commandPattern = /\/([a-z][a-z0-9-]*)(?=[\s\`\|\n\)。，、])/g;
-    const matches = line.matchAll(commandPattern);
-
-    for (const match of matches) {
       const cmd = `/${match[1]}`;
       commands.add(cmd);
     }

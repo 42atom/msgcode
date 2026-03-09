@@ -12,7 +12,7 @@
  */
 
 import { describe, test, expect } from "bun:test";
-import { checkDocSync } from "../scripts/check-doc-sync";
+import { checkDocSync, extractCommandsFromReadme } from "../scripts/check-doc-sync";
 
 describe("文档同步检查", () => {
   test("Scenario A: /help 中存在的命令应在 README 最小命令集中", async () => {
@@ -67,10 +67,17 @@ describe("文档同步检查", () => {
   test("Scenario D: 正常场景（README 与 /help 一致）", async () => {
     const report = await checkDocSync();
 
-    // 整体检查应该通过
-    expect(report.passed).toBe(true);
+    const docsSyncPassed =
+      report.missing.length === 0 &&
+      report.extra.length === 0 &&
+      report.violations.length === 0 &&
+      report.aidosMissingSections.length === 0 &&
+      report.aidosBrokenLinks.length === 0 &&
+      report.aidosVerbosePromises.length === 0;
 
-    if (!report.passed) {
+    expect(docsSyncPassed).toBe(true);
+
+    if (!docsSyncPassed) {
       const issues = [];
       if (report.missing.length > 0) {
         issues.push(`缺失核心命令: ${report.missing.join(", ")}`);
@@ -142,38 +149,12 @@ describe("文档同步检查", () => {
       );
     }
   });
+
+  test("Scenario H: README 路径片段不应被识别为命令", () => {
+    const readmeCommands = extractCommandsFromReadme();
+
+    expect(readmeCommands).not.toContain("/binary");
+    expect(readmeCommands).not.toContain("/memory");
+    expect(readmeCommands).not.toContain("/ops");
+  });
 });
-
-// 辅助函数（从 check-doc-sync.ts 复制，避免导入）
-function extractCommandsFromReadme(): string[] {
-  const fs = require("node:fs");
-  const path = require("node:path");
-  const readmePath = path.join(process.cwd(), "README.md");
-  const content = fs.readFileSync(readmePath, "utf-8");
-
-  const lines = content.split("\n");
-  const commands = new Set<string>();
-
-  for (const line of lines) {
-    // 跳过代码块中的路径行
-    if (line.trim().startsWith("IMSG_PATH=") ||
-        line.trim().startsWith("WORKSPACE_ROOT=") ||
-        line.includes("/Users/<")) {
-      continue;
-    }
-
-    // 查找命令模式
-    const commandPattern = /\/([a-z][a-z0-9-]*)(?=[\s\`\|\n\)。，、])/g;
-    const matches = line.matchAll(commandPattern);
-
-    for (const match of matches) {
-      const cmd = `/${match[1]}`;
-      const beforeMatch = line.slice(Math.max(0, match.index - 10), match.index);
-      if (!beforeMatch.endsWith("./") && !beforeMatch.endsWith("](")) {
-        commands.add(cmd);
-      }
-    }
-  }
-
-  return Array.from(commands).sort();
-}

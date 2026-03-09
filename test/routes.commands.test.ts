@@ -34,6 +34,11 @@ import {
   loadRoutes,
   type RouteStoreData,
 } from "../src/routes/store.js";
+import {
+  getVisibleSlashKeywords,
+  renderSlashHelpText,
+  renderUnknownCommandHint,
+} from "../src/routes/cmd-info.js";
 
 // 测试文件路径
 const TEST_ROUTES_FILE = path.join(os.tmpdir(), ".config/msgcode/routes.json");
@@ -304,12 +309,57 @@ describe("路由命令处理器", () => {
       expect(result.message).toContain("/start");
       expect(result.message).toContain("/status");
       expect(result.message).toContain("/model");
+      expect(result.message).toContain("/policy");
+      expect(result.message).toContain("/owner");
+      expect(result.message).toContain("/owner-only");
       expect(result.message).toContain("/mode");
       expect(result.message).toContain("/tts");
       expect(result.message).toContain("/voice");
       expect(result.message).toContain("/soul");
+      expect(result.message).toContain("/schedule");
+      expect(result.message).toContain("/mem");
+      expect(result.message).toContain("/pi");
+      expect(result.message).toContain("/task");
+      expect(result.message).toContain("/toolstats");
+      expect(result.message).toContain("/desktop");
       expect(result.message).toContain("/help");
       expect(result.message).toContain("/info");
+    });
+  });
+
+  describe("help 元数据投影", () => {
+    it("renderSlashHelpText 应包含关键命令", () => {
+      const text = renderSlashHelpText();
+
+      expect(text).toContain("msgcode 2.3 命令速查");
+      expect(text).toContain("/bind <dir>");
+      expect(text).toContain("/desktop ...");
+      expect(text).toContain("/mode style-reset");
+      expect(text).toContain("/loglevel [level]");
+    });
+
+    it("getVisibleSlashKeywords 应返回去重后的可见命令关键字", () => {
+      const keywords = getVisibleSlashKeywords();
+
+      expect(keywords).toEqual(expect.arrayContaining([
+        "/bind",
+        "/desktop",
+        "/help",
+        "/loglevel",
+        "/mode",
+        "/start",
+        "/tool",
+      ]));
+      expect(new Set(keywords).size).toBe(keywords.length);
+    });
+
+    it("renderUnknownCommandHint 应从同一份 help 元数据派生命令列表", () => {
+      const hint = renderUnknownCommandHint();
+
+      expect(hint).toContain("可用命令:");
+      expect(hint).toContain("/bind");
+      expect(hint).toContain("/desktop");
+      expect(hint).toContain("/mode");
     });
   });
 
@@ -410,6 +460,7 @@ describe("路由命令处理器", () => {
 
       expect(result.success).toBe(false);
       expect(result.message).toContain("未知命令");
+      expect(result.message).toContain("/desktop");
     });
   });
 
