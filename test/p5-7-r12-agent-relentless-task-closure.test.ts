@@ -308,7 +308,7 @@ describe("P5.7-R12: Agent Relentless Task Closure", () => {
 
             expect(resumeResult.ok).toBe(true);
             expect(resumeResult.task?.status).toBe("running");
-            expect(resumeResult.task?.attemptCount).toBe(1);
+            expect(resumeResult.task?.attemptCount).toBe(0);
             expect(resumeResult.task?.checkpoint?.currentPhase).toBe("running");
             expect(resumeResult.task?.checkpoint?.nextAction).toContain("继续执行");
         });
@@ -365,6 +365,8 @@ describe("P5.7-R12: Agent Relentless Task Closure", () => {
             expect(updateResult.ok).toBe(true);
             // 由于没有 verify 证据，状态应该是 running 而不是 completed
             expect(updateResult.task?.status).toBe("running");
+            expect(updateResult.task?.checkpoint?.currentPhase).toBe("running");
+            expect(updateResult.task?.checkpoint?.nextAction).toBe("补充验证证据后再结束任务");
         });
 
         it("verify gate：有 verify 证据可 completed", async () => {
@@ -401,6 +403,40 @@ describe("P5.7-R12: Agent Relentless Task Closure", () => {
             expect(updateResult.task?.status).toBe("completed");
             expect(updateResult.task?.verifyEvidence).toBeDefined();
             expect(updateResult.task?.checkpoint?.currentPhase).toBe("completed");
+        });
+
+        it("显式 failed 不得被 attemptCount 逻辑回退成 pending", async () => {
+            const createResult = await supervisor.createTask(
+                "test-chat-10",
+                "/tmp/workspace",
+                "应保持失败状态"
+            );
+
+            expect(createResult.ok).toBe(true);
+
+            const runningResult = await supervisor.updateTaskResult(createResult.task!.taskId, {
+                ok: true,
+                status: "running",
+            });
+            expect(runningResult.ok).toBe(true);
+
+            const failedResult = await supervisor.updateTaskResult(createResult.task!.taskId, {
+                ok: false,
+                status: "failed",
+                errorCode: "BUDGET_EXHAUSTED",
+                errorMessage: "same tool retry limit",
+                checkpoint: {
+                    currentPhase: "failed",
+                    summary: "预算耗尽，无法继续",
+                    nextAction: "检查预算后重新发起任务",
+                    updatedAt: Date.now(),
+                },
+            });
+
+            expect(failedResult.ok).toBe(true);
+            expect(failedResult.task?.status).toBe("failed");
+            expect(failedResult.task?.lastErrorCode).toBe("BUDGET_EXHAUSTED");
+            expect(failedResult.task?.checkpoint?.currentPhase).toBe("failed");
         });
 
         it("任务状态输出应包含 checkpoint 阶段与下一步", async () => {

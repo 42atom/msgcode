@@ -24,6 +24,25 @@ afterEach(async () => {
 });
 
 describe("P5.7-R13: runtime skill sync", () => {
+  it("托管 runtime skill 索引中的 skill 目录必须被 git 跟踪", () => {
+    const managedSkillIds = [
+      "vision-index",
+      "local-vision-lmstudio",
+      "zai-vision-mcp",
+      "scheduler",
+      "plan-files",
+      "patchright-browser",
+    ];
+
+    for (const skillId of managedSkillIds) {
+      const result = Bun.spawnSync(
+        ["git", "ls-files", "--error-unmatch", join("src", "skills", "runtime", skillId)],
+        { cwd: join(__dirname, "..") },
+      );
+      expect(result.exitCode).toBe(0);
+    }
+  });
+
   it("应同步托管 runtime skills 并保留用户已有自定义 skill 索引", async () => {
     const userSkillsDir = await mkdtemp(join(tmpdir(), "msgcode-runtime-skills-"));
     tempDirs.push(userSkillsDir);

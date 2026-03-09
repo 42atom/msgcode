@@ -188,7 +188,6 @@ export class TaskSupervisor {
 
         const result = await this.taskStore.updateTask(taskId, {
             status: "running",
-            attemptCount: existing.attemptCount + 1,
             blockedReason: undefined,
             recoveryContext: undefined,
             checkpoint: existing.checkpoint
@@ -260,42 +259,52 @@ export class TaskSupervisor {
         }
 
         // 根据执行结果确定新状态
-        let newStatus: TaskStatus;
+        let newStatus: TaskStatus = result.status;
         let updates: Partial<TaskRecord> = {};
 
-        if (result.ok) {
-            // 执行成功，检查 verify 证据
-            if (result.verifyEvidence) {
-                newStatus = "completed";
-                updates.verifyEvidence = result.verifyEvidence;
-            } else {
-                // 没有 verify 证据，需要继续执行或等待人工接力
-                newStatus = "running"; // 继续执行
-            }
-        } else {
-            // 执行失败，判断是否可重试
-            if (result.blockedReason) {
-                // 需人工接力
-                newStatus = "blocked";
+        switch (result.status) {
+            case "completed":
+                // completed 必须带 verify 证据；否则继续保持 running，等待下一轮补证据
+                if (result.verifyEvidence) {
+                    updates.verifyEvidence = result.verifyEvidence;
+                } else {
+                    newStatus = "running";
+                }
+                break;
+            case "blocked":
                 updates.blockedReason = result.blockedReason;
                 updates.recoveryContext = result.recoveryContext;
-            } else if (existing.attemptCount >= existing.maxAttempts) {
-                // 超过最大重试次数，标记为失败
-                newStatus = "failed";
+                break;
+            case "failed":
                 updates.lastErrorCode = result.errorCode;
                 updates.lastErrorMessage = result.errorMessage;
-            } else {
-                // 可重试，回到 pending 等待下次 heartbeat
-                newStatus = "pending";
+                break;
+            case "pending":
                 updates.lastErrorCode = result.errorCode;
                 updates.lastErrorMessage = result.errorMessage;
-                updates.attemptCount = existing.attemptCount + 1;
-                updates.nextWakeAtMs = Date.now() + this.config.heartbeatIntervalMs;
-            }
+                if (!result.ok) {
+                    updates.attemptCount = existing.attemptCount + 1;
+                    updates.nextWakeAtMs = Date.now() + this.config.heartbeatIntervalMs;
+                }
+                break;
+            case "running":
+            case "cancelled":
+                break;
         }
 
-        if (result.checkpoint) {
-            updates.checkpoint = result.checkpoint;
+        const checkpointSource = result.checkpoint ?? existing.checkpoint;
+        if (checkpointSource) {
+            const alignedCheckpoint: TaskCheckpoint = {
+                ...checkpointSource,
+                currentPhase: newStatus,
+                updatedAt: Date.now(),
+            };
+
+            if (result.status === "completed" && newStatus === "running" && !result.verifyEvidence) {
+                alignedCheckpoint.nextAction = "补充验证证据后再结束任务";
+            }
+
+            updates.checkpoint = alignedCheckpoint;
         }
 
         // 应用状态转换
