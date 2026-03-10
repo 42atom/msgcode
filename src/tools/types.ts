@@ -20,6 +20,9 @@ export type ToolName =
   | "write_file"
   | "edit_file"
   | "feishu_list_members"
+  | "feishu_list_recent_messages"
+  | "feishu_reply_message"
+  | "feishu_react_message"
   | "feishu_send_file";  // 飞书文件发送工具
 
 export type ToolDataMap = {
@@ -42,6 +45,29 @@ export type ToolDataMap = {
     memberIdType: "open_id" | "user_id" | "union_id";
     memberTotal: number;
     members: Array<{ senderId: string; name: string }>;
+  };
+  feishu_list_recent_messages: {
+    chatId: string;
+    count: number;
+    messages: Array<{
+      messageId: string;
+      senderId: string;
+      messageType: string;
+      sentAt?: string;
+      replyToMessageId?: string;
+      textSnippet: string;
+    }>;
+  };
+  feishu_reply_message: {
+    chatId?: string;
+    repliedToMessageId: string;
+    messageId: string;
+    replyInThread: boolean;
+  };
+  feishu_react_message: {
+    messageId: string;
+    reactionId?: string;
+    emojiType: string;
   };
   // 飞书文件发送工具
   feishu_send_file: { chatId: string; attachmentType?: "file" | "image"; attachmentKey?: string };
@@ -68,6 +94,8 @@ export interface ToolPolicy {
 export interface ToolContext {
   workspacePath: string;
   chatId?: string;
+  currentMessageId?: string;
+  defaultActionTargetMessageId?: string;
   source: ToolSource;
   requestId: string;
   timeoutMs?: number;

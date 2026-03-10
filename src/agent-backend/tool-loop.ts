@@ -900,28 +900,13 @@ export async function getToolsForLlm(workspacePath?: string): Promise<ToolName[]
     try {
         const { loadWorkspaceConfig } = await import("../config/workspace.js");
         const cfg = await loadWorkspaceConfig(workspacePath);
-        // R6 hotfix contract: 未显式配置 pi.enabled 时不启用工具
-        const piEnabled = Object.prototype.hasOwnProperty.call(cfg, "pi.enabled")
-            ? cfg["pi.enabled"]
-            : false;
-        if (!piEnabled) {
-            // P5.7-R15 + P5.7-R16: skill 场景默认暴露完整工具
-            // 即使未启用 pi，也允许 skill 读取 + 后续执行
-            return filterDefaultLlmTools([
-                "read_file",
-                "bash",
-                "browser",
-                "tts",
-                "asr",
-                "vision",
-                "desktop",
-            ]);
-        }
-
-        // P5.7-R8c: 从单一真相源派生工具列表
-        // 读取 workspace tooling.allow（使用默认值）
+        // 单一真相源：LLM 工具暴露只看 tooling.allow，再补 skill 发现所需的最小基线。
+        // 不再让 pi.enabled 决定“有没有工具”，否则会吞掉 feishu_send_file 等已允许工具。
+        const configuredTools = Array.isArray(cfg["tooling.allow"])
+            ? (cfg["tooling.allow"] as ToolName[])
+            : [];
         const allowedTools = filterDefaultLlmTools(
-            ((cfg["tooling.allow"] as ToolName[]) || ["bash", "read_file"])
+            Array.from(new Set<ToolName>(["read_file", "bash", ...configuredTools]))
         );
 
         // 解析 LLM 工具暴露结果，返回 exposedTools
@@ -1007,12 +992,22 @@ function buildBrowserRuntimeHint(toolNames: ToolName[]): string {
     }
 }
 
-async function runTool(name: string, args: Record<string, unknown>, root: string): Promise<ToolRunResult> {
+async function runTool(
+    name: string,
+    args: Record<string, unknown>,
+    root: string,
+    context?: {
+        currentMessageId?: string;
+        defaultActionTargetMessageId?: string;
+    }
+): Promise<ToolRunResult> {
     const { executeTool } = await import("../tools/bus.js");
     const { randomUUID } = await import("node:crypto");
 
     const result = await executeTool(name as any, args, {
         workspacePath: root,
+        currentMessageId: context?.currentMessageId,
+        defaultActionTargetMessageId: context?.defaultActionTargetMessageId,
         source: "llm-tool-call",
         requestId: `agent-${randomUUID()}`,
     });
@@ -1198,6 +1193,8 @@ async function runMiniMaxAnthropicToolLoop(params: {
     baseMessages: Array<{ role: string; content?: string }>;
     activeToolSchemas: readonly unknown[];
     workspacePath: string;
+    currentMessageId?: string;
+    defaultActionTargetMessageId?: string;
 }): Promise<AgentToolLoopResult> {
     const HARD_CAP_TOOL_CALLS = 999;
     const HARD_CAP_TOOL_STEPS = 4096;
@@ -1275,7 +1272,10 @@ async function runMiniMaxAnthropicToolLoop(params: {
 
                 let toolResult: ToolRunResult;
                 try {
-                    toolResult = await runTool(tc.function.name, args, params.workspacePath);
+                    toolResult = await runTool(tc.function.name, args, params.workspacePath, {
+                        currentMessageId: params.currentMessageId,
+                        defaultActionTargetMessageId: params.defaultActionTargetMessageId,
+                    });
                 } catch (e) {
                     toolResult = {
                         error: e instanceof Error ? e.message : String(e),
@@ -1723,6 +1723,8 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
             baseMessages: messages,
             activeToolSchemas: activeAnthropicToolSchemas,
             workspacePath,
+            currentMessageId: options.currentMessageId,
+            defaultActionTargetMessageId: options.defaultActionTargetMessageId,
         });
     }
 
@@ -1817,7 +1819,10 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
 
                 let toolResult: ToolRunResult;
                 try {
-                    toolResult = await runTool(tc.function.name, args, workspacePath);
+                    toolResult = await runTool(tc.function.name, args, workspacePath, {
+                        currentMessageId: options.currentMessageId,
+                        defaultActionTargetMessageId: options.defaultActionTargetMessageId,
+                    });
                 } catch (e) {
                     toolResult = {
                         error: e instanceof Error ? e.message : String(e),

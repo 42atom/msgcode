@@ -102,6 +102,8 @@ export interface AgentToolLoopOptions {
     summaryContext?: string; // summary 格式化后的上下文
     // P5.6.8-R4e: SOUL 上下文（direct only）
     soulContext?: { content: string; source: string; path: string; chars: number };
+    currentMessageId?: string;
+    defaultActionTargetMessageId?: string;
     // P5.7-R3l-4: 追踪字段
     traceId?: string;  // 用于 journal 追踪
     route?: "tool" | "complex-tool";  // 用于 journal 路由标记
@@ -222,6 +224,8 @@ export interface AgentRoutedChatOptions {
     windowMessages?: Array<{ role: string; content?: string }>;
     summaryContext?: string;
     soulContext?: { content: string; source: string; path: string; chars: number };
+    currentMessageId?: string;
+    defaultActionTargetMessageId?: string;
     temperature?: number; // 可选覆盖温度
     traceId?: string; // 外层 runId 透传时复用
     runContext?: AgentRunContext; // Phase 4: 统一 Run Events 透传

@@ -248,6 +248,27 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     expect(tools).toContain("bash");
   });
 
+  it("pi.enabled=false 且 allow 包含 feishu_send_file 时，getToolsForLlm() 应暴露它", async () => {
+    const workspacePath = await createTempWorkspace();
+    const configPath = join(workspacePath, ".msgcode", "config.json");
+
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        "pi.enabled": false,
+        "tooling.allow": ["feishu_send_file"],
+      }),
+      "utf-8"
+    );
+
+    const toolLoopModule = await import("../src/agent-backend/tool-loop.js");
+    const tools = await toolLoopModule.getToolsForLlm(workspacePath);
+
+    expect(tools).toContain("read_file");
+    expect(tools).toContain("bash");
+    expect(tools).toContain("feishu_send_file");
+  });
+
   // ============================================
   // 4. 验证 toOpenAiToolSchemas 转换
   // ============================================
@@ -374,9 +395,9 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     // getToolsForLlm() 现在返回 ToolName[]
     const toolNames = tools as string[];
 
-    // 如果 getToolsForLlm() 直接返回 PI_ON_TOOLS，那么不会只包含 browser
-    // 实际应该只包含 browser（因为 tooling.allow 只有 browser）
-    expect(toolNames).toEqual(["browser"]);
+    // 如果 getToolsForLlm() 直接返回 PI_ON_TOOLS，那么不会是“browser + skill 基线”。
+    // 当前真实口径：tooling.allow 决定业务工具，再补 read_file/bash 作为 skill 发现基线。
+    expect(toolNames).toEqual(["read_file", "bash", "browser"]);
     const piToolNames = PI_ON_TOOLS.map((t: any) => t.name || t);
     expect(toolNames).not.toEqual(piToolNames);
   });

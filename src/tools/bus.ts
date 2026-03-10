@@ -43,6 +43,9 @@ const TOOL_META: Record<ToolName, { sideEffect: SideEffectLevel }> = {
   edit_file: { sideEffect: "local-write" },
   feishu_send_file: { sideEffect: "message-send" },  // 飞书文件发送
   feishu_list_members: { sideEffect: "read-only" },  // 飞书群成员查询
+  feishu_list_recent_messages: { sideEffect: "read-only" },  // 飞书最近消息查询
+  feishu_reply_message: { sideEffect: "message-send" },  // 飞书消息回复
+  feishu_react_message: { sideEffect: "message-send" },  // 飞书消息表情回复
 };
 
 const MEDIA_PIPELINE_ALLOWED: ToolName[] = ["asr", "vision"];
@@ -238,6 +241,30 @@ function validateToolArgs(
     case "feishu_send_file": {
       if (!args.filePath || typeof args.filePath !== "string" || !args.filePath.trim()) {
         return { code: "TOOL_BAD_ARGS", message: "feishu_send_file: 'filePath' must be a non-empty string" };
+      }
+      break;
+    }
+    case "feishu_reply_message": {
+      if (!args.text || typeof args.text !== "string" || !args.text.trim()) {
+        return { code: "TOOL_BAD_ARGS", message: "feishu_reply_message: 'text' must be a non-empty string" };
+      }
+      if (
+        args.messageId !== undefined
+        && (typeof args.messageId !== "string" || !args.messageId.trim())
+      ) {
+        return { code: "TOOL_BAD_ARGS", message: "feishu_reply_message: 'messageId' must be a non-empty string when provided" };
+      }
+      break;
+    }
+    case "feishu_react_message": {
+      if (
+        args.messageId !== undefined
+        && (typeof args.messageId !== "string" || !args.messageId.trim())
+      ) {
+        return { code: "TOOL_BAD_ARGS", message: "feishu_react_message: 'messageId' must be a non-empty string when provided" };
+      }
+      if (args.emoji !== undefined && typeof args.emoji !== "string") {
+        return { code: "TOOL_BAD_ARGS", message: "feishu_react_message: 'emoji' must be a string when provided" };
       }
       break;
     }
@@ -1057,6 +1084,160 @@ export async function executeTool(
               }
             : undefined,
           error: out.ok ? undefined : { code: "TOOL_EXEC_FAILED", message: out.error || "获取群成员失败" },
+          durationMs: Date.now() - started,
+        };
+        break;
+      }
+      case "feishu_list_recent_messages": {
+        let chatId = args.chatId ? String(args.chatId).trim() : undefined;
+        const limitRaw = Number(args.limit ?? 8);
+        const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(Math.trunc(limitRaw), 20)) : 8;
+        const { loadWorkspaceConfig } = await import("../config/workspace.js");
+        const workspaceConfig = await loadWorkspaceConfig(ctx.workspacePath);
+
+        if (!chatId && ctx.chatId) {
+          chatId = ctx.chatId.replace(/^feishu:/, "");
+        }
+        if (!chatId) {
+          chatId = (workspaceConfig["runtime.current_chat_id"] as string | undefined)?.trim();
+        }
+        chatId = chatId || "";
+
+        let appId = process.env.FEISHU_APP_ID?.trim();
+        let appSecret = process.env.FEISHU_APP_SECRET?.trim();
+
+        if (!appId || !appSecret) {
+          appId = (workspaceConfig["feishu.appId"] as string | undefined)?.trim();
+          appSecret = (workspaceConfig["feishu.appSecret"] as string | undefined)?.trim();
+        }
+
+        if (!appId || !appSecret) {
+          throw new Error("飞书配置未找到：请设置环境变量 FEISHU_APP_ID/FEISHU_APP_SECRET 或 workspace config 中的 feishu.appId/feishu.appSecret");
+        }
+        if (!chatId) {
+          throw new Error("飞书 chatId 未找到：请传入 chatId，或先让当前请求把 runtime.current_chat_id 写入 .msgcode/config.json");
+        }
+
+        const { feishuListRecentMessages } = await import("../tools/feishu-list-recent-messages.js");
+        const out = await withTimeout(
+          feishuListRecentMessages(
+            { chatId, limit },
+            { appId, appSecret }
+          ),
+          ctx.timeoutMs ?? 30000
+        );
+
+        result = {
+          ok: out.ok,
+          tool,
+          data: out.ok
+            ? {
+                chatId: out.chatId,
+                count: out.count ?? out.messages?.length ?? 0,
+                messages: out.messages ?? [],
+              }
+            : undefined,
+          error: out.ok ? undefined : { code: "TOOL_EXEC_FAILED", message: out.error || "获取最近消息失败" },
+          durationMs: Date.now() - started,
+        };
+        break;
+      }
+      case "feishu_reply_message": {
+        let messageId = args.messageId ? String(args.messageId).trim() : undefined;
+        const text = String(args.text ?? "").trim();
+        const replyInThread = Boolean(args.replyInThread);
+        const { loadWorkspaceConfig } = await import("../config/workspace.js");
+        const workspaceConfig = await loadWorkspaceConfig(ctx.workspacePath);
+
+        if (!messageId) {
+          messageId = ctx.defaultActionTargetMessageId?.trim() || ctx.currentMessageId?.trim();
+        }
+
+        let appId = process.env.FEISHU_APP_ID?.trim();
+        let appSecret = process.env.FEISHU_APP_SECRET?.trim();
+
+        if (!appId || !appSecret) {
+          appId = (workspaceConfig["feishu.appId"] as string | undefined)?.trim();
+          appSecret = (workspaceConfig["feishu.appSecret"] as string | undefined)?.trim();
+        }
+
+        if (!appId || !appSecret) {
+          throw new Error("飞书配置未找到：请设置环境变量 FEISHU_APP_ID/FEISHU_APP_SECRET 或 workspace config 中的 feishu.appId/feishu.appSecret");
+        }
+        if (!messageId) {
+          throw new Error("飞书目标消息 ID 未找到：请显式传入 messageId，或仅对当前消息执行回复动作");
+        }
+
+        const { feishuReplyMessage } = await import("../tools/feishu-reply-message.js");
+        const out = await withTimeout(
+          feishuReplyMessage(
+            { messageId, text, replyInThread },
+            { appId, appSecret }
+          ),
+          ctx.timeoutMs ?? 30000
+        );
+
+        result = {
+          ok: out.ok,
+          tool,
+          data: out.ok
+            ? {
+                chatId: out.chatId,
+                repliedToMessageId: out.repliedToMessageId,
+                messageId: out.messageId ?? "",
+                replyInThread: out.replyInThread ?? replyInThread,
+              }
+            : undefined,
+          error: out.ok ? undefined : { code: "TOOL_EXEC_FAILED", message: out.error || "回复消息失败" },
+          durationMs: Date.now() - started,
+        };
+        break;
+      }
+      case "feishu_react_message": {
+        let messageId = args.messageId ? String(args.messageId).trim() : undefined;
+        const emoji = args.emoji ? String(args.emoji).trim() : undefined;
+        const { loadWorkspaceConfig } = await import("../config/workspace.js");
+        const workspaceConfig = await loadWorkspaceConfig(ctx.workspacePath);
+
+        if (!messageId) {
+          messageId = ctx.defaultActionTargetMessageId?.trim() || ctx.currentMessageId?.trim();
+        }
+
+        let appId = process.env.FEISHU_APP_ID?.trim();
+        let appSecret = process.env.FEISHU_APP_SECRET?.trim();
+
+        if (!appId || !appSecret) {
+          appId = (workspaceConfig["feishu.appId"] as string | undefined)?.trim();
+          appSecret = (workspaceConfig["feishu.appSecret"] as string | undefined)?.trim();
+        }
+
+        if (!appId || !appSecret) {
+          throw new Error("飞书配置未找到：请设置环境变量 FEISHU_APP_ID/FEISHU_APP_SECRET 或 workspace config 中的 feishu.appId/feishu.appSecret");
+        }
+        if (!messageId) {
+          throw new Error("飞书目标消息 ID 未找到：请显式传入 messageId，或仅对当前消息执行表情回复动作");
+        }
+
+        const { feishuReactMessage } = await import("../tools/feishu-react-message.js");
+        const out = await withTimeout(
+          feishuReactMessage(
+            { messageId, emoji },
+            { appId, appSecret }
+          ),
+          ctx.timeoutMs ?? 30000
+        );
+
+        result = {
+          ok: out.ok,
+          tool,
+          data: out.ok
+            ? {
+                messageId: out.messageId,
+                reactionId: out.reactionId,
+                emojiType: out.emojiType ?? "THUMBSUP",
+              }
+            : undefined,
+          error: out.ok ? undefined : { code: "TOOL_EXEC_FAILED", message: out.error || "消息表情回复失败" },
           durationMs: Date.now() - started,
         };
         break;

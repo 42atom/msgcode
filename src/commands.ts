@@ -450,7 +450,7 @@ export async function startBot(): Promise<void> {
 
   try {
     const { syncManagedRuntimeSkills } = await import("./skills/runtime-sync.js");
-    const skillSync = await syncManagedRuntimeSkills();
+    const skillSync = await syncManagedRuntimeSkills({ overwrite: true });
     if (skillSync.copiedFiles > 0 || skillSync.indexUpdated) {
       logger.info("运行时托管 skills 已同步", {
         module: "commands",

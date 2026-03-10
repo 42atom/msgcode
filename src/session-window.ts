@@ -29,6 +29,11 @@ import { join } from "node:path";
 export interface WindowMessage {
     role: string;
     content?: string;
+    messageId?: string;
+    senderId?: string;
+    senderName?: string;
+    messageType?: string;
+    isGroup?: boolean;
     tool_calls?: Array<{
         id: string;
         type: string;

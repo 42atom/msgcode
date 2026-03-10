@@ -283,6 +283,73 @@ export const TOOL_MANIFESTS: Record<ToolName, ToolManifest> = {
     riskLevel: "low",
   },
 
+  feishu_list_recent_messages: {
+    name: "feishu_list_recent_messages",
+    description: "获取当前飞书会话最近若干条消息的最小结构表。返回 messageId、senderId、消息类型和文本摘要，适合引用、reaction 或确认“上一条/某人的那条消息”。",
+    parameters: {
+      type: "object",
+      properties: {
+        chatId: {
+          type: "string",
+          description: "飞书群聊 ID（例如：oc_xxxxxxxxxxxxxxxx）。可省略，默认读取当前 workspace 的 runtime.current_chat_id。",
+        },
+        limit: {
+          type: "number",
+          description: "最近消息条数。默认 8，最大 20。",
+        },
+      },
+      required: [],
+      additionalProperties: false,
+    },
+    riskLevel: "low",
+  },
+
+  feishu_reply_message: {
+    name: "feishu_reply_message",
+    description: "按 messageId 回复飞书消息。适合对当前消息或最近消息中的某一条做精确回复，不要猜“上一条”。若未显式传 messageId，优先使用当前消息的默认目标。",
+    parameters: {
+      type: "object",
+      properties: {
+        messageId: {
+          type: "string",
+          description: "要回复的飞书消息 ID。可省略；若省略，默认使用当前消息的 defaultActionTargetMessageId。",
+        },
+        text: {
+          type: "string",
+          description: "回复文本。若在多人群聊里明确是对某个人说话，且已知对方 ID，应在句首使用 <at user_id=\"对方ID\">称呼</at>。",
+        },
+        replyInThread: {
+          type: "boolean",
+          description: "是否在线程内回复。默认 false。",
+        },
+      },
+      required: ["text"],
+      additionalProperties: false,
+    },
+    riskLevel: "medium",
+  },
+
+  feishu_react_message: {
+    name: "feishu_react_message",
+    description: "按 messageId 给飞书消息添加表情回复。适合对本消息或最近消息中的某一条做点赞/爱心等 reaction。若未显式传 messageId，优先使用当前消息的默认目标。",
+    parameters: {
+      type: "object",
+      properties: {
+        messageId: {
+          type: "string",
+          description: "要添加表情回复的飞书消息 ID。可省略；若省略，默认使用当前消息的 defaultActionTargetMessageId。",
+        },
+        emoji: {
+          type: "string",
+          description: "表情类型。支持 THUMBSUP/HEART/JOY/EYES/OK，也支持 like、+1、点赞 等常见别名。",
+        },
+      },
+      required: [],
+      additionalProperties: false,
+    },
+    riskLevel: "medium",
+  },
+
   feishu_send_file: {
     name: "feishu_send_file",
     description: "发送文件到飞书群聊。支持上传本地文件并发送到指定飞书群。",

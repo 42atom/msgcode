@@ -586,7 +586,11 @@ export class RuntimeRouterHandler implements CommandHandler {
                 runId: run.runId,
                 sessionKey: run.sessionKey,
                 currentChannel: sessionChannel,
+                currentMessageId: context.originalMessage.id,
                 currentSpeakerId: context.originalMessage.sender || context.originalMessage.handle,
+                currentSpeakerName: context.originalMessage.senderName,
+                currentIsGroup: context.originalMessage.isGroup,
+                currentMessageType: context.originalMessage.messageType,
                 primaryOwnerIds: getPrimaryOwnerIdsForChannel(sessionChannel),
             });
 
@@ -644,6 +648,8 @@ export class RuntimeRouterHandler implements CommandHandler {
                 summaryContext: assembledContext.summaryContext,
                 // P5.6.8-R4e: 注入 SOUL 上下文（direct only）
                 soulContext: assembledContext.soulContext,
+                currentMessageId: context.originalMessage.id,
+                defaultActionTargetMessageId: assembledContext.defaultActionTargetMessageId,
             });
             const clean = (routedResult.answer || "").trim();
             if (!clean) {
@@ -706,7 +712,15 @@ export class RuntimeRouterHandler implements CommandHandler {
                 // P5.7-R9-T3 Step 1: TTS 模式也必须写回会话窗口（禁止漏写回）
                 if (context.projectDir && clean) {
                     try {
-                        await appendWindow(context.projectDir, context.chatId, { role: "user", content: trimmed });
+                        await appendWindow(context.projectDir, context.chatId, {
+                            role: "user",
+                            content: trimmed,
+                            messageId: context.originalMessage.id,
+                            senderId: context.originalMessage.sender || context.originalMessage.handle,
+                            senderName: context.originalMessage.senderName,
+                            messageType: context.originalMessage.messageType,
+                            isGroup: context.originalMessage.isGroup,
+                        });
                         await appendWindow(context.projectDir, context.chatId, { role: "assistant", content: clean });
                     } catch {
                         // 窗口写回失败不影响主流程
@@ -753,7 +767,15 @@ export class RuntimeRouterHandler implements CommandHandler {
             // P5.6.2-R2: 写回短期会话窗口（user + assistant 双向写回）
             if (context.projectDir && clean) {
                 try {
-                    await appendWindow(context.projectDir, context.chatId, { role: "user", content: trimmed });
+                    await appendWindow(context.projectDir, context.chatId, {
+                        role: "user",
+                        content: trimmed,
+                        messageId: context.originalMessage.id,
+                        senderId: context.originalMessage.sender || context.originalMessage.handle,
+                        senderName: context.originalMessage.senderName,
+                        messageType: context.originalMessage.messageType,
+                        isGroup: context.originalMessage.isGroup,
+                    });
                     await appendWindow(context.projectDir, context.chatId, { role: "assistant", content: clean });
                 } catch {
                     // 窗口写回失败不影响主流程

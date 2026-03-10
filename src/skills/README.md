@@ -59,7 +59,7 @@ src/skills/
 │   └── reactions/
 │       └── SKILL.md
 └── runtime/                # 仓库托管的 runtime skill 真相源
-    ├── index.json          # 托管 skill 索引（vision-index, local-vision-lmstudio, scheduler, plan-files, character-identity, patchright-browser）
+    ├── index.json          # 托管 skill 索引（vision-index, local-vision-lmstudio, scheduler, plan-files, character-identity, feishu-send-file, patchright-browser）
     ├── scheduler/
     │   ├── SKILL.md
     │   └── main.sh

@@ -20,6 +20,7 @@ interface SkillIndexEntry {
   name: string;
   entry: string;
   description: string;
+  layer?: string;
 }
 
 interface SkillIndexFile {
@@ -172,6 +173,36 @@ function mergeSkillIndexes(
   };
 }
 
+function mergeOptionalSkillsIntoIndex(
+  base: SkillIndexFile,
+  optional: SkillIndexFile | null
+): SkillIndexFile {
+  if (!optional) {
+    return base;
+  }
+
+  const merged = new Map<string, SkillIndexEntry>();
+  for (const skill of base.skills) {
+    merged.set(skill.id, skill);
+  }
+
+  for (const skill of optional.skills) {
+    if (!skill?.id?.trim()) continue;
+    if (RETIRED_MANAGED_SKILL_IDS.has(skill.id)) continue;
+    if (merged.has(skill.id)) continue;
+    merged.set(skill.id, {
+      ...skill,
+      layer: skill.layer || "optional",
+    });
+  }
+
+  return {
+    ...base,
+    updatedAt: new Date().toISOString(),
+    skills: Array.from(merged.values()),
+  };
+}
+
 export async function syncManagedRuntimeSkills(
   options: RuntimeSkillSyncOptions = {}
 ): Promise<RuntimeSkillSyncResult> {
@@ -211,9 +242,10 @@ export async function syncManagedRuntimeSkills(
   let optionalCopiedFiles = 0;
   let optionalSkippedFiles = 0;
   let optionalSkillIds: string[] = [];
+  let optionalIndex: SkillIndexFile | null = null;
   const optionalSourceDir = resolveOptionalSkillsSourceDir();
   if (existsSync(optionalSourceDir)) {
-    const optionalIndex = await loadSkillIndex(join(optionalSourceDir, "index.json"));
+    optionalIndex = await loadSkillIndex(join(optionalSourceDir, "index.json"));
     const optionalTargetDir = join(userSkillsDir, "optional");
     const optionalCopyResult = await copyDirectoryRecursive(
       optionalSourceDir,
@@ -225,6 +257,9 @@ export async function syncManagedRuntimeSkills(
     optionalSkippedFiles = optionalCopyResult.skippedFiles;
     optionalSkillIds = optionalIndex?.skills.map((skill) => skill.id) ?? [];
   }
+
+  const mergedWithOptional = mergeOptionalSkillsIntoIndex(mergedIndex, optionalIndex);
+  await writeFile(join(userSkillsDir, "index.json"), `${JSON.stringify(mergedWithOptional, null, 2)}\n`, "utf-8");
 
   return {
     copiedFiles: copiedFiles + optionalCopiedFiles,

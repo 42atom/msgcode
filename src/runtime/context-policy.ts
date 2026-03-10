@@ -70,6 +70,10 @@ export interface AssembleAgentContextInput {
     sessionKey?: string;
     currentChannel?: SessionChannel;
     currentSpeakerId?: string;
+    currentSpeakerName?: string;
+    currentMessageId?: string;
+    currentIsGroup?: boolean;
+    currentMessageType?: string;
     primaryOwnerIds?: string[];
 }
 
@@ -78,6 +82,7 @@ export interface AssembledAgentContext {
     windowMessages: WindowMessage[];
     summaryContext?: string;
     soulContext?: { content: string; source: string; path: string; chars: number };
+    defaultActionTargetMessageId?: string;
     checkpointContext?: string;
     contextWindowTokens: number;
     contextBudget: number;
@@ -87,8 +92,13 @@ export interface AssembledAgentContext {
     compactionTriggered: boolean;
     compactionReason?: string;
     postCompactUsagePct?: number;
+    messageIdentityContext?: string;
+    recentMessageRosterContext?: string;
     speakerIdentityContext?: string;
 }
+
+const RECENT_MESSAGE_ROSTER_LIMIT = 8;
+const RECENT_MESSAGE_SNIPPET_CHARS = 80;
 
 export function clipContextText(text: string, maxChars: number): string {
     if (!text) return "";
@@ -224,6 +234,19 @@ export async function assembleAgentContext(
     const contextUsagePct = Math.round((contextUsedTokens / safeContextBudget) * 100);
     const budgetRemaining = contextBudget - contextUsedTokens;
     const checkpointContext = formatTaskCheckpointAsContext(input.checkpoint);
+    const messageIdentityContext = buildCurrentMessageIdentityContext({
+        channel: input.currentChannel,
+        chatId: input.chatId,
+        messageId: input.currentMessageId,
+        speakerId: input.currentSpeakerId,
+        speakerName: input.currentSpeakerName,
+        isGroup: input.currentIsGroup,
+        messageType: input.currentMessageType,
+    });
+    const recentMessageRosterContext = buildRecentMessageRosterContext({
+        windowMessages,
+        primaryOwnerIds: input.primaryOwnerIds,
+    });
     const speakerIdentityContext = buildSpeakerIdentityContext({
         channel: input.currentChannel,
         speakerId: input.currentSpeakerId,
@@ -233,6 +256,8 @@ export async function assembleAgentContext(
         prompt: input.prompt,
         taskGoal: input.taskGoal,
         checkpointContext,
+        messageIdentityContext,
+        recentMessageRosterContext,
         speakerIdentityContext,
     });
 
@@ -338,6 +363,7 @@ export async function assembleAgentContext(
         windowMessages,
         summaryContext,
         soulContext,
+        defaultActionTargetMessageId: input.currentMessageId?.trim() || undefined,
         checkpointContext: checkpointContext || undefined,
         contextWindowTokens,
         contextBudget,
@@ -347,6 +373,8 @@ export async function assembleAgentContext(
         compactionTriggered,
         compactionReason,
         postCompactUsagePct,
+        messageIdentityContext,
+        recentMessageRosterContext,
         speakerIdentityContext,
     };
 }
@@ -360,10 +388,20 @@ function buildAgentPrompt(params: {
     prompt: string;
     taskGoal?: string;
     checkpointContext?: string;
+    messageIdentityContext?: string;
+    recentMessageRosterContext?: string;
     speakerIdentityContext?: string;
 }): string {
     const basePrompt = params.prompt.trim();
     const sections: string[] = [];
+
+    if (params.messageIdentityContext) {
+        sections.push(`[当前消息事实]\n${params.messageIdentityContext}`);
+    }
+
+    if (params.recentMessageRosterContext) {
+        sections.push(`[最近消息索引]\n${params.recentMessageRosterContext}`);
+    }
 
     if (params.speakerIdentityContext) {
         sections.push(`[当前会话身份事实]\n${params.speakerIdentityContext}`);
@@ -379,6 +417,81 @@ function buildAgentPrompt(params: {
         `[长期任务目标]\n${goal}\n\n${params.checkpointContext}\n\n请基于上面的任务状态继续推进，优先完成“下一步”；若已满足验收标准，则完成任务并给出可验证结果。`
     );
     return sections.join("\n\n");
+}
+
+function buildCurrentMessageIdentityContext(params: {
+    channel?: SessionChannel;
+    chatId: string;
+    messageId?: string;
+    speakerId?: string;
+    speakerName?: string;
+    isGroup?: boolean;
+    messageType?: string;
+}): string | undefined {
+    const messageId = (params.messageId || "").trim();
+    if (!messageId) {
+        return undefined;
+    }
+
+    const lines = [
+        `当前渠道: ${params.channel || "unknown"}`,
+        `当前会话ID: ${params.chatId}`,
+        `当前消息ID: ${messageId}`,
+        `本轮默认动作目标消息ID: ${messageId}`,
+    ];
+
+    const speakerId = (params.speakerId || "").trim();
+    if (speakerId) {
+        lines.push(`当前消息发送者ID: ${speakerId}`);
+    }
+
+    const speakerName = (params.speakerName || "").trim();
+    if (speakerName) {
+        lines.push(`当前消息发送者昵称: ${speakerName}`);
+    }
+
+    if (typeof params.isGroup === "boolean") {
+        lines.push(`当前是否群聊: ${params.isGroup ? "是" : "否"}`);
+    }
+
+    const messageType = (params.messageType || "").trim();
+    if (messageType) {
+        lines.push(`当前消息类型: ${messageType}`);
+    }
+
+    return lines.join("\n");
+}
+
+function buildRecentMessageRosterContext(params: {
+    windowMessages: WindowMessage[];
+    primaryOwnerIds?: string[];
+}): string | undefined {
+    const primaryOwnerIds = new Set((params.primaryOwnerIds || []).map((it) => it.trim()).filter(Boolean));
+    const recent = params.windowMessages
+        .filter((msg) => {
+            const messageId = (msg.messageId || "").trim();
+            const senderId = (msg.senderId || "").trim();
+            const content = (msg.content || "").trim();
+            return Boolean(messageId && senderId && content);
+        })
+        .slice(-RECENT_MESSAGE_ROSTER_LIMIT);
+
+    if (recent.length === 0) {
+        return undefined;
+    }
+
+    const lines = recent.map((msg) => {
+        const messageId = (msg.messageId || "").trim();
+        const senderId = (msg.senderId || "").trim();
+        const senderName = (msg.senderName || "").trim();
+        const snippet = clipContextText((msg.content || "").trim(), RECENT_MESSAGE_SNIPPET_CHARS).replace(/\n+/g, " ");
+        const messageType = (msg.messageType || "").trim() || "text";
+        const ownerTag = primaryOwnerIds.has(senderId) ? " owner=yes" : "";
+        const namePart = senderName ? ` name=${senderName}` : "";
+        return `- msg=${messageId} sender=${senderId}${namePart} type=${messageType}${ownerTag} text=\"${snippet}\"`;
+    });
+
+    return lines.join("\n");
 }
 
 function buildSpeakerIdentityContext(params: {

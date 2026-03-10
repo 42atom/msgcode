@@ -31,6 +31,7 @@ describe("P5.7-R13: runtime skill sync", () => {
       "scheduler",
       "plan-files",
       "character-identity",
+      "feishu-send-file",
       "patchright-browser",
     ];
 
@@ -96,6 +97,7 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(result.managedSkillIds).toContain("scheduler");
     expect(result.managedSkillIds).toContain("plan-files");
     expect(result.managedSkillIds).toContain("character-identity");
+    expect(result.managedSkillIds).toContain("feishu-send-file");
     expect(result.managedSkillIds).not.toContain("zai-vision-mcp");
     expect(result.optionalSkillIds).toContain("twitter-media");
     expect(result.optionalSkillIds).toContain("veo-video");
@@ -111,6 +113,8 @@ describe("P5.7-R13: runtime skill sync", () => {
     const localVisionSh = await readFile(join(userSkillsDir, "local-vision-lmstudio", "main.sh"), "utf-8");
     const planFilesDoc = await readFile(join(userSkillsDir, "plan-files", "SKILL.md"), "utf-8");
     const characterIdentityDoc = await readFile(join(userSkillsDir, "character-identity", "SKILL.md"), "utf-8");
+    const feishuSendFileDoc = await readFile(join(userSkillsDir, "feishu-send-file", "SKILL.md"), "utf-8");
+    const feishuSendFileSh = await readFile(join(userSkillsDir, "feishu-send-file", "main.sh"), "utf-8");
     const skillDoc = await readFile(join(userSkillsDir, "patchright-browser", "SKILL.md"), "utf-8");
     const mainSh = await readFile(join(userSkillsDir, "patchright-browser", "main.sh"), "utf-8");
     const schedulerDoc = await readFile(join(userSkillsDir, "scheduler", "SKILL.md"), "utf-8");
@@ -153,6 +157,10 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(characterIdentityDoc).toContain("先查表，不要猜");
     expect(characterIdentityDoc).toContain(".msgcode/character-identity/<channel>-<chat-token>.csv");
     expect(characterIdentityDoc).toContain("senderId");
+    expect(feishuSendFileDoc).toContain("feishu-send-file skill");
+    expect(feishuSendFileDoc).toContain("runtime.current_chat_id");
+    expect(feishuSendFileDoc).toContain("不要去解析 `.msgcode/sessions/` 文件名猜 chatId");
+    expect(feishuSendFileSh).toContain('const chatId = typeof config["runtime.current_chat_id"] === "string"');
     expect(twitterMediaDoc).toContain("twitter-media skill");
     expect(twitterMediaDoc).toContain("api.fxtwitter.com");
     expect(screenshotDoc).toContain("msgcode media screen");
@@ -181,11 +189,12 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("scheduler");
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("plan-files");
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("character-identity");
-    expect(mergedIndex.skills.map((skill) => skill.id)).not.toContain("twitter-media");
-    expect(mergedIndex.skills.map((skill) => skill.id)).not.toContain("veo-video");
-    expect(mergedIndex.skills.map((skill) => skill.id)).not.toContain("screenshot");
-    expect(mergedIndex.skills.map((skill) => skill.id)).not.toContain("scrapling");
-    expect(mergedIndex.skills.map((skill) => skill.id)).not.toContain("reactions");
+    expect(mergedIndex.skills.map((skill) => skill.id)).toContain("feishu-send-file");
+    expect(mergedIndex.skills.map((skill) => skill.id)).toContain("twitter-media");
+    expect(mergedIndex.skills.map((skill) => skill.id)).toContain("veo-video");
+    expect(mergedIndex.skills.map((skill) => skill.id)).toContain("screenshot");
+    expect(mergedIndex.skills.map((skill) => skill.id)).toContain("scrapling");
+    expect(mergedIndex.skills.map((skill) => skill.id)).toContain("reactions");
     expect(mergedIndex.skills.map((skill) => skill.id)).not.toContain("pinchtab-browser");
     expect(mergedIndex.skills.map((skill) => skill.id)).not.toContain("zai-vision-mcp");
     expect(optionalIndex.skills.map((skill) => skill.id)).toContain("twitter-media");
@@ -196,10 +205,15 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(optionalIndex.skills.find((skill) => skill.id === "twitter-media")?.entry).toBe(
       "~/.config/msgcode/skills/optional/twitter-media/SKILL.md",
     );
+    expect(mergedIndex.skills.find((skill) => skill.id === "twitter-media")?.entry).toBe(
+      "~/.config/msgcode/skills/optional/twitter-media/SKILL.md",
+    );
+    expect(mergedIndex.skills.find((skill) => skill.id === "twitter-media")?.layer).toBe("optional");
     expect(mergedIndex.skills.find((skill) => skill.id === "vision-index")?.entry).toBe("~/.config/msgcode/skills/vision-index/SKILL.md");
     expect(mergedIndex.skills.find((skill) => skill.id === "local-vision-lmstudio")?.entry).toBe("~/.config/msgcode/skills/local-vision-lmstudio/SKILL.md");
     expect(mergedIndex.skills.find((skill) => skill.id === "plan-files")?.entry).toBe("~/.config/msgcode/skills/plan-files/SKILL.md");
     expect(mergedIndex.skills.find((skill) => skill.id === "character-identity")?.entry).toBe("~/.config/msgcode/skills/character-identity/SKILL.md");
+    expect(mergedIndex.skills.find((skill) => skill.id === "feishu-send-file")?.entry).toBe("~/.config/msgcode/skills/feishu-send-file/SKILL.md");
     expect(visionIndexStat.mode & 0o111).toBeGreaterThan(0);
     expect(localVisionStat.mode & 0o111).toBeGreaterThan(0);
     expect(mainStat.mode & 0o111).toBeGreaterThan(0);

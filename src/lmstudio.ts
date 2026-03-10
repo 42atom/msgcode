@@ -221,33 +221,15 @@ export async function getToolsForLlm(workspacePath?: string): Promise<readonly A
     try {
         const { loadWorkspaceConfig } = await import("./config/workspace.js");
         const cfg = await loadWorkspaceConfig(workspacePath);
-        const piEnabled = Object.prototype.hasOwnProperty.call(cfg, "pi.enabled")
-            ? cfg["pi.enabled"]
-            : false;
-        if (!piEnabled) {
-            // P5.7-R15 + R16: skill 场景默认暴露完整工具（与 tool-loop.ts 对齐）
-            const { filterDefaultLlmTools } = await import("./tools/manifest.js");
-            const defaultTools = filterDefaultLlmTools([
-                "read_file",
-                "bash",
-                "browser",
-                "tts",
-                "asr",
-                "vision",
-                "desktop",
-            ]);
-            return defaultTools.map((name) => ({
-                name,
-                description: "",
-            }));
-        }
-
         // P5.7-R8c: 从单一真相源派生工具列表
         // 导入 manifest 模块
         const { resolveLlmToolExposure } = await import("./tools/manifest.js");
 
-        // 读取 workspace tooling.allow（使用默认值）
-        const allowedTools = filterDefaultLlmTools(((cfg["tooling.allow"] as any) || ["bash", "read_file"]));
+        // 单一真相源：LLM 工具暴露只看 tooling.allow，再补 skill 发现所需的最小基线。
+        const configuredTools = Array.isArray(cfg["tooling.allow"])
+            ? (cfg["tooling.allow"] as string[])
+            : [];
+        const allowedTools = filterDefaultLlmTools(Array.from(new Set(["read_file", "bash", ...configuredTools])) as any);
 
         // 解析 LLM 工具暴露结果
         const exposure = resolveLlmToolExposure(allowedTools);

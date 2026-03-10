@@ -33,6 +33,12 @@
       "description": "多角色沟通中的人物识别说明书。基于 channel/chatId/senderId 在当前 workspace 维护简单 CSV 对照表，忘记人物身份时先查表，不要猜。"
     },
     {
+      "id": "feishu-send-file",
+      "name": "Feishu Send File",
+      "entry": "~/.config/msgcode/skills/feishu-send-file/SKILL.md",
+      "description": "把当前 workspace 里的文件回传到飞书会话。优先直接调用 feishu_send_file，并让工具从 .msgcode/config.json 读取 runtime.current_chat_id。"
+    },
+    {
       "id": "patchright-browser",
       "name": "Patchright Browser",
       "entry": "~/.config/msgcode/skills/patchright-browser/main.sh",

@@ -37,6 +37,28 @@ describe("P5.7-R6 HOTFIX: gen 入口 + tools 缺省值", () => {
     }
   });
 
+  it("getToolsForLlm: config 缺少 pi.enabled 但 allow 包含 feishu_send_file 时应暴露它", async () => {
+    const { getToolsForLlm } = await import("../src/lmstudio.js");
+
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), "msgcode-ws-r6-feishu-tools-"));
+    fs.mkdirSync(path.join(ws, ".msgcode"), { recursive: true });
+    fs.writeFileSync(
+      path.join(ws, ".msgcode", "config.json"),
+      JSON.stringify({ "tooling.allow": ["feishu_send_file"] }, null, 2),
+      "utf-8"
+    );
+
+    try {
+      const tools = await getToolsForLlm(ws);
+      const toolNames = tools.map(t => t.name);
+      expect(toolNames).toContain("read_file");
+      expect(toolNames).toContain("bash");
+      expect(toolNames).toContain("feishu_send_file");
+    } finally {
+      fs.rmSync(ws, { recursive: true, force: true });
+    }
+  });
+
   it("CLI: `msgcode gen --help` 应包含 image/selfie/tts/music 子命令", () => {
     const out = execSync("NODE_OPTIONS='--import tsx' node src/cli.ts gen --help", {
       encoding: "utf-8",

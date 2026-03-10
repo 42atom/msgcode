@@ -140,6 +140,12 @@ function inspectFeishuContent(content: unknown): FeishuContentInspection {
   };
 }
 
+function normalizeFeishuMessageType(msgType: unknown): string {
+  if (typeof msgType !== "string") return "unknown";
+  const trimmed = msgType.trim();
+  return trimmed || "unknown";
+}
+
 function sanitizeFilename(filename: string): string {
   const base = path.basename(filename).trim();
   if (!base) return "attachment.bin";
@@ -382,6 +388,8 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
         }
         const contentInspection = inspectFeishuContent(message?.content);
 
+        const messageTypeLabel = normalizeFeishuMessageType(msgType);
+
         const inboundBase: InboundMessage = {
           id: String(messageId),
           chatId: toFeishuChatGuid(String(chatId)),
@@ -392,17 +400,17 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
           handle: sender?.open_id || sender?.user_id || sender?.union_id,
           senderName: undefined,
           isGroup: message?.chat_type ? String(message.chat_type) === "group" : undefined,
+          messageType: messageTypeLabel,
         };
 
-        const msgTypeLabel = msgType ? String(msgType) : "unknown";
         logger.info(
-          `Feishu 入站事件 msgType=${msgTypeLabel} messageId=${String(messageId)} contentKind=${contentInspection.contentKind} resourceKeyField=${contentInspection.resourceKeyField ?? "none"} resourceKey=${contentInspection.resourceKey ?? "none"} fileName=${contentInspection.fileName ?? "none"}`,
+          `Feishu 入站事件 msgType=${messageTypeLabel} messageId=${String(messageId)} contentKind=${contentInspection.contentKind} resourceKeyField=${contentInspection.resourceKeyField ?? "none"} resourceKey=${contentInspection.resourceKey ?? "none"} fileName=${contentInspection.fileName ?? "none"}`,
           {
           module: "feishu",
           chatId: inboundBase.chatId,
           rawChatId: String(chatId),
           messageId: String(messageId),
-          msgType: msgTypeLabel,
+          msgType: messageTypeLabel,
           hasText: Boolean(inboundBase.text),
           attachmentMapped: Boolean(inboundBase.attachments && inboundBase.attachments.length > 0),
           contentKind: contentInspection.contentKind,
@@ -419,14 +427,14 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
           return;
         }
 
-        const attachmentSpec = resolveFeishuInboundAttachmentSpec(msgTypeLabel, String(messageId), message?.content);
+        const attachmentSpec = resolveFeishuInboundAttachmentSpec(messageTypeLabel, String(messageId), message?.content);
         if (!attachmentSpec) {
           logger.info(
-            `Feishu 非文本消息尚未映射为附件 msgType=${msgTypeLabel} resourceKeyField=${contentInspection.resourceKeyField ?? "none"} resourceKey=${contentInspection.resourceKey ?? "none"} fileName=${contentInspection.fileName ?? "none"}`,
+            `Feishu 非文本消息尚未映射为附件 msgType=${messageTypeLabel} resourceKeyField=${contentInspection.resourceKeyField ?? "none"} resourceKey=${contentInspection.resourceKey ?? "none"} fileName=${contentInspection.fileName ?? "none"}`,
             {
               module: "feishu",
               chatId: inboundBase.chatId,
-              msgType: msgTypeLabel,
+              msgType: messageTypeLabel,
               attachmentMapped: false,
               resourceKeyField: contentInspection.resourceKeyField ?? null,
               resourceKey: contentInspection.resourceKey ?? null,
@@ -453,11 +461,11 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
             };
 
             logger.info(
-              `Feishu 非文本消息已映射为附件 msgType=${msgTypeLabel} localPath=${localPath} mime=${attachmentSpec.mime ?? "none"} fileName=${attachmentSpec.filename}`,
+              `Feishu 非文本消息已映射为附件 msgType=${messageTypeLabel} localPath=${localPath} mime=${attachmentSpec.mime ?? "none"} fileName=${attachmentSpec.filename}`,
               {
                 module: "feishu",
                 chatId: inboundBase.chatId,
-                msgType: msgTypeLabel,
+                msgType: messageTypeLabel,
                 messageId: String(messageId),
                 attachmentMapped: true,
                 localPath,
@@ -469,11 +477,11 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
             config.onInbound(inboundWithAttachment);
           } catch (downloadError) {
             logger.warn(
-              `Feishu 非文本消息资源下载失败 msgType=${msgTypeLabel} resourceKey=${attachmentSpec.resourceKey} fileName=${attachmentSpec.filename}`,
+              `Feishu 非文本消息资源下载失败 msgType=${messageTypeLabel} resourceKey=${attachmentSpec.resourceKey} fileName=${attachmentSpec.filename}`,
               {
                 module: "feishu",
                 chatId: inboundBase.chatId,
-                msgType: msgTypeLabel,
+                msgType: messageTypeLabel,
                 messageId: String(messageId),
                 resourceKey: attachmentSpec.resourceKey,
                 fileName: attachmentSpec.filename,
@@ -749,6 +757,7 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
 export const __test = process.env.NODE_ENV === "test"
   ? {
       inspectFeishuContent,
+      normalizeFeishuMessageType,
       resolveFeishuInboundAttachmentSpec,
     }
   : undefined;

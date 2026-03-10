@@ -21,7 +21,7 @@ describe("P5.6.8-R4g: 命名收口", () => {
 
     // 通过类型系统验证：shell 已从 ToolName 中删除
     // P5.6.13-R1A-EXEC: run_skill 已退役
-    const validTools = ["tts", "asr", "vision", "bash", "browser", "desktop", "read_file", "feishu_list_members", "feishu_send_file"];
+    const validTools = ["tts", "asr", "vision", "bash", "browser", "desktop", "read_file", "feishu_list_members", "feishu_list_recent_messages", "feishu_reply_message", "feishu_react_message", "feishu_send_file"];
 
     expect(validTools).toContain("bash");
     expect(validTools).not.toContain("shell");
@@ -34,6 +34,9 @@ describe("P5.6.8-R4g: 命名收口", () => {
     expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).toContain("read_file");
     expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).toContain("bash");
     expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).toContain("feishu_list_members");
+    expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).toContain("feishu_list_recent_messages");
+    expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).toContain("feishu_reply_message");
+    expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).toContain("feishu_react_message");
     expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).not.toContain("mem");
     expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).not.toContain("write_file");
     expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).not.toContain("edit_file");

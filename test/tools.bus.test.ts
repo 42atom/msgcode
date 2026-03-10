@@ -169,6 +169,9 @@ describe("Tool Bus", () => {
       expect(policy.allow).toContain("browser");
       expect(policy.allow).toContain("read_file");
       expect(policy.allow).toContain("feishu_list_members");
+      expect(policy.allow).toContain("feishu_list_recent_messages");
+      expect(policy.allow).toContain("feishu_reply_message");
+      expect(policy.allow).toContain("feishu_react_message");
       expect(policy.allow).not.toContain("write_file");
       expect(policy.allow).not.toContain("edit_file");
     });
