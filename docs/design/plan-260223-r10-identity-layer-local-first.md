@@ -1,89 +1,178 @@
-# plan-260223-r10-identity-layer-local-first
+# Plan: 统一 Secret 配置文件（薄版）
+
+> 原 `identity layer` 方案在语义和结构上都有做厚风险。
+> 本文档将其重定义为：**一个本地 secret 配置文件 + 一个薄运行时注入器 + 一组脱敏规则**。
+> 目标不是做身份平台，而是让 GUI 和运行时都能稳定使用同一份 secret 真相源。
 
 Issue: [待创建]  
-Task: docs/tasks/p5-7-r10-identity-layer-local-first.md
+Task: [待创建]
 
 ## Problem
 
-当前 Agent 身份能力存在三类结构性问题：
-1. 凭据来源分散（`.env`、workspace 配置、工具内各自读取），缺少单一治理层。
-2. 高权限密钥存在明文落盘与误泄露风险（日志、报错、调试输出）。
-3. 工具调用与凭据绑定关系不透明，缺少最小权限与审计闭环。
+当前项目里的 secret 使用方式存在三个直接问题：
 
-这会直接影响真实场景可用性（交易、支付、生产 API）与长期维护成本。
+1. 凭据来源分散
+   - `.env`
+   - shell 环境变量
+   - 各 provider / tool 自己读自己的 key
+
+2. GUI 没有稳定的单一落点
+   - 如果以后要做 GUI 配置页，`.env` 更适合人工编辑，不适合结构化读写
+   - 多处来源并存时，GUI 很难解释“当前到底哪份生效”
+
+3. 泄露面不收口
+   - 业务代码直接读环境变量时，日志/报错/调试输出更容易把密钥带出去
+
+真正的问题不是“缺身份平台”，而是**缺一个统一 secret 真相源**。
+
+## Occam Check
+
+1. 不加它，系统具体坏在哪？
+   - GUI 没有统一 secret 编辑入口。
+   - 运行时继续依赖散落的 `.env` / shell env / provider 私有读取。
+   - secret 来源不透明，排障和迁移都费劲。
+
+2. 用更少的层能不能解决？
+   - 能。
+   - 只要一份 `secrets.json` + 一个统一 loader + 运行时按需转成 env，就够了。
+   - 不需要 `secret://` 协议，不需要 keychain/gateway 双模式，不需要权限平台。
+
+3. 这个改动让主链数量变多了还是变少了？
+   - 变少了。
+   - secret 来源从“多处散读”收口成“一处配置 + 一处注入”。
 
 ## Decision
 
-采用“本地优先 + 双模式并行”路线：
-1. 默认模式为 `local-keychain`（macOS Keychain 托管密钥，明文不落盘）。
-2. 保留可选模式 `managed-gateway`（便捷优先场景）。
-3. 引入统一凭据引用协议 `secret://<KEY_NAME>`，业务主链不再直接依赖具体环境变量名。
-4. 建立身份策略层：`tool -> credential` 显式绑定，未绑定默认拒绝。
+采用 **本地单文件 secret 配置源** 方案：
+
+1. 正式真相源固定为：
+   - `~/.config/msgcode/secrets.json`
+
+2. 文件格式固定为 JSON，而不是 `.env`
+   - 便于 GUI 做结构化读写
+   - 便于后续加元信息（如描述、启用状态）而不破坏格式
+
+3. 运行时统一通过一个薄 loader 读取 secrets
+   - provider / tool / 子进程不再各自散读 `.env`
+   - 真正执行时，再按需要映射成对应 env
+
+4. 默认只做最小脱敏
+   - 日志不打印明文 secret
+   - 报错不回显完整 key
+
+5. 明确不做
+   - 不做 `secret://<KEY>` 引用协议
+   - 不做 keychain / managed-gateway 双模式
+   - 不做“工具 -> 凭据”策略平台
+   - 不做新的身份控制层
+
+## 最小合同
+
+### 文件路径
+
+- `~/.config/msgcode/secrets.json`
+
+### 文件示例
+
+```json
+{
+  "OPENAI_API_KEY": "...",
+  "MINIMAX_API_KEY": "...",
+  "FEISHU_APP_ID": "...",
+  "FEISHU_APP_SECRET": "..."
+}
+```
+
+### 运行时规则
+
+1. `secrets.json` 是正式真相源
+2. 迁移期允许旧 env fallback
+3. 一旦 `secrets.json` 中存在同名项，以文件值为准
+4. provider / tool 侧尽量不直接读散落 env
 
 ## Plan
 
-1. `R10-T1` 合同冻结
-   - 冻结 `identity.mode`、`secret://` 协议、错误码与输出 envelope。
-   - 定义凭据生命周期：创建、读取（掩码）、删除、迁移、健康检查。
+1. 冻结合同
+   - 固定 `~/.config/msgcode/secrets.json`
+   - 固定 JSON 顶层 `Record<string, string>`
+   - 固定迁移期优先级：`secrets.json > 旧 env fallback`
 
-2. `R10-T2` Keychain 适配器与 CLI
-   - 提供 `msgcode secret add/list/remove/get/test/migrate`。
-   - `list/get` 默认不返回明文；`get --reveal` 受策略控制。
+2. 新增薄 loader
+   - 建议文件：
+     - `src/config/secrets.ts`
+   - 责任只包括：
+     - 读取 JSON
+     - 读取旧 env fallback
+     - 返回脱敏安全的查询结果
 
-3. `R10-T3` 运行时密钥注入
-   - 在 `agent-backend`、`tools`、`gen` 链路统一解析 `secret://`。
-   - 注入仅在进程内短时存在，日志与错误输出统一脱敏。
+3. 收运行时注入口
+   - provider / tool / 子进程统一改走该 loader
+   - 只在真正执行前，把所需字段注入子进程 env
 
-4. `R10-T4` 权限策略层
-   - 引入工具凭据映射与风险等级（low/medium/high）。
-   - 高风险工具支持确认门禁与执行来源标记。
+4. 增加最小写入口
+   - 优先服务 GUI
+   - CLI 如要补，也只做薄命令：
+     - `msgcode secrets show`
+     - `msgcode secrets set <KEY> <VALUE>`
+     - `msgcode secrets remove <KEY>`
+   - 本轮不做复杂 secret 管理平台
 
-5. `R10-T5` 审计与观测
-   - 新增身份审计字段（`traceId/tool/credentialAlias/result/durationMs`）。
-   - 仅记录别名与结果码，不记录明文。
+5. 收脱敏规则
+   - logger / error formatter 中屏蔽常见 key 值
+   - 禁止在错误消息里直接拼 secret 明文
 
-6. `R10-T6` 双模式切换与回退
-   - `local-keychain` 与 `managed-gateway` 统一经配置切换。
-   - 提供故障回退路径，不改业务调用代码。
-
-7. `R10-T7` 端到端验收
-   - 真实 8-case 冒烟（工具调用、定时、记忆、多步编排）。
-   - 安全门禁（零明文落盘、日志零泄露）+ 三门全绿后签收。
+6. 迁移收尾
+   - 保留旧 env fallback 一段时间
+   - 待 GUI 和运行时稳定后，再逐步减少散读 env
 
 ## Risks
 
-1. 迁移期凭据读取路径并存，可能导致行为分叉。  
-   缓解：单源解析函数 + 回归锁覆盖两模式。
-2. 旧工具直接读环境变量，绕过身份层。  
-   缓解：静态扫描禁止新直读 + 运行时告警。
-3. Keychain 可用性差异（权限弹窗、会话态）。  
-   缓解：预检命令与降级提示，不静默失败。
+1. `secrets.json` 是明文文件
+   - 风险：本地文件泄露
+   - 缓解：权限收口到用户目录；默认 `600`；禁止进仓库；日志不回显内容
+
+2. 迁移期双读取会有歧义
+   - 风险：用户不知道当前是哪一份生效
+   - 缓解：明确优先级固定为 `secrets.json > env fallback`
+
+3. provider 私有读取残留
+   - 风险：表面单一真相源，实际还有旁路
+   - 缓解：逐步把入口收口到统一 loader，并加源码扫描/回归锁
 
 ## Migration / Rollout
 
-1. 先合同、后接线、再策略，最后切默认值。
-2. 发布窗口内保持向后兼容：旧 env 读取仅作 fallback，并记录弃用告警。
-3. 全量回归通过后，逐步收紧到“仅 `secret://` + 身份层”。
+1. 先落 `secrets.json` 合同和 loader
+2. 再把主路径 provider / tool 改为统一读取
+3. GUI 只读写 `secrets.json`
+4. 最后再决定是否保留旧 env fallback
 
 ## Test Plan
 
-1. 每步强制执行：
-   - `npx tsc --noEmit`
-   - `npm test`
-   - `npm run docs:check`
-2. 增加回归锁：
-   - 明文不落盘锁（仓库与工作区敏感字样扫描）
-   - 凭据绑定锁（未绑定工具拒绝执行）
-   - 脱敏锁（日志/报错不含密钥值）
-   - 模式一致锁（两模式下相同业务输入行为一致）
+1. loader 测试
+   - 有 `secrets.json` 时优先读文件
+   - 无文件时兼容旧 env
+   - 文件和 env 同名时文件优先
+
+2. 注入测试
+   - 子进程能拿到映射后的 env
+   - 未声明的 secret 不应被额外注入
+
+3. 脱敏测试
+   - 日志不包含原始 key 值
+   - 报错不包含原始 key 值
 
 ## Observability
 
-1. 统一日志维度：`traceId`, `identityMode`, `credentialAlias`, `tool`, `errorCode`。
-2. 区分失败类型：
-   - `IDENTITY_SECRET_NOT_FOUND`
-   - `IDENTITY_ACCESS_DENIED`
-   - `IDENTITY_RESOLVE_FAILED`
-   - `IDENTITY_PROVIDER_UNAVAILABLE`
+最小观测即可：
+
+- `secretSource=file|env-fallback`
+- `secretKey=<KEY_NAME>`
+- `resolved=true|false`
+
+禁止记录：
+
+- secret 明文
+- 完整 token
+- 可逆还原的长片段
 
 （章节级）评审意见：[留空,用户将给出反馈]
