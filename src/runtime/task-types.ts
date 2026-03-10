@@ -12,6 +12,7 @@
  */
 
 import { randomUUID } from "node:crypto";
+import type { RunSource } from "./run-types.js";
 
 // ============================================
 // 任务状态枚举
@@ -324,7 +325,18 @@ export interface TaskTurnResult {
     continuationReason?: string;
 }
 
-export type TaskTurnExecutor = (task: TaskRecord) => Promise<TaskTurnResult>;
+/**
+ * 任务执行上下文
+ *
+ * Phase 1 只补最小 run 元数据透传。
+ */
+export interface TaskTurnContext {
+    runId: string;
+    sessionKey: string;
+    source: Extract<RunSource, "task" | "heartbeat">;
+}
+
+export type TaskTurnExecutor = (task: TaskRecord, context: TaskTurnContext) => Promise<TaskTurnResult>;
 
 // ============================================
 // 诊断输出类型

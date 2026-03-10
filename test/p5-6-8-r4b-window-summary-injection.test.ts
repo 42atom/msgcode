@@ -35,24 +35,24 @@ describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
     });
 
     describe("handlers.ts 注入验证", () => {
-        it("handlers.ts 必须导入 loadSummary 和 formatSummaryAsContext", () => {
+        it("handlers.ts 必须导入统一的 assembleAgentContext", () => {
             const code = fs.readFileSync(
                 path.join(process.cwd(), "src/handlers.ts"),
                 "utf-8"
             );
 
-            expect(code).toMatch(/import\s*\{[\s\S]*loadSummary[\s\S]*\}\s*from\s*["']\.\/summary\.js["']/);
-            expect(code).toMatch(/import\s*\{[\s\S]*formatSummaryAsContext[\s\S]*\}\s*from\s*["']\.\/summary\.js["']/);
+            expect(code).toMatch(/import\s*\{[\s\S]*assembleAgentContext[\s\S]*\}\s*from\s*["']\.\/runtime\/context-policy\.js["']/);
         });
 
-        it("handlers.ts 必须读取 summary", () => {
+        it("handlers.ts 必须通过 assembleAgentContext 读取上下文", () => {
             const code = fs.readFileSync(
                 path.join(process.cwd(), "src/handlers.ts"),
                 "utf-8"
             );
 
-            expect(code).toContain('await loadSummary(context.projectDir, context.chatId)');
-            expect(code).toContain('formatSummaryAsContext(summary)');
+            expect(code).toContain("const assembledContext = await assembleAgentContext({");
+            expect(code).toContain('source: "message"');
+            expect(code).toContain("chatId: context.chatId");
         });
 
         it("handlers.ts 必须传递 windowMessages 和 summaryContext 给 executeAgentTurn", () => {
@@ -62,12 +62,12 @@ describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
             );
 
             // P5.7-R12: handlers 只依赖 executeAgentTurn 统一入口
-            const executeTurnMatch = code.match(/executeAgentTurn\(\{[\s\S]{0,500}/);
+            const executeTurnMatch = code.match(/executeAgentTurn\(\{[\s\S]{0,900}/);
             expect(executeTurnMatch).not.toBeNull();
 
             // 验证传递了 windowMessages 和 summaryContext
-            expect(executeTurnMatch![0]).toContain("windowMessages");
-            expect(executeTurnMatch![0]).toContain("summaryContext");
+            expect(executeTurnMatch![0]).toContain("assembledContext.windowMessages");
+            expect(executeTurnMatch![0]).toContain("assembledContext.summaryContext");
         });
     });
 

@@ -111,6 +111,13 @@ export interface Config {
     // owner 身份标识（电话/邮箱 handle），用于群聊收口信任边界
     // 逗号分隔：MSGCODE_OWNER=wan2011@me.com,+8613800...
     ownerIdentifiers: string[];
+    // 按渠道配置的主要服务对象 ID（软身份事实，不等于硬白名单）
+    primaryOwnerIds: {
+        imessage: string[];
+        feishu: string[];
+        telegram: string[];
+        discord: string[];
+    };
 
     // Feishu（飞书）Bot 配置（MVP）
     feishu?: {
@@ -128,6 +135,10 @@ function parseCsv(value: string | undefined): string[] {
         .split(",")
         .map(s => s.trim())
         .filter(Boolean);
+}
+
+function parsePrimaryOwnerIdsByChannel(channel: "IMESSAGE" | "FEISHU" | "TELEGRAM" | "DISCORD"): string[] {
+    return parseCsv(process.env[`MSGCODE_PRIMARY_OWNER_${channel}_IDS`]);
 }
 
 function parseBool(value: string | undefined): boolean {
@@ -209,6 +220,12 @@ export function loadConfig(): Config {
     const emails = parseEmails(process.env.MY_EMAIL);
     const ownerOnlyInGroup = parseBool(process.env.MSGCODE_OWNER_ONLY_IN_GROUP);
     const ownerIdentifiers = parseCsv(process.env.MSGCODE_OWNER);
+    const primaryOwnerIds = {
+        imessage: parsePrimaryOwnerIdsByChannel("IMESSAGE"),
+        feishu: parsePrimaryOwnerIdsByChannel("FEISHU"),
+        telegram: parsePrimaryOwnerIdsByChannel("TELEGRAM"),
+        discord: parsePrimaryOwnerIdsByChannel("DISCORD"),
+    };
     const supervisorEnabled = process.env.SUPERVISOR_ENABLED
         ? parseBool(process.env.SUPERVISOR_ENABLED)
         : !isTest;
@@ -274,6 +291,14 @@ export function loadConfig(): Config {
         },
         ownerOnlyInGroup: isTest ? false : ownerOnlyInGroup,
         ownerIdentifiers: isTest ? ["test@example.com"] : ownerIdentifiers,
+        primaryOwnerIds: isTest
+            ? {
+                imessage: [],
+                feishu: ["ou_test_primary_owner"],
+                telegram: [],
+                discord: [],
+            }
+            : primaryOwnerIds,
         ...(enableFeishu
             ? {
                 feishu: {
@@ -315,4 +340,24 @@ export function isWhitelisted(identifier: string): boolean {
     }
 
     return false;
+}
+
+export type PrimaryOwnerChannel = keyof Config["primaryOwnerIds"];
+
+export function getPrimaryOwnerIdsForChannel(
+    channel: PrimaryOwnerChannel | "unknown"
+): string[] {
+    if (channel === "unknown") {
+        return [];
+    }
+    return [...(config.primaryOwnerIds[channel] || [])];
+}
+
+export function isPrimaryOwnerForChannel(
+    channel: PrimaryOwnerChannel | "unknown",
+    identifier?: string
+): boolean {
+    const normalized = (identifier || "").trim();
+    if (!normalized) return false;
+    return getPrimaryOwnerIdsForChannel(channel).includes(normalized);
 }

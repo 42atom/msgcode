@@ -503,17 +503,25 @@ describe("P5.7-R12: Agent Relentless Task Closure", () => {
             expect(text).toContain("最近错误码: TOOL_TIMEOUT");
         });
 
-        it("commands.ts 的 executeTaskTurn 应注入 checkpoint + summary/window", () => {
+        it("commands.ts 的 executeTaskTurn 应通过统一 assembler 注入 checkpoint + summary/window", () => {
             const code = fs.readFileSync(
                 path.join(process.cwd(), "src/commands.ts"),
                 "utf-8"
             );
 
-            expect(code).toContain("formatTaskCheckpointAsContext");
-            expect(code).toContain("const checkpointContext = formatTaskCheckpointAsContext(task.checkpoint)");
-            expect(code).toContain("loadWindow(task.workspacePath, task.chatId)");
-            expect(code).toContain("loadSummary(task.workspacePath, task.chatId)");
-            expect(code).toContain("summaryContext");
+            expect(code).toContain('const { assembleAgentContext } = await import("./runtime/context-policy.js")');
+            expect(code).toContain("const assembledContext = await assembleAgentContext({");
+            expect(code).toContain("source: runContext.source");
+            expect(code).toContain("taskGoal: task.goal");
+            expect(code).toContain("checkpoint: task.checkpoint");
+            expect(code).toContain("includeSoulContext: true");
+            expect(code).toContain("sessionKey: runContext.sessionKey");
+            expect(code).toContain("prompt: assembledContext.prompt");
+            expect(code).toContain("windowMessages: assembledContext.windowMessages");
+            expect(code).toContain("summaryContext: assembledContext.summaryContext");
+            expect(code).toContain("soulContext: assembledContext.soulContext");
+            expect(code).not.toContain("loadWindow(task.workspacePath, task.chatId)");
+            expect(code).not.toContain("loadSummary(task.workspacePath, task.chatId)");
         });
     });
 });

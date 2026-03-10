@@ -33,6 +33,7 @@ import {
     buildExecSystemPrompt,
     buildConversationContextBlocks,
 } from "./prompt.js";
+import { clipToolPreviewText } from "../runtime/context-policy.js";
 import {
     resolveAgentBackendRuntime,
     normalizeModelOverride,
@@ -320,7 +321,7 @@ const TOOL_RESULT_CONTEXT_MAX_CHARS = 4000;
  */
 function serializeToolResultForConversation(result: unknown): string {
     const raw = typeof result === "string" ? result : JSON.stringify(result);
-    return clipText(raw, TOOL_RESULT_CONTEXT_MAX_CHARS);
+    return clipToolPreviewText(raw, TOOL_RESULT_CONTEXT_MAX_CHARS);
 }
 
 function getFinishSupervisorSettings(): {

@@ -18,17 +18,16 @@ import { resolve } from "node:path";
 // ============================================
 
 describe("P5.7-R9-T2: 70% 触发阈值", () => {
-    it("handlers.ts 应包含 70% 软阈值常量", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/handlers.ts"), "utf-8");
+    it("context-policy.ts 应包含 70% 软阈值常量", () => {
+        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
         // 锁定：70% 软阈值触发 compact
-        expect(code).toContain("COMPACT_SOFT_THRESHOLD = 70");
+        expect(code).toContain("CONTEXT_COMPACT_SOFT_THRESHOLD = 70");
     });
 
-    it("handlers.ts 应包含 isApproachingBudget 判定逻辑", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/handlers.ts"), "utf-8");
+    it("context-policy.ts 应包含 isApproachingBudget 判定逻辑", () => {
+        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
         // 锁定：使用率 >= 70% 标记为 isApproachingBudget
-        expect(code).toContain("isApproachingBudget");
-        expect(code).toContain("contextUsagePct >= 70");
+        expect(code).toContain("contextUsagePct >= CONTEXT_COMPACT_SOFT_THRESHOLD");
     });
 });
 
@@ -37,14 +36,14 @@ describe("P5.7-R9-T2: 70% 触发阈值", () => {
 // ============================================
 
 describe("P5.7-R9-T2: 85% 硬保护阈值", () => {
-    it("handlers.ts 应包含 85% 硬保护阈值常量", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/handlers.ts"), "utf-8");
+    it("context-policy.ts 应包含 85% 硬保护阈值常量", () => {
+        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
         // 锁定：85% 硬保护阈值
-        expect(code).toContain("COMPACT_HARD_THRESHOLD = 85");
+        expect(code).toContain("CONTEXT_COMPACT_HARD_THRESHOLD = 85");
     });
 
-    it("handlers.ts 应包含硬保护警告日志", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/handlers.ts"), "utf-8");
+    it("context-policy.ts 应包含硬保护警告日志", () => {
+        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
         // 锁定：compact 后仍超过 85% 应有警告
         expect(code).toContain("context overflow protected");
     });
@@ -55,8 +54,8 @@ describe("P5.7-R9-T2: 85% 硬保护阈值", () => {
 // ============================================
 
 describe("P5.7-R9-T2: 观测字段冻结", () => {
-    it("handlers.ts 应包含所有必需的观测字段", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/handlers.ts"), "utf-8");
+    it("context-policy.ts 应包含所有必需的观测字段", () => {
+        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
         // 锁定：观测字段必须包含
         expect(code).toContain("contextWindowTokens");
         expect(code).toContain("contextUsedTokens");
@@ -71,28 +70,35 @@ describe("P5.7-R9-T2: 观测字段冻结", () => {
 // ============================================
 
 describe("P5.7-R9-T2: Compact 策略", () => {
-    it("handlers.ts 应保留最近 10 条消息", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/handlers.ts"), "utf-8");
+    it("context-policy.ts 应保留最近 10 条消息", () => {
+        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
         // 锁定：保留最近 10 条消息
-        expect(code).toContain("COMPACT_KEEP_RECENT = 10");
+        expect(code).toContain("CONTEXT_COMPACT_KEEP_RECENT = 10");
     });
 
-    it("handlers.ts 应调用 trimWindowWithResult 进行裁剪", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/handlers.ts"), "utf-8");
+    it("context-policy.ts 应调用 trimWindowWithResult 进行裁剪", () => {
+        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
         // 锁定：使用 trimWindowWithResult 裁剪
         expect(code).toContain("trimWindowWithResult");
     });
 
-    it("handlers.ts 应调用 extractSummary 提取摘要", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/handlers.ts"), "utf-8");
+    it("context-policy.ts 应调用 extractSummary 提取摘要", () => {
+        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
         // 锁定：使用 extractSummary 提取摘要
         expect(code).toContain("extractSummary");
     });
 
-    it("handlers.ts 应调用 rewriteWindow 重写窗口", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/handlers.ts"), "utf-8");
+    it("context-policy.ts 应调用 rewriteWindow 重写窗口", () => {
+        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
         // 锁定：使用 rewriteWindow 重写窗口文件
         expect(code).toContain("rewriteWindow");
+    });
+
+    it("handlers.ts 不应再独占 compact 主逻辑", () => {
+        const code = readFileSync(resolve(process.cwd(), "src/handlers.ts"), "utf-8");
+        expect(code).toContain("assembleAgentContext");
+        expect(code).not.toContain("trimWindowWithResult");
+        expect(code).not.toContain("extractSummary");
     });
 });
 
@@ -120,18 +126,18 @@ describe("P5.7-R9-T2: 路由一致性", () => {
 // ============================================
 
 describe("P5.7-R9-T2: 预算感知模块导入", () => {
-    it("handlers.ts 应导入 estimateTotalTokens", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/handlers.ts"), "utf-8");
+    it("context-policy.ts 应导入 estimateTotalTokens", () => {
+        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
         expect(code).toContain("estimateTotalTokens");
     });
 
-    it("handlers.ts 应导入 getInputBudgetFromCapabilities", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/handlers.ts"), "utf-8");
+    it("context-policy.ts 应导入 getInputBudgetFromCapabilities", () => {
+        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
         expect(code).toContain("getInputBudgetFromCapabilities");
     });
 
-    it("handlers.ts 应导入 resolveRuntimeCapabilities", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/handlers.ts"), "utf-8");
+    it("context-policy.ts 应导入 resolveRuntimeCapabilities", () => {
+        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
         expect(code).toContain("resolveRuntimeCapabilities");
     });
 });

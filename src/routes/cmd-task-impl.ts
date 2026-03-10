@@ -17,6 +17,7 @@ import type { RouteEntry } from "./store.js";
 import type { TaskSupervisor } from "../runtime/task-supervisor.js";
 import type { TaskDiagnostics } from "../runtime/task-types.js";
 import { logger } from "../logger/index.js";
+import { beginRun } from "../runtime/run-store.js";
 
 // ============================================
 // 命令执行结果
@@ -57,10 +58,21 @@ export async function handleTaskRun(
         };
     }
 
+    const run = beginRun({
+        source: "task",
+        kind: "task",
+        chatId: route.chatGuid,
+        workspacePath: route.workspacePath,
+    });
+
     try {
         const result = await supervisor.createTask(route.chatGuid, route.workspacePath, goal.trim());
 
         if (!result.ok) {
+            run.finish({
+                status: "failed",
+                error: result.error,
+            });
             return {
                 ok: false,
                 message: `创建任务失败: ${result.error}`,
@@ -68,22 +80,31 @@ export async function handleTaskRun(
         }
 
         const task = result.task;
+        run.finish({
+            status: "completed",
+            taskId: task.taskId,
+        });
         return {
             ok: true,
             message: `任务已创建\n- 任务 ID: ${task.taskId}\n- 目标: ${task.goal}\n- 状态: ${task.status}`,
             task,
         };
     } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
         logger.error("创建任务失败", {
             module: "cmd-task",
             chatId: route.chatGuid,
             goal,
-            error: error instanceof Error ? error.message : String(error),
+            error: errorMessage,
+        });
+        run.finish({
+            status: "failed",
+            error: errorMessage,
         });
 
         return {
             ok: false,
-            message: `创建任务失败: ${error instanceof Error ? error.message : String(error)}`,
+            message: `创建任务失败: ${errorMessage}`,
         };
     }
 }
@@ -236,10 +257,21 @@ export async function handleTaskResume(
     route: RouteEntry,
     supervisor: TaskSupervisor
 ): Promise<TaskCommandResult> {
+    const run = beginRun({
+        source: "task",
+        kind: "task",
+        chatId: route.chatGuid,
+        workspacePath: route.workspacePath,
+    });
+
     try {
         const task = await supervisor.getActiveTask(route.chatGuid);
 
         if (!task) {
+            run.finish({
+                status: "failed",
+                error: "当前没有活跃任务",
+            });
             return {
                 ok: false,
                 message: "当前没有活跃任务",
@@ -247,6 +279,11 @@ export async function handleTaskResume(
         }
 
         if (task.status !== "blocked") {
+            run.finish({
+                status: "failed",
+                taskId: task.taskId,
+                error: `只能恢复 blocked 状态的任务，当前状态: ${task.status}`,
+            });
             return {
                 ok: false,
                 message: `只能恢复 blocked 状态的任务\n当前状态: ${task.status}`,
@@ -256,27 +293,41 @@ export async function handleTaskResume(
         const result = await supervisor.resumeTask(task.taskId);
 
         if (!result.ok) {
+            run.finish({
+                status: "failed",
+                taskId: task.taskId,
+                error: result.error,
+            });
             return {
                 ok: false,
                 message: `恢复任务失败: ${result.error}`,
             };
         }
 
+        run.finish({
+            status: "completed",
+            taskId: result.task.taskId,
+        });
         return {
             ok: true,
             message: `任务已恢复\n- 任务 ID: ${task.taskId}\n- 原状态: blocked\n- 新状态: running\n- 重试次数: ${result.task.attemptCount}`,
             task: result.task,
         };
     } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
         logger.error("恢复任务失败", {
             module: "cmd-task",
             chatId: route.chatGuid,
-            error: error instanceof Error ? error.message : String(error),
+            error: errorMessage,
+        });
+        run.finish({
+            status: "failed",
+            error: errorMessage,
         });
 
         return {
             ok: false,
-            message: `恢复任务失败: ${error instanceof Error ? error.message : String(error)}`,
+            message: `恢复任务失败: ${errorMessage}`,
         };
     }
 }

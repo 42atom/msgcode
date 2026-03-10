@@ -12,6 +12,7 @@
 
 import * as crypto from "node:crypto";
 import { logger } from "../logger/index.js";
+import { emitToolLoopRunEvents } from "../runtime/run-events.js";
 import type {
     AgentRoutedChatOptions,
     AgentRoutedChatResult,
@@ -35,7 +36,7 @@ function buildToolSequence(actionJournal: AgentRoutedChatResult["actionJournal"]
 // ============================================
 
 export async function runAgentRoutedChat(options: AgentRoutedChatOptions): Promise<AgentRoutedChatResult> {
-    const traceId = crypto.randomUUID().slice(0, 8);
+    const traceId = options.traceId ?? crypto.randomUUID().slice(0, 8);
     const backendRuntime = resolveAgentBackendRuntime(options.agentProvider);
 
     const degradeState = getDegradeState();
@@ -122,6 +123,18 @@ export async function runAgentRoutedChat(options: AgentRoutedChatOptions): Promi
 
     const finalRoute = toolLoopResult.toolCall !== undefined ? "tool" : "no-tool";
     const decisionSource = toolLoopResult.decisionSource ?? "model";
+
+    if (options.runContext) {
+        emitToolLoopRunEvents({
+            runId: options.runContext.runId,
+            sessionKey: options.runContext.sessionKey,
+            source: options.runContext.source,
+            answer: toolLoopResult.answer,
+            route: finalRoute,
+            actionJournal: toolLoopResult.actionJournal,
+            verifyResult: toolLoopResult.verifyResult,
+        });
+    }
 
     logger.info("agent-first chat completed", {
         module: "agent-backend",

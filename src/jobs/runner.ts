@@ -16,6 +16,7 @@ import type { RouteEntry } from "../routes/store.js";
 import { getRouteByChatId } from "../routes/store.js";
 import { handleTmuxSend } from "../tmux/responder.js";
 import { stableGroupNameForChatId } from "../imsg/adapter.js";
+import { beginRun, toRunErrorMessage } from "../runtime/run-store.js";
 
 // ============================================
 // 执行上下文
@@ -66,146 +67,169 @@ export async function executeJob(
   job: CronJob,
   ctx: JobExecutionContext = {}
 ): Promise<JobExecutionResult> {
-  const startTime = Date.now();
-
-  // P5.7-R17: 支持 chatMessage payload（不走 tmux，直接发消息）
-  if (job.payload.kind === "chatMessage") {
-    return await executeChatMessageJob(job, ctx, startTime);
-  }
-
-  // 仅支持 tmuxMessage payload
-  if (job.payload.kind !== "tmuxMessage") {
-    return {
-      status: "skipped",
-      durationMs: Date.now() - startTime,
-      error: `不支持的 payload.kind: ${job.payload.kind}`,
-      errorCode: "PAYLOAD_EMPTY",
-    };
-  }
-
-  const text = job.payload.text;
-  if (!text) {
-    return {
-      status: "skipped",
-      durationMs: Date.now() - startTime,
-      error: "payload.text 为空",
-      errorCode: "PAYLOAD_EMPTY",
-    };
-  }
-
-  // 1) 获取 route
-  const route = getRouteByChatId(job.route.chatGuid);
-  if (!route) {
-    return {
-      status: "skipped",
-      durationMs: Date.now() - startTime,
-      error: `路由不存在: ${job.route.chatGuid}`,
-      errorCode: "ROUTE_NOT_FOUND",
-    };
-  }
-
-  if (route.status !== "active") {
-    return {
-      status: "skipped",
-      durationMs: Date.now() - startTime,
-      error: `路由未激活: ${route.label} (${route.status})`,
-      errorCode: "ROUTE_INACTIVE",
-    };
-  }
-
-  // 2) 获取 tmux group name
-  const groupName = stableGroupNameForChatId(job.route.chatGuid);
-
-  // 3) 执行 tmux send
-  const tmuxResult = await handleTmuxSend(groupName, text, {
-    projectDir: route.workspacePath,
+  const run = beginRun({
+    source: "schedule",
+    kind: "light",
+    chatId: job.route.chatGuid,
+    triggerId: job.id,
   });
 
-  if (!tmuxResult.success) {
-    // tmux 执行失败
-    const errorMsg = tmuxResult.error || "未知错误";
+  try {
+    const startTime = Date.now();
 
-    if (errorMsg.includes("tmux 会话未运行")) {
-      return {
+    // P5.7-R17: 支持 chatMessage payload（不走 tmux，直接发消息）
+    if (job.payload.kind === "chatMessage") {
+      return finalizeScheduleRun(run, await executeChatMessageJob(job, ctx, startTime));
+    }
+
+    // 仅支持 tmuxMessage payload
+    if (job.payload.kind !== "tmuxMessage") {
+      return finalizeScheduleRun(run, {
+        status: "skipped",
+        durationMs: Date.now() - startTime,
+        error: "不支持的 payload.kind",
+        errorCode: "PAYLOAD_EMPTY",
+      });
+    }
+
+    const text = job.payload.text;
+    if (!text) {
+      return finalizeScheduleRun(run, {
+        status: "skipped",
+        durationMs: Date.now() - startTime,
+        error: "payload.text 为空",
+        errorCode: "PAYLOAD_EMPTY",
+      });
+    }
+
+    // 1) 获取 route
+    const route = getRouteByChatId(job.route.chatGuid);
+    if (!route) {
+      return finalizeScheduleRun(run, {
+        status: "skipped",
+        durationMs: Date.now() - startTime,
+        error: `路由不存在: ${job.route.chatGuid}`,
+        errorCode: "ROUTE_NOT_FOUND",
+      });
+    }
+
+    if (route.status !== "active") {
+      return finalizeScheduleRun(run, {
+        status: "skipped",
+        durationMs: Date.now() - startTime,
+        error: `路由未激活: ${route.label} (${route.status})`,
+        errorCode: "ROUTE_INACTIVE",
+      });
+    }
+
+    // 2) 获取 tmux group name
+    const groupName = stableGroupNameForChatId(job.route.chatGuid);
+
+    // 3) 执行 tmux send
+    const tmuxResult = await handleTmuxSend(groupName, text, {
+      projectDir: route.workspacePath,
+    });
+
+    if (!tmuxResult.success) {
+      // tmux 执行失败
+      const errorMsg = tmuxResult.error || "未知错误";
+
+      if (errorMsg.includes("tmux 会话未运行")) {
+        return finalizeScheduleRun(run, {
+          status: "error",
+          durationMs: Date.now() - startTime,
+          error: errorMsg,
+          errorCode: "TMUX_SESSION_DEAD",
+          details: { groupName },
+        });
+      }
+
+      return finalizeScheduleRun(run, {
         status: "error",
         durationMs: Date.now() - startTime,
         error: errorMsg,
-        errorCode: "TMUX_SESSION_DEAD",
+        errorCode: "TMUX_SESSION_START_FAILED",
         details: { groupName },
+      });
+    }
+
+    // 4) 处理 delivery（回发到 iMessage）
+    const shouldDelivery = ctx.delivery !== false;
+    let deliveryError: string | undefined;
+
+    if (shouldDelivery && job.delivery.mode === "reply-to-same-chat") {
+      let responseText = tmuxResult.response || "";
+
+      // 按 maxChars 截断
+      if (job.delivery.maxChars && responseText.length > job.delivery.maxChars) {
+        responseText = responseText.slice(0, job.delivery.maxChars) + "...";
+      }
+
+      // 回发消息
+      try {
+        if (ctx.imsgSend) {
+          // 使用自定义 imsgSend（CLI 手动 run）
+          await ctx.imsgSend(job.route.chatGuid, responseText);
+        } else {
+          // TODO: 使用 imsgClient（daemon 模式）
+          // 目前 CLI 手动 run 需要提供 imsgSend，daemon 模式下通过 context 传入
+          deliveryError = "imsgSend 未提供（daemon 模式需传入）";
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (job.delivery.bestEffort) {
+          // bestEffort 模式：回发失败不影响任务状态
+          deliveryError = msg;
+        } else {
+          // 非 bestEffort：回发失败算任务失败
+          return finalizeScheduleRun(run, {
+            status: "error",
+            durationMs: Date.now() - startTime,
+            error: `回发失败: ${msg}`,
+            errorCode: "IMSG_SEND_FAILED",
+            details: { originalResponse: tmuxResult.response },
+          });
+        }
+      }
+    }
+
+    // 5) 返回成功结果
+    const result: JobExecutionResult = {
+      status: "ok",
+      durationMs: Date.now() - startTime,
+    };
+
+    // 如果有回发错误（bestEffort 模式），写入 details
+    if (deliveryError) {
+      result.details = {
+        deliveryError,
+        originalResponse: tmuxResult.response,
       };
     }
 
-    return {
-      status: "error",
-      durationMs: Date.now() - startTime,
-      error: errorMsg,
-      errorCode: "TMUX_SESSION_START_FAILED",
-      details: { groupName },
-    };
-  }
-
-  // 4) 处理 delivery（回发到 iMessage）
-  const shouldDelivery = ctx.delivery !== false;
-  let deliveryError: string | undefined;
-
-  if (shouldDelivery && job.delivery.mode === "reply-to-same-chat") {
-    let responseText = tmuxResult.response || "";
-
-    // 按 maxChars 截断
-    if (job.delivery.maxChars && responseText.length > job.delivery.maxChars) {
-      responseText = responseText.slice(0, job.delivery.maxChars) + "...";
+    // 如果响应被截断，写入 details
+    if (tmuxResult.response && job.delivery.maxChars && tmuxResult.response.length > job.delivery.maxChars) {
+      result.details = result.details || {};
+      result.details.truncated = true;
+      result.details.originalLength = tmuxResult.response.length;
+      result.details.truncatedLength = job.delivery.maxChars;
     }
 
-    // 回发消息
-    try {
-      if (ctx.imsgSend) {
-        // 使用自定义 imsgSend（CLI 手动 run）
-        await ctx.imsgSend(job.route.chatGuid, responseText);
-      } else {
-        // TODO: 使用 imsgClient（daemon 模式）
-        // 目前 CLI 手动 run 需要提供 imsgSend，daemon 模式下通过 context 传入
-        deliveryError = "imsgSend 未提供（daemon 模式需传入）";
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (job.delivery.bestEffort) {
-        // bestEffort 模式：回发失败不影响任务状态
-        deliveryError = msg;
-      } else {
-        // 非 bestEffort：回发失败算任务失败
-        return {
-          status: "error",
-          durationMs: Date.now() - startTime,
-          error: `回发失败: ${msg}`,
-          errorCode: "IMSG_SEND_FAILED",
-          details: { originalResponse: tmuxResult.response },
-        };
-      }
-    }
+    return finalizeScheduleRun(run, result);
+  } catch (error) {
+    run.finish({
+      status: "failed",
+      error: toRunErrorMessage(error),
+    });
+    throw error;
   }
+}
 
-  // 5) 返回成功结果
-  const result: JobExecutionResult = {
-    status: "ok",
-    durationMs: Date.now() - startTime,
-  };
-
-  // 如果有回发错误（bestEffort 模式），写入 details
-  if (deliveryError) {
-    result.details = {
-      deliveryError,
-      originalResponse: tmuxResult.response,
-    };
-  }
-
-  // 如果响应被截断，写入 details
-  if (tmuxResult.response && job.delivery.maxChars && tmuxResult.response.length > job.delivery.maxChars) {
-    result.details = result.details || {};
-    result.details.truncated = true;
-    result.details.originalLength = tmuxResult.response.length;
-    result.details.truncatedLength = job.delivery.maxChars;
-  }
-
+function finalizeScheduleRun(run: import("../runtime/run-store.js").RunHandle, result: JobExecutionResult): JobExecutionResult {
+  run.finish({
+    status: result.status === "ok" ? "completed" : "failed",
+    error: result.error,
+  });
   return result;
 }
 

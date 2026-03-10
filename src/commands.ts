@@ -650,11 +650,9 @@ export async function startBot(): Promise<void> {
 
   // P5.7-R12: 初始化并启动 Task Supervisor
   const { createTaskSupervisor } = await import("./runtime/task-supervisor.js");
+  const { assembleAgentContext } = await import("./runtime/context-policy.js");
   const { initializeEventQueue, restoreAllQueuesFromDisk } = await import("./steering-queue.js");
   const { executeAgentTurn } = await import("./agent-backend.js");
-  const { loadSummary, formatSummaryAsContext } = await import("./summary.js");
-  const { loadWindow } = await import("./session-window.js");
-  const { formatTaskCheckpointAsContext } = await import("./runtime/task-types.js");
   const taskDir = `${config.workspaceRoot}/.msgcode/tasks`;
   const eventQueueDir = `${config.workspaceRoot}/.msgcode/event-queue`;
   initializeEventQueue(eventQueueDir);
@@ -663,21 +661,31 @@ export async function startBot(): Promise<void> {
     taskDir,
     eventQueueDir,
     heartbeatIntervalMs: 60_000,
-    executeTaskTurn: async (task) => {
-      const checkpointContext = formatTaskCheckpointAsContext(task.checkpoint);
-      const taskPrompt = checkpointContext
-        ? `[长期任务目标]\n${task.goal}\n\n${checkpointContext}\n\n请基于上面的任务状态继续推进，优先完成“下一步”；若已满足验收标准，则完成任务并给出可验证结果。`
-        : task.goal;
-
-      const windowMessages = await loadWindow(task.workspacePath, task.chatId);
-      const summary = await loadSummary(task.workspacePath, task.chatId);
-      const summaryContext = formatSummaryAsContext(summary);
+    executeTaskTurn: async (task, runContext) => {
+      const assembledContext = await assembleAgentContext({
+        source: runContext.source,
+        chatId: task.chatId,
+        prompt: task.goal,
+        workspacePath: task.workspacePath,
+        taskGoal: task.goal,
+        checkpoint: task.checkpoint,
+        includeSoulContext: true,
+        runId: runContext.runId,
+        sessionKey: runContext.sessionKey,
+      });
 
       return executeAgentTurn({
-        prompt: taskPrompt,
+        prompt: assembledContext.prompt,
         workspacePath: task.workspacePath,
-        windowMessages,
-        summaryContext,
+        windowMessages: assembledContext.windowMessages,
+        summaryContext: assembledContext.summaryContext,
+        soulContext: assembledContext.soulContext,
+        traceId: runContext.runId,
+        runContext: {
+          runId: runContext.runId,
+          sessionKey: runContext.sessionKey,
+          source: runContext.source,
+        },
       });
     },
   });

@@ -113,6 +113,12 @@ export interface AgentToolLoopOptions {
     allowNoTool?: boolean; // 如果为 true，模型可以自己决定不调用工具（默认 false，保持向后兼容）
 }
 
+export interface AgentRunContext {
+    runId: string;
+    sessionKey: string;
+    source: "message" | "task" | "heartbeat";
+}
+
 // ============================================
 // Action Journal 类型（P5.7-R3l-4）
 // ============================================
@@ -217,6 +223,8 @@ export interface AgentRoutedChatOptions {
     summaryContext?: string;
     soulContext?: { content: string; source: string; path: string; chars: number };
     temperature?: number; // 可选覆盖温度
+    traceId?: string; // 外层 runId 透传时复用
+    runContext?: AgentRunContext; // Phase 4: 统一 Run Events 透传
 }
 
 /**

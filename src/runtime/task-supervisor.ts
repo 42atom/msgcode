@@ -28,6 +28,9 @@ import { createTaskRecord, toDiagnostics } from "./task-types.js";
 import { TaskStore } from "./task-store.js";
 import { logger } from "../logger/index.js";
 import type { TickContext } from "./heartbeat.js";
+import { beginRun, toRunErrorMessage } from "./run-store.js";
+import { emitRunEvent } from "./run-events.js";
+import type { RunSource } from "./run-types.js";
 
 // ============================================
 // Task Supervisor 类
@@ -365,7 +368,10 @@ export class TaskSupervisor {
 
             // 执行任务（当前 MVP 只支持单任务，取第一个）
             for (const task of runnableTasks) {
-                await this.executeTask(task);
+                await this.executeTask(task, {
+                    source: "heartbeat",
+                    triggerId: ctx.tickId,
+                });
             }
         } catch (error) {
             logger.error("Heartbeat tick 执行失败", {
@@ -384,9 +390,23 @@ export class TaskSupervisor {
      *
      * @param task 任务记录
      */
-    private async executeTask(task: TaskRecord): Promise<void> {
+    private async executeTask(
+        task: TaskRecord,
+        runContext: { source: Extract<RunSource, "task" | "heartbeat">; triggerId?: string }
+    ): Promise<void> {
+        const run = beginRun({
+            source: runContext.source,
+            kind: "task",
+            chatId: task.chatId,
+            workspacePath: task.workspacePath,
+            taskId: task.taskId,
+            triggerId: runContext.triggerId,
+        });
+
         logger.info("开始执行任务", {
             module: "task-supervisor",
+            runId: run.runId,
+            source: runContext.source,
             taskId: task.taskId,
             goal: task.goal,
             attemptCount: task.attemptCount,
@@ -401,14 +421,24 @@ export class TaskSupervisor {
         if (!updateResult.ok) {
             logger.error("更新任务状态失败", {
                 module: "task-supervisor",
+                runId: run.runId,
+                source: runContext.source,
                 taskId: task.taskId,
+                error: updateResult.error,
+            });
+            run.finish({
+                status: "failed",
                 error: updateResult.error,
             });
             return;
         }
 
         try {
-            const result = await this.executeTaskTurn(task);
+            const result = await this.executeTaskTurn(task, {
+                runId: run.runId,
+                sessionKey: run.sessionKey,
+                source: runContext.source,
+            });
 
             // P5.7-R12-T8: 检查是否可续跑
             if (result.continuable) {
@@ -442,8 +472,14 @@ export class TaskSupervisor {
 
                     logger.info("任务总预算耗尽，进入失败状态", {
                         module: "task-supervisor",
+                        runId: run.runId,
+                        source: runContext.source,
                         taskId: task.taskId,
                         reason: budgetCheckResult.reason,
+                    });
+                    run.finish({
+                        status: "failed",
+                        error: budgetCheckResult.reason,
                     });
                     return;
                 }
@@ -491,8 +527,13 @@ export class TaskSupervisor {
 
                 logger.info("任务续跑准备下一轮", {
                     module: "task-supervisor",
+                    runId: run.runId,
+                    source: runContext.source,
                     taskId: task.taskId,
                     newAttemptCount: task.attemptCount + 1,
+                });
+                run.finish({
+                    status: "completed",
                 });
                 return;
             }
@@ -541,16 +582,40 @@ export class TaskSupervisor {
 
             await this.updateTaskResult(task.taskId, executionResult);
 
+            if (
+                executionResult.status === "blocked" &&
+                (!result.verifyResult || result.verifyResult.ok)
+            ) {
+                emitRunEvent({
+                    runId: run.runId,
+                    sessionKey: run.sessionKey,
+                    source: runContext.source,
+                    type: "run:block",
+                    taskId: task.taskId,
+                    message: executionResult.blockedReason || "任务已进入 blocked 状态",
+                    errorCode: executionResult.errorCode,
+                });
+            }
+
             logger.info("任务执行完成", {
                 module: "task-supervisor",
+                runId: run.runId,
+                source: runContext.source,
                 taskId: task.taskId,
                 status: executionResult.status,
             });
+            run.finish({
+                status: executionResult.status === "blocked" ? "blocked" : "completed",
+                error: executionResult.errorMessage || executionResult.blockedReason,
+            });
         } catch (error) {
+            const errorMessage = toRunErrorMessage(error);
             logger.error("任务执行失败", {
                 module: "task-supervisor",
+                runId: run.runId,
+                source: runContext.source,
                 taskId: task.taskId,
-                error: error instanceof Error ? error.message : String(error),
+                error: errorMessage,
             });
 
             // P5.7-R12-T8: 更新错误码计数（异常分支）
@@ -575,8 +640,12 @@ export class TaskSupervisor {
                 ok: false,
                 status: "failed",
                 errorCode: executionFailedErrorCode,
-                errorMessage: error instanceof Error ? error.message : String(error),
+                errorMessage: errorMessage,
                 checkpoint: this.buildFailureCheckpoint(task, executionFailedErrorCode, error),
+            });
+            run.finish({
+                status: "failed",
+                error: errorMessage,
             });
         }
     }

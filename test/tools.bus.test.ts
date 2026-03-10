@@ -168,6 +168,7 @@ describe("Tool Bus", () => {
       expect(policy.allow).toContain("bash");
       expect(policy.allow).toContain("browser");
       expect(policy.allow).toContain("read_file");
+      expect(policy.allow).toContain("feishu_list_members");
       expect(policy.allow).not.toContain("write_file");
       expect(policy.allow).not.toContain("edit_file");
     });

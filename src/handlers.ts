@@ -14,12 +14,10 @@ import { executeAgentTurn, runAgentChat } from "./agent-backend.js";
 import type { InboundMessage } from "./imsg/types.js";
 import { clearTtsPrefs, getTtsPrefs, getVoiceReplyMode, setTtsPrefs, setVoiceReplyMode } from "./state/store.js";
 import { logger } from "./logger/index.js";
+import { getPrimaryOwnerIdsForChannel } from "./config.js";
 import { loadWorkspaceConfig, getRuntimeKind, getTmuxClient, getPolicyMode } from "./config/workspace.js";
 // P5.5: 关键词主触发已禁用，不再 import detectAutoSkill/runAutoSkill
 // import { detectAutoSkill, normalizeSkillId, runAutoSkill, runSkill } from "./skills/auto.js";
-// P5.7-R9-T2: 导入预算感知模块
-import { estimateTotalTokens } from "./budget.js";
-import { getInputBudgetFromCapabilities, resolveRuntimeCapabilities } from "./capabilities.js";
 
 // 导入 tmux 模块
 import { type RunnerType } from "./tmux/session.js";
@@ -29,12 +27,13 @@ import { handleTmuxSend } from "./tmux/responder.js";
 import * as session from "./runtime/session-orchestrator.js";
 
 // P5.6.2-R1: 导入会话窗口
-import { loadWindow, appendWindow, type WindowMessage, trimWindowWithResult, rewriteWindow } from "./session-window.js";
-import { loadSummary, formatSummaryAsContext, extractSummary, saveSummary, type ChatSummary } from "./summary.js";
-import { resolveSoulContext } from "./config/souls.js";
+import { appendWindow } from "./session-window.js";
 // P5.6.13-R2: 导入线程存储
 import { ensureThread, appendTurn, getThreadInfo } from "./runtime/thread-store.js";
 import { renderUnknownCommandHint } from "./routes/cmd-info.js";
+import { assembleAgentContext } from "./runtime/context-policy.js";
+import { resolveSessionChannel } from "./runtime/session-key.js";
+import { beginRun } from "./runtime/run-store.js";
 
 const TMUX_STYLE_MAX_CHARS = 800;
 const TMUX_LOCAL_ONLY_BLOCK_MESSAGE = "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）";
@@ -567,151 +566,42 @@ export class RuntimeRouterHandler implements CommandHandler {
         // 单源化：Agent Backend 仅从全局 AGENT_BACKEND 读取
         const provider = resolveGlobalAgentProvider();
         const providerSource = process.env.AGENT_BACKEND ? "env" : "default";
+        const run = beginRun({
+            source: "message",
+            kind: "light",
+            chatId: context.chatId,
+            workspacePath: context.projectDir,
+        });
 
         try {
-            const { randomUUID } = await import("node:crypto");
-            const traceId = randomUUID();  // 生成链路追踪 ID
-
-            // P5.6.2-R2: 读取短期会话窗口
-            let windowMessages: WindowMessage[] = [];
-            let summaryContext: string | undefined;
-            let soulContext: { content: string; source: string; path: string; chars: number } | undefined;
-
-            if (context.projectDir) {
-                windowMessages = await loadWindow(context.projectDir, context.chatId);
-
-                // P5.6.8-R4b: 读取 summary 并格式化为上下文
-                const summary = await loadSummary(context.projectDir, context.chatId);
-                if (summary) {
-                    summaryContext = formatSummaryAsContext(summary);
-                }
-
-                // P5.6.8-R4e: 读取 SOUL 上下文
-                soulContext = await resolveSoulContext(context.projectDir);
-            }
-
-            // P5.7-R9-T2 Step 1: 上下文预算感知（请求前观测）
-            const runtimeCaps = await resolveRuntimeCapabilities({
-                agentProvider: provider,
-            });
-            const contextWindowTokens = runtimeCaps.contextWindowTokens;
-            const contextBudget = getInputBudgetFromCapabilities(runtimeCaps);
-            const safeContextBudget = contextBudget > 0 ? contextBudget : 1;
-            const contextUsedTokens = estimateTotalTokens(windowMessages, runtimeCaps.charsPerToken);
-            const contextUsagePct = Math.round((contextUsedTokens / safeContextBudget) * 100);
-            const budgetRemaining = contextBudget - contextUsedTokens;
-            const isApproachingBudget = contextUsagePct >= 70;
-
-            logger.info("context budget observation", {
-                module: "handlers",
+            const traceId = run.runId;
+            const sessionChannel = resolveSessionChannel(context.chatId);
+            const assembledContext = await assembleAgentContext({
+                source: "message",
                 chatId: context.chatId,
-                contextWindowTokens,
-                contextBudget,
-                contextUsedTokens,
-                contextUsagePct,
-                budgetRemaining,
-                isApproachingBudget,
-                contextCapsSource: runtimeCaps.source,
-                contextCapsProvider: runtimeCaps.provider,
-                contextCapsModel: runtimeCaps.model || "",
-                charsPerToken: runtimeCaps.charsPerToken,
+                prompt: trimmed,
+                workspacePath: context.projectDir,
+                agentProvider: provider,
+                includeSoulContext: true,
+                runId: run.runId,
+                sessionKey: run.sessionKey,
+                currentChannel: sessionChannel,
+                currentSpeakerId: context.originalMessage.sender || context.originalMessage.handle,
+                primaryOwnerIds: getPrimaryOwnerIdsForChannel(sessionChannel),
             });
-
-            // P5.7-R9-T2 Step 2: 70% 自动 Compact
-            let compactionTriggered = false;
-            let compactionReason: string | undefined;
-            let postCompactUsagePct: number | undefined;
-
-            // 阈值常量（冻结）
-            const COMPACT_SOFT_THRESHOLD = 70;  // 70% 触发 compact
-            const COMPACT_HARD_THRESHOLD = 85;  // 85% 硬保护
-            const COMPACT_KEEP_RECENT = 10;     // 保留最近 10 条消息
-
-            if (isApproachingBudget && context.projectDir) {
-                compactionTriggered = true;
-                compactionReason = `context usage ${contextUsagePct}% >= ${COMPACT_SOFT_THRESHOLD}% threshold`;
-
-                logger.info("context compaction triggered", {
-                    module: "handlers",
-                    chatId: context.chatId,
-                    reason: compactionReason,
-                    preCompactUsage: contextUsagePct,
-                    preCompactMessages: windowMessages.length,
-                });
-
-                try {
-                    // 1. 裁剪窗口：保留最近 N 条
-                    const trimResult = trimWindowWithResult(windowMessages, COMPACT_KEEP_RECENT);
-
-                    if (trimResult.wasTrimmed && trimResult.trimmed.length > 0) {
-                        // 2. 提取被裁剪消息的摘要
-                        const newSummary = extractSummary(trimResult.trimmed, windowMessages);
-
-                        // 3. 合并到现有 summary
-                        const existingSummary = await loadSummary(context.projectDir, context.chatId);
-                        const mergedSummary: ChatSummary = {
-                            goal: [...existingSummary.goal, ...newSummary.goal].slice(-5),
-                            constraints: [...existingSummary.constraints, ...newSummary.constraints].slice(-10),
-                            decisions: [...existingSummary.decisions, ...newSummary.decisions].slice(-10),
-                            openItems: [...existingSummary.openItems, ...newSummary.openItems].slice(-5),
-                            toolFacts: [...existingSummary.toolFacts, ...newSummary.toolFacts].slice(-10),
-                        };
-
-                        // 4. 保存合并后的 summary
-                        await saveSummary(context.projectDir, context.chatId, mergedSummary);
-
-                        // 5. 重写窗口文件
-                        await rewriteWindow(context.projectDir, context.chatId, trimResult.messages);
-
-                        // 6. 更新内存中的窗口和摘要上下文
-                        windowMessages = trimResult.messages;
-                        summaryContext = formatSummaryAsContext(mergedSummary);
-
-                        // 7. 重新评估使用率
-                        const postCompactUsed = estimateTotalTokens(windowMessages);
-                        postCompactUsagePct = Math.round((postCompactUsed / contextBudget) * 100);
-
-                        logger.info("context compaction completed", {
-                            module: "handlers",
-                            chatId: context.chatId,
-                            preCompactMessages: trimResult.trimmed.length + trimResult.messages.length,
-                            postCompactMessages: trimResult.messages.length,
-                            preCompactUsage: contextUsagePct,
-                            postCompactUsage: postCompactUsagePct,
-                            summaryEntries: {
-                                goals: mergedSummary.goal.length,
-                                constraints: mergedSummary.constraints.length,
-                                decisions: mergedSummary.decisions.length,
-                                openItems: mergedSummary.openItems.length,
-                                toolFacts: mergedSummary.toolFacts.length,
-                            },
-                        });
-
-                        // 8. 硬保护检查：compact 后仍超过 85% 则警告
-                        if (postCompactUsagePct >= COMPACT_HARD_THRESHOLD) {
-                            logger.warn("context overflow protected", {
-                                module: "handlers",
-                                chatId: context.chatId,
-                                postCompactUsage: postCompactUsagePct,
-                                hardThreshold: COMPACT_HARD_THRESHOLD,
-                            });
-                        }
-                    }
-                } catch (compactError) {
-                    logger.error("context compaction failed", {
-                        module: "handlers",
-                        chatId: context.chatId,
-                        error: compactError instanceof Error ? compactError.message : String(compactError),
-                    });
-                    // compact 失败不阻塞请求，继续使用原始窗口
-                }
-            }
 
             // P5.6.14-R3: 注入观测字段
-            const injectionEnabled = !!(windowMessages.length > 0 || summaryContext || soulContext?.content);
+            const injectionEnabled = !!(
+                assembledContext.windowMessages.length > 0 ||
+                assembledContext.summaryContext ||
+                assembledContext.soulContext?.content
+            );
 
             logger.info("agent request started", {
                 module: "handlers",
+                runId: run.runId,
+                sessionKey: run.sessionKey,
+                source: "message",
                 chatId: context.chatId,
                 traceId,
                 // P5.6.14-R3: 日志字段锁
@@ -720,45 +610,59 @@ export class RuntimeRouterHandler implements CommandHandler {
                 agentProviderSource: providerSource,
                 injectionEnabled,
                 // 注入详情
-                memoryInjected: windowMessages.length > 0 || !!summaryContext,
-                memoryTurns: windowMessages.length,
-                soulInjected: !!soulContext?.content,
-                soulSource: soulContext?.source || "none",
-                soulPath: soulContext?.path || "",
-                soulChars: soulContext?.chars || 0,
+                memoryInjected: assembledContext.windowMessages.length > 0 || !!assembledContext.summaryContext,
+                memoryTurns: assembledContext.windowMessages.length,
+                soulInjected: !!assembledContext.soulContext?.content,
+                soulSource: assembledContext.soulContext?.source || "none",
+                soulPath: assembledContext.soulContext?.path || "",
+                soulChars: assembledContext.soulContext?.chars || 0,
                 // P5.7-R9-T2: 上下文预算与 compact 观测字段（冻结）
-                contextWindowTokens,
-                contextUsedTokens,
-                contextUsagePct,
-                compactionTriggered,
-                compactionReason,
-                postCompactUsagePct,
+                contextWindowTokens: assembledContext.contextWindowTokens,
+                contextUsedTokens: assembledContext.contextUsedTokens,
+                contextUsagePct: assembledContext.contextUsagePct,
+                compactionTriggered: assembledContext.compactionTriggered,
+                compactionReason: assembledContext.compactionReason,
+                postCompactUsagePct: assembledContext.postCompactUsagePct,
             });
 
             // P5.6.1-R2: Persona 全量退役，不再注入 personaContent
             const personaContent = undefined;
             // P5.7-R3e: 主链走路由分发（no-tool / tool / complex-tool）
             const routedResult = await executeAgentTurn({
-                prompt: trimmed,
+                prompt: assembledContext.prompt,
                 system: personaContent,
                 ...(context.projectDir ? { workspacePath: context.projectDir } : {}),
                 agentProvider: provider,
+                traceId,
+                runContext: {
+                    runId: run.runId,
+                    sessionKey: run.sessionKey,
+                    source: "message",
+                },
                 // P5.6.8-R4b: 注入短期记忆上下文
-                windowMessages,
-                summaryContext,
+                windowMessages: assembledContext.windowMessages,
+                summaryContext: assembledContext.summaryContext,
                 // P5.6.8-R4e: 注入 SOUL 上下文（direct only）
-                soulContext,
+                soulContext: assembledContext.soulContext,
             });
             const clean = (routedResult.answer || "").trim();
             if (!clean) {
+                const errorMessage = "Agent Backend 未返回可展示的文本（可能模型只输出了 reasoning、发生截断，或模型已崩溃）";
+                run.finish({
+                    status: "failed",
+                    error: errorMessage,
+                });
                 return {
                     success: false,
-                    error: "Agent Backend 未返回可展示的文本（可能模型只输出了 reasoning、发生截断，或模型已崩溃）",
+                    error: errorMessage,
                 };
             }
 
             logger.info("agent request completed", {
                 module: "handlers",
+                runId: run.runId,
+                sessionKey: run.sessionKey,
+                source: "message",
                 chatId: context.chatId,
                 traceId,
                 responseLength: clean.length,
@@ -779,10 +683,10 @@ export class RuntimeRouterHandler implements CommandHandler {
                     .map((entry) => `${entry.ok ? "ok" : "fail"}:${entry.tool}`)
                     .join(" -> "),
                 // P5.6.8-R4e: SOUL 注入观测字段
-                soulInjected: !!soulContext?.content,
-                soulSource: soulContext?.source || "none",
-                soulPath: soulContext?.path || "",
-                soulChars: soulContext?.chars || 0,
+                soulInjected: !!assembledContext.soulContext?.content,
+                soulSource: assembledContext.soulContext?.source || "none",
+                soulPath: assembledContext.soulContext?.path || "",
+                soulChars: assembledContext.soulContext?.chars || 0,
             });
 
             // 自动语音回复：不在 handler 内阻塞生成（避免"很久不回复"）
@@ -792,6 +696,8 @@ export class RuntimeRouterHandler implements CommandHandler {
 
                 logger.info("Agent Backend 返回 TTS defer", {
                     module: "handlers",
+                    runId: run.runId,
+                    source: "message",
                     chatId: context.chatId,
                     traceId,
                     textLength: speakText.length,
@@ -826,6 +732,9 @@ export class RuntimeRouterHandler implements CommandHandler {
                     }
                 }
 
+                run.finish({
+                    status: "completed",
+                });
                 return {
                     success: true,
                     response: voiceMode === "audio" ? "正在生成语音..." : clean,
@@ -873,11 +782,19 @@ export class RuntimeRouterHandler implements CommandHandler {
                 }
             }
 
+            run.finish({
+                status: "completed",
+            });
             return { success: true, response: clean, defer: null };
         } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : "调用失败";
+            run.finish({
+                status: "failed",
+                error: errorMessage,
+            });
             return {
                 success: false,
-                error: error instanceof Error ? error.message : "调用失败",
+                error: errorMessage,
             };
         }
     }
