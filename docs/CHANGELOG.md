@@ -3,6 +3,7 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-10
+  - runtime: `permissions` probe 已按 transport 条件化；未启用 `imsg` 时不再无条件检查 `~/Library/Messages` 与 `chat.db`，避免 Feishu-only 部署因本地 iMessage 权限缺失被 `msgcode status` 误判为 error (Issue: 0064, Plan: docs/design/plan-260310-permissions-probe-imsg-conditional.md) [risk: low] [rollback: 回退 `src/probe/probes/permissions.ts` 与相关测试]
   - runtime: 修复 `preflight` 与默认 transport 口径漂移；`loadManifest()` 现在会按本轮 transport 解析结果动态提升真正的启动必需依赖，避免 fallback-imsg 场景仍显示 `0/0` 启动必需，同时保持 Feishu-first 的静态 manifest 不变 (Issue: 0063, Plan: docs/design/plan-260310-preflight-transport-aware-startup-deps.md) [risk: medium] [rollback: 回退 `src/deps/load.ts`、`src/config/transports.ts` 与相关 preflight 测试]
   - runtime: 默认通道口径已收口为 `Feishu-first, iMessage-optional`；无显式 `MSGCODE_TRANSPORTS` 时，有飞书凭据默认只启 `feishu`，否则回退 `imsg`，同时 `imsg/messages_db` 退出全局启动硬依赖，README 快速开始也同步切到飞书主通道 (Issue: 0062, Plan: docs/design/plan-260310-feishu-first-imsg-optional.md) [risk: medium] [rollback: 回退 `src/config.ts`、`src/deps/manifest.json`、`README.md` 与相关测试]
   - runtime: macOS 下 `msgcode start/stop/restart` 已收口到 LaunchAgent 主链；daemon 由 `launchd` 托管常驻，`msgcode status` 新增 daemon 托管状态诊断，且 launchd 会话里 `imsg` 初始化失败时不再拖垮整进程，而是自动降级为保留其余 transport 常驻 (Issue: 0061, Plan: docs/design/plan-260310-msgcode-daemon-keepalive-via-launchd.md) [risk: medium] [rollback: 回退 `src/runtime/launchd.ts`、`src/cli.ts`、`src/daemon.ts`、`src/commands.ts` 与 daemon probe 改动]

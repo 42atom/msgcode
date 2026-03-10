@@ -16,15 +16,20 @@ import type { ProbeResult, ProbeOptions } from "../types.js";
 export async function probePermissions(options?: ProbeOptions): Promise<ProbeResult> {
     const details: Record<string, unknown> = {};
     const issues: string[] = [];
+    const enableImsg = config.transports.includes("imsg");
 
-    // 1. ~/Library/Messages 访问权限
-    const messagesPath = path.join(os.homedir(), "Library/Messages");
-    try {
-        await fs.access(messagesPath, fs.constants.R_OK);
-        details.messages_readable = true;
-    } catch {
-        details.messages_readable = false;
-        issues.push("~/Library/Messages 不可读");
+    if (enableImsg) {
+        // 1. ~/Library/Messages 访问权限
+        const messagesPath = path.join(os.homedir(), "Library/Messages");
+        try {
+            await fs.access(messagesPath, fs.constants.R_OK);
+            details.messages_readable = true;
+        } catch {
+            details.messages_readable = false;
+            issues.push("~/Library/Messages 不可读");
+        }
+    } else {
+        details.messages_readable = null;
     }
 
     // 2. ~/.config/msgcode 写权限
@@ -46,19 +51,23 @@ export async function probePermissions(options?: ProbeOptions): Promise<ProbeRes
         issues.push("WORKSPACE_ROOT 不可访问");
     }
 
-    // 4. 完全磁盘访问（通过检查 Messages 数据库来推断）
-    const dbPath = config.imsgDbPath || path.join(os.homedir(), "Library/Messages/chat.db");
-    try {
-        await fs.access(dbPath, fs.constants.R_OK);
-        details.full_disk_access = true;
-    } catch {
-        details.full_disk_access = false;
-        issues.push("完全磁盘访问可能未授权（无法读取 chat.db）");
+    if (enableImsg) {
+        // 4. 完全磁盘访问（通过检查 Messages 数据库来推断）
+        const dbPath = config.imsgDbPath || path.join(os.homedir(), "Library/Messages/chat.db");
+        try {
+            await fs.access(dbPath, fs.constants.R_OK);
+            details.full_disk_access = true;
+        } catch {
+            details.full_disk_access = false;
+            issues.push("完全磁盘访问可能未授权（无法读取 chat.db）");
+        }
+    } else {
+        details.full_disk_access = null;
     }
 
     // 判断状态
     let status: ProbeResult["status"] = "pass";
-    if (!details.messages_readable || !details.full_disk_access) {
+    if (enableImsg && (!details.messages_readable || !details.full_disk_access)) {
         status = "error";
     } else if (issues.length > 0) {
         status = "warning";
