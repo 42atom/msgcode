@@ -50,7 +50,7 @@ export const DEFAULT_CONVERSATION_CONTEXT_BUDGET: ConversationContextBudget = {
 
 export const CONTEXT_COMPACT_SOFT_THRESHOLD = 70;
 export const CONTEXT_COMPACT_HARD_THRESHOLD = 85;
-export const CONTEXT_COMPACT_KEEP_RECENT = 10;
+export const CONTEXT_COMPACT_KEEP_RECENT = 16;
 
 type NormalizedContextMessage = {
     role: "user" | "assistant";
@@ -94,11 +94,13 @@ export interface AssembledAgentContext {
     postCompactUsagePct?: number;
     messageIdentityContext?: string;
     recentMessageRosterContext?: string;
+    artifactRosterContext?: string;
     speakerIdentityContext?: string;
 }
 
-const RECENT_MESSAGE_ROSTER_LIMIT = 8;
+const RECENT_MESSAGE_ROSTER_LIMIT = 40;
 const RECENT_MESSAGE_SNIPPET_CHARS = 80;
+const ARTIFACT_ROSTER_LIMIT = 20;
 
 export function clipContextText(text: string, maxChars: number): string {
     if (!text) return "";
@@ -218,12 +220,13 @@ export async function assembleAgentContext(
 
     let windowMessages: WindowMessage[] = [];
     let summaryContext: string | undefined;
+    let summaryData: ChatSummary | undefined;
     let soulContext: { content: string; source: string; path: string; chars: number } | undefined;
 
     if (input.workspacePath) {
         windowMessages = await loadWindow(input.workspacePath, input.chatId);
-        const summary = await loadSummary(input.workspacePath, input.chatId);
-        summaryContext = formatSummaryAsContext(summary) || undefined;
+        summaryData = await loadSummary(input.workspacePath, input.chatId);
+        summaryContext = formatSummaryAsContext(summaryData) || undefined;
 
         if (input.includeSoulContext) {
             soulContext = await resolveSoulContext(input.workspacePath);
@@ -247,6 +250,7 @@ export async function assembleAgentContext(
         windowMessages,
         primaryOwnerIds: input.primaryOwnerIds,
     });
+    const artifactRosterContext = buildArtifactRosterContext(summaryData);
     const speakerIdentityContext = buildSpeakerIdentityContext({
         channel: input.currentChannel,
         speakerId: input.currentSpeakerId,
@@ -258,6 +262,7 @@ export async function assembleAgentContext(
         checkpointContext,
         messageIdentityContext,
         recentMessageRosterContext,
+        artifactRosterContext,
         speakerIdentityContext,
     });
 
@@ -375,6 +380,7 @@ export async function assembleAgentContext(
         postCompactUsagePct,
         messageIdentityContext,
         recentMessageRosterContext,
+        artifactRosterContext,
         speakerIdentityContext,
     };
 }
@@ -390,6 +396,7 @@ function buildAgentPrompt(params: {
     checkpointContext?: string;
     messageIdentityContext?: string;
     recentMessageRosterContext?: string;
+    artifactRosterContext?: string;
     speakerIdentityContext?: string;
 }): string {
     const basePrompt = params.prompt.trim();
@@ -401,6 +408,10 @@ function buildAgentPrompt(params: {
 
     if (params.recentMessageRosterContext) {
         sections.push(`[最近消息索引]\n${params.recentMessageRosterContext}`);
+    }
+
+    if (params.artifactRosterContext) {
+        sections.push(`[最近生成产物索引]\n${params.artifactRosterContext}`);
     }
 
     if (params.speakerIdentityContext) {
@@ -492,6 +503,35 @@ function buildRecentMessageRosterContext(params: {
     });
 
     return lines.join("\n");
+}
+
+function buildArtifactRosterContext(summary?: ChatSummary): string | undefined {
+    if (!summary || summary.toolFacts.length === 0) {
+        return undefined;
+    }
+
+    const pathPattern = /(?:\/[^\s;]+AIDOCS\/[^\s;]+|AIDOCS\/[^\s;]+)/g;
+    const seen = new Set<string>();
+    const artifacts: string[] = [];
+
+    for (const fact of summary.toolFacts) {
+        const matches = fact.match(pathPattern) || [];
+        for (const match of matches) {
+            const normalized = match.trim();
+            if (!normalized || seen.has(normalized)) continue;
+            seen.add(normalized);
+            artifacts.push(normalized);
+        }
+    }
+
+    if (artifacts.length === 0) {
+        return undefined;
+    }
+
+    return artifacts
+        .slice(-ARTIFACT_ROSTER_LIMIT)
+        .map((artifactPath) => `- path=${artifactPath}`)
+        .join("\n");
 }
 
 function buildSpeakerIdentityContext(params: {

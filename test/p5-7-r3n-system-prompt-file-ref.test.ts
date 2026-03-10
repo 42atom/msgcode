@@ -33,6 +33,9 @@ describe("P5.7-R3n: system prompt file reference", () => {
         expect(content).toContain("twitter-media");
         expect(content).toContain("主索引已经汇总了基础 skill 和可选 skill 的摘要");
         expect(content).toContain("`memory` 不是工具名");
+        expect(content).toContain("判断某个 skill 能做什么、不能做什么之前，必须仔细阅读对应的 SKILL.md");
+        expect(content).toContain("如果看完仍然不确定能力边界或调用方式，先向用户说明不确定点并沟通");
+        expect(content).toContain("凡是 AI 生成的图片、音频、视频以及其他生成产物，优先在当前 workspace 的 `AIDOCS/` 目录下查找");
     });
 
     it("配置层应暴露 AGENT_SYSTEM_PROMPT_FILE", () => {

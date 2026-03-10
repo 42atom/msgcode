@@ -95,7 +95,7 @@ export async function feishuListRecentMessages(
     }
 ): Promise<FeishuListRecentMessagesResult> {
     const chatId = args.chatId.trim();
-    const limit = Math.max(1, Math.min(args.limit ?? 8, 20));
+    const limit = Math.max(1, Math.min(args.limit ?? 40, 40));
 
     logger.info("Feishu 最近消息查询开始", {
         module: "tools",

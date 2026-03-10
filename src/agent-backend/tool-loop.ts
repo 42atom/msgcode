@@ -1665,7 +1665,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                     // 忽略
                 }
             }
-            skillHint += "调用方式：read_file 先读 ~/.config/msgcode/skills/<id>/SKILL.md。把 SKILL.md 当成能力说明书 / 接口文档，按里面写明的真实调用合同执行；不要自造 wrapper，不要猜 main.sh，也不要猜 skill 目录里还有别的脚本。";
+            skillHint += "调用方式：read_file 先读 ~/.config/msgcode/skills/<id>/SKILL.md。把 SKILL.md 当成能力说明书 / 接口文档，仔细阅读后再按里面写明的真实调用合同执行；不要自造 wrapper，不要猜 main.sh，也不要猜 skill 目录里还有别的脚本。判断某个 skill 能做什么、不能做什么之前，必须先读清 SKILL.md；如果看完仍然不确定，就先和用户沟通，不要先下结论。";
             system += skillHint;
         } catch {
             // 忽略

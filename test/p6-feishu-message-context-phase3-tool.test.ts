@@ -143,4 +143,49 @@ describe("P6: feishu recent messages tool", () => {
     expect(result.error?.message).toContain("获取群组中所有消息");
     expect(result.error?.message).toContain("机器人仍在群里");
   });
+
+  it("默认应查询最近 40 条，并将显式 limit 上限收口到 40", async () => {
+    await saveCurrentSessionContext(workspacePath, {
+      transport: "feishu",
+      chatId: "oc_from_workspace",
+      chatGuid: "feishu:oc_from_workspace",
+    });
+
+    const observedLimits: number[] = [];
+    mock.module("../src/tools/feishu-list-recent-messages.js", () => ({
+      feishuListRecentMessages: async (args: { chatId: string; limit?: number }) => {
+        observedLimits.push(args.limit ?? -1);
+        return {
+          ok: true,
+          chatId: args.chatId,
+          count: 0,
+          messages: [],
+        };
+      },
+    }));
+
+    const defaultResult = await executeTool(
+      "feishu_list_recent_messages",
+      {},
+      {
+        workspacePath,
+        source: "llm-tool-call",
+        requestId: randomUUID(),
+      }
+    );
+
+    const cappedResult = await executeTool(
+      "feishu_list_recent_messages",
+      { limit: 999 },
+      {
+        workspacePath,
+        source: "llm-tool-call",
+        requestId: randomUUID(),
+      }
+    );
+
+    expect(defaultResult.ok).toBe(true);
+    expect(cappedResult.ok).toBe(true);
+    expect(observedLimits).toEqual([40, 40]);
+  });
 });

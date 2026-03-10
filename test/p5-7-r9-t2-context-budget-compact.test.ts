@@ -70,10 +70,10 @@ describe("P5.7-R9-T2: 观测字段冻结", () => {
 // ============================================
 
 describe("P5.7-R9-T2: Compact 策略", () => {
-    it("context-policy.ts 应保留最近 10 条消息", () => {
+  it("context-policy.ts 应保留最近 16 条消息", () => {
         const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
-        // 锁定：保留最近 10 条消息
-        expect(code).toContain("CONTEXT_COMPACT_KEEP_RECENT = 10");
+        // 锁定：保留最近 16 条消息
+        expect(code).toContain("CONTEXT_COMPACT_KEEP_RECENT = 16");
     });
 
     it("context-policy.ts 应调用 trimWindowWithResult 进行裁剪", () => {

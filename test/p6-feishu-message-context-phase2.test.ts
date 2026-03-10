@@ -83,6 +83,81 @@ describe("Phase 2: Feishu recent message roster context", () => {
     expect(result.prompt).toContain("msg=om_prev_2");
   });
 
+  it("最近消息索引应保留最近 40 条结构记录，而不是只保留很短窗口", async () => {
+    const { appendWindow } = await import("../src/session-window.js");
+    const { assembleAgentContext } = await import("../src/runtime/context-policy.js");
+
+    for (let i = 1; i <= 45; i += 1) {
+      await appendWindow(workspacePath, "feishu:oc_roster_limit_phase2", {
+        role: "user",
+        content: `第 ${i} 条消息，记录一段上下文线索。`,
+        messageId: `om_prev_${i}`,
+        senderId: `ou_speaker_${i}`,
+        senderName: `成员${i}`,
+        messageType: "text",
+        isGroup: true,
+      });
+    }
+
+    const result = await assembleAgentContext({
+      source: "message",
+      chatId: "feishu:oc_roster_limit_phase2",
+      prompt: "请引用较新的消息线索。",
+      workspacePath,
+      currentChannel: "feishu",
+      currentMessageId: "om_current_limit",
+      currentSpeakerId: "ou_owner_1",
+      currentSpeakerName: "老哥",
+      currentIsGroup: true,
+      currentMessageType: "text",
+      primaryOwnerIds: ["ou_owner_1"],
+      runId: "run-message-phase2-limit",
+      sessionKey: "session:v1:feishu:message-phase2-limit",
+    });
+
+    const lines = result.recentMessageRosterContext?.split("\n") || [];
+    expect(lines.some((line) => line.includes("msg=om_prev_1 "))).toBe(false);
+    expect(lines.some((line) => line.includes("msg=om_prev_6 "))).toBe(true);
+    expect(lines.some((line) => line.includes("msg=om_prev_45 "))).toBe(true);
+    expect(lines.length).toBe(40);
+  });
+
+  it("应把 summary 中的最近生成产物路径提炼成独立索引", async () => {
+    const { saveSummary } = await import("../src/summary.js");
+    const { assembleAgentContext } = await import("../src/runtime/context-policy.js");
+
+    await saveSummary(workspacePath, "feishu:oc_artifact_phase2", {
+      goal: [],
+      constraints: [],
+      decisions: [],
+      openItems: [],
+      toolFacts: [
+        "生成图片完成，路径=/Users/admin/msgcode-workspaces/smoke/ws-a/AIDOCS/images/gen-image-2026-03-10T17-20-00-074Z.png",
+        "Banana 输出保存在 AIDOCS/banana-images/banana-pro-20260311-015844-image.png",
+      ],
+    });
+
+    const result = await assembleAgentContext({
+      source: "message",
+      chatId: "feishu:oc_artifact_phase2",
+      prompt: "请继续处理刚才那张图。",
+      workspacePath,
+      currentChannel: "feishu",
+      currentMessageId: "om_current_artifact",
+      currentSpeakerId: "ou_owner_1",
+      currentSpeakerName: "老哥",
+      currentIsGroup: false,
+      currentMessageType: "text",
+      primaryOwnerIds: ["ou_owner_1"],
+      runId: "run-message-phase2-artifact",
+      sessionKey: "session:v1:feishu:message-phase2-artifact",
+    });
+
+    expect(result.artifactRosterContext).toContain("/Users/admin/msgcode-workspaces/smoke/ws-a/AIDOCS/images/gen-image-2026-03-10T17-20-00-074Z.png");
+    expect(result.artifactRosterContext).toContain("AIDOCS/banana-images/banana-pro-20260311-015844-image.png");
+    expect(result.prompt).toContain("[最近生成产物索引]");
+  });
+
   it("handlers 写回窗口时应保留当前消息元数据", () => {
     const handlersCode = fs.readFileSync(
       path.join(process.cwd(), "src/handlers.ts"),

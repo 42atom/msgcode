@@ -1090,8 +1090,8 @@ export async function executeTool(
       }
       case "feishu_list_recent_messages": {
         let chatId = args.chatId ? String(args.chatId).trim() : undefined;
-        const limitRaw = Number(args.limit ?? 8);
-        const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(Math.trunc(limitRaw), 20)) : 8;
+        const limitRaw = Number(args.limit ?? 40);
+        const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(Math.trunc(limitRaw), 40)) : 40;
         const { loadWorkspaceConfig } = await import("../config/workspace.js");
         const workspaceConfig = await loadWorkspaceConfig(ctx.workspacePath);
 
