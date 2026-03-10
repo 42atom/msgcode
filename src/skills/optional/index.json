@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "source": "global-optional-source",
+  "skills": [
+    {
+      "id": "twitter-media",
+      "name": "Twitter Media",
+      "entry": "~/.config/msgcode/skills/optional/twitter-media/SKILL.md",
+      "description": "Twitter/X 链接媒体提取说明书。需要从 x.com 或 twitter.com 链接中拿文本、图片、视频或缩略图时按需读取。"
+    },
+    {
+      "id": "veo-video",
+      "name": "Veo Video",
+      "entry": "~/.config/msgcode/skills/optional/veo-video/SKILL.md",
+      "description": "Google Veo 视频生成说明书。需要调用 Gemini/Veo 生成文生视频或图生视频时按需读取。"
+    },
+    {
+      "id": "screenshot",
+      "name": "Screenshot",
+      "entry": "~/.config/msgcode/skills/optional/screenshot/SKILL.md",
+      "description": "本地截图说明书。需要采集当前屏幕并落盘为截图证据时按需读取。"
+    },
+    {
+      "id": "scrapling",
+      "name": "Scrapling",
+      "entry": "~/.config/msgcode/skills/optional/scrapling/SKILL.md",
+      "description": "Scrapling 网页抓取说明书。需要结构化抓网页、绕过简单反爬或做动态抓取时按需读取。"
+    },
+    {
+      "id": "reactions",
+      "name": "Reactions",
+      "entry": "~/.config/msgcode/skills/optional/reactions/SKILL.md",
+      "description": "消息表情反应说明书。只有本地 reaction bridge 已存在时才使用，不属于默认 core 能力。"
+    }
+  ]
+}

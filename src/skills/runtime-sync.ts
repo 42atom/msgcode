@@ -41,6 +41,7 @@ export interface RuntimeSkillSyncResult {
   copiedFiles: number;
   skippedFiles: number;
   managedSkillIds: string[];
+  optionalSkillIds: string[];
   indexUpdated: boolean;
 }
 
@@ -67,10 +68,26 @@ function resolveRuntimeSkillsSourceDir(explicit?: string): string {
   return candidates[0];
 }
 
+function resolveOptionalSkillsSourceDir(): string {
+  const candidates = [
+    join(__dirname, "optional"),
+    join(process.cwd(), "src", "skills", "optional"),
+  ];
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return candidates[0];
+}
+
 async function copyDirectoryRecursive(
   sourceDir: string,
   targetDir: string,
-  overwrite: boolean
+  overwrite: boolean,
+  skipIndexJson = true
 ): Promise<{ copiedFiles: number; skippedFiles: number }> {
   await mkdir(targetDir, { recursive: true });
 
@@ -79,7 +96,7 @@ async function copyDirectoryRecursive(
   const entries = await readdir(sourceDir, { withFileTypes: true });
 
   for (const entry of entries) {
-    if (entry.name === "index.json") {
+    if (skipIndexJson && entry.name === "index.json") {
       continue;
     }
     if (entry.isDirectory() && RETIRED_MANAGED_SKILL_IDS.has(entry.name)) {
@@ -90,7 +107,7 @@ async function copyDirectoryRecursive(
     const targetPath = join(targetDir, entry.name);
 
     if (entry.isDirectory()) {
-      const nested = await copyDirectoryRecursive(sourcePath, targetPath, overwrite);
+      const nested = await copyDirectoryRecursive(sourcePath, targetPath, overwrite, skipIndexJson);
       copiedFiles += nested.copiedFiles;
       skippedFiles += nested.skippedFiles;
       continue;
@@ -167,6 +184,7 @@ export async function syncManagedRuntimeSkills(
       copiedFiles: 0,
       skippedFiles: 0,
       managedSkillIds: [],
+      optionalSkillIds: [],
       indexUpdated: false,
     };
   }
@@ -180,6 +198,7 @@ export async function syncManagedRuntimeSkills(
       copiedFiles: 0,
       skippedFiles: 0,
       managedSkillIds: [],
+      optionalSkillIds: [],
       indexUpdated: false,
     };
   }
@@ -189,10 +208,29 @@ export async function syncManagedRuntimeSkills(
   const mergedIndex = mergeSkillIndexes(existingIndex, managedIndex);
   await writeFile(join(userSkillsDir, "index.json"), `${JSON.stringify(mergedIndex, null, 2)}\n`, "utf-8");
 
+  let optionalCopiedFiles = 0;
+  let optionalSkippedFiles = 0;
+  let optionalSkillIds: string[] = [];
+  const optionalSourceDir = resolveOptionalSkillsSourceDir();
+  if (existsSync(optionalSourceDir)) {
+    const optionalIndex = await loadSkillIndex(join(optionalSourceDir, "index.json"));
+    const optionalTargetDir = join(userSkillsDir, "optional");
+    const optionalCopyResult = await copyDirectoryRecursive(
+      optionalSourceDir,
+      optionalTargetDir,
+      overwrite,
+      false
+    );
+    optionalCopiedFiles = optionalCopyResult.copiedFiles;
+    optionalSkippedFiles = optionalCopyResult.skippedFiles;
+    optionalSkillIds = optionalIndex?.skills.map((skill) => skill.id) ?? [];
+  }
+
   return {
-    copiedFiles,
-    skippedFiles,
+    copiedFiles: copiedFiles + optionalCopiedFiles,
+    skippedFiles: skippedFiles + optionalSkippedFiles,
     managedSkillIds: managedIndex.skills.map((skill) => skill.id),
+    optionalSkillIds,
     indexUpdated: true,
   };
 }

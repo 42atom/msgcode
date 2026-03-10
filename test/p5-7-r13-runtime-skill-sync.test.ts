@@ -41,6 +41,16 @@ describe("P5.7-R13: runtime skill sync", () => {
       );
       expect(result.exitCode).toBe(0);
     }
+
+    const optionalSkillIds = ["twitter-media", "veo-video", "screenshot", "scrapling", "reactions"];
+
+    for (const skillId of optionalSkillIds) {
+      const result = Bun.spawnSync(
+        ["git", "ls-files", "--error-unmatch", join("src", "skills", "optional", skillId)],
+        { cwd: join(__dirname, "..") },
+      );
+      expect(result.exitCode).toBe(0);
+    }
   });
 
   it("应同步托管 runtime skills 并保留用户已有自定义 skill 索引", async () => {
@@ -87,6 +97,11 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(result.managedSkillIds).toContain("plan-files");
     expect(result.managedSkillIds).toContain("character-identity");
     expect(result.managedSkillIds).not.toContain("zai-vision-mcp");
+    expect(result.optionalSkillIds).toContain("twitter-media");
+    expect(result.optionalSkillIds).toContain("veo-video");
+    expect(result.optionalSkillIds).toContain("screenshot");
+    expect(result.optionalSkillIds).toContain("scrapling");
+    expect(result.optionalSkillIds).toContain("reactions");
     expect(result.copiedFiles).toBeGreaterThanOrEqual(10);
     expect(result.indexUpdated).toBe(true);
 
@@ -100,6 +115,11 @@ describe("P5.7-R13: runtime skill sync", () => {
     const mainSh = await readFile(join(userSkillsDir, "patchright-browser", "main.sh"), "utf-8");
     const schedulerDoc = await readFile(join(userSkillsDir, "scheduler", "SKILL.md"), "utf-8");
     const schedulerSh = await readFile(join(userSkillsDir, "scheduler", "main.sh"), "utf-8");
+    const optionalIndex = JSON.parse(await readFile(join(userSkillsDir, "optional", "index.json"), "utf-8")) as {
+      skills: Array<{ id: string; entry?: string; description?: string }>;
+    };
+    const twitterMediaDoc = await readFile(join(userSkillsDir, "optional", "twitter-media", "SKILL.md"), "utf-8");
+    const screenshotDoc = await readFile(join(userSkillsDir, "optional", "screenshot", "SKILL.md"), "utf-8");
     const mergedIndex = JSON.parse(await readFile(join(userSkillsDir, "index.json"), "utf-8")) as {
       skills: Array<{ id: string; entry?: string; description?: string }>;
     };
@@ -133,6 +153,9 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(characterIdentityDoc).toContain("先查表，不要猜");
     expect(characterIdentityDoc).toContain(".msgcode/character-identity/<channel>-<chat-token>.csv");
     expect(characterIdentityDoc).toContain("senderId");
+    expect(twitterMediaDoc).toContain("twitter-media skill");
+    expect(twitterMediaDoc).toContain("api.fxtwitter.com");
+    expect(screenshotDoc).toContain("msgcode media screen");
     expect(skillDoc).toContain("patchright-browser skill");
     expect(skillDoc).toContain("name: patchright-browser");
     expect(skillDoc).toContain("## 能力");
@@ -158,8 +181,21 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("scheduler");
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("plan-files");
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("character-identity");
+    expect(mergedIndex.skills.map((skill) => skill.id)).not.toContain("twitter-media");
+    expect(mergedIndex.skills.map((skill) => skill.id)).not.toContain("veo-video");
+    expect(mergedIndex.skills.map((skill) => skill.id)).not.toContain("screenshot");
+    expect(mergedIndex.skills.map((skill) => skill.id)).not.toContain("scrapling");
+    expect(mergedIndex.skills.map((skill) => skill.id)).not.toContain("reactions");
     expect(mergedIndex.skills.map((skill) => skill.id)).not.toContain("pinchtab-browser");
     expect(mergedIndex.skills.map((skill) => skill.id)).not.toContain("zai-vision-mcp");
+    expect(optionalIndex.skills.map((skill) => skill.id)).toContain("twitter-media");
+    expect(optionalIndex.skills.map((skill) => skill.id)).toContain("veo-video");
+    expect(optionalIndex.skills.map((skill) => skill.id)).toContain("screenshot");
+    expect(optionalIndex.skills.map((skill) => skill.id)).toContain("scrapling");
+    expect(optionalIndex.skills.map((skill) => skill.id)).toContain("reactions");
+    expect(optionalIndex.skills.find((skill) => skill.id === "twitter-media")?.entry).toBe(
+      "~/.config/msgcode/skills/optional/twitter-media/SKILL.md",
+    );
     expect(mergedIndex.skills.find((skill) => skill.id === "vision-index")?.entry).toBe("~/.config/msgcode/skills/vision-index/SKILL.md");
     expect(mergedIndex.skills.find((skill) => skill.id === "local-vision-lmstudio")?.entry).toBe("~/.config/msgcode/skills/local-vision-lmstudio/SKILL.md");
     expect(mergedIndex.skills.find((skill) => skill.id === "plan-files")?.entry).toBe("~/.config/msgcode/skills/plan-files/SKILL.md");

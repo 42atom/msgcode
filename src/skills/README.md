@@ -2,11 +2,17 @@
 
 ## 单真相源说明（2026-03-08）
 
-**runtime skills 是唯一正式真相源**：
+**runtime skills 是唯一正式常驻真相源**：
 
 - 真相源：`src/skills/runtime/` → `~/.config/msgcode/skills/`
 - 执行主链：runtime skill -> bash -> CLI 命令
 - builtin registry（`registry.ts`）为历史占位，不再作为技能执行的正式主链
+
+**optional skills 是 repo 内置的按需扩展层**：
+
+- 真相源：`src/skills/optional/` → `~/.config/msgcode/skills/optional/`
+- 发现方式：先读 `~/.config/msgcode/skills/index.json`；主索引无匹配时，再按需读 `~/.config/msgcode/skills/optional/index.json`
+- 目标：属于 msgcode 自带能力，但不默认塞进模型常驻上下文
 
 **runtime skill 文案格式统一为能力说明书**：
 
@@ -40,6 +46,18 @@ src/skills/
 ├── registry.ts             # ⚠️ 历史占位 - 不再作为执行主链
 ├── auto.ts                 # 自然语言触发（向后兼容）
 ├── runtime-sync.ts         # runtime skill 安装/同步
+├── optional/               # repo 内置按需技能（不进默认主索引）
+│   ├── index.json
+│   ├── twitter-media/
+│   │   └── SKILL.md
+│   ├── veo-video/
+│   │   └── SKILL.md
+│   ├── screenshot/
+│   │   └── SKILL.md
+│   ├── scrapling/
+│   │   └── SKILL.md
+│   └── reactions/
+│       └── SKILL.md
 └── runtime/                # 仓库托管的 runtime skill 真相源
     ├── index.json          # 托管 skill 索引（vision-index, local-vision-lmstudio, scheduler, plan-files, character-identity, patchright-browser）
     ├── scheduler/
@@ -67,6 +85,7 @@ src/skills/
 - `index.ts`：导出聚合，方便外部引用
 - `auto.ts`：自然语言触发（向后兼容，保留 system-info）
 - `runtime/`：**正式技能真相源** - 执行主链：runtime skill -> bash -> CLI 命令
+- `optional/`：**可选扩展技能真相源** - 运行时会同步，但不并入默认主索引；仅在任务明显匹配或主索引无覆盖时按需读取
 
 ## 架构决策
 
@@ -75,12 +94,14 @@ src/skills/
 | 位置 | 用途 | 说明 |
 |------|------|------|
 | `src/skills/runtime/` | 仓库托管 runtime skills | 安装/启动时同步到用户目录 |
+| `src/skills/optional/` | 仓库托管 optional skills | 安装/启动时同步到用户目录，但不进入默认主索引 |
 | `~/.config/msgcode/skills/` | 用户技能目录 | 运行时加载，用户可自定义 |
 | `<workspace>/.msgcode/skills/` | 项目级技能 | 项目特定技能（待实现） |
 
 ### 安装时复制逻辑
 
 - `msgcode init` 时自动同步 `src/skills/runtime/` 到 `~/.config/msgcode/skills/`
+- `msgcode init/start` 时自动同步 `src/skills/optional/` 到 `~/.config/msgcode/skills/optional/`
 - `msgcode start` 时会 best-effort 补齐仓库托管 runtime skills，避免安装目录缺失
 - **幂等原则**：仅首次创建，已存在文件不覆盖
 - **覆盖开关**：`msgcode init --overwrite-skills` 强制覆盖
@@ -100,6 +121,13 @@ src/skills/
 3. 更新 `src/skills/runtime/index.json`
 4. 如有安装/同步逻辑变化，更新 `runtime-sync.ts`
 5. 通过 `msgcode init` 或 `msgcode start` 触发同步
+
+### 新增 optional skill 流程
+
+1. 在 `src/skills/optional/<skill-id>/` 新增 `SKILL.md`
+2. 更新 `src/skills/optional/index.json`
+3. 如有安装/同步逻辑变化，更新 `runtime-sync.ts`
+4. 不要把 optional skill 加进 `src/skills/runtime/index.json`
 
 ### 技能检测扩展
 
@@ -122,6 +150,14 @@ runtime-sync.ts
 ~/.config/msgcode/skills/
    ↓
 Tool Loop / prompt 只读取用户目录 index.json
+
+src/skills/optional/
+   ↓
+runtime-sync.ts
+   ↓
+~/.config/msgcode/skills/optional/
+   ↓
+主索引无匹配时，再按需读取 optional/index.json
 ```
 
 ## 变更日志
