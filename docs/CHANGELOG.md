@@ -3,6 +3,7 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-10
+  - runtime: 修复 `preflight` 与默认 transport 口径漂移；`loadManifest()` 现在会按本轮 transport 解析结果动态提升真正的启动必需依赖，避免 fallback-imsg 场景仍显示 `0/0` 启动必需，同时保持 Feishu-first 的静态 manifest 不变 (Issue: 0063, Plan: docs/design/plan-260310-preflight-transport-aware-startup-deps.md) [risk: medium] [rollback: 回退 `src/deps/load.ts`、`src/config/transports.ts` 与相关 preflight 测试]
   - runtime: 默认通道口径已收口为 `Feishu-first, iMessage-optional`；无显式 `MSGCODE_TRANSPORTS` 时，有飞书凭据默认只启 `feishu`，否则回退 `imsg`，同时 `imsg/messages_db` 退出全局启动硬依赖，README 快速开始也同步切到飞书主通道 (Issue: 0062, Plan: docs/design/plan-260310-feishu-first-imsg-optional.md) [risk: medium] [rollback: 回退 `src/config.ts`、`src/deps/manifest.json`、`README.md` 与相关测试]
   - runtime: macOS 下 `msgcode start/stop/restart` 已收口到 LaunchAgent 主链；daemon 由 `launchd` 托管常驻，`msgcode status` 新增 daemon 托管状态诊断，且 launchd 会话里 `imsg` 初始化失败时不再拖垮整进程，而是自动降级为保留其余 transport 常驻 (Issue: 0061, Plan: docs/design/plan-260310-msgcode-daemon-keepalive-via-launchd.md) [risk: medium] [rollback: 回退 `src/runtime/launchd.ts`、`src/cli.ts`、`src/daemon.ts`、`src/commands.ts` 与 daemon probe 改动]
   - skills: 退役 `zai-vision-mcp` runtime skill；正式视觉能力面收口为“当前模型原生看图 + 本地 LM Studio”，runtime skill sync 也会把 `zai-vision-mcp` 视为 retired skill，不再继续暴露到用户索引 (Issue: 0060, Plan: docs/design/plan-260310-retire-zai-vision-mcp-runtime-skill.md) [risk: low] [rollback: 恢复 `src/skills/runtime/zai-vision-mcp/`、`src/skills/runtime/index.json` 与 runtime skill sync 测试]

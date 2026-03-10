@@ -14,6 +14,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { logger } from "./logger/index.js";
+import { parseRuntimeTransports, type RuntimeTransport } from "./config/transports.js";
 
 /**
  * 获取配置文件路径
@@ -70,7 +71,7 @@ export interface Config {
     // Transport 列表（启动时启用哪些通道）
     // - 默认：有飞书配置则 feishu，否则回退 imsg
     // - 可用 MSGCODE_TRANSPORTS 显式覆盖
-    transports: ("imsg" | "feishu")[];
+    transports: RuntimeTransport[];
     // 白名单
     whitelist: WhitelistConfig;
     // 群组路由：群组名 → 配置
@@ -141,34 +142,6 @@ function parseNumber(value: string | undefined, fallback: number): number {
     return parsed;
 }
 
-function hasFeishuCredentials(env: NodeJS.ProcessEnv = process.env): boolean {
-    return !!(env.FEISHU_APP_ID || "").trim() && !!(env.FEISHU_APP_SECRET || "").trim();
-}
-
-function resolveDefaultTransports(env: NodeJS.ProcessEnv = process.env): ("imsg" | "feishu")[] {
-    return hasFeishuCredentials(env) ? ["feishu"] : ["imsg"];
-}
-
-function parseTransports(env: NodeJS.ProcessEnv = process.env): ("imsg" | "feishu")[] {
-    const raw = (env.MSGCODE_TRANSPORTS || "").trim();
-    if (raw) {
-        const items = raw
-            .split(",")
-            .map((s) => s.trim().toLowerCase())
-            .filter(Boolean);
-        const out: ("imsg" | "feishu")[] = [];
-        for (const it of items) {
-            if (it === "imsg" || it === "feishu") {
-                if (!out.includes(it)) out.push(it);
-            }
-        }
-        // 兜底：空配置不允许（避免“启动了但没 transport”）
-        return out.length > 0 ? out : resolveDefaultTransports(env);
-    }
-
-    return resolveDefaultTransports(env);
-}
-
 function parseDefaultWorkspaceDir(): string {
     const raw = (process.env.MSGCODE_DEFAULT_WORKSPACE_DIR || "").trim();
     const dir = raw || "default";
@@ -230,7 +203,7 @@ function parseGroupRoutes(): Map<string, GroupConfig> {
 export function loadConfig(): Config {
     const isTest = process.env.NODE_ENV === "test";
 
-    const transports = parseTransports();
+    const transports = parseRuntimeTransports();
 
     const phones = parsePhones(process.env.MY_PHONE);
     const emails = parseEmails(process.env.MY_EMAIL);
