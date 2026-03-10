@@ -654,9 +654,9 @@ async function initBot(options: { overwriteSkills?: boolean } = {}): Promise<voi
  * @param overwrite 是否强制覆盖已存在的文件
  */
 async function copySkillsToUserConfig(overwrite: boolean = false): Promise<void> {
-  const { syncManagedRuntimeSkills } = await import("./skills/runtime-sync.js");
+  const { syncRuntimeSkills } = await import("./skills/runtime-sync.js");
   const userSkillsDir = path.join(CONFIG_DIR, "skills");
-  const result = await syncManagedRuntimeSkills({
+  const result = await syncRuntimeSkills({
     overwrite,
     userSkillsDir,
   });

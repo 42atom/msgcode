@@ -200,20 +200,18 @@ export function parseToolCallBestEffortFromText(params: {
 }
 
 export async function getToolsForLlm(workspacePath?: string): Promise<readonly AidocsToolDefFromBackend[]> {
-    // P5.7-R15 + R16: skill 场景默认暴露完整工具（与 tool-loop.ts 对齐）
-    // 当没有 workspace 配置时，暴露全部基础工具
+    // 无 workspace 时也走默认配置真相源，避免和主执行核漂移。
     if (!workspacePath) {
-        const { filterDefaultLlmTools, TOOL_MANIFESTS } = await import("./tools/manifest.js");
-        const defaultTools = filterDefaultLlmTools([
-            "read_file",
-            "bash",
-            "browser",
-            "tts",
-            "asr",
-            "vision",
-            "desktop",
+        const [{ filterDefaultLlmTools, resolveLlmToolExposure }, { DEFAULT_WORKSPACE_CONFIG }] = await Promise.all([
+            import("./tools/manifest.js"),
+            import("./config/workspace.js"),
         ]);
-        return defaultTools.map((name) => ({
+        const configuredTools = Array.isArray(DEFAULT_WORKSPACE_CONFIG["tooling.allow"])
+            ? (DEFAULT_WORKSPACE_CONFIG["tooling.allow"] as string[])
+            : [];
+        const allowedTools = filterDefaultLlmTools(Array.from(new Set(["read_file", "bash", ...configuredTools])) as any);
+        const exposure = resolveLlmToolExposure(allowedTools as any);
+        return exposure.exposedTools.map((name) => ({
             name,
             description: "", // 描述在 toOpenAiToolSchemas 中填充
         }));

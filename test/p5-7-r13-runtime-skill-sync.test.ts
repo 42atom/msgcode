@@ -7,7 +7,7 @@ import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { syncManagedRuntimeSkills } from "../src/skills/runtime-sync.js";
+import { syncRuntimeSkills } from "../src/skills/runtime-sync.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const runtimeSourceDir = join(__dirname, "..", "src", "skills", "runtime");
@@ -25,7 +25,7 @@ afterEach(async () => {
 
 describe("P5.7-R13: runtime skill sync", () => {
   it("托管 runtime skill 索引中的 skill 目录必须被 git 跟踪", () => {
-    const managedSkillIds = [
+    const runtimeSkillIds = [
       "vision-index",
       "local-vision-lmstudio",
       "scheduler",
@@ -35,7 +35,7 @@ describe("P5.7-R13: runtime skill sync", () => {
       "patchright-browser",
     ];
 
-    for (const skillId of managedSkillIds) {
+    for (const skillId of runtimeSkillIds) {
       const result = Bun.spawnSync(
         ["git", "ls-files", "--error-unmatch", join("src", "skills", "runtime", skillId)],
         { cwd: join(__dirname, "..") },
@@ -86,19 +86,19 @@ describe("P5.7-R13: runtime skill sync", () => {
       "utf-8",
     );
 
-    const result = await syncManagedRuntimeSkills({
+    const result = await syncRuntimeSkills({
       sourceDir: runtimeSourceDir,
       userSkillsDir,
     });
 
-    expect(result.managedSkillIds).toContain("vision-index");
-    expect(result.managedSkillIds).toContain("local-vision-lmstudio");
-    expect(result.managedSkillIds).toContain("patchright-browser");
-    expect(result.managedSkillIds).toContain("scheduler");
-    expect(result.managedSkillIds).toContain("plan-files");
-    expect(result.managedSkillIds).toContain("character-identity");
-    expect(result.managedSkillIds).toContain("feishu-send-file");
-    expect(result.managedSkillIds).not.toContain("zai-vision-mcp");
+    expect(result.runtimeSkillIds).toContain("vision-index");
+    expect(result.runtimeSkillIds).toContain("local-vision-lmstudio");
+    expect(result.runtimeSkillIds).toContain("patchright-browser");
+    expect(result.runtimeSkillIds).toContain("scheduler");
+    expect(result.runtimeSkillIds).toContain("plan-files");
+    expect(result.runtimeSkillIds).toContain("character-identity");
+    expect(result.runtimeSkillIds).toContain("feishu-send-file");
+    expect(result.runtimeSkillIds).not.toContain("zai-vision-mcp");
     expect(result.optionalSkillIds).toContain("twitter-media");
     expect(result.optionalSkillIds).toContain("veo-video");
     expect(result.optionalSkillIds).toContain("screenshot");
@@ -231,7 +231,7 @@ describe("P5.7-R13: runtime skill sync", () => {
       "utf-8",
     );
 
-    const result = await syncManagedRuntimeSkills({
+    const result = await syncRuntimeSkills({
       sourceDir: runtimeSourceDir,
       userSkillsDir,
       overwrite: false,

@@ -884,18 +884,17 @@ function buildToolFailureVerifyResult(toolName: string, toolResult: ToolRunResul
  * 不再使用 PI_ON_TOOLS 硬编码白名单
  */
 export async function getToolsForLlm(workspacePath?: string): Promise<ToolName[]> {
-    // P5.7-R15 + P5.7-R16: skill 场景默认暴露完整工具
-    // 当没有 workspace 配置时，暴露全部基础工具（skill 读取 + 后续执行需要）
+    // 无 workspace 时，也必须走当前默认配置真相源，避免和真实工具面漂移。
     if (!workspacePath) {
-        return filterDefaultLlmTools([
-            "read_file",
-            "bash",
-            "browser",
-            "tts",
-            "asr",
-            "vision",
-            "desktop",
-        ]);
+        const { DEFAULT_WORKSPACE_CONFIG } = await import("../config/workspace.js");
+        const configuredTools = Array.isArray(DEFAULT_WORKSPACE_CONFIG["tooling.allow"])
+            ? (DEFAULT_WORKSPACE_CONFIG["tooling.allow"] as ToolName[])
+            : [];
+        const allowedTools = filterDefaultLlmTools(
+            Array.from(new Set<ToolName>(["read_file", "bash", ...configuredTools]))
+        );
+        const exposure = resolveLlmToolExposure(allowedTools);
+        return exposure.exposedTools;
     }
     try {
         const { loadWorkspaceConfig } = await import("../config/workspace.js");

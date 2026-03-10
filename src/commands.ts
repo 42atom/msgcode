@@ -449,14 +449,14 @@ export async function startBot(): Promise<void> {
   await initLoggerFromSettings();
 
   try {
-    const { syncManagedRuntimeSkills } = await import("./skills/runtime-sync.js");
-    const skillSync = await syncManagedRuntimeSkills({ overwrite: true });
+    const { syncRuntimeSkills } = await import("./skills/runtime-sync.js");
+    const skillSync = await syncRuntimeSkills({ overwrite: true });
     if (skillSync.copiedFiles > 0 || skillSync.indexUpdated) {
       logger.info("运行时托管 skills 已同步", {
         module: "commands",
         copiedFiles: skillSync.copiedFiles,
         skippedFiles: skillSync.skippedFiles,
-        managedSkillIds: skillSync.managedSkillIds,
+        runtimeSkillIds: skillSync.runtimeSkillIds,
         indexUpdated: skillSync.indexUpdated,
       });
     }

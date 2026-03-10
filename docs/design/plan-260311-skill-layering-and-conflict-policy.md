@@ -5,7 +5,7 @@
 `msgcode` 当前 skill 系统已经有 `runtime` 和 `optional` 两层，但来源边界仍然不清：
 
 - repo 同步产物与用户目录混在一起
-- 还没有正式的 user-managed 层
+- 还没有正式的 legacy-active 收口与 workspace 层
 - workspace skill 还没进主链
 - 缺少明确的 conflict policy 与 per-skill enable/gating 规则
 
@@ -24,7 +24,7 @@
 
 ## Decision
 
-采用“保留现有 runtime/optional，补 managed/workspace/effective-index”的最小方案。
+采用“保留现有 runtime/optional，承认 legacy-active，后续再视需要补 workspace 层”的最小方案。
 
 核心理由：
 
@@ -37,24 +37,24 @@
 1. 冻结 skill 分层模型
    - `runtime` = bundled core
    - `optional` = bundled system optional
-   - `managed` = user installed
-   - `workspace` = local override
+   - `legacy-active` = 当前仍在使用、但尚未纳入 repo 真相源的本地 skill
+   - `workspace` = future local override（暂不实现）
    - 验收：文档里有清晰层级定义
 
 2. 冻结 conflict policy
-   - `workspace > managed > system-optional`
+   - `workspace > optional`
    - `core` 保留区默认不可覆盖
    - alias/command 冲突 fail-closed
    - 验收：文档里有 precedence 与冲突语义
 
 3. 冻结最小运行时结构
-   - 当前索引之外，再生成 `effective-index.json`
-   - `effective-index` 只表达“当前生效 skill”
-   - 验收：文档里有最小字段与作用范围
+   - 当前继续使用单一主索引
+   - legacy-active 先显式承认存在，不再假装它们已被 repo 托管
+   - 验收：文档里有清晰来源说明，不制造第二套安装层
 
 4. 冻结后续实施顺序
-   - 先做 provenance/effective index
-   - 再做 managed/workspace
+   - 先理顺 runtime/optional/legacy-active 的口径
+   - 再评估 workspace 层是否真有必要
    - 最后做 per-skill gating
    - 验收：有清晰 phase 顺序，不直接开做平台
 

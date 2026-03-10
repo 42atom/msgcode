@@ -269,6 +269,17 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     expect(tools).toContain("feishu_send_file");
   });
 
+  it("无 workspace 时，getToolsForLlm() 应读取默认配置真相源而不是旧硬编码名单", async () => {
+    const toolLoopModule = await import("../src/agent-backend/tool-loop.js");
+    const tools = await toolLoopModule.getToolsForLlm(undefined);
+
+    expect(tools).toContain("read_file");
+    expect(tools).toContain("bash");
+    expect(tools).toContain("feishu_send_file");
+    expect(tools).toContain("feishu_list_recent_messages");
+    expect(tools).not.toContain("vision");
+  });
+
   // ============================================
   // 4. 验证 toOpenAiToolSchemas 转换
   // ============================================

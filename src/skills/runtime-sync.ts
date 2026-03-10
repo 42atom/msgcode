@@ -30,7 +30,7 @@ interface SkillIndexFile {
   skills: SkillIndexEntry[];
 }
 
-const RETIRED_MANAGED_SKILL_IDS = new Set(["pinchtab-browser", "zai-vision-mcp"]);
+const RETIRED_RUNTIME_SKILL_IDS = new Set(["pinchtab-browser", "zai-vision-mcp"]);
 
 export interface RuntimeSkillSyncOptions {
   overwrite?: boolean;
@@ -41,7 +41,7 @@ export interface RuntimeSkillSyncOptions {
 export interface RuntimeSkillSyncResult {
   copiedFiles: number;
   skippedFiles: number;
-  managedSkillIds: string[];
+  runtimeSkillIds: string[];
   optionalSkillIds: string[];
   indexUpdated: boolean;
 }
@@ -100,7 +100,7 @@ async function copyDirectoryRecursive(
     if (skipIndexJson && entry.name === "index.json") {
       continue;
     }
-    if (entry.isDirectory() && RETIRED_MANAGED_SKILL_IDS.has(entry.name)) {
+    if (entry.isDirectory() && RETIRED_RUNTIME_SKILL_IDS.has(entry.name)) {
       continue;
     }
 
@@ -148,26 +148,26 @@ async function loadSkillIndex(filePath: string): Promise<SkillIndexFile | null> 
 
 function mergeSkillIndexes(
   existing: SkillIndexFile | null,
-  managed: SkillIndexFile
+  runtimeIndex: SkillIndexFile
 ): SkillIndexFile {
   const merged = new Map<string, SkillIndexEntry>();
 
   for (const skill of existing?.skills ?? []) {
     if (skill && typeof skill.id === "string" && skill.id.trim()) {
-      if (RETIRED_MANAGED_SKILL_IDS.has(skill.id)) {
+      if (RETIRED_RUNTIME_SKILL_IDS.has(skill.id)) {
         continue;
       }
       merged.set(skill.id, skill);
     }
   }
 
-  for (const skill of managed.skills) {
+  for (const skill of runtimeIndex.skills) {
     merged.set(skill.id, skill);
   }
 
   return {
-    version: managed.version || existing?.version || 1,
-    source: managed.source || existing?.source || "global-single-source",
+    version: runtimeIndex.version || existing?.version || 1,
+    source: runtimeIndex.source || existing?.source || "global-single-source",
     updatedAt: new Date().toISOString(),
     skills: Array.from(merged.values()),
   };
@@ -188,7 +188,7 @@ function mergeOptionalSkillsIntoIndex(
 
   for (const skill of optional.skills) {
     if (!skill?.id?.trim()) continue;
-    if (RETIRED_MANAGED_SKILL_IDS.has(skill.id)) continue;
+    if (RETIRED_RUNTIME_SKILL_IDS.has(skill.id)) continue;
     if (merged.has(skill.id)) continue;
     merged.set(skill.id, {
       ...skill,
@@ -203,7 +203,7 @@ function mergeOptionalSkillsIntoIndex(
   };
 }
 
-export async function syncManagedRuntimeSkills(
+export async function syncRuntimeSkills(
   options: RuntimeSkillSyncOptions = {}
 ): Promise<RuntimeSkillSyncResult> {
   const overwrite = options.overwrite === true;
@@ -214,7 +214,7 @@ export async function syncManagedRuntimeSkills(
     return {
       copiedFiles: 0,
       skippedFiles: 0,
-      managedSkillIds: [],
+      runtimeSkillIds: [],
       optionalSkillIds: [],
       indexUpdated: false,
     };
@@ -223,12 +223,12 @@ export async function syncManagedRuntimeSkills(
   await mkdir(userSkillsDir, { recursive: true });
 
   const sourceIndexPath = join(sourceDir, "index.json");
-  const managedIndex = await loadSkillIndex(sourceIndexPath);
-  if (!managedIndex) {
+  const runtimeIndex = await loadSkillIndex(sourceIndexPath);
+  if (!runtimeIndex) {
     return {
       copiedFiles: 0,
       skippedFiles: 0,
-      managedSkillIds: [],
+      runtimeSkillIds: [],
       optionalSkillIds: [],
       indexUpdated: false,
     };
@@ -236,7 +236,7 @@ export async function syncManagedRuntimeSkills(
 
   const { copiedFiles, skippedFiles } = await copyDirectoryRecursive(sourceDir, userSkillsDir, overwrite);
   const existingIndex = await loadSkillIndex(join(userSkillsDir, "index.json"));
-  const mergedIndex = mergeSkillIndexes(existingIndex, managedIndex);
+  const mergedIndex = mergeSkillIndexes(existingIndex, runtimeIndex);
   await writeFile(join(userSkillsDir, "index.json"), `${JSON.stringify(mergedIndex, null, 2)}\n`, "utf-8");
 
   let optionalCopiedFiles = 0;
@@ -264,7 +264,7 @@ export async function syncManagedRuntimeSkills(
   return {
     copiedFiles: copiedFiles + optionalCopiedFiles,
     skippedFiles: skippedFiles + optionalSkippedFiles,
-    managedSkillIds: managedIndex.skills.map((skill) => skill.id),
+    runtimeSkillIds: runtimeIndex.skills.map((skill) => skill.id),
     optionalSkillIds,
     indexUpdated: true,
   };

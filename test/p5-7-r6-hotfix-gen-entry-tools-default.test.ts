@@ -59,6 +59,19 @@ describe("P5.7-R6 HOTFIX: gen 入口 + tools 缺省值", () => {
     }
   });
 
+  it("getToolsForLlm: 无 workspace 时也应基于默认配置暴露当前默认工具面", async () => {
+    const { getToolsForLlm } = await import("../src/lmstudio.js");
+
+    const tools = await getToolsForLlm(undefined);
+    const toolNames = tools.map((t) => t.name);
+
+    expect(toolNames).toContain("read_file");
+    expect(toolNames).toContain("bash");
+    expect(toolNames).toContain("feishu_send_file");
+    expect(toolNames).toContain("feishu_list_members");
+    expect(toolNames).not.toContain("vision");
+  });
+
   it("CLI: `msgcode gen --help` 应包含 image/selfie/tts/music 子命令", () => {
     const out = execSync("NODE_OPTIONS='--import tsx' node src/cli.ts gen --help", {
       encoding: "utf-8",

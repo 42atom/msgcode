@@ -31,11 +31,11 @@
 1. 来源边界不清
 - `~/.config/msgcode/skills/` 同时承载 repo 同步产物与用户目录
 - 当前 `runtime-sync.ts` 会把 repo skill 合并进用户 index
-- 结果是“bundled skill”和“user managed skill”没有清晰分层
+- 结果是“bundled skill”和“legacy-active skill”没有清晰分层
 
-2. 缺正式的 user-managed 层
+2. 现实里存在 legacy-active 层
 - 目前只有 repo 自带 runtime/optional
-- 还没有正式口径去表达“这是用户自己安装的 skill”
+- 另外还有一批本地历史 skill 仍在使用，但尚未纳入 repo 真相源
 
 3. workspace 层还没进入正式主链
 - `src/skills/README.md` 提到了 `<workspace>/.msgcode/skills/`
@@ -65,7 +65,7 @@
 - 还有 `extraDirs`
 
 2. precedence 很明确
-- workspace > managed/local > bundled
+- workspace > legacy-active/local > bundled
 
 3. skill 与 plugin 分开
 - plugins 是代码模块
@@ -130,7 +130,7 @@
 - `ghost-os` 应该是 desktop plugin
 - `character-identity` 应该是 skill
 
-### 结论 3：最薄的分层应是四层
+### 结论 3：当前最薄的分层应先承认三层半现实
 
 1. bundled core
 - repo 自带
@@ -143,9 +143,8 @@
 - 默认不同步进主索引或不同步进常驻上下文
 - 按需发现、按需加载
 
-3. user managed
-- 用户安装的全局 skill
-- 属于当前机器，不属于 repo
+3. legacy-active
+- 当前机器上仍在使用，但尚未纳入 repo 真相源的本地 skill
 
 4. workspace local
 - 当前 workspace 自己的 skill
@@ -155,35 +154,32 @@
 
 ### 目录层
 
-保持现有结构不大改，只补最小缺口：
+当前更现实的结构是：
 
 - `src/skills/runtime/`
   - 视为 bundled core
 - `src/skills/optional/`
   - 视为 bundled optional
-- `~/.config/msgcode/skills/managed/`
-  - 新增 user managed
+- `~/.config/msgcode/skills/`
+  - runtime 同步产物 + legacy-active
 - `<workspace>/.msgcode/skills/`
-  - 正式启用 workspace local
+  - future local override（尚未正式启用）
 
 ### 运行时层
 
-运行时不要再把所有来源糊成一个不透明用户目录，而应该生成一个“生效索引”：
+当前最薄做法不是先加 `effective-index.json`，而是：
 
-- `~/.config/msgcode/skills/effective-index.json`
-
-这个文件只回答一件事：
-- 当前实际可见的 skill 是谁
-- 它来自哪一层
-- 是否 enabled
+- 继续使用 `~/.config/msgcode/skills/index.json`
+- 但在文档和同步实现中承认 `legacy-active` 的存在
+- 不再假装所有 skill 都已经被 runtime/optional 完整托管
 
 ### 角色层
 
 四层建议命名为：
 
-- `core`
-- `system-optional`
-- `managed`
+- `runtime`
+- `optional`
+- `legacy-active`
 - `workspace`
 
 ## 推荐 conflict policy
@@ -192,13 +188,12 @@
 
 #### 规则
 
-1. `workspace` > `managed` > `system-optional`
+1. `workspace` > `optional`
 2. `core` 为保留区，默认不允许被覆盖
 
 #### 原因
 
 - workspace 覆盖是局部最强语义
-- user managed 应该能覆盖系统 optional
 - core 是大脑的一部分，不该被任意影子覆盖
 
 ### 二、core 保留区
@@ -299,7 +294,7 @@ skill 若声明：
 2. 新增 `managed` 与 `workspace`
 3. 新增 `effective-index.json`
 4. 定死：
-   - `workspace > managed > system-optional`
+   - `workspace > optional > legacy-active`
    - `core` 不可覆盖
 
 这就够了。
