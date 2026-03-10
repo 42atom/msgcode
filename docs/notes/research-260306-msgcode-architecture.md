@@ -123,7 +123,7 @@
 - `bash-runner.ts`：Shell 命令执行
 - `browser-pinchtab.ts`：浏览器自动化（基于 PinchTab）
 - `tts.ts`：文本转语音
-- `vision_ocr.ts`：视觉 OCR
+- `vision.ts`：视觉理解
 
 ### 3.7 记忆系统 (`src/memory/`)
 - **L0**：会话窗口（`<workspace>/.msgcode/sessions/<chatId>.jsonl`）

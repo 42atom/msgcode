@@ -1,7 +1,7 @@
 ---
 id: 0010
 title: MiniMax Anthropic Provider 兼容修复
-status: doing
+status: done
 owner: agent
 labels: [feature, refactor, architecture]
 risk: medium
@@ -34,10 +34,10 @@ links:
 
 - [x] 记录官方兼容要求与当前实现差异
 - [x] 创建 Plan 文档并冻结最小实现边界
-- [ ] 新增 MiniMax Anthropic provider 适配实现
-- [ ] 接线 `runAgentChat` / `runAgentToolLoop` 到 minimax 专用 provider
-- [ ] 补 MiniMax tool-use 多轮与 no-tool 回归锁
-- [ ] 跑定向与全量验证
+- [x] 新增 MiniMax Anthropic provider 适配实现
+- [x] 接线 `runAgentChat` / `runAgentToolLoop` 到 minimax 专用 provider
+- [x] 补 MiniMax tool-use 多轮与 no-tool 回归锁
+- [x] 跑定向与全量验证
 
 ## Acceptance Criteria
 
@@ -75,6 +75,9 @@ links:
   - `npm run docs:check`
   - `npm test`（1367 pass / 0 fail）
   - 真实 API 冒烟：`runAgentChat({ prompt: "只回复 OK", backendRuntime: resolveAgentBackendRuntime("minimax") })` → `OK`
+- 2026-03-09 关单同步：
+  - 现有实现、测试、CHANGELOG 与真实 API smoke 已满足本单目标
+  - 状态从 `doing` 同步为 `done`
 
 ## Links
 

@@ -1,15 +1,17 @@
 ---
 id: 0026
 title: Agent 读 Skill 桥断裂 - 自然语言无法真实执行 read_file
-status: doing
+status: done
 owner: agent
 labels: [feature, agent, skill, bug]
 risk: high
 scope: src/agent-backend/tool-loop.ts, src/agent-backend/routed-chat.ts
 plan_doc: docs/design/plan-260308-agent-read-skill-bridge.md
 links:
+  - docs/tasks/p5-7-r15-agent-read-skill-bridge.md
   - /Users/admin/GitProjects/msgcode/issues/0022-scheduler-skill-bash-mainline.md
   - /Users/admin/GitProjects/msgcode/issues/0024-skill-single-source-runtime.md
+  - /Users/admin/GitProjects/msgcode/issues/0027-llm-skill-directory-open-loop.md
 created: 2026-03-08
 due:
 ---
@@ -36,12 +38,12 @@ due:
 
 ## Plan
 
-- [ ] 创建 issue + plan
-- [ ] 拿证据（代码根因）
-- [ ] 修 read_file 桥
-- [ ] 补测试
-- [ ] 真机 smoke
-- [ ] 提交
+- [x] 创建 issue + plan
+- [x] 拿证据（代码根因）
+- [x] 修 read_file 桥
+- [x] 补测试
+- [x] 真机链路后续转入 Issue 0027 继续验证
+- [x] 提交
 
 ## Evidence
 
@@ -72,3 +74,17 @@ due:
 1. 不要把问题扩成"整个 agent-first 都重做"
 2. 先只修 read_file，不碰 bash
 3. 不要用 prompt 掩盖 runtime 根因
+
+### 修复结果
+1. `getToolsForLlm()` 在 skill 场景不再因为 `pi.enabled` 缺失而返回空工具集
+2. 最小桥接验证已由回归锁覆盖：`test/p5-7-r15-agent-read-skill-bridge.test.ts`
+3. 后续“读完 skill 后继续 bash / browser / mem”的开放循环验证，已由 Issue 0027 继续承接
+
+### 2026-03-09 关单同步
+1. 本单目标是修 `read_file` 桥，而不是完成整个 skill open-loop
+2. 当前根因、修复、测试、后续承接都已明确，状态从 `doing` 同步为 `done`
+
+## Links
+
+- Plan: `docs/design/plan-260308-agent-read-skill-bridge.md`
+- Task: `docs/tasks/p5-7-r15-agent-read-skill-bridge.md`

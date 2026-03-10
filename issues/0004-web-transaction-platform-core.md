@@ -80,6 +80,7 @@ due:
 - 待替换旧口径：`docs/tasks/p5-7-r7-browser-domain.md` 当前仍是 `open/click/type + Playwright` 范围，后续需改成 Browser Core + Transaction Kernel。
 - 2026-03-06 决策更新：首期先做 Browser Core，安全阀门与两段式提交延后；依赖提示词约束 agent 行为。
 - 2026-03-06 决策更新：PinchTab 作为主浏览器底座，更符合“用户自有浏览器身份 / profile / session 管理控制面”的整体构思；`agent-browser` 保留为参考工具，不接入主链路。
+- 2026-03-09 决策更新：Gmail 不再作为独立产品任务或独立 smoke 批次维护。Browser Core 已跑通后，Gmail 只是普通网页之一；本单剩余重点收口为 `waiting-human-login / pause / resume` 人机接力状态机，而不是继续维护单站点 Gmail 专项验收。
 - 2026-03-06 验证计划：先安装 `pinchtab` 并写入项目依赖，再用公开网站跑一条“像 agent 一样使用浏览器”的真实链路，记录实际坑点后再调整文档与构建计划。
 - 2026-03-06 验证结果：
   - 已通过 `npm install pinchtab@0.7.7` 将依赖写入 `package.json`

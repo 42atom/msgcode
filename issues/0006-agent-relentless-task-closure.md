@@ -1,7 +1,7 @@
 ---
 id: 0006
 title: Agent 追打型未完成任务闭环
-status: doing
+status: done
 owner: agent
 labels: [feature, refactor, docs]
 risk: high
@@ -79,6 +79,9 @@ created: 2026-03-06
   - `npm test -- test/p5-7-r12-agent-relentless-task-closure.test.ts`：`17 pass / 0 fail`
   - `npm test -- test/context.steering.test.ts`：`18 pass / 0 fail`
   - `npm run docs:check`：通过
+- 2026-03-09 关单同步：
+  - checklist 已全完成，状态从 `doing` 同步为 `done`
+  - 当前保留的后续工作应转入新 issue，而不是继续挂在本单
 - 风险收口：
   - 默认只支持单 chat 单活跃任务，先收口状态空间
   - 对 recoverable error 要有明确预算，避免无限自旋

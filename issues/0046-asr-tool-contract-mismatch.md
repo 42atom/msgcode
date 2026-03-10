@@ -1,13 +1,15 @@
 ---
 id: 0046
 title: 修复 asr 工具合同不一致导致的空路径失败
-status: open
+status: done
 owner: agent
 labels: [bug, asr, tools]
 risk: medium
 scope: ASR 工具说明书与 Tool Bus 执行参数不一致
 plan_doc: docs/design/plan-260309-asr-tool-contract-mismatch.md
-links: []
+links:
+  - docs/tasks/p5-7-r22-asr-tool-contract-mismatch.md
+  - docs/CHANGELOG.md
 ---
 
 ## Context
@@ -44,10 +46,10 @@ links: []
 
 ## Plan
 
-- [ ] 对齐 `asr` 工具合同，统一 `audioPath` / `inputPath` 语义
-- [ ] 优先保持对现有调用的兼容，避免修复时打断已存在调用方
-- [ ] 补 manifest/bus 的合同回归测试
-- [ ] 用现有日志中的飞书语音场景做定向验证
+- [x] 对齐 `asr` 工具合同，统一 `audioPath` / `inputPath` 语义
+- [x] 优先保持对现有调用的兼容，避免修复时打断已存在调用方
+- [x] 补 manifest/bus 的合同回归测试
+- [x] 用现有日志中的飞书语音场景做定向验证
 
 ## Acceptance Criteria
 
@@ -65,11 +67,24 @@ links: []
 - `src/tools/bus.ts`
 - `src/runners/asr.ts`
 - `src/tools/types.ts`
+- `src/tools/manifest.ts`
 
 ### Logs
 - `/Users/admin/.config/msgcode/log/msgcode.log`
   - `2026-03-08 17:11:52` 到 `17:11:59`
 
+### Tests
+- `test/p5-7-r22-asr-tool-contract.test.ts`
+
+### 结果
+- `asr` 说明书主字段已统一为 `audioPath`
+- Tool Bus 兼容读取 `audioPath ?? inputPath`
+- 回归锁已覆盖“新口径优先、旧口径兼容”两条路径
+
+### 2026-03-09 关单同步
+- 本单目标已由代码与合同回归测试满足，状态从 `open` 同步为 `done`
+
 ## Links
 
 - Plan: `docs/design/plan-260309-asr-tool-contract-mismatch.md`
+- Task: `docs/tasks/p5-7-r22-asr-tool-contract-mismatch.md`

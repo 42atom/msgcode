@@ -1,13 +1,14 @@
 ---
 id: 0017
 title: 工具调用成功率优先于协议摩擦
-status: doing
+status: done
 owner: agent
 labels: [bug, refactor, tooling]
 risk: medium
 scope: agent-backend/tools/manifest/tests
 plan_doc: docs/design/plan-260307-tool-success-over-protocol-friction.md
 links:
+  - docs/tasks/p5-7-r13-tool-success-over-protocol-friction.md
   - docs/notes/research-260307-patchright-phase-a.md
 created: 2026-03-07
 due:
@@ -36,11 +37,11 @@ due:
 
 ## Plan
 
-- [ ] 创建并评审 Plan 文档：`docs/design/plan-260307-tool-success-over-protocol-friction.md`
-- [ ] 统一 `edit_file` 参数合同
-- [ ] 放宽显式工具偏好，允许 `bash` 后备
-- [ ] 补充并跑通回归测试
-- [ ] 更新 CHANGELOG
+- [x] 创建并评审 Plan 文档：`docs/design/plan-260307-tool-success-over-protocol-friction.md`
+- [x] 统一 `edit_file` 参数合同
+- [x] 放宽显式工具偏好，允许 `bash` 后备
+- [x] 补充并跑通回归测试
+- [x] 更新 CHANGELOG
 
 ## Acceptance Criteria
 
@@ -54,7 +55,20 @@ due:
 - 关键日志：
   - `edit_file: 'edits' must be a non-empty array`
   - `MODEL_PROTOCOL_FAILED`
+- Code:
+  - `src/tools/manifest.ts`
+  - `src/tools/bus.ts`
+  - `src/agent-backend/tool-loop.ts`
+- Tests:
+  - `test/p5-6-8-r3b-edit-file-patch.test.ts`
+  - `test/p5-7-r3l-7-tool-protocol-retry-and-soul-normalize.test.ts`
+- Changelog:
+  - `docs/CHANGELOG.md` 已记录 Issue 0017 的外部口径变更
+- 2026-03-09 关单同步：
+  - `edit_file` 合同兼容与 `bash` fallback 已有代码、测试、CHANGELOG 三重证据
+  - 状态从 `doing` 同步为 `done`
 
 ## Links
 
 - Plan: `docs/design/plan-260307-tool-success-over-protocol-friction.md`
+- Task: `docs/tasks/p5-7-r13-tool-success-over-protocol-friction.md`

@@ -1,13 +1,14 @@
 ---
 id: 0014
 title: Runtime skill 仓库源与安装目录单一真相源
-status: doing
+status: done
 owner: agent
 labels: [feature, refactor, docs]
 risk: medium
 scope: skills/install/startup/config-contract
 plan_doc: docs/design/plan-260307-runtime-skill-source-sync.md
 links:
+  - docs/tasks/p5-7-r13-runtime-skill-source-sync.md
   - issues/0013-pinchtab-single-browser-substrate-bootstrap.md
 created: 2026-03-07
 due:
@@ -26,27 +27,27 @@ due:
 - 在仓库内增加托管 runtime skill 真相源。
 - 让 `msgcode init` 和 `msgcode start` 都能幂等同步托管 runtime skills 到 `~/.config/msgcode/skills/`。
 - 保留用户自定义 skills，不因为托管 skill 同步而被覆盖或删除。
-- 用测试锁住 `pinchtab-browser` 的安装与索引合并行为。
+- 用测试锁住托管 runtime skill 的安装与索引合并行为。
 
 ### Non-Goals
 
 - 本轮不重做整个历史 skill 系统。
-- 本轮不把所有现有用户 skill 全量迁入仓库，只先收口托管的 `pinchtab-browser`。
+- 本轮不把所有现有用户 skill 全量迁入仓库，只先收口托管 runtime skills。
 - 本轮不修改 tool loop 的技能读取口径，仍以 `~/.config/msgcode/skills/index.json` 为运行时真相源。
 
 ## Plan
 
-- [ ] 创建并评审 Plan 文档：`docs/design/plan-260307-runtime-skill-source-sync.md`
-- [ ] 新增仓库托管 runtime skill 源目录：`src/skills/runtime/`
-- [ ] 新增同步模块并替换 `src/cli.ts` 里的旧安装逻辑
-- [ ] 在 `startBot()` 接入 best-effort runtime skill 同步
-- [ ] 更新 `src/skills/README.md` 和 `docs/CHANGELOG.md`
-- [ ] 补充同步回归测试并运行定向验证
-- [ ] 将本地 `~/.config/msgcode/skills/` 同步到最新托管版本
+- [x] 创建并评审 Plan 文档：`docs/design/plan-260307-runtime-skill-source-sync.md`
+- [x] 新增仓库托管 runtime skill 源目录：`src/skills/runtime/`
+- [x] 新增同步模块并替换 `src/cli.ts` 里的旧安装逻辑
+- [x] 在 `startBot()` 接入 best-effort runtime skill 同步
+- [x] 更新 `src/skills/README.md` 和 `docs/CHANGELOG.md`
+- [x] 补充同步回归测试并运行定向验证
+- [x] 将本地 `~/.config/msgcode/skills/` 同步到最新托管版本
 
 ## Acceptance Criteria
 
-1. 仓库内存在 `pinchtab-browser` 的托管 runtime skill 真相源。
+1. 仓库内存在托管 runtime skill 真相源（现役 `patchright-browser` / `scheduler`）。
 2. `msgcode init` 会把托管 runtime skill 同步到 `~/.config/msgcode/skills/`。
 3. `msgcode start` 即使未执行过 `init`，也会 best-effort 补齐托管 runtime skill。
 4. 现有自定义 skill 与 `index.json` 不会在同步过程中丢失。
@@ -61,9 +62,21 @@ due:
   - `src/skills/README.md`
   - `src/skills/runtime-sync.ts`
 - Runtime source：
-  - `~/.config/msgcode/skills/pinchtab-browser/`
+  - `src/skills/runtime/index.json`
+  - `src/skills/runtime/patchright-browser/`
+  - `src/skills/runtime/scheduler/`
+- Tests：
+  - `test/p5-7-r13-runtime-skill-sync.test.ts`
+- 现状说明：
+  - 原始触发点是 `pinchtab-browser` 手工落盘
+  - 当前正式运行时 skill 已演进为 `patchright-browser` + `scheduler`
+  - `pinchtab-browser` 已退役，仅保留历史参考与回滚说明
+- 2026-03-09 关单同步：
+  - issue 已按当前真实实现口径更新
+  - 状态从 `doing` 同步为 `done`
 
 ## Links
 
 - Plan: `docs/design/plan-260307-runtime-skill-source-sync.md`
+- Task: `docs/tasks/p5-7-r13-runtime-skill-source-sync.md`
 - Related: `issues/0013-pinchtab-single-browser-substrate-bootstrap.md`
