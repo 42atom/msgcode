@@ -68,8 +68,8 @@ export interface WhitelistConfig {
  */
 export interface Config {
     // Transport 列表（启动时启用哪些通道）
-    // - 默认：imsg
-    // - 若配置 FEISHU_APP_ID/FEISHU_APP_SECRET：自动追加 feishu（可用 MSGCODE_TRANSPORTS 显式覆盖）
+    // - 默认：有飞书配置则 feishu，否则回退 imsg
+    // - 可用 MSGCODE_TRANSPORTS 显式覆盖
     transports: ("imsg" | "feishu")[];
     // 白名单
     whitelist: WhitelistConfig;
@@ -141,8 +141,16 @@ function parseNumber(value: string | undefined, fallback: number): number {
     return parsed;
 }
 
-function parseTransports(): ("imsg" | "feishu")[] {
-    const raw = (process.env.MSGCODE_TRANSPORTS || "").trim();
+function hasFeishuCredentials(env: NodeJS.ProcessEnv = process.env): boolean {
+    return !!(env.FEISHU_APP_ID || "").trim() && !!(env.FEISHU_APP_SECRET || "").trim();
+}
+
+function resolveDefaultTransports(env: NodeJS.ProcessEnv = process.env): ("imsg" | "feishu")[] {
+    return hasFeishuCredentials(env) ? ["feishu"] : ["imsg"];
+}
+
+function parseTransports(env: NodeJS.ProcessEnv = process.env): ("imsg" | "feishu")[] {
+    const raw = (env.MSGCODE_TRANSPORTS || "").trim();
     if (raw) {
         const items = raw
             .split(",")
@@ -155,15 +163,10 @@ function parseTransports(): ("imsg" | "feishu")[] {
             }
         }
         // 兜底：空配置不允许（避免“启动了但没 transport”）
-        return out.length > 0 ? out : ["imsg"];
+        return out.length > 0 ? out : resolveDefaultTransports(env);
     }
 
-    // 默认：imsg；若 feishu 配置齐全则自动追加
-    const out: ("imsg" | "feishu")[] = ["imsg"];
-    if ((process.env.FEISHU_APP_ID || "").trim() && (process.env.FEISHU_APP_SECRET || "").trim()) {
-        out.push("feishu");
-    }
-    return out;
+    return resolveDefaultTransports(env);
 }
 
 function parseDefaultWorkspaceDir(): string {

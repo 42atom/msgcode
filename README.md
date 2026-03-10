@@ -1,6 +1,6 @@
 # msgcode
 
-> iMessage-first personal agent runtime on macOS.
+> Feishu-first personal agent runtime on macOS.
 
 msgcode 的目标是把「个人智能体」做成可长期运行的基础设施，而不是一次性的聊天应用。
 
@@ -44,8 +44,9 @@ msgcode 的默认原则不是“约束 LLM”，而是“支持 LLM 完成任务
 - macOS（建议 Apple Silicon）
 - Node.js + npm
 - `tmux`
-- iMessage 可用账号
+- 飞书企业自建应用凭据（`FEISHU_APP_ID` / `FEISHU_APP_SECRET`）
 - Chrome/Chromium（供浏览器自动化底座使用）
+- iMessage 仅在显式启用 `imsg` transport 时需要
 
 ### 2. 安装依赖
 
@@ -77,10 +78,20 @@ npm exec msgcode -- init
 ### 4. 配置 `~/.config/msgcode/.env`
 
 ```bash
-MY_EMAIL=me@icloud.com
-IMSG_PATH=/Users/<you>/msgcode/vendor/imsg/v0.4.0/imsg
+MY_EMAIL=me@company.com
+FEISHU_APP_ID=cli_xxx
+FEISHU_APP_SECRET=xxx
 WORKSPACE_ROOT=/Users/<you>/msgcode-workspaces
+
+# 可选：仅在显式启用 iMessage transport 时需要
+# MSGCODE_TRANSPORTS=imsg,feishu
+# IMSG_PATH=/Users/<you>/msgcode/vendor/imsg/v0.4.0/imsg
 ```
+
+默认 transport 口径：
+- 配置飞书凭据时，默认只启 `feishu`
+- 未配置飞书凭据时，回退到 `imsg`
+- 如需显式启用 iMessage，请设置 `MSGCODE_TRANSPORTS=imsg` 或 `MSGCODE_TRANSPORTS=imsg,feishu`
 
 Browser Core 配置口径：
 - 正式浏览器主链不再依赖 PinchTab orchestrator/baseUrl/binary 环境变量。
@@ -101,9 +112,9 @@ msgcode start
 msgcode start -d
 ```
 
-### 6. 在 iMessage 绑定项目
+### 6. 在飞书群绑定项目
 
-1. 新建群聊并拉入 msgcode 账号
+1. 新建飞书群并拉入 msgcode 机器人
 2. 在群里发送：
 
 ```text
@@ -156,7 +167,7 @@ npx tsx src/cli.ts /desktop observe
 
 ## Known Limits
 
-- iMessage 适配依赖 macOS 本地能力，系统升级可能影响稳定性。
+- 飞书已是主通道；iMessage 仅作为本地可选通道保留，受 macOS 本地权限与系统升级影响更大。
 - Tmux 代理属于“终端通道”，输出质量受上游 CLI 工具更新影响。
 - 命令在不同运行态可见性不同，出现分歧时一律以 `/help` 输出为准。
 

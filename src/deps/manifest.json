@@ -1,17 +1,6 @@
 {
   "version": 1,
-  "requiredForStart": [
-    {
-      "id": "imsg",
-      "kind": "bin",
-      "pathEnv": "IMSG_PATH"
-    },
-    {
-      "id": "messages_db",
-      "kind": "fs_read",
-      "path": "~/Library/Messages/chat.db"
-    }
-  ],
+  "requiredForStart": [],
   "requiredForJobs": [
     {
       "id": "tmux",
@@ -20,6 +9,18 @@
     }
   ],
   "optional": [
+    {
+      "id": "imsg",
+      "kind": "bin",
+      "pathEnv": "IMSG_PATH",
+      "description": "iMessage transport 可执行入口（仅在启用 imsg 时需要）"
+    },
+    {
+      "id": "messages_db",
+      "kind": "fs_read",
+      "path": "~/Library/Messages/chat.db",
+      "description": "macOS iMessage 本地 chat.db（仅在启用 imsg 时需要）"
+    },
     {
       "id": "lmstudio",
       "kind": "http",
