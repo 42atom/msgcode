@@ -3,6 +3,7 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-10
+  - runtime: macOS 下 `msgcode start/stop/restart` 已收口到 LaunchAgent 主链；daemon 由 `launchd` 托管常驻，`msgcode status` 新增 daemon 托管状态诊断，且 launchd 会话里 `imsg` 初始化失败时不再拖垮整进程，而是自动降级为保留其余 transport 常驻 (Issue: 0061, Plan: docs/design/plan-260310-msgcode-daemon-keepalive-via-launchd.md) [risk: medium] [rollback: 回退 `src/runtime/launchd.ts`、`src/cli.ts`、`src/daemon.ts`、`src/commands.ts` 与 daemon probe 改动]
   - skills: 退役 `zai-vision-mcp` runtime skill；正式视觉能力面收口为“当前模型原生看图 + 本地 LM Studio”，runtime skill sync 也会把 `zai-vision-mcp` 视为 retired skill，不再继续暴露到用户索引 (Issue: 0060, Plan: docs/design/plan-260310-retire-zai-vision-mcp-runtime-skill.md) [risk: low] [rollback: 恢复 `src/skills/runtime/zai-vision-mcp/`、`src/skills/runtime/index.json` 与 runtime skill sync 测试]
   - runtime: 修复 review 暴露的长期任务状态机漂移；`updateTaskResult()` 现在尊重显式 `status`，`failed` 不再被错误回退成 `pending`，无 verify 的 `completed` 会与 checkpoint 一起降级回 `running`，同时 `/task resume` 不再在真正续跑前先消耗一次 attempt budget (Issue: 0059, Plan: docs/design/plan-260310-review-fixes-task-status-and-runtime-skill-index.md) [risk: medium] [rollback: 回退 `src/runtime/task-supervisor.ts` 与相关 `/task` 测试]
   - skills: 修复 runtime skill 索引与仓库真相源失配；把 `vision-index`、`local-vision-lmstudio`、`zai-vision-mcp` 正式纳入仓库托管 runtime skills，并新增“索引列出的托管 skill 必须被 git 跟踪”的回归锁，避免 clean checkout 下 skill 索引悬空 (Issue: 0059, Plan: docs/design/plan-260310-review-fixes-task-status-and-runtime-skill-index.md) [risk: low] [rollback: 回退 vision runtime skill 目录、`src/skills/runtime/index.json` 与 runtime skill sync 测试]

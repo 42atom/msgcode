@@ -92,6 +92,10 @@ program
   .command("stop")
   .description("停止 msgcode（保留 tmux 会话上下文）")
   .action(async () => {
+    if (process.platform === "darwin") {
+      await stopManagedDaemon();
+      return;
+    }
     const { stopBot } = await import("./commands.js");
     await stopBot();
   });
@@ -105,13 +109,19 @@ program
     if (options.debug) {
       enableDebugProfile();
     }
-    const { stopBot } = await import("./commands.js");
-    await stopBot();
     if (normalized === "debug") {
+      const { stopBot } = await import("./commands.js");
+      await stopBot();
       const { startBot } = await import("./commands.js");
       await startBot();
       return;
     }
+    if (process.platform === "darwin") {
+      await restartManagedDaemon();
+      return;
+    }
+    const { stopBot } = await import("./commands.js");
+    await stopBot();
     await launchDaemon();
   });
 
@@ -119,6 +129,15 @@ program
   .command("allstop")
   .description("停止 msgcode + 清理所有 tmux 会话")
   .action(async () => {
+    if (process.platform === "darwin") {
+      await stopManagedDaemon();
+      const { killMsgcodeTmuxSessions } = await import("./commands.js");
+      const sessions = await killMsgcodeTmuxSessions();
+      if (sessions.length > 0) {
+        console.log(`已停止 tmux 会话: ${sessions.join(", ")}`);
+      }
+      return;
+    }
     const { allStop } = await import("./commands.js");
     await allStop();
   });
@@ -436,7 +455,12 @@ async function launchDaemon(): Promise<void> {
   console.log(`  cliEntry: ${versionInfo.cliEntry}`);
   console.log("");
 
-  // 单实例守护：若已有 daemon 在跑，则不重复启动
+  if (process.platform === "darwin") {
+    await startManagedDaemon();
+    return;
+  }
+
+  // 非 macOS 仍保留旧 detached child 模式
   try {
     const { acquireSingletonLock } = await import("./runtime/singleton.js");
     const lock = await acquireSingletonLock("msgcode-daemon");
@@ -444,7 +468,6 @@ async function launchDaemon(): Promise<void> {
       console.log(`msgcode 已在运行 (pid: ${lock.pid ?? "unknown"})`);
       return;
     }
-    // 这里不 release：真正的 daemon 进程会重新 acquire 并管理 pidfile
     await lock.release();
   } catch {
     // best-effort：锁机制失败时继续启动（避免误伤）
@@ -476,6 +499,115 @@ async function launchDaemon(): Promise<void> {
 
   console.log(`msgcode 已启动 (PID: ${child.pid})`);
   console.log(`日志: ${LOG_FILE}`);
+}
+
+function isPidAlive(pid: number): boolean {
+  if (!Number.isFinite(pid) || pid <= 1) {
+    return false;
+  }
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function waitForPidExit(pid: number, timeoutMs = 4000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (!isPidAlive(pid)) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  }
+  return !isPidAlive(pid);
+}
+
+async function stopStandaloneDaemon(skipPid?: number): Promise<number | null> {
+  const { readSingletonPid } = await import("./runtime/singleton.js");
+  const pid = await readSingletonPid("msgcode");
+  if (!pid || pid === skipPid) {
+    return null;
+  }
+
+  try {
+    process.kill(pid, "SIGTERM");
+  } catch {
+    return null;
+  }
+
+  const exited = await waitForPidExit(pid);
+  if (!exited && isPidAlive(pid)) {
+    try {
+      process.kill(pid, "SIGKILL");
+    } catch {
+      // ignore
+    }
+    await waitForPidExit(pid, 1000);
+  }
+  return pid;
+}
+
+async function startManagedDaemon(): Promise<void> {
+  const {
+    readLaunchAgentRuntime,
+    ensureLaunchAgentStarted,
+  } = await import("./runtime/launchd.js");
+
+  const current = await readLaunchAgentRuntime(process.env);
+  if (current.status === "running") {
+    console.log(`msgcode 已由 launchd 运行 (PID: ${current.pid ?? "unknown"})`);
+    console.log(`日志: ${current.stdoutPath}`);
+    return;
+  }
+
+  await stopStandaloneDaemon(current.pid);
+  const runtime = await ensureLaunchAgentStarted(process.env);
+  console.log(`msgcode 已由 launchd 启动 (PID: ${runtime.pid ?? "unknown"})`);
+  console.log(`LaunchAgent: ${runtime.plistPath}`);
+  console.log(`日志: ${runtime.stdoutPath}`);
+}
+
+async function stopManagedDaemon(): Promise<void> {
+  const {
+    readLaunchAgentRuntime,
+    stopLaunchAgent,
+  } = await import("./runtime/launchd.js");
+
+  const current = await readLaunchAgentRuntime(process.env);
+  if (current.loaded) {
+    await stopLaunchAgent(process.env);
+    await waitForPidExit(current.pid ?? -1, 3000);
+  }
+
+  await stopStandaloneDaemon(current.pid);
+  console.log("msgcode 已停止");
+}
+
+async function restartManagedDaemon(): Promise<void> {
+  const {
+    readLaunchAgentRuntime,
+    ensureLaunchAgentStarted,
+    restartLaunchAgent,
+  } = await import("./runtime/launchd.js");
+
+  const current = await readLaunchAgentRuntime(process.env);
+  let runtime;
+
+  if (current.installed || current.loaded) {
+    if (!current.pid) {
+      await stopStandaloneDaemon();
+    }
+    runtime = await restartLaunchAgent(process.env);
+  } else {
+    await stopStandaloneDaemon();
+    runtime = await ensureLaunchAgentStarted(process.env);
+  }
+
+  console.log(`msgcode 已重启 (PID: ${runtime.pid ?? "unknown"})`);
+  console.log(`LaunchAgent: ${runtime.plistPath}`);
+  console.log(`日志: ${runtime.stdoutPath}`);
 }
 
 async function initBot(options: { overwriteSkills?: boolean } = {}): Promise<void> {

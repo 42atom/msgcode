@@ -15,6 +15,7 @@ import { ImsgRpcClient } from "./imsg/rpc-client.js";
 import type { InboundMessage } from "./imsg/types.js";
 import crypto from "node:crypto";
 import { getVersion } from "./version.js";
+import type { DependencyCheckResult } from "./deps/types.js";
 
 const execAsync = promisify(exec);
 
@@ -213,6 +214,49 @@ async function handleControlCommandInFastLaneWithClient(
   }
 }
 
+type RuntimeTransport = "imsg" | "feishu";
+
+function isImsgUnavailableError(message: string): boolean {
+  return message.includes("RPC 客户端已关闭") || message.includes("imsg 进程未运行");
+}
+
+export function filterStartupDependencyFailures(
+  checks: DependencyCheckResult[],
+  options: {
+    enableImsg: boolean;
+    supervisor?: string;
+  }
+): {
+  blocking: DependencyCheckResult[];
+  downgraded: DependencyCheckResult[];
+} {
+  const blocking: DependencyCheckResult[] = [];
+  const downgraded: DependencyCheckResult[] = [];
+  const launchdManaged = options.supervisor === "launchd";
+
+  for (const check of checks) {
+    if (check.available) {
+      continue;
+    }
+
+    // feishu-only：允许缺失 iMessage 相关依赖
+    if (!options.enableImsg && ["imsg", "messages_db"].includes(check.dependencyId)) {
+      downgraded.push(check);
+      continue;
+    }
+
+    // launchd 下 node 读取 chat.db 可能被 TCC 拒绝，但不代表 daemon 不能继续
+    if (launchdManaged && check.dependencyId === "messages_db") {
+      downgraded.push(check);
+      continue;
+    }
+
+    blocking.push(check);
+  }
+
+  return { blocking, downgraded };
+}
+
 /**
  * 检查消息是否已通过快车道回复（供 listener.ts 使用）
  */
@@ -311,8 +355,6 @@ async function killMsgcodeProcesses(): Promise<void> {
   const patterns = [
     "tsx.*src/index.ts",
     "tsx.*src/daemon.ts",
-    "tsx.*src/cli.ts",
-    "node.*tsx.*msgcode",
     "npm exec tsx src/index.ts",
     // IndexTTS 常驻 worker（避免 daemon 重启后遗留孤儿进程）
     "indexts_worker\\.py",
@@ -327,7 +369,7 @@ async function killMsgcodeProcesses(): Promise<void> {
   }
 }
 
-async function killMsgcodeTmuxSessions(): Promise<string[]> {
+export async function killMsgcodeTmuxSessions(): Promise<string[]> {
   try {
     const { stdout } = await execAsync(`tmux list-sessions -F "#{session_name}" || true`);
     const sessions = stdout
@@ -361,13 +403,23 @@ export async function startBot(): Promise<void> {
 
     // 检查 requiredForStart
     const enableImsg = config.transports.includes("imsg");
-    const missingStart = preflightResult.requiredForStart
-      .filter((r) => !r.available)
-      // feishu-only 时允许缺失 imsg/messages_db（manifest 仍保持 iMessage-first）
-      .filter((r) => (enableImsg ? true : !["imsg", "messages_db"].includes(r.dependencyId)));
-    if (missingStart.length > 0) {
+    const startupDeps = filterStartupDependencyFailures(preflightResult.requiredForStart, {
+      enableImsg,
+      supervisor: process.env.MSGCODE_DAEMON_SUPERVISOR,
+    });
+    if (startupDeps.downgraded.length > 0) {
+      logger.warn("启动依赖已降级为告警", {
+        module: "commands",
+        supervisor: process.env.MSGCODE_DAEMON_SUPERVISOR ?? "standalone",
+        downgraded: startupDeps.downgraded.map((check) => ({
+          dependencyId: check.dependencyId,
+          error: check.error,
+        })),
+      });
+    }
+    if (startupDeps.blocking.length > 0) {
       console.error("启动必需依赖缺失:");
-      for (const check of missingStart) {
+      for (const check of startupDeps.blocking) {
         console.error(`  - ${check.dependencyId}: ${check.error}`);
       }
       console.error("\n请解决缺失依赖后重试。运行 'msgcode preflight --json' 查看详情。");
@@ -434,6 +486,27 @@ export async function startBot(): Promise<void> {
   const transports = config.transports;
   const enableImsg = transports.includes("imsg");
   const enableFeishu = transports.includes("feishu");
+  const activeTransports: RuntimeTransport[] = [];
+  const degradeImsgTransport = async (reason: string): Promise<void> => {
+    if (!enableFeishu) {
+      throw new Error(reason);
+    }
+
+    logger.warn("imsg transport 初始化失败，已降级为仅保留其余 transport", {
+      module: "commands",
+      error: reason,
+    });
+    try {
+      await imsgClient?.stop();
+    } catch {
+      // ignore
+    }
+    imsgClient = null;
+    const imsgIndex = activeTransports.indexOf("imsg");
+    if (imsgIndex >= 0) {
+      activeTransports.splice(imsgIndex, 1);
+    }
+  };
 
   // 统一发送口径：按 chat_guid 前缀分发到具体 transport。
   // - iMessage：chat_guid 为原始 guid（不带前缀）
@@ -459,11 +532,23 @@ export async function startBot(): Promise<void> {
   };
 
   if (enableImsg) {
-    if (!config.imsgPath) {
-      throw new Error("已启用 imsg transport，但 config.imsgPath 为空");
+    try {
+      if (!config.imsgPath) {
+        throw new Error("已启用 imsg transport，但 config.imsgPath 为空");
+      }
+      imsgClient = new ImsgRpcClient(config.imsgPath);
+      await imsgClient.start();
+      activeTransports.push("imsg");
+    } catch (error) {
+      imsgClient = null;
+      if (!enableFeishu) {
+        throw error;
+      }
+      logger.warn("imsg transport 启动失败，已降级为仅保留其余 transport", {
+        module: "commands",
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
-    imsgClient = new ImsgRpcClient(config.imsgPath);
-    await imsgClient.start();
   }
 
   // E14: 加载游标状态，使用 since_rowid 或 start 参数
@@ -495,10 +580,20 @@ export async function startBot(): Promise<void> {
         await imsgClient.subscribe({ start: startTime });
       }
     } catch (stateError) {
-      // state.json 不存在或格式错误，回退到 start 窗口
-      logger.warn(`无法加载游标状态: ${stateError instanceof Error ? stateError.message : String(stateError)}`, { module: "commands" });
-      const startTime = new Date(Date.now() - 60000).toISOString();
-      await imsgClient.subscribe({ start: startTime });
+      const reason = stateError instanceof Error ? stateError.message : String(stateError);
+      logger.warn(`无法加载游标状态: ${reason}`, { module: "commands" });
+
+      if (isImsgUnavailableError(reason)) {
+        await degradeImsgTransport(reason);
+      } else {
+        try {
+          const startTime = new Date(Date.now() - 60000).toISOString();
+          await imsgClient.subscribe({ start: startTime });
+        } catch (subscribeError) {
+          const subscribeReason = subscribeError instanceof Error ? subscribeError.message : String(subscribeError);
+          await degradeImsgTransport(subscribeReason);
+        }
+      }
     }
   }
 
@@ -736,22 +831,42 @@ export async function startBot(): Promise<void> {
 
   // Feishu transport（可选）
   if (enableFeishu) {
-    if (!config.feishu) {
-      throw new Error("enableFeishu=1 但 config.feishu 为空");
+    try {
+      if (!config.feishu) {
+        throw new Error("enableFeishu=1 但 config.feishu 为空");
+      }
+      const { createFeishuTransport } = await import("./feishu/transport.js");
+      feishuTransport = createFeishuTransport({
+        appId: config.feishu.appId,
+        appSecret: config.feishu.appSecret,
+        encryptKey: config.feishu.encryptKey,
+        onInbound: (m) => handleInbound(m),
+      });
+      await feishuTransport.start();
+      activeTransports.push("feishu");
+      logger.info("Feishu transport 已启用", { module: "commands" });
+    } catch (error) {
+      feishuTransport = null;
+      if (activeTransports.length === 0) {
+        throw error;
+      }
+      logger.warn("feishu transport 启动失败，已降级为仅保留其余 transport", {
+        module: "commands",
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
-    const { createFeishuTransport } = await import("./feishu/transport.js");
-    feishuTransport = createFeishuTransport({
-      appId: config.feishu.appId,
-      appSecret: config.feishu.appSecret,
-      encryptKey: config.feishu.encryptKey,
-      onInbound: (m) => handleInbound(m),
-    });
-    await feishuTransport.start();
-    logger.info("Feishu transport 已启用", { module: "commands" });
   }
 
-  console.log(`msgcode 已启动（transports: ${transports.join(",")}）`);
-  logger.info("msgcode 已启动", { module: "commands", transports });
+  if (activeTransports.length === 0) {
+    throw new Error("没有可用 transport，daemon 启动取消");
+  }
+
+  console.log(`msgcode 已启动（transports: ${activeTransports.join(",")}）`);
+  logger.info("msgcode 已启动", {
+    module: "commands",
+    requestedTransports: transports,
+    activeTransports,
+  });
 
   process.on("SIGINT", async () => {
     await stopBot();
