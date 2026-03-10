@@ -160,7 +160,7 @@
 
 文档：
 
-- `docs/notes/插件系统之1-transparent_agent_execution_console_design.md`
+- `docs/notes/research-260310-transparent-execution-plugin.md`
 
 归类：
 
