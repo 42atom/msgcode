@@ -1,13 +1,15 @@
 ---
 id: 0069
 title: 飞书群成员 roster 工具与群聊 @ 规则
-status: doing
+status: done
 owner: agent
 labels: [feature, refactor]
 risk: medium
 scope: 薄接飞书群成员查询能力，并补群聊定向回复的 @ 约束
 plan_doc: docs/design/plan-260310-feishu-member-roster-tool-and-mention-guidance.md
-links: []
+links:
+  - 3b358ba
+  - docs/design/plan-260310-feishu-member-roster-tool-and-mention-guidance.md
 ---
 
 ## Context
@@ -37,12 +39,12 @@ links: []
 
 ## Plan
 
-- [ ] 新增 `feishu_list_members` 工具实现
-- [ ] 注册 manifest / bus / types / 默认工具 allow
-- [ ] 提示词增加飞书群聊定向回复 `@` 规则
-- [ ] `character-identity` skill 增加通过成员列表初始化通讯录的说明
-- [ ] 补回归测试
-- [ ] 更新 changelog
+- [x] 新增 `feishu_list_members` 工具实现
+- [x] 注册 manifest / bus / types / 默认工具 allow
+- [x] 提示词增加飞书群聊定向回复 `@` 规则
+- [x] `character-identity` skill 增加通过成员列表初始化通讯录的说明
+- [x] 补回归测试
+- [x] 更新 changelog
 
 ## Acceptance Criteria
 
@@ -57,7 +59,18 @@ links: []
 - 已验证当前飞书应用真实调用 `chatMembers.get` 成功，返回 2 个成员：
   - `ou_0443f43f6047fd032302ba09cbb374c3 / won`
   - `ou_93e21042bc142789ea9a6acf3b901212 / tan`
+- 2026-03-10 已实现：
+  - 新增工具：`src/tools/feishu-list-members.ts`
+  - 已注册到 `src/tools/manifest.ts`、`src/tools/bus.ts`、`src/tools/types.ts`
+  - 已加入默认 allow 与 `/tool allow` 用户可见列表
+  - `prompts/agents-prompt.md` 已新增多人群聊定向回复 `@` 规则
+  - `character-identity` skill 已补充“先拉 roster 再建 CSV”说明
+- 验证：
+  - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r32-feishu-list-members.test.ts test/p5-7-r3n-system-prompt-file-ref.test.ts test/p5-6-8-r4g-pi-core-tools.test.ts test/tools.bus.test.ts`
+  - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r13-runtime-skill-sync.test.ts test/p5-7-r31-primary-owner-channel-config.test.ts`
 
 ## Links
 
 - `docs/design/plan-260310-feishu-member-roster-tool-and-mention-guidance.md`
+- `src/tools/feishu-list-members.ts`
+- `prompts/agents-prompt.md`
