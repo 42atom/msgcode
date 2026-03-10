@@ -5,6 +5,11 @@
  * Implements text segmentation, emotion scoring, and safety thresholds
  */
 
+import {
+  LOCAL_MODEL_LOAD_MAX_RETRIES,
+  maybeReloadLocalModelAndRetry,
+} from "../../runtime/model-service-lease.js";
+
 // ============================================
 // Types
 // ============================================
@@ -325,54 +330,69 @@ async function callLMStudioForEmotion(text: string, styleHint?: string): Promise
 只返回JSON，不要其他内容。格式：{"vector": [0.1, 0, 0, 0, 0, 0, 0, 0.9]}`;
 
   try {
-    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(apiKey ? { "Authorization": `Bearer ${apiKey}` } : {}),
-      },
-      body: JSON.stringify({
-        model: modelName,
-        messages: [
-          {
-            role: "system",
-            content: "你是文本情感分类助手。分析文本情感并返回8维情感向量JSON格式。",
+    let lastError: Error | undefined;
+    for (let attempt = 0; attempt <= LOCAL_MODEL_LOAD_MAX_RETRIES; attempt++) {
+      try {
+        const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(apiKey ? { "Authorization": `Bearer ${apiKey}` } : {}),
           },
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-        temperature: 0.3,
-        max_tokens: 256,
-      }),
-    });
+          body: JSON.stringify({
+            model: modelName,
+            messages: [
+              {
+                role: "system",
+                content: "你是文本情感分类助手。分析文本情感并返回8维情感向量JSON格式。",
+              },
+              {
+                role: "user",
+                content: prompt,
+              },
+            ],
+            temperature: 0.3,
+            max_tokens: 256,
+          }),
+        });
 
-    if (!response.ok) {
-      throw new Error(`LM Studio API error: ${response.status} ${response.statusText}`);
+        if (!response.ok) {
+          throw new Error(`LM Studio API error: ${response.status} ${response.statusText}`);
+        }
+
+        const data = (await response.json()) as LMStudioResponse;
+        const content = data.choices[0]?.message?.content || "";
+
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+          throw new Error("No JSON found in LM Studio response");
+        }
+
+        const parsed = JSON.parse(jsonMatch[0]);
+        let vector = parsed.vector;
+
+        if (!Array.isArray(vector) || vector.length !== 8) {
+          throw new Error(`Invalid emotion vector format: expected 8 floats, got ${vector?.length}`);
+        }
+
+        vector = vector.map((v: unknown) => (typeof v === "number" ? v : 0));
+        return vector as EmotionVector;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        if (await maybeReloadLocalModelAndRetry({
+          module: "tts/emotion",
+          baseUrl,
+          model: modelName,
+          errorMessage: lastError.message,
+          attempt,
+          apiKey: apiKey || undefined,
+        })) {
+          continue;
+        }
+        break;
+      }
     }
-
-    const data = (await response.json()) as LMStudioResponse;
-    const content = data.choices[0]?.message?.content || "";
-
-    // Parse JSON from response
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error("No JSON found in LM Studio response");
-    }
-
-    const parsed = JSON.parse(jsonMatch[0]);
-    let vector = parsed.vector;
-
-    // Validate vector
-    if (!Array.isArray(vector) || vector.length !== 8) {
-      throw new Error(`Invalid emotion vector format: expected 8 floats, got ${vector?.length}`);
-    }
-
-    // Ensure all values are numbers
-    vector = vector.map((v: unknown) => (typeof v === "number" ? v : 0));
-
-    return vector as EmotionVector;
+    throw lastError ?? new Error("LM Studio emotion call failed");
   } catch (err) {
     // Fallback to neutral vector on error
     if (err instanceof Error) {
@@ -403,39 +423,58 @@ ${JSON.stringify(usedSegments, null, 0)}
 {"vectors":[[...8 floats...],[...],...]}（长度必须等于片段数量）`;
 
   try {
-    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(apiKey ? { "Authorization": `Bearer ${apiKey}` } : {}),
-      },
-      body: JSON.stringify({
-        model: modelName,
-        messages: [
-          {
-            role: "system",
-            content: "你是文本情感分类助手。对每个片段返回对应的8维情感向量JSON。",
+    let lastError: Error | undefined;
+    for (let attempt = 0; attempt <= LOCAL_MODEL_LOAD_MAX_RETRIES; attempt++) {
+      try {
+        const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(apiKey ? { "Authorization": `Bearer ${apiKey}` } : {}),
           },
-          {
-            role: "user",
-            content: prompt,
-          },
-        ],
-        temperature: 0.3,
-        max_tokens: 512,
-      }),
-    });
+          body: JSON.stringify({
+            model: modelName,
+            messages: [
+              {
+                role: "system",
+                content: "你是文本情感分类助手。对每个片段返回对应的8维情感向量JSON。",
+              },
+              {
+                role: "user",
+                content: prompt,
+              },
+            ],
+            temperature: 0.3,
+            max_tokens: 512,
+          }),
+        });
 
-    if (!response.ok) {
-      throw new Error(`LM Studio API error: ${response.status} ${response.statusText}`);
+        if (!response.ok) {
+          throw new Error(`LM Studio API error: ${response.status} ${response.statusText}`);
+        }
+
+        const data = (await response.json()) as LMStudioResponse;
+        const content = data.choices[0]?.message?.content || "";
+
+        const vectors = await tryParseVectorsFromContent(content, usedSegments.length);
+        if (!vectors) return null;
+        return vectors;
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err));
+        if (await maybeReloadLocalModelAndRetry({
+          module: "tts/emotion",
+          baseUrl,
+          model: modelName,
+          errorMessage: lastError.message,
+          attempt,
+          apiKey: apiKey || undefined,
+        })) {
+          continue;
+        }
+        break;
+      }
     }
-
-    const data = (await response.json()) as LMStudioResponse;
-    const content = data.choices[0]?.message?.content || "";
-
-    const vectors = await tryParseVectorsFromContent(content, usedSegments.length);
-    if (!vectors) return null;
-    return vectors;
+    throw lastError ?? new Error("LM Studio batch emotion call failed");
   } catch (err) {
     if (err instanceof Error) {
       console.error(`[emotion] LM Studio batch call failed: ${err.message}`);

@@ -186,8 +186,10 @@ describe("P5.7-R9-T2: Skills global-only single source", () => {
       expect(observedSystemPrompt).toContain("- read_file:");
       expect(observedSystemPrompt).toContain("- bash:");
       expect(observedSystemPrompt).toContain("skill 名不是工具名");
-      expect(observedSystemPrompt).toContain("查记忆用 mem");
+      expect(observedSystemPrompt).not.toContain("查记忆用 mem");
       expect(observedSystemPrompt).toContain("禁止把 file、memory、thread、todo、cron、media、gen、banana-pro-image-gen 当作工具名");
+      expect(observedSystemPrompt).toContain("只有拿到本轮真实工具回执后");
+      expect(observedSystemPrompt).toContain("不要编造旧错误、旧附件结果或旧视觉结论");
       expect(observedSystemPrompt).toContain("[技能系统]");
       expect(observedSystemPrompt).toContain("全局 skills 索引 JSON（只读）");
       expect(observedSystemPrompt).toContain('"source": "global-single-source"');
@@ -196,7 +198,11 @@ describe("P5.7-R9-T2: Skills global-only single source", () => {
       expect(observedSystemPrompt).toContain("全局技能：");
       expect(observedSystemPrompt).not.toContain("工作区技能：");
       expect(observedSystemPrompt).not.toContain("workspace-only-skill");
-      expect(observedSystemPrompt).toContain("~/.config/msgcode/skills/<id>/main.sh");
+      expect(observedSystemPrompt).toContain("~/.config/msgcode/skills/<id>/SKILL.md");
+      expect(observedSystemPrompt).toContain("把 SKILL.md 当成能力说明书 / 接口文档");
+      expect(observedSystemPrompt).toContain("不要自造 wrapper，不要猜 main.sh");
+      expect(observedSystemPrompt).toContain("不要复述上一轮失败");
+      expect(observedSystemPrompt).toContain("缺少当前附件或路径");
       expect(observedSystemPrompt).not.toContain("<workspace>/.msgcode/skills");
     } finally {
       globalThis.fetch = originalFetch;
@@ -280,7 +286,11 @@ describe("P5.7-R9-T2: Skills global-only single source", () => {
       expect(result.answer).toContain("done");
       expect(observedSystemPrompt).not.toContain("工作区技能：");
       expect(observedSystemPrompt).not.toContain("workspace-fallback-skill");
-      expect(observedSystemPrompt).toContain("~/.config/msgcode/skills/<id>/main.sh");
+      expect(observedSystemPrompt).toContain("~/.config/msgcode/skills/<id>/SKILL.md");
+      expect(observedSystemPrompt).toContain("把 SKILL.md 当成能力说明书 / 接口文档");
+      expect(observedSystemPrompt).toContain("不要自造 wrapper，不要猜 main.sh");
+      expect(observedSystemPrompt).toContain("只有拿到本轮真实工具回执后");
+      expect(observedSystemPrompt).toContain("缺少当前附件或路径");
       expect(observedSystemPrompt).not.toContain("<workspace>/.msgcode/skills");
     } finally {
       globalThis.fetch = originalFetch;
@@ -433,6 +443,9 @@ describe("P5.7-R9-T2: Skills global-only single source", () => {
       expect(observedSystemPrompt).toContain("不要使用 agent-browser 作为正式浏览器通道");
       expect(observedSystemPrompt).toContain("patchright-browser/SKILL.md");
       expect(observedSystemPrompt).toContain("--remote-debugging-port=9222");
+      expect(observedSystemPrompt).toContain("instances.stop 和 tabs.list 必须传真实 instanceId");
+      expect(observedSystemPrompt).toContain("instanceId 只能来自 instances.launch、instances.list、tabs.open 等真实返回值");
+      expect(observedSystemPrompt).toContain("tabId 只能来自 tabs.open、tabs.list、snapshot、text 的真实返回值");
     } finally {
       globalThis.fetch = originalFetch;
       if (originalWorkspaceRoot === undefined) {

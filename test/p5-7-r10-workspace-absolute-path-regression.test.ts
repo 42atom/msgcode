@@ -9,6 +9,7 @@ import os from "node:os";
 import path from "node:path";
 import { mkdtempSync, rmSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { routeByChatId } from "../src/router.js";
 
 interface Envelope {
   status: "pass" | "warning" | "error";
@@ -17,6 +18,9 @@ interface Envelope {
 }
 
 const tempDirs: string[] = [];
+const ORIGINAL_WORKSPACE_ROOT = process.env.WORKSPACE_ROOT;
+const ORIGINAL_ROUTES_FILE_PATH = process.env.ROUTES_FILE_PATH;
+const ORIGINAL_DEFAULT_WORKSPACE_DIR = process.env.MSGCODE_DEFAULT_WORKSPACE_DIR;
 
 function createWorkspace(): string {
   const dir = mkdtempSync(path.join(os.tmpdir(), "msgcode-abs-ws-"));
@@ -51,6 +55,9 @@ afterEach(() => {
       rmSync(dir, { recursive: true, force: true });
     }
   }
+  process.env.WORKSPACE_ROOT = ORIGINAL_WORKSPACE_ROOT;
+  process.env.ROUTES_FILE_PATH = ORIGINAL_ROUTES_FILE_PATH;
+  process.env.MSGCODE_DEFAULT_WORKSPACE_DIR = ORIGINAL_DEFAULT_WORKSPACE_DIR;
 });
 
 describe("P5.7-R10: absolute workspace path", () => {
@@ -109,6 +116,39 @@ describe("P5.7-R10: absolute workspace path", () => {
 
     const remove = runCli(["schedule", "remove", "daily-check", "--workspace", ws, "--json"]);
     expect(remove.code).not.toBe(0); // 失败是因为 schedule 不存在
+  });
+
+  it("default workspace 自动落地后，schedule add 应可成功投递到当前群", () => {
+    const root = createWorkspace();
+    const routesFile = path.join(root, "config", "routes.json");
+    const defaultWorkspace = path.join(root, "default");
+    const chatId = "feishu:oc_default_schedule";
+
+    process.env.WORKSPACE_ROOT = root;
+    process.env.ROUTES_FILE_PATH = routesFile;
+    process.env.MSGCODE_DEFAULT_WORKSPACE_DIR = "default";
+
+    const routed = routeByChatId(chatId);
+    expect(routed?.projectDir).toBe(defaultWorkspace);
+
+    const add = runCli([
+      "schedule",
+      "add",
+      "default-daily-check",
+      "--workspace",
+      defaultWorkspace,
+      "--cron",
+      "0 9 * * *",
+      "--tz",
+      "UTC",
+      "--message",
+      "daily check",
+      "--json",
+    ]);
+
+    expect(add.code).toBe(0);
+    expect(add.envelope.status).toBe("pass");
+    expect(String(add.envelope.data?.path || "")).toContain(defaultWorkspace);
   });
 
   it("相对路径越界应仍返回 PATH_TRAVERSAL", () => {

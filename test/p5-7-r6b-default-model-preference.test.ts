@@ -28,7 +28,7 @@ describe("P5.7-R6b: LM Studio 默认模型优先级", () => {
   });
 
   it("视觉链路默认模型应固定为 4.6V abliterated mlx", () => {
-    const code = fs.readFileSync(path.join(process.cwd(), "src", "runners", "vision_ocr.ts"), "utf-8");
+    const code = fs.readFileSync(path.join(process.cwd(), "src", "runners", "vision.ts"), "utf-8");
 
     expect(code).toContain(
       'const modelId = process.env.LMSTUDIO_VISION_MODEL || "huihui-glm-4.6v-flash-abliterated-mlx"'

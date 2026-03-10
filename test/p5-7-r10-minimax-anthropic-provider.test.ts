@@ -334,4 +334,75 @@ describe("P5.7-R10: MiniMax Anthropic provider", () => {
             await rm(workspacePath, { recursive: true, force: true });
         }
     });
+
+    it("finish supervisor 在 minimax 下只返回 thinking PASS 时也应放行成功任务", async () => {
+        const originalFetch = globalThis.fetch;
+        const originalSupervisorConfig = { ...config.supervisor };
+        const workspacePath = await createToolEnabledWorkspace();
+        let callCount = 0;
+
+        config.supervisor.enabled = true;
+        config.supervisor.temperature = 0;
+        config.supervisor.maxTokens = 200;
+
+        globalThis.fetch = (async () => {
+            callCount += 1;
+
+            if (callCount === 1) {
+                return asJsonResponse({
+                    role: "assistant",
+                    content: [
+                        {
+                            type: "tool_use",
+                            id: "toolu_bash_success_1",
+                            name: "bash",
+                            input: { command: "touch .msgcode/minimax-supervisor-ok.marker" },
+                        },
+                    ],
+                    stop_reason: "tool_use",
+                } satisfies MiniMaxMessagesResponse);
+            }
+
+            if (callCount === 2) {
+                return asJsonResponse({
+                    role: "assistant",
+                    content: [
+                        { type: "text", text: "已创建完成。" },
+                    ],
+                    stop_reason: "end_turn",
+                } satisfies MiniMaxMessagesResponse);
+            }
+
+            return asJsonResponse({
+                role: "assistant",
+                content: [
+                    { type: "thinking", thinking: "PASS" },
+                ],
+                stop_reason: "end_turn",
+            } satisfies MiniMaxMessagesResponse);
+        }) as typeof fetch;
+
+        try {
+            const result = await runLmStudioToolLoop({
+                prompt: "创建一个标记文件并结束",
+                workspacePath,
+                backendRuntime: minimaxRuntime,
+                timeoutMs: 10_000,
+            });
+
+            expect(callCount).toBe(3);
+            expect(result.answer).toBe("已创建完成。");
+            expect(result.actionJournal.map((entry) => `${entry.phase}:${entry.tool}:${entry.ok}`)).toEqual([
+                "act:bash:true",
+                "verify:bash:true",
+                "report:finish-supervisor:true",
+            ]);
+        } finally {
+            globalThis.fetch = originalFetch;
+            config.supervisor.enabled = originalSupervisorConfig.enabled;
+            config.supervisor.temperature = originalSupervisorConfig.temperature;
+            config.supervisor.maxTokens = originalSupervisorConfig.maxTokens;
+            await rm(workspacePath, { recursive: true, force: true });
+        }
+    });
 });

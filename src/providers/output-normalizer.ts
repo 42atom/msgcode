@@ -121,7 +121,7 @@ export function stripMetaNarrative(input: string): string {
         "两段式",
         "第1段",
         "第2段",
-        "[图片文字]",
+        "[图片",
         "[图片错误]",
         "[attachment]",
         "[derived]",

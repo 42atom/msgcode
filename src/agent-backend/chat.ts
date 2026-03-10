@@ -32,6 +32,10 @@ import {
     normalizeMiniMaxAnthropicBaseUrl,
     parseMiniMaxAnthropicResponse,
 } from "../providers/minimax-anthropic.js";
+import {
+    LOCAL_MODEL_LOAD_MAX_RETRIES,
+    maybeReloadLocalModelAndRetry,
+} from "../runtime/model-service-lease.js";
 
 // ============================================
 // 类型定义
@@ -283,8 +287,18 @@ async function resolveLmStudioModelId(params: ResolveModelParams): Promise<strin
         return loadedModel;
     }
 
+    const firstCatalogModel = await fetchFirstModelId({
+        baseUrl: params.baseUrl,
+        apiKey: params.apiKey,
+        timeoutMs: params.timeoutMs,
+    });
+    if (firstCatalogModel) {
+        cachedModel = { baseUrl: params.baseUrl, id: firstCatalogModel };
+        return firstCatalogModel;
+    }
+
     throw new Error(
-        "LM Studio 中没有已加载的模型。\n\n" +
+        "LM Studio 中没有已加载或可发现的模型。\n\n" +
         "请在 LM Studio 中加载至少一个模型后再试。"
     );
 }
@@ -456,7 +470,7 @@ async function runLmStudioChatNativeMcp(params: LmStudioNativeMcpParams): Promis
     }
 
     let lastError: Error | undefined;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt <= LOCAL_MODEL_LOAD_MAX_RETRIES; attempt++) {
         try {
             const rawText = await fetchTextWithTimeout({
                 url,
@@ -481,10 +495,15 @@ async function runLmStudioChatNativeMcp(params: LmStudioNativeMcpParams): Promis
             return message;
         } catch (error: unknown) {
             lastError = error instanceof Error ? error : new Error("LM Studio 调用失败");
-            const msg = lastError.message;
-
-            if (msg.includes("Model unloaded") && attempt < 1) {
-                await new Promise(resolve => setTimeout(resolve, 3000));
+            if (await maybeReloadLocalModelAndRetry({
+                module: "agent-backend/chat",
+                baseUrl: params.baseUrl,
+                model: params.model,
+                errorMessage: lastError.message,
+                attempt,
+                apiKey: params.apiKey,
+                timeoutMs: params.timeoutMs,
+            })) {
                 continue;
             }
             break;
@@ -510,7 +529,7 @@ async function runLmStudioChatNative(params: LmStudioNativeChatParams): Promise<
     }
 
     let lastError: Error | undefined;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt <= LOCAL_MODEL_LOAD_MAX_RETRIES; attempt++) {
         try {
             const rawText = await fetchTextWithTimeout({
                 url,
@@ -535,10 +554,15 @@ async function runLmStudioChatNative(params: LmStudioNativeChatParams): Promise<
             return message;
         } catch (error: unknown) {
             lastError = error instanceof Error ? error : new Error("LM Studio 调用失败");
-            const msg = lastError.message;
-
-            if (msg.includes("Model unloaded") && attempt < 1) {
-                await new Promise(resolve => setTimeout(resolve, 3000));
+            if (await maybeReloadLocalModelAndRetry({
+                module: "agent-backend/chat",
+                baseUrl: params.baseUrl,
+                model: params.model,
+                errorMessage: lastError.message,
+                attempt,
+                apiKey: params.apiKey,
+                timeoutMs: params.timeoutMs,
+            })) {
                 continue;
             }
             break;
@@ -557,34 +581,55 @@ async function runLmStudioChatOpenAICompat(params: LmStudioOpenAIChatParams): Pr
     }
     messages.push({ role: "user", content: params.prompt });
 
-    const rawText = await fetchTextWithTimeout({
-        url,
-        method: "POST",
-        timeoutMs: params.timeoutMs,
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-            model: params.model,
-            messages,
-            stream: false,
-            max_tokens: params.maxTokens,
-            temperature: params.temperature ?? 0.7,
-        }),
-        apiKey: params.apiKey,
-    });
+    let lastError: Error | undefined;
+    for (let attempt = 0; attempt <= LOCAL_MODEL_LOAD_MAX_RETRIES; attempt++) {
+        try {
+            const rawText = await fetchTextWithTimeout({
+                url,
+                method: "POST",
+                timeoutMs: params.timeoutMs,
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({
+                    model: params.model,
+                    messages,
+                    stream: false,
+                    max_tokens: params.maxTokens,
+                    temperature: params.temperature ?? 0.7,
+                }),
+                apiKey: params.apiKey,
+            });
 
-    let json: unknown;
-    try {
-        json = JSON.parse(rawText);
-    } catch {
-        throw new Error(`LM Studio API 返回非 JSON：${sanitizeLmStudioOutput(rawText).slice(0, 400)}`);
+            let json: unknown;
+            try {
+                json = JSON.parse(rawText);
+            } catch {
+                throw new Error(`LM Studio API 返回非 JSON：${sanitizeLmStudioOutput(rawText).slice(0, 400)}`);
+            }
+
+            const content = isChatCompletion(json) ? json.choices[0]?.message?.content : undefined;
+            const text = typeof content === "string" ? content : (content ? String(content) : "");
+            if (!text || !text.trim()) {
+                throw new Error(`LM Studio(${params.model}) 未返回可展示的内容`);
+            }
+            return text;
+        } catch (error: unknown) {
+            lastError = error instanceof Error ? error : new Error("LM Studio 调用失败");
+            if (await maybeReloadLocalModelAndRetry({
+                module: "agent-backend/chat",
+                baseUrl: params.baseUrl,
+                model: params.model,
+                errorMessage: lastError.message,
+                attempt,
+                apiKey: params.apiKey,
+                timeoutMs: params.timeoutMs,
+            })) {
+                continue;
+            }
+            break;
+        }
     }
 
-    const content = isChatCompletion(json) ? json.choices[0]?.message?.content : undefined;
-    const text = typeof content === "string" ? content : (content ? String(content) : "");
-    if (!text || !text.trim()) {
-        throw new Error(`LM Studio(${params.model}) 未返回可展示的内容`);
-    }
-    return text;
+    throw new Error(`LM Studio(${params.model}) ${lastError?.message || "调用失败"}`);
 }
 
 async function runMiniMaxChatAnthropic(params: LmStudioOpenAIChatParams): Promise<string> {

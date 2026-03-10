@@ -5,7 +5,6 @@
  * - read_file: 读取 skill
  * - bash: 执行后续命令
  * - browser: 浏览器操作
- * - mem: 记忆操作
  */
 
 import { describe, expect, it } from "bun:test";
@@ -22,8 +21,8 @@ describe("P5.7-R15 + P5.7-R16: skill 场景完整工具暴露", () => {
     expect(tools).toContain("bash");
     // 必须包含 browser（浏览器操作）
     expect(tools).toContain("browser");
-    // 必须包含 mem（记忆操作）
-    expect(tools).toContain("mem");
+    // 不应包含未实现的 mem tool
+    expect(tools).not.toContain("mem");
     // 不应包含被默认抑制的工具
     expect(tools).not.toContain("write_file");
     expect(tools).not.toContain("edit_file");

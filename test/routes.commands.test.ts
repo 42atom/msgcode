@@ -39,10 +39,12 @@ import {
   renderSlashHelpText,
   renderUnknownCommandHint,
 } from "../src/routes/cmd-info.js";
+import { saveWorkspaceConfig } from "../src/config/workspace.js";
 
 // 测试文件路径
 const TEST_ROUTES_FILE = path.join(os.tmpdir(), ".config/msgcode/routes.json");
 const TEST_STATE_FILE = path.join(os.tmpdir(), ".config/msgcode/state.json");
+const ORIGINAL_AGENT_BACKEND = process.env.AGENT_BACKEND;
 
 describe("路由命令处理器", () => {
   // 在每个测试前后清理测试文件和目录
@@ -63,10 +65,16 @@ describe("路由命令处理器", () => {
     cleanTestData();
     const testWorkspaceRoot = path.join(os.tmpdir(), "msgcode-test-workspace");
     fs.mkdirSync(testWorkspaceRoot, { recursive: true });
+    process.env.AGENT_BACKEND = "agent-backend";
   });
 
   afterEach(() => {
     cleanTestData();
+    if (ORIGINAL_AGENT_BACKEND === undefined) {
+      delete process.env.AGENT_BACKEND;
+    } else {
+      process.env.AGENT_BACKEND = ORIGINAL_AGENT_BACKEND;
+    }
   });
 
   describe("isRouteCommand", () => {
@@ -197,6 +205,18 @@ describe("路由命令处理器", () => {
       expect(fs.existsSync(expectedPath)).toBe(true);
     });
 
+    it("绑定成功时显示真实 Agent Backend", async () => {
+      process.env.AGENT_BACKEND = "minimax";
+
+      const options: CommandHandlerOptions = { chatId: testChatId, args: ["agent/backend"] };
+      const result = await handleBindCommand(options);
+
+      expect(result.success).toBe(true);
+      expect(result.message).toContain("运行形态：agent（智能体编排）");
+      expect(result.message).toContain("Agent Backend: minimax");
+      expect(result.message).not.toContain("模型客户端:");
+    });
+
     it("拒绝绝对路径", async () => {
       const options: CommandHandlerOptions = { chatId: testChatId, args: ["/etc/passwd"] };
       const result = await handleBindCommand(options);
@@ -241,6 +261,47 @@ describe("路由命令处理器", () => {
       expect(result.success).toBe(true);
       expect(result.message).toContain("当前绑定");
       expect(result.message).toContain("test/project");
+    });
+
+    it("legacy runner.default=lmstudio 时仍显示真实 Agent Backend", async () => {
+      process.env.AGENT_BACKEND = "minimax";
+
+      const bindResult = await handleBindCommand({
+        chatId: testChatId,
+        args: ["legacy/project"],
+      });
+      expect(bindResult.success).toBe(true);
+
+      const workspacePath = path.join(process.env.WORKSPACE_ROOT!, "legacy/project");
+      await saveWorkspaceConfig(workspacePath, { "runner.default": "lmstudio" });
+
+      const result = await handleWhereCommand({ chatId: testChatId, args: [] });
+
+      expect(result.success).toBe(true);
+      expect(result.message).toContain("运行形态：agent（智能体编排）");
+      expect(result.message).toContain("Agent Backend: minimax");
+      expect(result.message).not.toContain("模型客户端: lmstudio");
+    });
+
+    it("tmux 模式时显示真实 Tmux Client", async () => {
+      const bindResult = await handleBindCommand({
+        chatId: testChatId,
+        args: ["tmux/project"],
+      });
+      expect(bindResult.success).toBe(true);
+
+      const workspacePath = path.join(process.env.WORKSPACE_ROOT!, "tmux/project");
+      await saveWorkspaceConfig(workspacePath, {
+        "runtime.kind": "tmux",
+        "tmux.client": "codex",
+      });
+
+      const result = await handleWhereCommand({ chatId: testChatId, args: [] });
+
+      expect(result.success).toBe(true);
+      expect(result.message).toContain("运行形态：tmux（透传执行臂）");
+      expect(result.message).toContain("Tmux Client: codex");
+      expect(result.message).not.toContain("Agent Backend:");
     });
   });
 

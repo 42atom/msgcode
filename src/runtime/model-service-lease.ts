@@ -13,6 +13,8 @@ import { logger } from "../logger/index.js";
  * 默认模型服务空闲阈值：10 分钟
  */
 export const DEFAULT_MODEL_SERVICE_IDLE_TTL_MS = 600_000;
+export const LOCAL_MODEL_LOAD_MAX_RETRIES = 2;
+export const DEFAULT_LOCAL_MODEL_RETRY_DELAY_MS = 3_000;
 
 /**
  * 释放原因
@@ -308,6 +310,124 @@ export function createLocalModelReleaseAction(params: {
       baseUrl,
     });
   };
+}
+
+export function shouldRetryLocalModelLoad(message: string): boolean {
+  const normalized = (message || "").toLowerCase();
+  if (!normalized.trim()) return false;
+  return [
+    "model unloaded",
+    "model not loaded",
+    "no loaded model",
+    "没有已加载的模型",
+    "未加载的模型",
+    "model has crashed",
+    "the model has crashed",
+    "channel error",
+    "segmentation fault",
+  ].some((pattern) => normalized.includes(pattern));
+}
+
+export function createLocalModelLoadAction(params: {
+  baseUrl: string;
+  model: string;
+  apiKey?: string;
+  timeoutMs?: number;
+}): () => Promise<boolean> {
+  const baseUrl = params.baseUrl.replace(/\/+$/, "");
+  const model = params.model.trim();
+  const timeoutMs = Math.max(500, params.timeoutMs ?? 5_000);
+
+  return async () => {
+    if (!model) return false;
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+    };
+    if (params.apiKey?.trim()) {
+      headers.authorization = `Bearer ${params.apiKey.trim()}`;
+    }
+
+    const requests: Array<{ url: string; method: "POST"; body: string }> = [
+      {
+        url: `${baseUrl}/api/v1/models/load`,
+        method: "POST",
+        body: JSON.stringify({ model }),
+      },
+      {
+        url: `${baseUrl}/api/v0/model/load`,
+        method: "POST",
+        body: JSON.stringify({ model }),
+      },
+    ];
+
+    for (const req of requests) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const resp = await fetch(req.url, {
+          method: req.method,
+          headers,
+          body: req.body,
+          signal: controller.signal,
+        });
+        if (resp.ok) {
+          logger.info("Model load accepted", {
+            module: "runtime/model-service-lease",
+            serviceName: `agent-backend:${model}`,
+            endpoint: req.url,
+            status: resp.status,
+          });
+          return true;
+        }
+      } catch {
+        // 忽略并尝试下一个端点
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    logger.info("Model load endpoint not available, skip", {
+      module: "runtime/model-service-lease",
+      serviceName: `agent-backend:${model}`,
+      baseUrl,
+    });
+    return false;
+  };
+}
+
+export async function maybeReloadLocalModelAndRetry(params: {
+  module: string;
+  baseUrl: string;
+  model: string;
+  errorMessage: string;
+  attempt: number;
+  apiKey?: string;
+  timeoutMs?: number;
+  maxRetries?: number;
+  delayMs?: number;
+}): Promise<boolean> {
+  const maxRetries = params.maxRetries ?? LOCAL_MODEL_LOAD_MAX_RETRIES;
+  if (params.attempt >= maxRetries) return false;
+  if (!shouldRetryLocalModelLoad(params.errorMessage)) return false;
+
+  const loaded = await createLocalModelLoadAction({
+    baseUrl: params.baseUrl,
+    model: params.model,
+    apiKey: params.apiKey,
+    timeoutMs: params.timeoutMs,
+  })();
+
+  logger.warn("Local model reload scheduled", {
+    module: params.module,
+    serviceName: `agent-backend:${params.model}`,
+    attempt: params.attempt + 1,
+    maxRetries,
+    loaded,
+    error: params.errorMessage,
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, params.delayMs ?? DEFAULT_LOCAL_MODEL_RETRY_DELAY_MS));
+  return true;
 }
 
 let globalModelServiceLeaseManager: ModelServiceLeaseManager | undefined;

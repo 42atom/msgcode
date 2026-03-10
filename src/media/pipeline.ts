@@ -2,7 +2,7 @@
  * msgcode: MediaPipeline（M4-A 媒体处理流水线）
  *
  * 职责：
- * - 自动处理图片附件（image）→ 生成派生文本
+ * - 自动处理图片附件（image）→ 生成图片摘要
  * - 去重（digest key）+ 限流（lane queue）
  * - 失败不崩（优雅降级）
  */
@@ -236,18 +236,17 @@ async function processAudio(
 }
 
 /**
- * 处理图片附件（M4-IMG-P0: Vision OCR）
+ * 处理图片附件（M4-IMG-P0: Vision 摘要）
  *
- * P0: 通过 Tool Bus 执行，明确"自动 OCR 属于预处理，不属于 LLM 工具决策"
+ * P0: 自动层只做摘要预览，不替主模型决定后续视觉任务。
  */
 async function processImage(
   vaultPath: string,
   digest: string,
-  workspacePath: string,
-  userQuery?: string
+  workspacePath: string
 ): Promise<DerivedText> {
   const result: DerivedText = {
-    kind: "vision_ocr",
+    kind: "vision",
     status: "unavailable",
   };
 
@@ -259,15 +258,11 @@ async function processImage(
 
   // P0: 通过 Tool Bus 执行（source="media-pipeline"）
   const requestId = randomUUID();
-  const toolResult = await executeTool(
-    "vision",
-    { imagePath: vaultPath, userQuery },
-    {
-      workspacePath,
-      source: "media-pipeline",
-      requestId,
-    }
-  );
+  const toolResult = await executeTool("vision", { imagePath: vaultPath }, {
+    workspacePath,
+    source: "media-pipeline",
+    requestId,
+  });
 
   if (!toolResult.ok) {
     const errorMsg = toolResult.error?.message || "OCR 失败";
@@ -326,14 +321,12 @@ async function processDoc(
  * @param vaultPath Vault 中的附件路径
  * @param attachment iMessage 附件信息
  * @param workspacePath 工作区路径
- * @param userQuery 用户提问（用于优化 Vision OCR 提示词）
  * @returns 处理结果
  */
 export async function processAttachment(
   vaultPath: string,
   attachment: ImsgAttachment,
-  workspacePath: string,
-  userQuery?: string
+  workspacePath: string
 ): Promise<AttachmentProcessResult> {
   const digest = await calculateDigest(vaultPath);
   const result: AttachmentProcessResult = {
@@ -351,7 +344,7 @@ export async function processAttachment(
 
   // 仅对图片做自动视觉处理；其他附件交给模型自行决策
   if (isImage) {
-    result.derived = await processImage(vaultPath, digest, workspacePath, userQuery);
+    result.derived = await processImage(vaultPath, digest, workspacePath);
   }
 
   return result;
@@ -360,7 +353,7 @@ export async function processAttachment(
 /**
  * B3: 格式化派生文本为自然语言格式
  *
- * - ASR/Vision OCR: 读取 textPath 文件内容（可控全文）
+ * - ASR/Vision: 读取 textPath 文件内容（可控全文）
  * - 其他情况: 输出详细标记
  */
 export async function formatDerivedForTmux(derived: DerivedText): Promise<string> {
@@ -378,8 +371,8 @@ export async function formatDerivedForTmux(derived: DerivedText): Promise<string
     return `[语音转写] ${oneLine}`;
   }
 
-  // Vision OCR：读取全文（带截断控制）
-  if (derived.kind === "vision_ocr" && derived.status === "ok" && derived.textPath) {
+  // Vision 摘要：读取全文（带截断控制）
+  if (derived.kind === "vision" && derived.status === "ok" && derived.textPath) {
     const text = await readDerivedText(derived.textPath, maxChars);
     const oneLine = text
       .replace(/\r\n/g, "\n")
@@ -387,7 +380,7 @@ export async function formatDerivedForTmux(derived: DerivedText): Promise<string
       .replace(/\s*\n+\s*/g, " ")
       .replace(/[ \t]{2,}/g, " ")
       .trim();
-    return `[图片文字] ${oneLine}`;
+    return `[图片摘要] ${oneLine}`;
   }
 
   // 其他情况：输出详细标记

@@ -321,6 +321,77 @@ describe("P5.7-R20: minimal finish supervisor", () => {
         }
     });
 
+    it("已验证成功但 supervisor 空返时，不应假阻塞成功任务", async () => {
+        const workspacePath = await createToolEnabledWorkspace();
+        let callCount = 0;
+
+        globalThis.fetch = (async () => {
+            callCount += 1;
+
+            if (callCount === 1) {
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: "",
+                            tool_calls: [{
+                                id: "call_bash_success_empty_supervisor",
+                                type: "function",
+                                function: {
+                                    name: "bash",
+                                    arguments: JSON.stringify({ command: "touch .msgcode/supervisor-empty-ok.marker" }),
+                                },
+                            }],
+                        },
+                        finish_reason: "tool_calls",
+                    }],
+                });
+            }
+
+            if (callCount === 2) {
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: "已创建完成。",
+                        },
+                        finish_reason: "stop",
+                    }],
+                });
+            }
+
+            return asJsonResponse({
+                choices: [{
+                    message: {
+                        role: "assistant",
+                        content: "",
+                    },
+                    finish_reason: "stop",
+                }],
+            });
+        }) as typeof fetch;
+
+        try {
+            const result = await runLmStudioToolLoop({
+                prompt: "创建一个标记文件然后结束",
+                workspacePath,
+                backendRuntime: localOpenAiRuntime,
+                timeoutMs: 10_000,
+            });
+
+            expect(callCount).toBe(3);
+            expect(result.answer).toBe("已创建完成。");
+            expect(result.answer).not.toContain("FINISH_SUPERVISOR_BLOCKED");
+            expect(result.actionJournal.map((entry) => `${entry.phase}:${entry.tool}:${entry.ok}`)).toEqual([
+                "act:bash:true",
+                "verify:bash:true",
+                "report:finish-supervisor:true",
+            ]);
+        } finally {
+            await rm(workspacePath, { recursive: true, force: true });
+        }
+    });
+
     it("连续 3 次 CONTINUE 后应停止并返回阻塞原因", async () => {
         const workspacePath = await createToolEnabledWorkspace();
         let callCount = 0;

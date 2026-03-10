@@ -13,6 +13,7 @@ import {
   updateRouteStatus,
 } from "./store.js";
 import type { CommandHandlerOptions, CommandResult } from "./cmd-types.js";
+import { getRuntimeKind, getTmuxClient } from "../config/workspace.js";
 
 const VALID_MODEL_CLIENTS: ModelClient[] = ["claude", "codex", "opencode"];
 const DEFAULT_BOT_TYPE: BotType = "agent-backend";
@@ -37,6 +38,45 @@ function isValidRelativePath(path: string): boolean {
     return false;
   }
   return true;
+}
+
+function normalizeGlobalAgentBackend(raw: string): string {
+  const value = raw.trim().toLowerCase();
+  if (!value || value === "agent" || value === "agent-backend" || value === "lmstudio" || value === "local-openai") {
+    return "agent-backend";
+  }
+  return value;
+}
+
+function formatAgentBackendLabel(provider: string): string {
+  if (provider === "agent-backend") {
+    return "agent-backend(local-openai/lmstudio)";
+  }
+  return provider;
+}
+
+async function resolveRuntimeDisplay(workspacePath: string): Promise<{
+  runtimeLine: string;
+  targetLine: string;
+}> {
+  try {
+    const runtimeKind = await getRuntimeKind(workspacePath);
+    if (runtimeKind === "tmux") {
+      const client = await getTmuxClient(workspacePath);
+      return {
+        runtimeLine: "运行形态：tmux（透传执行臂）",
+        targetLine: `Tmux Client: ${client}`,
+      };
+    }
+  } catch {
+    // ignore and fall through to agent default
+  }
+
+  const provider = formatAgentBackendLabel(normalizeGlobalAgentBackend(process.env.AGENT_BACKEND || ""));
+  return {
+    runtimeLine: "运行形态：agent（智能体编排）",
+    targetLine: `Agent Backend: ${provider}`,
+  };
 }
 
 export async function handleBindCommand(options: CommandHandlerOptions): Promise<CommandResult> {
@@ -97,14 +137,7 @@ export async function handleBindCommand(options: CommandHandlerOptions): Promise
       botType: DEFAULT_BOT_TYPE,
       modelClient,
     });
-
-    let displayModelClient = modelClient || "claude";
-    try {
-      const { getDefaultRunner } = await import("../config/workspace.js");
-      const actualRunner = await getDefaultRunner(entry.workspacePath);
-      displayModelClient = actualRunner;
-    } catch {
-    }
+    const runtimeDisplay = await resolveRuntimeDisplay(entry.workspacePath);
 
     return {
       success: true,
@@ -112,7 +145,8 @@ export async function handleBindCommand(options: CommandHandlerOptions): Promise
         `\n` +
         `工作目录: ${entry.workspacePath}\n` +
         `标签: ${entry.label}\n` +
-        `模型客户端: ${displayModelClient}\n` +
+        `${runtimeDisplay.runtimeLine}\n` +
+        `${runtimeDisplay.targetLine}\n` +
         `\n` +
         `现在可以发送消息开始使用`,
     };
@@ -169,13 +203,7 @@ export async function handleWhereCommand(options: CommandHandlerOptions): Promis
     return new Date(ts).toLocaleString("zh-CN");
   };
 
-  let displayModelClient = entry.modelClient || "claude";
-  try {
-    const { getDefaultRunner } = await import("../config/workspace.js");
-    const actualRunner = await getDefaultRunner(entry.workspacePath);
-    displayModelClient = actualRunner;
-  } catch {
-  }
+  const runtimeDisplay = await resolveRuntimeDisplay(entry.workspacePath);
 
   return {
     success: true,
@@ -183,7 +211,8 @@ export async function handleWhereCommand(options: CommandHandlerOptions): Promis
       `\n` +
       `工作目录: ${entry.workspacePath}\n` +
       `标签: ${entry.label}\n` +
-      `模型客户端: ${displayModelClient}\n` +
+      `${runtimeDisplay.runtimeLine}\n` +
+      `${runtimeDisplay.targetLine}\n` +
       `状态: ${entry.status}\n` +
       `绑定时间: ${formatTime(entry.createdAt)}\n` +
       `更新时间: ${formatTime(entry.updatedAt)}`,

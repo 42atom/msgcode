@@ -60,10 +60,13 @@ export interface LlmToolExposureResult {
 }
 
 /**
- * 默认不再暴露给 LLM 的历史文件写工具。
- * 保留执行实现，仅退出默认模型主链。
+ * 默认不再暴露给 LLM 的工具。
+ * 保留执行实现，但退出默认模型主链：
+ * - write_file/edit_file：避免默认文件写主链过宽
+ * - vision：系统仅保留图片预览摘要；详细视觉任务改走 skill
+ * - mem：当前无 P0 执行实现；长期记忆通过自动注入与 /mem slash 控制，不作为默认 LLM tool
  */
-export const LLM_DEFAULT_SUPPRESSED_TOOLS: ToolName[] = ["write_file", "edit_file"];
+export const LLM_DEFAULT_SUPPRESSED_TOOLS: ToolName[] = ["write_file", "edit_file", "vision", "mem"];
 
 export function filterDefaultLlmTools(toolNames: ToolName[]): ToolName[] {
   return toolNames.filter((tool) => !LLM_DEFAULT_SUPPRESSED_TOOLS.includes(tool));
@@ -119,7 +122,7 @@ export const TOOL_MANIFESTS: Record<ToolName, ToolManifest> = {
         },
         instanceId: {
           type: "string",
-          description: "浏览器实例 ID（大部分操作需要；tabs.open 可省略，系统会自动拉起默认实例）",
+          description: "浏览器实例 ID。instances.stop 与 tabs.list 必填；只能复用 instances.launch、instances.list、tabs.open 等真实返回值，禁止猜测或裸调。",
         },
         tabId: {
           type: "string",
@@ -322,13 +325,19 @@ export const TOOL_MANIFESTS: Record<ToolName, ToolManifest> = {
 
   vision: {
     name: "vision",
-    description: "图像识别。提取图片中的文本、对象、场景等信息。",
+    description:
+      "图像理解。读取 imagePath 指向的图片；若用户有明确任务（如提取文字、表格、代码、界面文案或细节），应把要求写入 userQuery，不要只传图片路径。",
     parameters: {
       type: "object",
       properties: {
         imagePath: {
           type: "string",
           description: "图片文件路径",
+        },
+        userQuery: {
+          type: "string",
+          description:
+            "用户要这次图片分析完成的具体任务。若需提取文字、表格、代码、界面文案或某块细节，必须把要求写在这里。",
         },
       },
       required: ["imagePath"],
@@ -402,8 +411,8 @@ export function resolveLlmToolExposure(allowedTools: ToolName[]): LlmToolExposur
   // 已注册说明书的工具列表
   const registeredTools = Object.keys(TOOL_MANIFESTS) as ToolName[];
 
-  // 真实暴露给 LLM 的工具列表（allowed ∩ registered）
-  const exposedTools = allowedTools.filter((tool) => tool in TOOL_MANIFESTS);
+  // 真实暴露给 LLM 的工具列表（默认抑制项会在这里退出主链）
+  const exposedTools = filterDefaultLlmTools(allowedTools).filter((tool) => tool in TOOL_MANIFESTS);
 
   // 允许但未注册说明书的工具列表
   const missingManifests = allowedTools.filter((tool) => !(tool in TOOL_MANIFESTS));
@@ -509,8 +518,10 @@ export function renderLlmToolIndex(toolNames: ToolName[]): string {
   }
 
   lines.push("重要边界：skill 名不是工具名。禁止把 file、memory、thread、todo、cron、media、gen、banana-pro-image-gen 当作工具名。");
-  lines.push("常见映射：读文件用 read_file，写改文件优先用 bash，查记忆用 mem，浏览器操作用 browser。");
+  lines.push("常见映射：读文件用 read_file，写改文件优先用 bash，浏览器操作用 browser。");
   lines.push("如果上面列表里没有某个工具名，就表示你本轮不能调用它。");
+  lines.push("只有拿到本轮真实工具回执后，才能声称某个工具成功、失败、崩溃、超时、报错或已完成发送。");
+  lines.push("如果本轮没有调用相关工具，就明确说“这轮还没实际核实”，不要编造旧错误、旧附件结果或旧视觉结论。");
 
   return lines.join("\n");
 }

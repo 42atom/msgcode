@@ -9,7 +9,7 @@
 
 import { config, type GroupConfig } from "./config.js";
 import { normalizeChatId, stableGroupNameForChatId } from "./imsg/adapter.js";
-import { getRouteByChatId as getRouteFromStore } from "./routes/store.js";
+import { getRouteByChatId as getRouteFromStore, setRoute } from "./routes/store.js";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -88,6 +88,23 @@ export function routeByChatId(chatId: string): Route | null {
         }
     } catch {
         // ignore：创建失败不阻塞路由，但后续会在 handler 里报错（更可观测）
+    }
+
+    // default workspace 不是“临时假路由”，而是新群的真实初始绑定。
+    try {
+        const now = new Date().toISOString();
+        setRoute(chatId, {
+            chatGuid: chatId,
+            chatId: normalizeChatId(chatId),
+            workspacePath,
+            label: defaultDir,
+            botType: "agent-backend",
+            status: "active",
+            createdAt: now,
+            updatedAt: now,
+        });
+    } catch {
+        // ignore：route 持久化失败不阻塞当前消息，保留 fallback 行为
     }
 
     return {

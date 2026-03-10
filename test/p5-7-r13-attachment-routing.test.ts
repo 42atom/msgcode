@@ -52,7 +52,6 @@ describe("P5.7-R13: attachment routing", () => {
         path: audioPath,
       },
       workspacePath,
-      "",
     );
 
     expect(result.derived).toBeUndefined();

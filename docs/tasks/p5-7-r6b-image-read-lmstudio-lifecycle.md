@@ -19,7 +19,7 @@
 ## 范围
 
 - `/Users/admin/GitProjects/msgcode/src/cli/image.ts`（新建）
-- `/Users/admin/GitProjects/msgcode/src/runners/vision_ocr.ts`（接入 TTL 参数）
+- `/Users/admin/GitProjects/msgcode/src/runners/vision.ts`（接入 TTL 参数）
 - `/Users/admin/GitProjects/msgcode/src/deps/preflight.ts`（补充可观测提示）
 - `/Users/admin/GitProjects/msgcode/src/cli/help.ts`（合同导出）
 - `/Users/admin/GitProjects/msgcode/test/*p5-7-r6b*`

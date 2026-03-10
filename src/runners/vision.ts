@@ -12,11 +12,14 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { exec, execSync } from "node:child_process";
 import { promisify } from "node:util";
+import { createHash } from "node:crypto";
 import { config } from "../config.js";
 import { logger } from "../logger/index.js";
 import {
   getModelServiceLeaseManager,
   createLocalModelReleaseAction,
+  LOCAL_MODEL_LOAD_MAX_RETRIES,
+  maybeReloadLocalModelAndRetry,
 } from "../runtime/model-service-lease.js";
 
 const execAsync = promisify(exec);
@@ -28,9 +31,9 @@ const execAsync = promisify(exec);
 export interface VisionOcrResult {
   /** 是否成功 */
   success: boolean;
-  /** OCR 文本路径 */
+  /** 图片理解结果路径 */
   textPath?: string;
-  /** OCR 文本预览（前 300 字） */
+  /** 文本预览（前 300 字） */
   textPreview?: string;
   /** 错误信息 */
   error?: string;
@@ -45,7 +48,7 @@ export interface VisionOcrOptions {
   workspacePath: string;
   /** 图片路径 */
   imagePath: string;
-  /** 用户提问（用于生成合适的提示词） */
+  /** 用户任务（交给视觉模型自行处理） */
   userQuery?: string;
   /** 模型 ID（可选，默认从配置读取） */
   modelId?: string;
@@ -62,6 +65,24 @@ export interface VisionOcrOptions {
 const VISION_TIMEOUT_MS = 120000;
 const VISION_MAX_BYTES = 10485760; // 10MB
 const MAX_IMAGE_DIMENSION = 2048; // 图片最大尺寸（宽或高）
+const VISION_MAX_OUTPUT_TOKENS = 2048; // 详细表格/文字提取至少保留 2k 输出预算
+
+function normalizeVisionQuery(userQuery: string): string {
+  return userQuery.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function buildVisionCachePath(visionDir: string, digest: string, userQuery: string): string {
+  const normalizedQuery = normalizeVisionQuery(userQuery);
+
+  // 兼容历史摘要缓存：无 query 仍沿用 <digest>.txt
+  if (!normalizedQuery) {
+    return join(visionDir, `${digest}.txt`);
+  }
+
+  // 查询态结果必须按图片 + 查询分开，避免摘要污染后续 OCR/表格提取。
+  const queryHash = createHash("sha256").update(normalizedQuery).digest("hex").slice(0, 8);
+  return join(visionDir, `${digest}.q-${queryHash}.txt`);
+}
 
 // ============================================
 // 辅助函数
@@ -194,49 +215,53 @@ function getImageMimeType(filePath: string): string {
 }
 
 // ============================================
-// LM Studio Vision OCR
+// LM Studio Vision
 // ============================================
 
 /**
- * 调用 LM Studio OpenAI 兼容 API 进行 Vision/OCR（带重试机制）
+ * 调用 LM Studio OpenAI 兼容 API 进行图片理解（带重试机制）
  *
  * P0-3: 硬策略处理 content 为空的情况：
  * - 如果 content 为空但有 reasoning_content → 视为失败（不要用 reasoning 做 OCR 文本）
  *
- * 重试机制：模型刚加载时可能不稳定，遇到 5xx 错误自动重试
+ * 重试机制：
+ * - 本地模型未加载 / 崩溃：最多 2 次触发 load 后重试
+ * - 一般 5xx/连接错误：最多 2 次普通重试
  */
 async function callLmStudioVisionOcr(
   imagePath: string,
   mimeType: string,
   modelId: string,
   timeoutMs: number,
-  explicitOcr: boolean,
   userQuery?: string
 ): Promise<{ success: boolean; text?: string; error?: string; hasReasoningOnly?: boolean }> {
-  // 重试配置：最多 2 次重试（总共 3 次尝试）
-  const maxRetries = 2;
+  const maxRetries = LOCAL_MODEL_LOAD_MAX_RETRIES;
   const retryDelays = [1000, 2000]; // 重试间隔：1秒、2秒
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    if (attempt > 0) {
-      logger.info(`Vision API 重试 ${attempt}/${maxRetries}`, {
-        module: "vision_ocr",
-        model: modelId,
-        delay: retryDelays[attempt - 1],
-      });
-      await new Promise(resolve => setTimeout(resolve, retryDelays[attempt - 1]));
-    }
-
-    const result = await callLmStudioVisionOcrOnce(imagePath, mimeType, modelId, timeoutMs, explicitOcr, userQuery);
+    const result = await callLmStudioVisionOcrOnce(imagePath, mimeType, modelId, timeoutMs, userQuery);
 
     if (result.success) {
       if (attempt > 0) {
         logger.info(`Vision API 重试成功`, {
-          module: "vision_ocr",
+          module: "vision",
           attempt,
         });
       }
       return result;
+    }
+
+    const reloaded = await maybeReloadLocalModelAndRetry({
+      module: "vision",
+      baseUrl: (config.lmstudioBaseUrl || "http://127.0.0.1:1234").replace(/\/+$/, ""),
+      model: modelId,
+      errorMessage: result.error || "",
+      attempt,
+      apiKey: config.lmstudioApiKey,
+      timeoutMs,
+    });
+    if (reloaded) {
+      continue;
     }
 
     // 检查是否是可重试的错误（5xx 服务器错误）
@@ -254,10 +279,11 @@ async function callLmStudioVisionOcr(
 
     // 可重试，继续下一次尝试
     logger.warn(`Vision API 请求失败，准备重试`, {
-      module: "vision_ocr",
+      module: "vision",
       attempt,
       error: result.error,
     });
+    await new Promise(resolve => setTimeout(resolve, retryDelays[attempt]));
   }
 
   // 不应该到达这里
@@ -272,7 +298,6 @@ async function callLmStudioVisionOcrOnce(
   mimeType: string,
   modelId: string,
   timeoutMs: number,
-  explicitOcr: boolean,
   userQuery?: string
 ): Promise<{ success: boolean; text?: string; error?: string; hasReasoningOnly?: boolean }> {
   const baseUrl = (config.lmstudioBaseUrl || "http://127.0.0.1:1234").replace(/\/+$/, "");
@@ -287,17 +312,22 @@ async function callLmStudioVisionOcrOnce(
   const base64Image = imageResult.base64;
   const dataUrl = `data:${mimeType};base64,${base64Image}`;
 
-  // 根据用户意图生成不同的提示词（统一使用 GLM-4.6V 模型）
-  // - /ocr 模式：纯抽字，只输出图片中的文字原文（分行）
-  // - 普通模式：视觉理解，简洁回答问题
+  // 根据用户意图生成提示词：
+  // - 无用户任务：只做一行图片摘要（自动预览）
+  // - 有用户任务：把任务直接交给视觉模型，不再由系统裁成 OCR/摘要分叉
   let prompt = "";
 
-  if (explicitOcr) {
-    // /ocr 模式：只输出图片中的文字原文，分行显示，不要任何解释
-    prompt = "请提取这张图片中的所有文字内容，按原文分行输出，只输出文字原文，不要添加任何解释、说明或格式。";
-  } else if (userQuery && userQuery.trim()) {
-    // 视觉模型 + 用户提问：简洁回答，禁止分析过程
-    prompt = `基于这张图片回答：${userQuery}\n\n要求：只输出最终答案，一句话说清楚，禁止分析、禁止解释、禁止列举细节。`;
+  if (userQuery && userQuery.trim()) {
+    // 用户已有明确任务时，不替主模型裁成一句话摘要，直接把任务交给视觉模型。
+    prompt = [
+      "请严格按用户要求处理这张图片。",
+      `用户要求：${userQuery}`,
+      "规则：",
+      "1. 优先完成用户要求，不要擅自压缩成一句话摘要。",
+      "2. 如果用户要求提取文字、表格、代码、界面文案或聊天内容，请尽量忠实输出可辨认原文，并保留原有结构。",
+      "3. 如果部分内容看不清，请明确指出不确定位置，不要编造。",
+      "4. 只有当用户明确要求概括、总结、描述时，才做摘要。",
+    ].join("\n");
   } else {
     // 视觉模型 + 无提问：简洁描述图片内容
     prompt = "用一句话简洁描述这张图片的内容，不要分析、不要解释。";
@@ -323,13 +353,13 @@ async function callLmStudioVisionOcrOnce(
       },
     ],
     temperature: 0,
-    max_tokens: 500,  // 限制输出长度，避免过长分析
+    max_tokens: VISION_MAX_OUTPUT_TOKENS,
   };
 
   try {
     // DEBUG: 记录请求信息
     logger.info("Vision API 请求", {
-      module: "vision_ocr",
+      module: "vision",
       model: modelId,
       promptLength: prompt.length,
       imageSize: base64Image.length,
@@ -364,7 +394,7 @@ async function callLmStudioVisionOcrOnce(
 
     // DEBUG: 记录响应信息
     logger.info("Vision API 响应", {
-      module: "vision_ocr",
+      module: "vision",
       contentType: typeof content,
       contentLength: (typeof content === "string" ? content.length : 0),
       contentPreview: (typeof content === "string" ? content.slice(0, 100) : ""),
@@ -383,7 +413,7 @@ async function callLmStudioVisionOcrOnce(
     if (reasoningContent && typeof reasoningContent === "string") {
       // P0-3: 只有 reasoning_content，说明模型被截断/未完成
       logger.warn("Vision API 只返回 reasoning content，未返回最终答案（视为失败）", {
-        module: "vision_ocr",
+        module: "vision",
         model: modelId,
         reasoningLength: reasoningContent.length,
       });
@@ -395,7 +425,7 @@ async function callLmStudioVisionOcrOnce(
     return { success: false, error: "LM Studio 未返回文本内容" };
   } catch (error) {
     logger.error("Vision API 调用异常", {
-      module: "vision_ocr",
+      module: "vision",
       error: error instanceof Error ? error.message : String(error),
     });
     return {
@@ -410,12 +440,12 @@ async function callLmStudioVisionOcrOnce(
 // ============================================
 
 /**
- * 执行 Vision OCR
+ * 执行图片理解
  *
  * @param options OCR 选项
  * @returns OCR 结果
  */
-export async function runVisionOcr(options: VisionOcrOptions): Promise<VisionOcrResult> {
+export async function runVision(options: VisionOcrOptions): Promise<VisionOcrResult> {
   const startTime = Date.now();
   const result: VisionOcrResult = { success: false };
 
@@ -438,9 +468,6 @@ export async function runVisionOcr(options: VisionOcrOptions): Promise<VisionOcr
     timeoutMs: 10_000,
   });
   const userQuery = (options.userQuery || "").trim();
-
-  // 检测是否明确要求 OCR（决定输出模式：纯抽字 vs 理解回答）
-  const explicitOcr = /ocr/i.test(userQuery);
 
   // 1. 检查文件存在
   if (!existsSync(imagePath)) {
@@ -490,7 +517,7 @@ export async function runVisionOcr(options: VisionOcrOptions): Promise<VisionOcr
     if (resizeResult.success && resizeResult.resizedPath) {
       actualImagePath = resizeResult.resizedPath;
       logger.info("图片已缩放", {
-        module: "vision_ocr",
+        module: "vision",
         originalSize: `${dimensions.width}x${dimensions.height}`,
         maxSize: MAX_IMAGE_DIMENSION,
       });
@@ -502,15 +529,21 @@ export async function runVisionOcr(options: VisionOcrOptions): Promise<VisionOcr
   const mimeType = getImageMimeType(actualImagePath);
 
   // 5. 计算 digest（用于输出文件名）
-  const { createHash } = await import("node:crypto");
   const hash = createHash("sha256");
   const imageBuffer = await readFile(actualImagePath);
   hash.update(imageBuffer);
   const digest = hash.digest("hex").slice(0, 12);
 
-  // 6. 检查是否已有 OCR 结果（去重）
+  // 6. 检查是否已有结果（去重）
   const visionDir = join(workspacePath, "artifacts", "vision");
-  const existingPath = join(visionDir, `${digest}.txt`);
+  const existingPath = buildVisionCachePath(visionDir, digest, userQuery);
+  logger.info("vision 请求已收口", {
+    module: "vision",
+    hasUserQuery: userQuery.length > 0,
+    userQueryChars: userQuery.length,
+    cacheKind: userQuery.length > 0 ? "query" : "summary",
+    cachePath: existingPath,
+  });
 
   if (existsSync(existingPath)) {
     const existingText = await readFile(existingPath, "utf-8");
@@ -525,7 +558,7 @@ export async function runVisionOcr(options: VisionOcrOptions): Promise<VisionOcr
   // 7. 调用 LM Studio Vision API
   const ocrResult = await modelServiceLease.withService(
     modelServiceName,
-    async () => callLmStudioVisionOcr(actualImagePath, mimeType, modelId, timeoutMs, explicitOcr, options.userQuery),
+    async () => callLmStudioVisionOcr(actualImagePath, mimeType, modelId, timeoutMs, options.userQuery),
     releaseAction
   );
 

@@ -374,7 +374,7 @@ async function checkModelLoadedDependency(dep: Dependency): Promise<DependencyCh
   };
 
   try {
-    // 获取 LM Studio base URL（和 vision_ocr.ts 一致）
+    // 获取 LM Studio base URL（和 vision.ts 一致）
     const baseUrl = (process.env.LMSTUDIO_BASE_URL || "http://127.0.0.1:1234").replace(/\/+$/, "");
     const apiKey = process.env.LMSTUDIO_API_KEY;
 

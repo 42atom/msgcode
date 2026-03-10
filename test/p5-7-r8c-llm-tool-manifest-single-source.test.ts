@@ -61,6 +61,17 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     expect(TOOL_MANIFESTS.edit_file).toBeDefined();
   });
 
+  it("vision 应保留内部说明书，但默认不再暴露给 LLM", async () => {
+    const { TOOL_MANIFESTS, resolveLlmToolExposure } = await import("../src/tools/manifest.js");
+
+    expect(TOOL_MANIFESTS.vision).toBeDefined();
+    const result = resolveLlmToolExposure(["vision", "bash", "read_file"]);
+    expect(result.allowedTools).toEqual(["vision", "bash", "read_file"]);
+    expect(result.exposedTools).not.toContain("vision");
+    expect(result.exposedTools).toContain("bash");
+    expect(result.exposedTools).toContain("read_file");
+  });
+
   // ============================================
   // 2. 验证暴露解析器逻辑
   // ============================================
@@ -150,6 +161,48 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     expect(tools).toContain("read_file");
     expect(tools).not.toContain("write_file");
     expect(tools).not.toContain("edit_file");
+  });
+
+  it("旧工作区即使 allow 包含 vision，getToolsForLlm() 也不应再暴露它", async () => {
+    const workspacePath = await createTempWorkspace();
+    const configPath = join(workspacePath, ".msgcode", "config.json");
+
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        "pi.enabled": true,
+        "tooling.allow": ["vision", "bash", "read_file"],
+      }),
+      "utf-8"
+    );
+
+    const toolLoopModule = await import("../src/agent-backend/tool-loop.js");
+    const tools = await toolLoopModule.getToolsForLlm(workspacePath);
+
+    expect(tools).not.toContain("vision");
+    expect(tools).toContain("bash");
+    expect(tools).toContain("read_file");
+  });
+
+  it("旧工作区即使 allow 包含 mem，getToolsForLlm() 也不应再暴露它", async () => {
+    const workspacePath = await createTempWorkspace();
+    const configPath = join(workspacePath, ".msgcode", "config.json");
+
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        "pi.enabled": true,
+        "tooling.allow": ["mem", "bash", "read_file"],
+      }),
+      "utf-8"
+    );
+
+    const toolLoopModule = await import("../src/agent-backend/tool-loop.js");
+    const tools = await toolLoopModule.getToolsForLlm(workspacePath);
+
+    expect(tools).not.toContain("mem");
+    expect(tools).toContain("bash");
+    expect(tools).toContain("read_file");
   });
 
   it("workspace tooling.allow 不包含 browser 时，getToolsForLlm() 不应返回 browser", async () => {

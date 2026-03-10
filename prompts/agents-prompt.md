@@ -8,7 +8,7 @@ skills 的单一来源目录是 {{MSGCODE_SKILLS_DIR}}。必须先读 {{MSGCODE_
 
 发送文件到飞书群时使用 feishu_send_file。飞书 chatId 优先读取当前 workspace 的 .msgcode/config.json 中的 runtime.current_chat_id，不要解析 session 文件名。bash 和 read_file 都优先使用绝对路径，例如 {{MSGCODE_CONFIG_DIR}}/...。
 
-浏览器正式通道只有 browser，底座固定为 Patchright 和 Chrome-as-State。不要把 agent-browser 当作正式浏览器执行路径，也不要发明第二套 browser substrate。涉及浏览器环境时，优先使用系统提供的 Chrome root、profilesRoot、launchCommand，不要猜路径。需要了解浏览器 CLI 合同时，可读取 {{MSGCODE_SKILLS_DIR}}/patchright-browser/SKILL.md。读取页面内容、截图、交互时，tabId 必须来自 browser 工具或 browser wrapper 的真实返回值，例如 tabs open、tabs list、snapshot、text 的结构化结果。不要猜 tabId，不要自己写 1、2、3 这种页签编号。
+浏览器正式通道只有 browser，底座固定为 Patchright 和 Chrome-as-State。不要把 agent-browser 当作正式浏览器执行路径，也不要发明第二套 browser substrate。涉及浏览器环境时，优先使用系统提供的 Chrome root、profilesRoot、launchCommand，不要猜路径。需要了解浏览器 CLI 合同时，可读取 {{MSGCODE_SKILLS_DIR}}/patchright-browser/SKILL.md。读取页面内容、截图、交互时，tabId 必须来自 browser 工具或 browser wrapper 的真实返回值，例如 tabs open、tabs list、snapshot、text 的结构化结果。不要猜 tabId，不要自己写 1、2、3 这种页签编号。instances.stop 和 tabs.list 必须传真实 instanceId；instanceId 只能来自 instances.launch、instances.list、tabs.open 等真实返回值，不允许裸调。
 
 如果工作区存在 <workspace>/.msgcode/SOUL.md，必须先读取并按其中设定扮演角色。不要猜测 soul 文件路径，固定路径就是 <workspace>/.msgcode/SOUL.md。扮演角色时不能牺牲事实准确性。
 

@@ -736,9 +736,9 @@ export async function handleMessage(
       const thisAttachmentText = formatAttachmentForTmux(attachment, copyResult.localPath, copyResult.digest) + "\n";
       attachmentText += thisAttachmentText;
 
-      // MediaPipeline: 仅自动处理图片；其他附件交给模型自行决策
+      // MediaPipeline: 仅自动生成图片摘要；其他视觉后处理交给主模型自行决策
       try {
-        const pipelineResult = await processAttachment(copyResult.localPath, attachment, workspacePath, text);
+        const pipelineResult = await processAttachment(copyResult.localPath, attachment, workspacePath);
 
         if (pipelineResult.derived) {
           // B3: 追加派生文本到 tmux（读取全文，带截断控制）
@@ -820,25 +820,20 @@ export async function handleMessage(
 
       if (hasOcrError) {
         // P0: OCR 失败直接固定文案回复，不喂给 4.7（避免元叙事）
-        await sendText(ctx.sendClient, message.chatId, "图片识别失败。若要纯抽字请发：ocr");
+        await sendText(ctx.sendClient, message.chatId, "图片识别失败。");
         shouldAdvanceCursor = true;
         return;
       }
 
-      // 只追加派生文本（[图片文字]/[语音转写]），去掉标签本体，避免模型复述方括号块
+      // 只追加派生文本（[图片摘要]/[语音转写]），去掉标签本体，避免模型复述方括号块
       const derivedEvidence = attachmentText
         .split("\n")
         .map(l => l.trim())
         .filter(Boolean)
-        .filter(line => line.startsWith("[图片文字]") || line.startsWith("[语音转写]"))
+        .filter(line => line.startsWith("[图片摘要]") || line.startsWith("[语音转写]"))
         .map(line => line.replace(/^\[[^\]]+\]\s*/g, "").trim())
         .filter(Boolean);
       const attachmentEvidence = extractAttachmentEvidence(attachmentText);
-
-      // 若用户未附带问题但只有图片 OCR 结果，给一个默认问题，避免模型进入"分析输入"模式
-      if (!contentToHandle && derivedEvidence.length > 0) {
-        contentToHandle = "请用一句话概括主要内容。";
-      }
 
       // 非图片附件默认不做系统自动处理，改为把附件信息交给模型自行决策
       if (!contentToHandle && attachmentEvidence.length > 0) {

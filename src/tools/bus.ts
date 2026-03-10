@@ -17,7 +17,7 @@ import type {
 import { loadWorkspaceConfig, getFsScope, DEFAULT_WORKSPACE_CONFIG } from "../config/workspace.js";
 import { runTts } from "../runners/tts.js";
 import { runAsr } from "../runners/asr.js";
-import { runVisionOcr } from "../runners/vision_ocr.js";
+import { runVision } from "../runners/vision.js";
 import { runBashCommand } from "../runners/bash-runner.js";
 import {
   executeBrowserOperation,
@@ -396,7 +396,7 @@ export async function executeTool(
         const imagePath = String(args.imagePath ?? "");
         const userQuery = typeof args.userQuery === "string" ? args.userQuery : undefined;
         const out = await withTimeout(
-          runVisionOcr({ workspacePath: ctx.workspacePath, imagePath, userQuery }),
+          runVision({ workspacePath: ctx.workspacePath, imagePath, userQuery }),
           ctx.timeoutMs ?? 120000
         );
         if (!out.success || !out.textPath) throw new Error(out.error || "vision failed");

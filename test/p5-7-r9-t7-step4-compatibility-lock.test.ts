@@ -395,6 +395,9 @@ describe("P5.7-R9-T7 Step 4: Prompt 构建函数行为", () => {
         expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).toContain("草稿里如果出现加粗");
         expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).not.toContain("第一轮必须优先产出 tool_calls");
         expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).not.toContain("没有 tool_calls 前");
+        expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).toContain("只有在本轮真实拿到对应工具回执后");
+        expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).toContain("不要复述上一轮失败");
+        expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).toContain("缺少当前附件或路径");
         expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).toContain("ABCD 或 1、2、3");
         expect(fs.readFileSync(EXEC_TOOL_PROTOCOL_CONSTRAINT_FILE, "utf-8")).toContain("ABCD 或 1、2、3");
         expect(fs.readFileSync(MCP_ANTI_LOOP_RULES_FILE, "utf-8")).toContain("必须调用 filesystem 工具");

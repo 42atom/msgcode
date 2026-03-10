@@ -12,7 +12,8 @@ import os from "node:os";
 import path from "node:path";
 import { handleMemCommand } from "../src/routes/cmd-memory.js";
 import { resolveCommandRoute } from "../src/routes/workspace-resolver.js";
-import { setRoute } from "../src/routes/store.js";
+import { getRouteByChatId, setRoute } from "../src/routes/store.js";
+import { routeByChatId } from "../src/router.js";
 
 const TEST_ROOT = path.join(os.tmpdir(), "msgcode-r13-default-workspace");
 const TEST_ROUTES = path.join(os.tmpdir(), ".config/msgcode/routes-r13-default-workspace.json");
@@ -55,7 +56,22 @@ describe("P5.7-R13: default workspace command fallback", () => {
 
     expect(result.success).toBe(true);
     expect(result.message).toContain("记忆注入状态");
-    expect(result.message).toContain(defaultWorkspace);
+    expect(result.message).toContain("工作目录: default");
+  });
+
+  it("未显式绑定的新群首次落到 default 时，应持久化为真实 route", () => {
+    const chatId = "feishu:oc_auto_default_bind";
+    const defaultWorkspace = path.join(TEST_ROOT, "default");
+
+    const routed = routeByChatId(chatId);
+    expect(routed).not.toBeNull();
+    expect(routed?.projectDir).toBe(defaultWorkspace);
+
+    const persisted = getRouteByChatId(chatId);
+    expect(persisted).not.toBeNull();
+    expect(persisted?.workspacePath).toBe(defaultWorkspace);
+    expect(persisted?.label).toBe("default");
+    expect(persisted?.botType).toBe("agent-backend");
   });
 
   it("显式绑定存在时，应优先使用显式 workspace", async () => {
