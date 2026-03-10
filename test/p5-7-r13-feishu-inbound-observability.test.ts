@@ -102,4 +102,16 @@ describe("P5.7-R13: feishu inbound observability", () => {
     const downloadType = result?.resourceType === "image" ? "image" : "file";
     expect(downloadType).toBe("file");
   });
+
+  it("应标准化 chat_type 并判断是否群聊", () => {
+    const normalizeChatType = feishuTransportTest?.normalizeFeishuChatType;
+    const resolveIsGroup = feishuTransportTest?.resolveFeishuIsGroup;
+    expect(normalizeChatType).toBeDefined();
+    expect(resolveIsGroup).toBeDefined();
+
+    expect(normalizeChatType!(" group ")).toBe("group");
+    expect(resolveIsGroup!("group")).toBe(true);
+    expect(resolveIsGroup!("p2p")).toBe(false);
+    expect(resolveIsGroup!(undefined)).toBeUndefined();
+  });
 });

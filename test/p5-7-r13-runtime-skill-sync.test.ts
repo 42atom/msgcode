@@ -3,6 +3,7 @@
  */
 
 import { afterEach, describe, expect, it } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -52,6 +53,8 @@ describe("P5.7-R13: runtime skill sync", () => {
       );
       expect(result.exitCode).toBe(0);
     }
+
+    expect(existsSync(join(runtimeSourceDir, "pinchtab-browser"))).toBe(false);
   });
 
   it("应同步托管 runtime skills 并保留用户已有自定义 skill 索引", async () => {

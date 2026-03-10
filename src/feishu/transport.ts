@@ -146,6 +146,18 @@ function normalizeFeishuMessageType(msgType: unknown): string {
   return trimmed || "unknown";
 }
 
+function normalizeFeishuChatType(chatType: unknown): string | undefined {
+  if (typeof chatType !== "string") return undefined;
+  const trimmed = chatType.trim();
+  return trimmed || undefined;
+}
+
+function resolveFeishuIsGroup(chatType: unknown): boolean | undefined {
+  const normalized = normalizeFeishuChatType(chatType);
+  if (!normalized) return undefined;
+  return normalized === "group";
+}
+
 function sanitizeFilename(filename: string): string {
   const base = path.basename(filename).trim();
   if (!base) return "attachment.bin";
@@ -390,6 +402,7 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
 
         const messageTypeLabel = normalizeFeishuMessageType(msgType);
 
+        const chatTypeLabel = normalizeFeishuChatType(message?.chat_type);
         const inboundBase: InboundMessage = {
           id: String(messageId),
           chatId: toFeishuChatGuid(String(chatId)),
@@ -399,7 +412,7 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
           sender: sender?.open_id || sender?.user_id || sender?.union_id,
           handle: sender?.open_id || sender?.user_id || sender?.union_id,
           senderName: undefined,
-          isGroup: message?.chat_type ? String(message.chat_type) === "group" : undefined,
+          isGroup: resolveFeishuIsGroup(message?.chat_type),
           messageType: messageTypeLabel,
         };
 
@@ -419,6 +432,8 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
           resourceKey: contentInspection.resourceKey ?? null,
           fileName: contentInspection.fileName ?? null,
           contentPreview: contentInspection.preview ?? null,
+          chatType: chatTypeLabel ?? null,
+          isGroup: inboundBase.isGroup ?? null,
         });
 
         if (msgType === "text") {
@@ -758,6 +773,8 @@ export const __test = process.env.NODE_ENV === "test"
   ? {
       inspectFeishuContent,
       normalizeFeishuMessageType,
+      normalizeFeishuChatType,
+      resolveFeishuIsGroup,
       resolveFeishuInboundAttachmentSpec,
     }
   : undefined;
