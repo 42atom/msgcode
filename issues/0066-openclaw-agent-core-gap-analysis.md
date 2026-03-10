@@ -50,7 +50,7 @@ links: []
 - 当前已有相关方向文档：
   - `docs/design/plan-260310-long-running-agent-context-smoothing.md`
   - `docs/design/plan-260310-post-imessage-channel-strategy.md`
-  - `AIDOCS/notes/future-architecture-node-260310.md`
+  - `docs/notes/research-260310-future-architecture-node.md`
   - `docs/notes/research-260310-openclaw-terminal-agent-harness.md`
   - `docs/notes/research-260310-thin-core-plugin-topology.md`
 - 2026-03-10 Phase 1 已落地：
