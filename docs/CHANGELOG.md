@@ -3,6 +3,8 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-11
+  - feishu/runtime: 最近消息查询与上下文索引统一扩到 40 条，compact 保留最近消息提升到 16 条；同时新增 `[最近生成产物索引]`，并在系统提示词里明确 AI 生成产物默认优先从当前 workspace 的 `AIDOCS/` 查找，减少“最近20条限制”和生成图片路径失忆导致的误判 (Issue: 0073, Plan: docs/design/plan-260311-feishu-message-context-and-actions.md) [risk: low] [rollback: 回退 `src/runtime/context-policy.ts`、`src/tools/bus.ts`、`src/tools/feishu-list-recent-messages.ts`、`prompts/agents-prompt.md` 与相关测试]
+- 2026-03-11
   - runtime/tools: 无 workspace 的工具暴露改为读取默认 workspace 配置真相源，不再继续走旧硬编码名单；同时将 runtime skill 同步实现里的 `managed` 术语收口为 `runtime`，避免和当前 `runtime / optional / legacy-active / retired` 现实口径继续漂移 (Issue: 0074, Plan: docs/design/plan-260311-tool-exposure-and-skill-runtime-terminology-cleanup.md) [risk: low] [rollback: 回退 `src/agent-backend/tool-loop.ts`、`src/lmstudio.ts`、`src/skills/runtime-sync.ts`、相关调用方与测试]
 - 2026-03-11
   - feishu/skills: 飞书入站日志现在补充 `chatType/isGroup`，降低私聊/群聊排障对猜测的依赖；同时已退役的 `pinchtab-browser` 正式移出 repo runtime 真相源，避免目录残留继续误导当前生效技能面 (Issue: 0075, Plan: docs/design/plan-260311-feishu-observability-and-pinchtab-retirement.md) [risk: low] [rollback: 回退 `src/feishu/transport.ts`，并从本地 `.trash/2026-03-11-pinchtab-browser/` 恢复旧目录]

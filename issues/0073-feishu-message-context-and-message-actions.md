@@ -1,7 +1,7 @@
 ---
 id: 0073
 title: 飞书消息级上下文与消息动作能力收口
-status: doing
+status: done
 owner: agent
 labels: [feature, refactor, docs]
 risk: medium
@@ -57,7 +57,8 @@ links:
 - [x] Phase 2：最近消息结构化摘要收口
 - [x] Phase 3：最近消息只读工具
 - [x] Phase 4：消息级动作工具（reply / react）
-- [x] 补测试、更新 changelog 与验证记录（Phase 1-3）
+- [x] 补测试、更新 changelog 与验证记录（Phase 1-4）
+- [x] 收口最近消息查询上限与生成产物定位提示，避免“最近20条”与 `AIDOCS` 双真相源继续漂移
 
 ## Acceptance Criteria
 
@@ -130,6 +131,14 @@ links:
   - 默认 workspace allow、`/tool allow` 用户口径与系统提示词已同步补上
   - 验证：
     - `bun test test/p6-feishu-message-context-phase4-actions.test.ts test/p6-feishu-message-context-phase3-tool.test.ts test/p5-6-8-r4g-pi-core-tools.test.ts test/tools.bus.test.ts test/p5-7-r3n-system-prompt-file-ref.test.ts`
+- 2026-03-11 收口补丁：
+  - `feishu_list_recent_messages` 默认查询值与显式上限已统一提升为 `40`
+  - `context-policy` 最近消息结构索引已提升为 `40` 条，compact 保留最近消息提升为 `16` 条
+  - summary 中 `AIDOCS/...` 生成产物路径会进入独立的 `[最近生成产物索引]`
+  - 系统提示词已明确：AI 生成的图片、音频、视频和其他生成产物优先在当前 workspace 的 `AIDOCS/` 下查找
+  - 验证：
+    - `bun test test/p5-7-r3n-system-prompt-file-ref.test.ts`
+    - `bun test test/p6-feishu-message-context-phase2.test.ts test/p6-feishu-message-context-phase3-tool.test.ts test/p5-7-r9-t2-context-budget-compact.test.ts test/p5-7-r27-context-budget-assembler.test.ts`
 
 ## Links
 

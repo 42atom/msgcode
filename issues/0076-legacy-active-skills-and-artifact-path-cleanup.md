@@ -1,0 +1,68 @@
+---
+id: 0076
+title: 收口 legacy-active skills 与生成产物路径双真相源
+status: open
+owner: agent
+labels: [refactor, docs, review]
+risk: medium
+scope: legacy-active skill 来源治理、生成类 skill 输出目录口径、运行时可发现性与文档一致性
+plan_doc: docs/design/plan-260311-legacy-active-skills-and-artifact-path-cleanup.md
+links:
+  - docs/design/plan-260311-legacy-active-skills-and-artifact-path-cleanup.md
+  - src/skills/runtime-sync.ts
+  - prompts/agents-prompt.md
+---
+
+## Context
+
+最近几轮排障暴露了两类残留：
+
+1. `memory/file/thread/todo/media/gen/banana-pro-image-gen` 仍在当前运行时活跃使用，但不在 repo `runtime/optional` 真相源里，属于 `legacy-active` 层。
+2. 生成类 skill 的输出目录口径不一致，尤其历史 Banana skill 文档曾写 `artifacts/banana-images`，真实脚本却输出到 `AIDOCS/banana-images`，导致模型先后出现“知道图在 AIDOCS”又“找不到原图”的漂移。
+
+## Goal / Non-Goals
+
+### Goal
+
+- 明确当前 `legacy-active` skill 的来源与地位，避免再被误清理。
+- 收口生成类 skill 的输出目录口径，优先统一到 `AIDOCS/`。
+- 保持“薄 core + skill 扩展”的现状，不把 skill 管理平台化。
+
+### Non-Goals
+
+- 不做 skill marketplace
+- 不做 managed 层回归
+- 不把 legacy-active 立即全部迁入 repo
+- 不顺手扩到 Telegram / Discord / surface
+
+## Plan
+
+- [ ] 审计当前 runtime 中仍活跃的 legacy-active skills 及其真实调用情况
+- [ ] 分类：应升格进 repo / 应继续本地保留 / 应退役
+- [ ] 审计生成类 skill 的输出目录合同，优先统一到 `AIDOCS/`
+- [ ] 清理明显误导模型的旧文案与路径提示
+- [ ] 形成最终分层与迁移建议，必要时拆后续 issue
+
+## Acceptance Criteria
+
+1. 当前仍在活跃使用的 legacy-active skills 有明确分类，不再被误判为 retired。
+2. 生成类 skill 的输出目录口径一致，不再同时存在 `artifacts/...` 与 `AIDOCS/...` 竞争同一语义。
+3. 不新增新的分层平台或控制面。
+
+## Notes
+
+- 这是 reviewer 自派清理单，来源于多轮真实排障暴露的残留，而不是新功能需求。
+- 初始嫌疑点：
+  - `memory`
+  - `file`
+  - `thread`
+  - `todo`
+  - `media`
+  - `gen`
+  - `banana-pro-image-gen`
+
+## Links
+
+- [docs/design/plan-260311-legacy-active-skills-and-artifact-path-cleanup.md](/Users/admin/GitProjects/msgcode/docs/design/plan-260311-legacy-active-skills-and-artifact-path-cleanup.md)
+- [src/skills/runtime-sync.ts](/Users/admin/GitProjects/msgcode/src/skills/runtime-sync.ts)
+- [prompts/agents-prompt.md](/Users/admin/GitProjects/msgcode/prompts/agents-prompt.md)
