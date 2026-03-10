@@ -1,7 +1,7 @@
 {
   "name": "msgcode",
   "version": "2.3.0",
-  "description": "AI agent on Mac with iMessage-first transport",
+  "description": "AI agent on Mac with Feishu-first transport",
   "type": "module",
   "bin": {
     "msgcode": "./bin/msgcode"
@@ -21,10 +21,11 @@
     "memory:e2e": "NODE_OPTIONS=\"--import tsx\" tsx scripts/memory/e2e-recall.ts"
   },
   "keywords": [
-    "imessage",
+    "feishu",
     "bot",
     "ai",
-    "macos"
+    "macos",
+    "imessage"
   ],
   "author": "",
   "license": "MIT",
