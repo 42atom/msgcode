@@ -42,6 +42,7 @@ const TOOL_META: Record<ToolName, { sideEffect: SideEffectLevel }> = {
   write_file: { sideEffect: "local-write" },
   edit_file: { sideEffect: "local-write" },
   feishu_send_file: { sideEffect: "message-send" },  // 飞书文件发送
+  feishu_list_members: { sideEffect: "read-only" },  // 飞书群成员查询
 };
 
 const MEDIA_PIPELINE_ALLOWED: ToolName[] = ["asr", "vision"];
@@ -999,6 +1000,63 @@ export async function executeTool(
             ...(out.attachmentKey ? { attachmentKey: out.attachmentKey } : {}),
           } : undefined,
           error: out.ok ? undefined : { code: "TOOL_EXEC_FAILED", message: out.error || "发送失败" },
+          durationMs: Date.now() - started,
+        };
+        break;
+      }
+      case "feishu_list_members": {
+        let chatId = args.chatId ? String(args.chatId).trim() : undefined;
+        const memberIdTypeRaw = String(args.memberIdType ?? "open_id").trim();
+        const memberIdType = memberIdTypeRaw === "user_id" || memberIdTypeRaw === "union_id"
+          ? memberIdTypeRaw
+          : "open_id";
+        const { loadWorkspaceConfig } = await import("../config/workspace.js");
+        const workspaceConfig = await loadWorkspaceConfig(ctx.workspacePath);
+
+        if (!chatId && ctx.chatId) {
+          chatId = ctx.chatId.replace(/^feishu:/, "");
+        }
+        if (!chatId) {
+          chatId = (workspaceConfig["runtime.current_chat_id"] as string | undefined)?.trim();
+        }
+        chatId = chatId || "";
+
+        let appId = process.env.FEISHU_APP_ID?.trim();
+        let appSecret = process.env.FEISHU_APP_SECRET?.trim();
+
+        if (!appId || !appSecret) {
+          appId = (workspaceConfig["feishu.appId"] as string | undefined)?.trim();
+          appSecret = (workspaceConfig["feishu.appSecret"] as string | undefined)?.trim();
+        }
+
+        if (!appId || !appSecret) {
+          throw new Error("飞书配置未找到：请设置环境变量 FEISHU_APP_ID/FEISHU_APP_SECRET 或 workspace config 中的 feishu.appId/feishu.appSecret");
+        }
+        if (!chatId) {
+          throw new Error("飞书 chatId 未找到：请传入 chatId，或先让当前请求把 runtime.current_chat_id 写入 .msgcode/config.json");
+        }
+
+        const { feishuListMembers } = await import("../tools/feishu-list-members.js");
+        const out = await withTimeout(
+          feishuListMembers(
+            { chatId, memberIdType },
+            { appId, appSecret }
+          ),
+          ctx.timeoutMs ?? 30000
+        );
+
+        result = {
+          ok: out.ok,
+          tool,
+          data: out.ok
+            ? {
+                chatId: out.chatId,
+                memberIdType: out.memberIdType,
+                memberTotal: out.memberTotal ?? out.members?.length ?? 0,
+                members: out.members ?? [],
+              }
+            : undefined,
+          error: out.ok ? undefined : { code: "TOOL_EXEC_FAILED", message: out.error || "获取群成员失败" },
           durationMs: Date.now() - started,
         };
         break;

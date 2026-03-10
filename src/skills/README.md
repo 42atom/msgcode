@@ -41,11 +41,13 @@ src/skills/
 ├── auto.ts                 # 自然语言触发（向后兼容）
 ├── runtime-sync.ts         # runtime skill 安装/同步
 └── runtime/                # 仓库托管的 runtime skill 真相源
-    ├── index.json          # 托管 skill 索引（vision-index, local-vision-lmstudio, scheduler, plan-files, patchright-browser）
+    ├── index.json          # 托管 skill 索引（vision-index, local-vision-lmstudio, scheduler, plan-files, character-identity, patchright-browser）
     ├── scheduler/
     │   ├── SKILL.md
     │   └── main.sh
     ├── plan-files/
+    │   └── SKILL.md
+    ├── character-identity/
     │   └── SKILL.md
     ├── vision-index/
     │   ├── SKILL.md

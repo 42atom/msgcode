@@ -19,6 +19,7 @@ export type ToolName =
   | "read_file"  // P5.6.8-R3: PI 四基础工具
   | "write_file"
   | "edit_file"
+  | "feishu_list_members"
   | "feishu_send_file";  // 飞书文件发送工具
 
 export type ToolDataMap = {
@@ -36,6 +37,12 @@ export type ToolDataMap = {
   read_file: { content: string };
   write_file: { path: string };
   edit_file: { path: string; editsApplied: number };
+  feishu_list_members: {
+    chatId: string;
+    memberIdType: "open_id" | "user_id" | "union_id";
+    memberTotal: number;
+    members: Array<{ senderId: string; name: string }>;
+  };
   // 飞书文件发送工具
   feishu_send_file: { chatId: string; attachmentType?: "file" | "image"; attachmentKey?: string };
 };

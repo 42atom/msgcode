@@ -24,6 +24,8 @@ describe("P5.7-R3n: system prompt file reference", () => {
         const content = readText("prompts/agents-prompt.md");
         expect(content).toContain("<workspace>/.msgcode/SOUL.md");
         expect(content).toContain("不要猜测 soul 或 soul.md");
+        expect(content).toContain("feishu_list_members");
+        expect(content).toContain('<at user_id="对方ID">称呼</at>');
     });
 
     it("配置层应暴露 AGENT_SYSTEM_PROMPT_FILE", () => {

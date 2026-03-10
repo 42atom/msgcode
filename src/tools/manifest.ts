@@ -261,6 +261,28 @@ export const TOOL_MANIFESTS: Record<ToolName, ToolManifest> = {
   // ============================================
   // 飞书工具
   // ============================================
+  feishu_list_members: {
+    name: "feishu_list_members",
+    description: "获取飞书群成员列表。返回成员 ID 和姓名，适合 character-identity 建表或在群聊里精确 @ 某人。",
+    parameters: {
+      type: "object",
+      properties: {
+        chatId: {
+          type: "string",
+          description: "飞书群聊 ID（例如：oc_xxxxxxxxxxxxxxxx）。可省略，默认读取当前 workspace 的 runtime.current_chat_id。",
+        },
+        memberIdType: {
+          type: "string",
+          description: "成员 ID 类型。默认 open_id；可选 user_id 或 union_id。",
+          enum: ["open_id", "user_id", "union_id"],
+        },
+      },
+      required: [],
+      additionalProperties: false,
+    },
+    riskLevel: "low",
+  },
+
   feishu_send_file: {
     name: "feishu_send_file",
     description: "发送文件到飞书群聊。支持上传本地文件并发送到指定飞书群。",

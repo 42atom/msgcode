@@ -30,6 +30,7 @@ describe("P5.7-R13: runtime skill sync", () => {
       "local-vision-lmstudio",
       "scheduler",
       "plan-files",
+      "character-identity",
       "patchright-browser",
     ];
 
@@ -84,8 +85,9 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(result.managedSkillIds).toContain("patchright-browser");
     expect(result.managedSkillIds).toContain("scheduler");
     expect(result.managedSkillIds).toContain("plan-files");
+    expect(result.managedSkillIds).toContain("character-identity");
     expect(result.managedSkillIds).not.toContain("zai-vision-mcp");
-    expect(result.copiedFiles).toBeGreaterThanOrEqual(9);
+    expect(result.copiedFiles).toBeGreaterThanOrEqual(10);
     expect(result.indexUpdated).toBe(true);
 
     const visionIndexDoc = await readFile(join(userSkillsDir, "vision-index", "SKILL.md"), "utf-8");
@@ -93,6 +95,7 @@ describe("P5.7-R13: runtime skill sync", () => {
     const localVisionDoc = await readFile(join(userSkillsDir, "local-vision-lmstudio", "SKILL.md"), "utf-8");
     const localVisionSh = await readFile(join(userSkillsDir, "local-vision-lmstudio", "main.sh"), "utf-8");
     const planFilesDoc = await readFile(join(userSkillsDir, "plan-files", "SKILL.md"), "utf-8");
+    const characterIdentityDoc = await readFile(join(userSkillsDir, "character-identity", "SKILL.md"), "utf-8");
     const skillDoc = await readFile(join(userSkillsDir, "patchright-browser", "SKILL.md"), "utf-8");
     const mainSh = await readFile(join(userSkillsDir, "patchright-browser", "main.sh"), "utf-8");
     const schedulerDoc = await readFile(join(userSkillsDir, "scheduler", "SKILL.md"), "utf-8");
@@ -125,6 +128,11 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(planFilesDoc).toContain("默认只建一份 plan 文件");
     expect(planFilesDoc).toContain("issues/NNNN-<slug>.md");
     expect(planFilesDoc).toContain("aidocs/task_plan-YYMMDD-<topic>.md");
+    expect(characterIdentityDoc).toContain("character-identity skill");
+    expect(characterIdentityDoc).toContain("当前 workspace 的 CSV");
+    expect(characterIdentityDoc).toContain("先查表，不要猜");
+    expect(characterIdentityDoc).toContain(".msgcode/character-identity/<channel>-<chat-token>.csv");
+    expect(characterIdentityDoc).toContain("senderId");
     expect(skillDoc).toContain("patchright-browser skill");
     expect(skillDoc).toContain("name: patchright-browser");
     expect(skillDoc).toContain("## 能力");
@@ -149,11 +157,13 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("patchright-browser");
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("scheduler");
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("plan-files");
+    expect(mergedIndex.skills.map((skill) => skill.id)).toContain("character-identity");
     expect(mergedIndex.skills.map((skill) => skill.id)).not.toContain("pinchtab-browser");
     expect(mergedIndex.skills.map((skill) => skill.id)).not.toContain("zai-vision-mcp");
     expect(mergedIndex.skills.find((skill) => skill.id === "vision-index")?.entry).toBe("~/.config/msgcode/skills/vision-index/SKILL.md");
     expect(mergedIndex.skills.find((skill) => skill.id === "local-vision-lmstudio")?.entry).toBe("~/.config/msgcode/skills/local-vision-lmstudio/SKILL.md");
     expect(mergedIndex.skills.find((skill) => skill.id === "plan-files")?.entry).toBe("~/.config/msgcode/skills/plan-files/SKILL.md");
+    expect(mergedIndex.skills.find((skill) => skill.id === "character-identity")?.entry).toBe("~/.config/msgcode/skills/character-identity/SKILL.md");
     expect(visionIndexStat.mode & 0o111).toBeGreaterThan(0);
     expect(localVisionStat.mode & 0o111).toBeGreaterThan(0);
     expect(mainStat.mode & 0o111).toBeGreaterThan(0);
