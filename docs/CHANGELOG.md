@@ -3,6 +3,7 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-10
+  - skills: 退役 `zai-vision-mcp` runtime skill；正式视觉能力面收口为“当前模型原生看图 + 本地 LM Studio”，runtime skill sync 也会把 `zai-vision-mcp` 视为 retired skill，不再继续暴露到用户索引 (Issue: 0060, Plan: docs/design/plan-260310-retire-zai-vision-mcp-runtime-skill.md) [risk: low] [rollback: 恢复 `src/skills/runtime/zai-vision-mcp/`、`src/skills/runtime/index.json` 与 runtime skill sync 测试]
   - runtime: 修复 review 暴露的长期任务状态机漂移；`updateTaskResult()` 现在尊重显式 `status`，`failed` 不再被错误回退成 `pending`，无 verify 的 `completed` 会与 checkpoint 一起降级回 `running`，同时 `/task resume` 不再在真正续跑前先消耗一次 attempt budget (Issue: 0059, Plan: docs/design/plan-260310-review-fixes-task-status-and-runtime-skill-index.md) [risk: medium] [rollback: 回退 `src/runtime/task-supervisor.ts` 与相关 `/task` 测试]
   - skills: 修复 runtime skill 索引与仓库真相源失配；把 `vision-index`、`local-vision-lmstudio`、`zai-vision-mcp` 正式纳入仓库托管 runtime skills，并新增“索引列出的托管 skill 必须被 git 跟踪”的回归锁，避免 clean checkout 下 skill 索引悬空 (Issue: 0059, Plan: docs/design/plan-260310-review-fixes-task-status-and-runtime-skill-index.md) [risk: low] [rollback: 回退 vision runtime skill 目录、`src/skills/runtime/index.json` 与 runtime skill sync 测试]
   - agent-backend: 对话链路与 tool-loop 的短期上下文注入改为共用同一套 budget assembler；`summaryContext`、recent window、单条消息截断现在按统一预算装配，并优先保留最新消息，减少旧大消息挤掉新状态造成的突然失忆 (Issue: 0058, Plan: docs/design/plan-260310-long-running-agent-context-smoothing.md) [risk: low] [rollback: 回退 `src/agent-backend/prompt.ts`、`src/agent-backend/tool-loop.ts` 与相关测试]

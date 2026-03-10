@@ -32,7 +32,7 @@ description: This skill should be used when the model needs detailed image under
 - `[图片摘要]` 只是预览，不是最终真相。
 - 详细视觉由模型自己决定；系统不替你选 provider，不替你做 OCR 裁决。
 - 如果当前模型原生支持图片输入，优先直接继续看图，不额外调本地脚本或 MCP。
-- 如果当前模型不能原生看图，再根据环境选择 `zai-vision-mcp` 或 `local-vision-lmstudio`。
+- 如果当前模型不能原生看图，再根据环境选择 `local-vision-lmstudio`。
 - 失败后先和用户沟通限制、重试方案或补充信息，不要要求系统替你加 recover 层。
 
 ## 供应商选择顺序
@@ -45,15 +45,7 @@ description: This skill should be used when the model needs detailed image under
 - 直接基于当前附件路径、附件信息和用户问题继续分析
 - 适合 GPT 等原生多模态模型
 
-### 2. 需要走 GLM / ZAI Vision MCP
-
-先读：
-
-- `~/.config/msgcode/skills/zai-vision-mcp/SKILL.md`
-
-再按那份说明书里的真实调用合同执行。重点是：先拿 live tool schema，再 call。
-
-### 3. 需要走本地 LM Studio 视觉模型
+### 2. 需要走本地 LM Studio 视觉模型
 
 先读：
 

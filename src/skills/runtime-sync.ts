@@ -29,7 +29,7 @@ interface SkillIndexFile {
   skills: SkillIndexEntry[];
 }
 
-const RETIRED_MANAGED_SKILL_IDS = new Set(["pinchtab-browser"]);
+const RETIRED_MANAGED_SKILL_IDS = new Set(["pinchtab-browser", "zai-vision-mcp"]);
 
 export interface RuntimeSkillSyncOptions {
   overwrite?: boolean;

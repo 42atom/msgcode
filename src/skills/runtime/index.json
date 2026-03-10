@@ -6,19 +6,13 @@
       "id": "vision-index",
       "name": "Vision Index",
       "entry": "~/.config/msgcode/skills/vision-index/SKILL.md",
-      "description": "详细视觉能力索引说明书。系统只负责图片预览摘要；先读本 skill，再判断走当前模型原生看图、ZAI Vision MCP、或本地 LM Studio。"
+      "description": "详细视觉能力索引说明书。系统只负责图片预览摘要；先读本 skill，再判断走当前模型原生看图或本地 LM Studio。"
     },
     {
       "id": "local-vision-lmstudio",
       "name": "Local Vision LM Studio",
       "entry": "~/.config/msgcode/skills/local-vision-lmstudio/SKILL.md",
       "description": "LM Studio 本地详细视觉说明书。先读本 skill，再按文档中的真实调用合同使用本地视觉能力；不要猜 wrapper 或 skill 目录脚本路径。"
-    },
-    {
-      "id": "zai-vision-mcp",
-      "name": "ZAI Vision MCP",
-      "entry": "~/.config/msgcode/skills/zai-vision-mcp/SKILL.md",
-      "description": "ZAI/GLM Vision MCP 说明书。先看真实 tool schema，再按文档调用；不要猜 wrapper 或额外脚本。"
     },
     {
       "id": "scheduler",
