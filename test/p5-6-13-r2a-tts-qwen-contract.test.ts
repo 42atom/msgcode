@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { rmSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -11,6 +12,7 @@ import type { InboundMessage } from "../src/imsg/types.js";
 
 type EnvSnapshot = {
   ttsBackend: string | undefined;
+  agentBackend: string | undefined;
   qwenRef: string | undefined;
   indexttsRef: string | undefined;
   statePath: string | undefined;
@@ -61,6 +63,7 @@ describe("P5.6.13-R2A: TTS Qwen 合同收口", () => {
   beforeEach(() => {
     snapshot = {
       ttsBackend: process.env.TTS_BACKEND,
+      agentBackend: process.env.AGENT_BACKEND,
       qwenRef: process.env.QWEN_TTS_REF_AUDIO,
       indexttsRef: process.env.INDEXTTS_REF_AUDIO,
       statePath: process.env.STATE_FILE_PATH,
@@ -75,6 +78,7 @@ describe("P5.6.13-R2A: TTS Qwen 合同收口", () => {
     }
 
     restoreEnv("TTS_BACKEND", snapshot.ttsBackend);
+    restoreEnv("AGENT_BACKEND", snapshot.agentBackend);
     restoreEnv("QWEN_TTS_REF_AUDIO", snapshot.qwenRef);
     restoreEnv("INDEXTTS_REF_AUDIO", snapshot.indexttsRef);
     restoreEnv("STATE_FILE_PATH", snapshot.statePath);
@@ -167,6 +171,31 @@ describe("P5.6.13-R2A: TTS Qwen 合同收口", () => {
 
       expect(result.success).toBe(true);
       expect(result.response).toContain(`TTS: mode=${item.expected}`);
+    }
+  });
+
+  it("workspace 当前分支的 tts-model 应优先于 TTS_BACKEND 环境变量", async () => {
+    const workspacePath = join(tmpdir(), `msgcode-tts-config-${randomUUID()}`);
+    mkdirSync(join(workspacePath, ".msgcode"), { recursive: true });
+    writeFileSync(
+      join(workspacePath, ".msgcode", "config.json"),
+      JSON.stringify({ "model.local.tts": "qwen" }, null, 2),
+      "utf-8",
+    );
+
+    process.env.TTS_BACKEND = "indextts";
+    process.env.AGENT_BACKEND = "agent-backend";
+
+    try {
+      const selection = await ttsTest.resolveTtsBackendSelection({
+        workspacePath,
+        model: undefined,
+      });
+      expect(selection.backendMode).toBe("qwen");
+      expect(selection.source).toBe("workspace");
+      expect(selection.configuredValue).toBe("qwen");
+    } finally {
+      rmSync(workspacePath, { recursive: true, force: true });
     }
   });
 });

@@ -14,6 +14,7 @@ import {
   handleEmbeddingModelCommand,
   handleModelCommand,
   handleTextModelCommand,
+  handleTtsModelCommand,
   handleVisionModelCommand,
 } from "../src/routes/cmd-model.js";
 
@@ -134,5 +135,17 @@ describe("P5.7-R24: backend lanes 命令协议", () => {
     expect(status.message).toContain("text-model: n/a (tmux)");
     expect(status.message).toContain("vision-model: n/a (tmux)");
     expect(status.message).toContain("embedding-model: n/a (tmux)");
+  });
+
+  it("tts-model 只允许 qwen|indextts|auto", async () => {
+    await handleBackendCommand({ chatId: CHAT_ID, args: ["local"] });
+
+    const invalid = await handleTtsModelCommand({ chatId: CHAT_ID, args: ["some-random-model"] });
+    expect(invalid.success).toBe(false);
+    expect(invalid.message).toContain("当前 tts-model 仅支持 qwen | indextts | auto");
+
+    const valid = await handleTtsModelCommand({ chatId: CHAT_ID, args: ["qwen"] });
+    expect(valid.success).toBe(true);
+    expect(valid.message).toContain("tts-model: qwen");
   });
 });

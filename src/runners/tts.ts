@@ -13,6 +13,7 @@ import { join, resolve } from "node:path";
 
 import type { TtsBackend, TtsOptions, TtsResult, TtsBackendContext } from "./tts/backends/types.js";
 import { logger } from "../logger/index.js";
+import { getCurrentLaneModel } from "../config/workspace.js";
 
 // ============================================
 // Backend Registry
@@ -50,6 +51,57 @@ function resolvePriorityBackends(rawBackendMode: string): TtsBackend[] {
   if (backendMode === "qwen") return ["qwen"];
   if (backendMode === "indextts") return ["indextts"];
   return ["qwen", "indextts"];
+}
+
+function normalizeConfiguredTtsBackend(raw: string | undefined): TtsBackend | undefined {
+  const normalized = (raw || "").trim().toLowerCase();
+  if (normalized === "qwen" || normalized === "indextts") {
+    return normalized;
+  }
+  return undefined;
+}
+
+type TtsBackendSelection = {
+  backendMode: "" | TtsBackend;
+  source: "options" | "workspace" | "env" | "default";
+  configuredValue?: string;
+};
+
+async function resolveTtsBackendSelection(
+  options: Pick<TtsOptions, "workspacePath" | "model">
+): Promise<TtsBackendSelection> {
+  const explicitBackend = normalizeConfiguredTtsBackend(options.model);
+  if (explicitBackend) {
+    return {
+      backendMode: explicitBackend,
+      source: "options",
+      configuredValue: options.model?.trim(),
+    };
+  }
+
+  const workspaceModel = await getCurrentLaneModel(options.workspacePath, "tts");
+  const workspaceBackend = normalizeConfiguredTtsBackend(workspaceModel);
+  if (workspaceBackend) {
+    return {
+      backendMode: workspaceBackend,
+      source: "workspace",
+      configuredValue: workspaceModel,
+    };
+  }
+
+  const envBackend = normalizeConfiguredTtsBackend(process.env.TTS_BACKEND);
+  if (envBackend) {
+    return {
+      backendMode: envBackend,
+      source: "env",
+      configuredValue: process.env.TTS_BACKEND,
+    };
+  }
+
+  return {
+    backendMode: "",
+    source: "default",
+  };
 }
 
 async function executeWithBackends(input: BackendExecutionInput): Promise<BackendExecutionResult> {
@@ -143,6 +195,8 @@ async function runTtsInternal(options: TtsOptions): Promise<TtsResult> {
   const t0 = Date.now();
   const textDigest = createHash("sha256").update(text).digest("hex").slice(0, 12);
 
+  const ttsBackendSelection = await resolveTtsBackendSelection(options);
+
   const workspacePath = resolve(options.workspacePath);
   const artifactId = randomUUID().replace(/-/g, "").slice(0, 12);
   const artifactsDir = join(workspacePath, "artifacts", "tts");
@@ -174,6 +228,9 @@ async function runTtsInternal(options: TtsOptions): Promise<TtsResult> {
     textDigest,
     timeoutMs,
     format: outFormat,
+    backendMode: ttsBackendSelection.backendMode || "fallback:qwen->indextts",
+    backendSource: ttsBackendSelection.source,
+    backendConfiguredValue: ttsBackendSelection.configuredValue,
   });
 
   // Backend context (shared across all backends)
@@ -191,7 +248,7 @@ async function runTtsInternal(options: TtsOptions): Promise<TtsResult> {
   // - TTS_BACKEND=qwen      -> strict qwen only
   // - TTS_BACKEND=indextts  -> strict indextts only
   // - unset/other           -> qwen -> indextts fallback
-  const priorityBackends = resolvePriorityBackends(process.env.TTS_BACKEND || "");
+  const priorityBackends = resolvePriorityBackends(ttsBackendSelection.backendMode);
 
   const execResult = await executeWithBackends({
     options: {
@@ -250,4 +307,6 @@ export const __test = {
   shouldAbortFallback,
   resolvePriorityBackends,
   executeWithBackends,
+  normalizeConfiguredTtsBackend,
+  resolveTtsBackendSelection,
 };

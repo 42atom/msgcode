@@ -64,6 +64,7 @@ links: []
 - [x] 让 `/model status` 成为唯一聚合状态页
 - [x] 将旧 `/model xxx` 退化为兼容 alias
 - [x] 补测试并更新帮助/提示文案
+- [x] 将 `tts-model` 真接入当前分支的 TTS 执行链与 `/mode` 状态回显
 - [x] 更新 changelog
 
 ## Acceptance Criteria
@@ -90,7 +91,9 @@ links: []
 - 当前已存在的本地 backend 真相源：
   - `src/local-backend/registry.ts`
 - Tests:
-  - `npm test -- test/routes.commands.test.ts test/p5-7-r8c-agent-backend-single-source.test.ts test/p5-7-r24-backend-command-lanes.test.ts test/p5-7-r9-t7-step4-compatibility-lock.test.ts test/p5-7-r9-t2-runtime-capabilities.test.ts test/p5-7-r23-vision-mainline.test.ts test/p5-7-r3e-model-alias-guard.test.ts`
+  - `npm test -- test/routes.commands.test.ts test/p5-7-r8c-agent-backend-single-source.test.ts test/p5-7-r24-backend-command-lanes.test.ts test/p5-7-r9-t7-step4-compatibility-lock.test.ts test/p5-7-r9-t2-runtime-capabilities.test.ts test/p5-7-r23-vision-mainline.test.ts test/p5-7-r3e-model-alias-guard.test.ts test/p5-6-13-r2a-tts-qwen-contract.test.ts`
+- Runtime:
+  - `tts-model` 已不只是配置项；当前分支设置会直接影响 `src/runners/tts.ts` 的后端选择顺序，并体现在 `/mode` 的 `TTS: mode=...` 与 `tts-model=...` 回显
 - Typecheck:
   - `npx tsc --noEmit` 仍有仓库既存错误，集中在 `src/feishu/transport.ts` 与 `src/routes/cmd-schedule.ts`
 

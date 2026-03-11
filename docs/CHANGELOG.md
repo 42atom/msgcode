@@ -3,6 +3,8 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-11
+  - runtime/tts: `tts-model` 不再只是命令面占位；当前分支的 `qwen|indextts|auto` 配置已直接接入 TTS 执行链，并优先于 `TTS_BACKEND` 环境变量，同时 `/mode` 会回显当前分支 `tts-model` 与实际 `strict/fallback` 模式 (Issue: 0080, Plan: docs/design/plan-260311-backend-command-lanes-v1.md) [risk: low] [rollback: 回退 `src/runners/tts.ts`、`src/handlers.ts`、`src/routes/cmd-model.ts`、`src/routes/cmd-info.ts` 与 TTS/命令协议测试本轮改动]
+- 2026-03-11
   - routes/backend-lanes: 新的执行基座命令协议已落地；`/backend local|api|tmux`、`/local`、`/api`、`/tmux`、`/text-model`、`/vision-model`、`/tts-model`、`/embedding-model` 已接入，`/model` 退化为 `status + legacy alias`，同时 `api-provider` 预设已从当前 active backend 解耦，`/model status` 只展示当前分支模型覆盖 (Issue: 0080, Plan: docs/design/plan-260311-backend-command-lanes-v1.md) [risk: medium] [rollback: 回退 `src/routes/{commands,cmd-model,cmd-info,cmd-bind}.ts`、`src/config/workspace.ts`、`src/runtime/session-orchestrator.ts`、`src/handlers.ts` 与新增命令测试]
 - 2026-03-11
   - runtime/vision: OMLX 图片请求现在会先查 `/v1/models/status`，只有 `model_type=vlm` 时才放行；同时本地运行环境已固定 `OMLX_MODEL=Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit` 与 `OMLX_VISION_MODEL=Qwen3.5-4B-MLX-4bit`，避免把图片误送给文本模型 (Issue: 0079, Plan: docs/design/plan-260311-local-backend-control-plane-mvp.md) [risk: medium] [rollback: 回退 `src/runners/vision.ts`、`test/p5-7-r23-vision-mainline.test.ts` 与本地 `.env` 中 OMLX 文本/视觉模型分工配置]

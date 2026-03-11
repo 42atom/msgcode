@@ -109,6 +109,11 @@
 3. 模型覆盖已按 `local/api` 分支分别存储，`/model status` 只显示当前分支模型值
 4. 旧 `/model minimax|omlx|codex|...` 继续可用，但已退化为兼容 alias
 5. 本轮还顺手补齐了 `deepseek` API provider 直连能力
+6. `tts-model` 已真接到当前分支的 TTS 执行链：
+   - `qwen` -> `strict:qwen`
+   - `indextts` -> `strict:indextts`
+   - `auto` -> `fallback:qwen->indextts`
+   并且 `/mode` 会回显当前分支的 `tts-model`
 
 ## Risks
 
@@ -129,6 +134,7 @@
 4. `/text-model auto` 会回到自动解析
 5. 旧 `/model minimax|omlx|codex` 仍按旧语义切换
 6. 路由解析能识别新命令集合
+7. `tts-model` 的当前分支配置应优先于 `TTS_BACKEND` 环境变量
 
 ## Observability
 

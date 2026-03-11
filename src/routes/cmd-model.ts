@@ -124,6 +124,11 @@ function normalizeModelOverrideInput(input: string): string {
   return trimmed;
 }
 
+function isSupportedTtsModelOverride(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return normalized === "" || normalized === "qwen" || normalized === "indextts";
+}
+
 function getActiveAgentProvider(): ActiveAgentProvider {
   const requestedApi = normalizeRequestedApiProvider(process.env.AGENT_BACKEND || "");
   if (requestedApi) {
@@ -312,6 +317,13 @@ async function handleModelFieldCommand(
     return {
       success: false,
       message: `无效的 ${slot}-model：请输入模型 ID 或 auto`,
+    };
+  }
+
+  if (slot === "tts" && !isSupportedTtsModelOverride(normalized)) {
+    return {
+      success: false,
+      message: `当前 tts-model 仅支持 qwen | indextts | auto`,
     };
   }
 

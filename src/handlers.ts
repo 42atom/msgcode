@@ -15,7 +15,7 @@ import type { InboundMessage } from "./imsg/types.js";
 import { clearTtsPrefs, getTtsPrefs, getVoiceReplyMode, setTtsPrefs, setVoiceReplyMode } from "./state/store.js";
 import { logger } from "./logger/index.js";
 import { getPrimaryOwnerIdsForChannel } from "./config.js";
-import { loadWorkspaceConfig, getRuntimeKind, getTmuxClient, getPolicyMode } from "./config/workspace.js";
+import { loadWorkspaceConfig, getRuntimeKind, getTmuxClient, getPolicyMode, getCurrentLaneModel } from "./config/workspace.js";
 // P5.5: 关键词主触发已禁用，不再 import detectAutoSkill/runAutoSkill
 // import { detectAutoSkill, normalizeSkillId, runAutoSkill, runSkill } from "./skills/auto.js";
 
@@ -350,7 +350,10 @@ export class RuntimeRouterHandler implements CommandHandler {
 
             // /mode - 查看语音模式
             if (trimmed === "/mode" || trimmed === "mode") {
-                const backendEnv = (process.env.TTS_BACKEND || "").trim().toLowerCase();
+                const configuredTtsModel = context.projectDir
+                  ? await getCurrentLaneModel(context.projectDir, "tts")
+                  : undefined;
+                const backendEnv = (configuredTtsModel || process.env.TTS_BACKEND || "").trim().toLowerCase();
                 const ttsMode =
                     backendEnv === "qwen"
                         ? "strict:qwen"
@@ -365,6 +368,7 @@ export class RuntimeRouterHandler implements CommandHandler {
                     response: [
                         `语音回复模式: ${voiceMode}`,
                         `TTS: mode=${ttsMode} normalize=${process.env.TTS_NORMALIZE_TEXT || "1"}`,
+                        `tts-model=${configuredTtsModel || "auto"}`,
                         refAudio ? `refAudio=${refAudio}` : "",
                         ttsPrefs.instruct ? `style=${ttsPrefs.instruct}` : "",
                     ].filter(Boolean).join("\n"),
