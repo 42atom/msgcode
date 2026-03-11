@@ -45,7 +45,7 @@ describe("P5.7-R9-T6: 配置默认语义", () => {
         expect(await getRuntimeKind(workspacePath)).toBe("agent");
     });
 
-    it("runner.default=lmstudio 映射到 agent.provider=lmstudio", async () => {
+    it("runner.default=lmstudio 映射到 agent.provider=agent-backend（兼容归一化）", async () => {
         const { getRuntimeKind, getAgentProvider, getDefaultRunner } = await import("../src/config/workspace.js");
 
         const configDir = path.join(workspacePath, ".msgcode");
@@ -57,7 +57,7 @@ describe("P5.7-R9-T6: 配置默认语义", () => {
         );
 
         expect(await getRuntimeKind(workspacePath)).toBe("agent");
-        expect(await getAgentProvider(workspacePath)).toBe("lmstudio");
+        expect(await getAgentProvider(workspacePath)).toBe("agent-backend");
         expect(await getDefaultRunner(workspacePath)).toBe("lmstudio");
     });
 
@@ -140,7 +140,7 @@ describe("P5.7-R9-T6: 类型定义", () => {
         // 编译时验证类型，运行时验证默认值
         const result = await getAgentProvider("/nonexistent");
         // agent-backend 是有效值
-        expect(["agent-backend", "lmstudio", "minimax", "openai", "llama", "claude"]).toContain(result);
+        expect(["agent-backend", "minimax", "deepseek", "openai"]).toContain(result);
     });
 
     it("BotType 类型包含 agent-backend", async () => {

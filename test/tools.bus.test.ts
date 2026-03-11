@@ -20,6 +20,7 @@ import type { ToolContext, ToolSource } from "../src/tools/types.js";
 import { executeTool, canExecuteTool, getToolPolicy } from "../src/tools/bus.js";
 import { recordToolEvent, getToolStats, clearToolEvents } from "../src/tools/telemetry.js";
 import type { ToolPolicy, ToolName } from "../src/tools/types.js";
+import { getToolPolicy as getWorkspaceToolPolicy } from "../src/config/workspace.js";
 
 describe("Tool Bus", () => {
   let tempWorkspace: string;
@@ -115,6 +116,21 @@ describe("Tool Bus", () => {
   });
 
   describe("Scenario B: autonomous 模式允许 llm-tool-call", () => {
+    test("Tool Bus 与 workspace 应共享同一份工具策略读取口径", async () => {
+      const configDir = join(tempWorkspace, ".msgcode");
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, "config.json"), JSON.stringify({
+        "tooling.mode": "explicit",
+        "tooling.allow": ["bash", "read_file"],
+        "tooling.require_confirm": ["bash"],
+      }));
+
+      const fromBus = await getToolPolicy(tempWorkspace);
+      const fromWorkspace = await getWorkspaceToolPolicy(tempWorkspace);
+
+      expect(fromBus).toEqual(fromWorkspace);
+    });
+
     test("应该允许 llm-tool-call 来源的工具调用", async () => {
       const gate = canExecuteTool(
         { mode: "autonomous", allow: ["tts", "asr", "bash"], requireConfirm: [] },

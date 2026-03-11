@@ -3,6 +3,8 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-11
+  - runtime/skills-config: repo 侧 `skills` 历史空壳已退出主链；`src/skills/registry.ts` 与 `src/runtime/skill-orchestrator.ts` 已归档，`src/skills/{types,auto,index}.ts` 只保留最小 `system-info` auto skill 兼容接口；同时 `tools/bus.ts` 不再维护影子 `getToolPolicy()`，`getAgentProvider()` 也只公开真实 provider，历史 `lmstudio/llama/claude` 配置读取时统一归一化到 `agent-backend` (Issue: 0087, Plan: docs/design/plan-260311-skill-legacy-cleanup-and-provider-truth-source.md) [risk: medium] [rollback: 从 `.trash/20260311-skill-legacy/` 恢复历史 skills 文件，并回退 `src/skills/*`、`src/tools/bus.ts`、`src/config/workspace.ts` 与本轮回归测试]
+- 2026-03-11
   - runtime/tools: `tooling.fs_scope` 已从“可写但无效”的假配置收口为真实运行时策略；默认仍保持 `unrestricted` 以避免扩大兼容面，但显式设为 `workspace` 时，`read_file / write_file / edit_file` 现在会真正限制在工作区内，并修复原先仅用字符串前缀比较导致的目录前缀碰撞误判 (Issue: 0086, Plan: docs/design/plan-260311-fs-scope-real-config-and-boundary-check.md) [risk: medium] [rollback: 回退 `src/config/workspace.ts`、`src/tools/bus.ts` 与 fs_scope 专项测试]
 - 2026-03-11
   - runtime/tooling: `/pi` 与 `pi.enabled` 已退出正式主链；工具开关只剩 `tooling.mode + tooling.allow`，`tooling.mode=explicit` 现在会在 `runAgentToolLoop()` 入口直接走 no-tool 主链，退役文件 `src/providers/tool-loop.ts` 也已删除，相关 routed-chat / tool-loop / 命令回归口径同步更新到当前单一真相源 (Issue: 0085, Plan: docs/design/plan-260311-pi-corpse-cleanup-and-tooling-mode-wireup.md) [risk: medium] [rollback: 回退 `src/routes/{commands,cmd-info,cmd-model}.ts`、`src/config/workspace.ts`、`src/agent-backend/tool-loop.ts`、`src/providers/tool-loop.ts` 与本轮工具主链回归测试]

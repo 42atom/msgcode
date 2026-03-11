@@ -1,0 +1,73 @@
+---
+id: 0087
+title: 清理 skills 历史尸体并收口工具策略与 provider 真相源
+status: done
+owner: agent
+labels: [refactor, docs, test]
+risk: medium
+scope: skills 历史层、tool policy 真相源、workspace provider 归一化
+plan_doc: docs/design/plan-260311-skill-legacy-cleanup-and-provider-truth-source.md
+links: []
+---
+
+## Context
+
+合主链前的审查仍剩三类有效问题：
+
+1. `src/skills/registry.ts` 与 `src/runtime/skill-orchestrator.ts` 仍保留历史占位接口，但主链已不消费它们。两份文件会继续制造“技能索引/执行还有另一套真相源”的错觉。
+2. `getToolPolicy()` 目前在 `src/config/workspace.ts` 和 `src/tools/bus.ts` 各有一份实现，行为虽接近，但真相源重复。
+3. `AgentProvider` 与 `getAgentProvider()` 仍把 `lmstudio / llama / claude` 这类僵尸值暴露为正式 provider，和当前 `/backend local|api|tmux + /local + /api` 的命令协议不一致。
+
+这些问题不会立刻让主链崩，但会继续误导后续维护者，影响合并到 `main` 的可审查性。
+
+## Goal / Non-Goals
+
+- Goal: 退役 `skills` 的历史空壳，实现 repo 侧最小自明技能接口
+- Goal: 让 `getToolPolicy()` 只保留一份真相源
+- Goal: 让 `getAgentProvider()` 与 `AgentProvider` 只暴露当前真实可选值
+- Goal: 保留旧配置兼容读取，不让历史 workspace 直接失效
+- Goal: 更新测试和文档，锁住新口径
+- Non-Goals: 不重做 runtime skills 发现机制
+- Non-Goals: 不做大范围 `LmStudio -> Agent` rename
+- Non-Goals: 不改命令面协议
+
+## Plan
+
+- [x] 新建 issue / plan，冻结本轮范围
+- [x] 清理 `skills` 历史空壳并更新索引导出
+- [x] 收口 `getToolPolicy()` 为单一真相源
+- [x] 归一化 `AgentProvider` 公开语义并保留旧配置兼容
+- [x] 更新测试、README、CHANGELOG
+
+## Acceptance Criteria
+
+1. `src/skills/registry.ts` 与 `src/runtime/skill-orchestrator.ts` 不再作为主链文件存在
+2. `src/skills/index.ts` 与 `src/skills/types.ts` 只表达当前最小 auto-skill 兼容语义
+3. `src/tools/bus.ts` 不再维护独立 `getToolPolicy()` 实现
+4. `getAgentProvider()` 只返回 `agent-backend | minimax | deepseek | openai | none`
+5. 历史 `runner.default=lmstudio|llama|claude` 或旧 `agent.provider` 配置仍可读，但会归一化为当前真实值
+6. 相关测试通过
+
+## Notes
+
+- 审查来源：
+  - `AIDOCS/opus-audit_incomplete_refactors.md.resolved.md`
+  - `AIDOCS/opus-audit_incomplete_refactors-2.md.resolved.md`
+  - `AIDOCS/reviews/260311-audit-2-fix-target-files.md`
+- 实现结果：
+  - `src/skills/registry.ts` 与 `src/runtime/skill-orchestrator.ts` 已退出主链，归档到 `.trash/20260311-skill-legacy/`
+  - `src/skills/{types,auto,index}.ts` 已收口为 repo 侧最小 auto skill 兼容接口，只保留 `system-info`
+  - `src/tools/bus.ts` 不再维护独立 `getToolPolicy()` 实现，直接复用 `src/config/workspace.ts`
+  - `getAgentProvider()` 与 `AgentProvider` 已收口到真实 provider；历史 `lmstudio / llama / claude` 配置读取时统一归一化到 `agent-backend`
+  - `LmStudio` 大面积命名债本轮未做 rename，已判定为不阻塞合并的后续技术债
+- 测试：
+  - `npm test -- test/skills.auto.test.ts test/p5-6-8-r3e-hard-cut.test.ts test/tools.bus.test.ts test/p5-6-14-r1-config-mapping.test.ts test/p5-6-14-r2-routing.test.ts test/p5-6-14-r4-model-config.test.ts test/p5-7-r9-t6-lmstudio-hardcode-purge.test.ts test/p5-7-r24-backend-command-lanes.test.ts test/routes.commands.test.ts`
+  - 结果：`160 pass / 0 fail`
+  - `npm test -- test/p5-7-r8c-agent-backend-single-source.test.ts test/p5-7-r9-t2-runtime-capabilities.test.ts test/p5-7-r9-t7-step4-compatibility-lock.test.ts`
+  - 结果：`67 pass / 0 fail`
+  - `npx tsc --noEmit`
+  - 结果：仍为仓库既存错误，仅剩 `src/feishu/transport.ts` 与 `src/routes/cmd-schedule.ts`
+
+## Links
+
+- Plan: docs/design/plan-260311-skill-legacy-cleanup-and-provider-truth-source.md

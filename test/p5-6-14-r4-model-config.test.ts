@@ -4,7 +4,7 @@
  * 验收口径：
  * 1. /model codex 映射到 runtime.kind=tmux + tmux.client=codex
  * 2. /model claude-code 映射到 runtime.kind=tmux + tmux.client=claude-code
- * 3. /model lmstudio 映射到 runtime.kind=agent + agent.provider=lmstudio
+ * 3. /model agent-backend 映射到 runtime.kind=agent + agent.provider=agent-backend
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "bun:test";
@@ -48,7 +48,7 @@ describe("P5.6.14-R4: /model 命令配置层回归锁", () => {
             // 初始为 agent 模式
             await writeConfig(workspacePath, {
                 "runtime.kind": "agent",
-                "agent.provider": "lmstudio",
+                "agent.provider": "agent-backend",
             });
 
             // 模拟 /model codex 行为
@@ -70,7 +70,7 @@ describe("P5.6.14-R4: /model 命令配置层回归锁", () => {
             // 初始为 agent 模式
             await writeConfig(workspacePath, {
                 "runtime.kind": "agent",
-                "agent.provider": "lmstudio",
+                "agent.provider": "agent-backend",
             });
 
             // 模拟 /model claude-code 行为
@@ -86,7 +86,7 @@ describe("P5.6.14-R4: /model 命令配置层回归锁", () => {
             expect(client).toBe("claude-code");
         });
 
-        it("/model lmstudio 映射到 runtime.kind=agent + agent.provider=lmstudio", async () => {
+        it("/model agent-backend 映射到 runtime.kind=agent + agent.provider=agent-backend", async () => {
             const { setRuntimeKind, setAgentProvider, getRuntimeKind, getAgentProvider } = await import("../src/config/workspace.js");
 
             // 初始为 tmux 模式
@@ -95,17 +95,17 @@ describe("P5.6.14-R4: /model 命令配置层回归锁", () => {
                 "tmux.client": "codex",
             });
 
-            // 模拟 /model lmstudio 行为
+            // 模拟 /model agent-backend 行为
             await setRuntimeKind(workspacePath, "agent");
-            await setAgentProvider(workspacePath, "lmstudio");
+            await setAgentProvider(workspacePath, "agent-backend");
 
             // 验证 runtime.kind=agent
             const kind = await getRuntimeKind(workspacePath);
             expect(kind).toBe("agent");
 
-            // 验证 agent.provider=lmstudio
+            // 验证 agent.provider=agent-backend
             const provider = await getAgentProvider(workspacePath);
-            expect(provider).toBe("lmstudio");
+            expect(provider).toBe("agent-backend");
         });
 
         it("/model minimax 映射到 runtime.kind=agent + agent.provider=minimax", async () => {
@@ -132,7 +132,7 @@ describe("P5.6.14-R4: /model 命令配置层回归锁", () => {
             // 初始为 agent 模式
             await writeConfig(workspacePath, {
                 "runtime.kind": "agent",
-                "agent.provider": "lmstudio",
+                "agent.provider": "agent-backend",
             });
 
             // 验证初始状态

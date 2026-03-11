@@ -66,13 +66,13 @@ describe("P5.6.14-R1: 配置映射回归锁", () => {
             expect(await getDefaultRunner(workspacePath)).toBe("claude-code");
         });
 
-        it("lmstudio -> runtime.kind=agent + agent.provider=lmstudio", async () => {
+        it("lmstudio -> runtime.kind=agent + agent.provider=agent-backend（兼容归一化）", async () => {
             const { getRuntimeKind, getAgentProvider, getTmuxClient, getDefaultRunner } = await import("../src/config/workspace.js");
 
             await writeConfig(workspacePath, { "runner.default": "lmstudio" });
 
             expect(await getRuntimeKind(workspacePath)).toBe("agent");
-            expect(await getAgentProvider(workspacePath)).toBe("lmstudio");
+            expect(await getAgentProvider(workspacePath)).toBe("agent-backend");
             expect(await getTmuxClient(workspacePath)).toBe("none");
             expect(await getDefaultRunner(workspacePath)).toBe("lmstudio");
         });

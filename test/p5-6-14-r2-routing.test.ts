@@ -84,7 +84,7 @@ describe("P5.6.14-R2: 路由收口回归锁", () => {
     });
 
     describe("R2-2: provider/client 子路由", () => {
-        it("agent + lmstudio 正确解析", async () => {
+        it("agent + 历史 lmstudio provider 读取时应归一化", async () => {
             const { getRuntimeKind, getAgentProvider, getTmuxClient } = await import("../src/config/workspace.js");
 
             await writeConfig(workspacePath, {
@@ -93,7 +93,7 @@ describe("P5.6.14-R2: 路由收口回归锁", () => {
             });
 
             expect(await getRuntimeKind(workspacePath)).toBe("agent");
-            expect(await getAgentProvider(workspacePath)).toBe("lmstudio");
+            expect(await getAgentProvider(workspacePath)).toBe("agent-backend");
             expect(await getTmuxClient(workspacePath)).toBe("none");
         });
 
@@ -107,7 +107,7 @@ describe("P5.6.14-R2: 路由收口回归锁", () => {
             });
 
             expect(await getRuntimeKind(workspacePath)).toBe("tmux");
-            // 没有设置 agent.provider 时，会 fallback 到默认值 lmstudio
+            // 没有设置 agent.provider 时，会 fallback 到默认值 agent-backend
             // 但 tmux 模式下 provider 不应该被使用，这里验证 tmux.client 正确即可
             expect(await getTmuxClient(workspacePath)).toBe("claude-code");
         });
@@ -138,7 +138,7 @@ describe("P5.6.14-R2: 路由收口回归锁", () => {
 
             // 兼容映射应生效
             expect(await getRuntimeKind(workspacePath)).toBe("agent");
-            expect(await getAgentProvider(workspacePath)).toBe("lmstudio");
+            expect(await getAgentProvider(workspacePath)).toBe("agent-backend");
             expect(await getDefaultRunner(workspacePath)).toBe("lmstudio");
 
             // 路由应走 agent 链路

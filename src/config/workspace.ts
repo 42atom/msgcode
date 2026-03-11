@@ -22,6 +22,9 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ToolName, ToolingMode } from "../tools/types.js";
 
+type LegacyAgentProviderAlias = "lmstudio" | "llama" | "claude";
+type StoredAgentProvider = AgentProvider | LegacyAgentProviderAlias;
+
 /**
  * Workspace 配置（存储在 .msgcode/config.json）
  * P5.6.14-R1: 配置域拆分 - 新增 runtime.kind/agent.provider/tmux.client
@@ -105,13 +108,13 @@ export interface WorkspaceConfig {
 
   /**
    * Agent Provider（仅 runtime.kind=agent 时有效）
-   * - agent-backend / local-openai: 本地后端（默认）
+   * - agent-backend: 本地后端入口（默认）
    * - minimax: MiniMax 模型
    * - openai: OpenAI API
-   * - lmstudio: 历史别名（兼容）
-   * - ...
+   * - deepseek: DeepSeek API
+   * - 历史配置中可能仍出现 lmstudio/llama/claude，读取时会归一化
    */
-  "agent.provider"?: AgentProvider;
+  "agent.provider"?: StoredAgentProvider;
 
   /**
    * Tmux Client（仅 runtime.kind=tmux 时有效）
@@ -133,8 +136,9 @@ export interface WorkspaceConfig {
    * P5.7-R9-T6: 新增 agent-backend 中性语义
    * 映射规则：
    * - codex|claude-code -> runtime.kind=tmux + tmux.client=<runner>
-   * - agent-backend|lmstudio|openai|minimax|deepseek -> runtime.kind=agent + agent.provider=<runner>
-   * - llama|claude -> runtime.kind=agent + agent.provider=lmstudio（兼容降级）
+   * - agent-backend|lmstudio -> runtime.kind=agent + agent.provider=agent-backend
+   * - openai|minimax|deepseek -> runtime.kind=agent + agent.provider=<runner>
+   * - llama|claude -> runtime.kind=agent + agent.provider=agent-backend（兼容降级）
    */
   "runner.default"?: "agent-backend" | "lmstudio" | "minimax" | "deepseek" | "llama" | "claude" | "openai" | "codex" | "claude-code";
 
@@ -193,9 +197,9 @@ export type FsScope = "workspace" | "unrestricted";
 
 /**
  * P5.6.14-R1b: Agent Provider 类型（agent 模式下有效）
- * P5.7-R9-T6: 新增 agent-backend 中性语义
+ * 只表达当前真实 provider；历史别名读取时在内部归一化
  */
-export type AgentProvider = "agent-backend" | "lmstudio" | "minimax" | "deepseek" | "openai" | "llama" | "claude";
+export type AgentProvider = "agent-backend" | "minimax" | "deepseek" | "openai";
 
 /**
  * P5.7-R24: 执行基座 lane
@@ -387,10 +391,9 @@ function mapRunnerToKindProviderClient(
     return { kind: "tmux", client: runner };
   }
 
-  // agent-backend|lmstudio|openai|minimax|deepseek -> agent + provider
+  // agent-backend|openai|minimax|deepseek -> agent + provider
   if (
     runner === "agent-backend" ||
-    runner === "lmstudio" ||
     runner === "openai" ||
     runner === "minimax" ||
     runner === "deepseek"
@@ -398,8 +401,18 @@ function mapRunnerToKindProviderClient(
     return { kind: "agent", provider: runner };
   }
 
-  // llama|claude -> agent + provider=agent-backend（兼容降级）
+  // lmstudio|llama|claude -> agent + provider=agent-backend（兼容降级）
   return { kind: "agent", provider: "agent-backend" };
+}
+
+function normalizeStoredAgentProvider(
+  raw: StoredAgentProvider | "" | undefined
+): AgentProvider | undefined {
+  if (!raw) return undefined;
+  if (raw === "agent-backend" || raw === "minimax" || raw === "deepseek" || raw === "openai") {
+    return raw;
+  }
+  return "agent-backend";
 }
 
 /**
@@ -430,7 +443,7 @@ export async function getRuntimeKind(
  * P5.6.14-R1b: 使用 AgentProvider 类型
  *
  * @param projectDir 工作区路径
- * @returns Agent Provider（agent-backend | minimax | openai | lmstudio | none）
+ * @returns Agent Provider（agent-backend | minimax | deepseek | openai | none）
  */
 export async function getAgentProvider(
   projectDir: string
@@ -439,7 +452,7 @@ export async function getAgentProvider(
 
   // 优先读新字段
   if (workspaceConfig["agent.provider"]) {
-    return workspaceConfig["agent.provider"];
+    return normalizeStoredAgentProvider(workspaceConfig["agent.provider"]) || "none";
   }
 
   // Fallback: 从 runner.default 映射
@@ -562,13 +575,9 @@ export async function getDefaultRunner(
   }
 
   if (workspaceConfig["runtime.kind"] === "agent") {
-    const provider = workspaceConfig["agent.provider"];
+    const provider = normalizeStoredAgentProvider(workspaceConfig["agent.provider"]);
     if (provider) {
-      // llama/claude 映射回 agent-backend（兼容返回）
-      if (provider === "llama" || provider === "claude") {
-        return "agent-backend";
-      }
-      return provider as "agent-backend" | "lmstudio" | "minimax" | "deepseek" | "openai";
+      return provider as "agent-backend" | "minimax" | "deepseek" | "openai";
     }
   }
 

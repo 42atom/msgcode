@@ -10,13 +10,10 @@ import path from "node:path";
 
 describe("P5.6.8-R3e: 硬切割回归锁", () => {
     describe("/skill run 命令面删除验证", () => {
-        it("src/runtime/skill-orchestrator.ts 不应导出 handleSkillRunCommand", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/runtime/skill-orchestrator.ts"),
-                "utf-8"
-            );
-
-            expect(code).not.toContain("export async function handleSkillRunCommand");
+        it("src/runtime/skill-orchestrator.ts 应已退出主链", () => {
+            expect(
+                fs.existsSync(path.join(process.cwd(), "src/runtime/skill-orchestrator.ts"))
+            ).toBe(false);
         });
 
         it("src/handlers.ts 不应调用 handleSkillRunCommand", () => {
@@ -38,6 +35,22 @@ describe("P5.6.8-R3e: 硬切割回归锁", () => {
             // handlers.ts 不应导入 skill 模块
             expect(code).not.toContain('import * as skill from "./runtime/skill-orchestrator"');
             expect(code).not.toContain('import { handleSkillRunCommand }');
+        });
+
+        it("src/skills/registry.ts 应已退出主链", () => {
+            expect(
+                fs.existsSync(path.join(process.cwd(), "src/skills/registry.ts"))
+            ).toBe(false);
+        });
+
+        it("src/skills/index.ts 不应再转发 registry", () => {
+            const code = fs.readFileSync(
+                path.join(process.cwd(), "src/skills/index.ts"),
+                "utf-8"
+            );
+
+            expect(code).not.toContain('./registry.js');
+            expect(code).not.toContain("runLegacySkill");
         });
     });
 
@@ -172,7 +185,7 @@ describe("P5.6.8-R3e: 硬切割回归锁", () => {
             const mainFiles = [
                 "src/handlers.ts",
                 "src/lmstudio.ts",
-                "src/runtime/skill-orchestrator.ts"
+                "src/skills/index.ts"
             ];
 
             for (const file of mainFiles) {

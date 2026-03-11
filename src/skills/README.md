@@ -6,7 +6,7 @@
 
 - 真相源：`src/skills/runtime/` → `~/.config/msgcode/skills/`
 - 执行主链：runtime skill -> bash -> CLI 命令
-- builtin registry（`registry.ts`）为历史占位，不再作为技能执行的正式主链
+- 不再保留 repo 内的 builtin registry 主链
 
 **optional skills 是 repo 内置的按需扩展层**：
 
@@ -38,21 +38,20 @@
 - 若外部 skill 的脚本或资产确有必要，必须复制或 vendor 到 `src/skills/runtime/<skill-id>/` 或 `src/skills/optional/<skill-id>/`
 - 允许依赖外部服务、系统命令、环境变量；不允许依赖“另一份本地 skill 仓库”
 
-**builtin registry 退役说明**：
+**repo 侧兼容层说明**：
 
-- `registry.ts` 保留仅为向后兼容
-- `runSkill()` 为占位实现，已退役
-- `schedule-skill` / `browser-skill` 已被 runtime skills (`scheduler` / `patchright-browser`) 取代
+- `auto.ts` 只保留最小 auto skill：`system-info`
+- `types.ts` 只表达这条 repo 侧最小兼容接口
+- 历史 `registry.ts` / `runtime/skill-orchestrator.ts` 已退出主链并归档到 `.trash/`
 
 ## 目录结构
 
 ```
 src/skills/
 ├── README.md               # 本目录说明（含单真相源说明）
-├── index.ts                # 导出聚合（仅聚合，不承载逻辑）
-├── types.ts                # 类型定义（SkillId, SkillContext, SkillResult 等）
-├── registry.ts             # ⚠️ 历史占位 - 不再作为执行主链
-├── auto.ts                 # 自然语言触发（向后兼容）
+├── index.ts                # repo 侧最小兼容导出
+├── types.ts                # repo 侧最小兼容类型
+├── auto.ts                 # 自然语言触发（仅保留 system-info）
 ├── runtime-sync.ts         # runtime skill 安装/同步
 ├── optional/               # repo 内置按需技能（不进默认主索引）
 │   ├── index.json
@@ -114,10 +113,9 @@ src/skills/
 
 ## 职责边界
 
-- `types.ts`：纯类型定义，不承载逻辑
-- `registry.ts`：⚠️ 历史占位 - 保留向后兼容，不再作为执行主链
-- `index.ts`：导出聚合，方便外部引用
-- `auto.ts`：自然语言触发（向后兼容，保留 system-info）
+- `types.ts`：repo 侧最小兼容类型
+- `index.ts`：repo 侧导出聚合，不承载技能逻辑
+- `auto.ts`：自然语言触发（仅保留 system-info）
 - `runtime/`：**正式技能真相源** - 执行主链：runtime skill -> bash -> CLI 命令
 - `optional/`：**可选扩展技能真相源** - 运行时会同步，但不并入默认主索引；仅在任务明显匹配或主索引无覆盖时按需读取
 
@@ -163,10 +161,10 @@ src/skills/
 3. 如有安装/同步逻辑变化，更新 `runtime-sync.ts`
 4. 不要把 optional skill 加进 `src/skills/runtime/index.json`
 
-### 技能检测扩展
+### repo 侧 auto skill 扩展
 
-- 关键词匹配：在 `registry.ts` 的 `detectSkillMatch` 中扩展
-- 意图识别：后续可接入 LLM 意图识别模型
+- 如需继续保留 repo 侧自然语言兼容入口，直接在 `auto.ts` 增补
+- 不要再恢复一套独立 registry/orchestrator
 
 ### 输出规范
 
