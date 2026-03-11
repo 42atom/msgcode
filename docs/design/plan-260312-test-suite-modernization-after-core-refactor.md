@@ -23,10 +23,11 @@ Issue: 0092
    - 例如退役文件不存在、旧旁路不再导出、兼容壳不再转发旧入口
 2. 替换高漂移源码字符串锁
    - 改为验证导出常量、导出函数、行为结果、持久化副作用、CLI/contract 输出
-3. 分三批清理高漂移区
+3. 分四批清理高漂移区
    - 第一批：`context-policy / fs_scope / hard-cut`
    - 第二批：`handlers / system prompt / scheduler / summary injection`
    - 第三批：`default model / alias guard / local model retry / routed-chat / tool-loop quota`
+   - 第四批：`listener / codex policy / feishu message handler context`
 4. 不一次性清空全部静态锁
    - 先拿最容易误导开发者的那批，后续分批推进
 
@@ -75,7 +76,13 @@ Issue: 0092
 6. 跑 targeted suites 与全量回归
    - `PATH="$HOME/.bun/bin:$PATH" bun test <targeted suites>`
    - `PATH="$HOME/.bun/bin:$PATH" bun test`
-7. 记录剩余下一批入口
+7. 第四批：改造 `listener / codex policy / feishu message handler context`
+   - `test/p5-6-13-r4-listener-trigger.test.ts`
+   - `test/p5-7-r9-t5-codex-policy-dedup.test.ts`
+   - `test/p6-feishu-message-context-phase1.test.ts`
+   - `test/p6-feishu-message-context-phase2.test.ts`
+   - 验收：真实临时 workspace + 真实 handler/router + 最少 mock；Node+tsx 隔离 listener 黑盒；通过 env/Context 控分支，不拦截基础层函数
+8. 记录剩余下一批入口
    - 重点关注 `listener / transport / feishu context / direct log / tool result clip` 等仍锁源码写法的测试
 
 ## Risks
@@ -124,14 +131,20 @@ Issue: 0092
    - `test/p5-7-r3e-model-alias-guard.test.ts`
    - `test/p5-7-r20-llm-unshackle-phase2.test.ts`
    - `test/p5-7-r21-routed-chat-unshackle-phase3.test.ts`
+4. 第四批：
+   - `test/p5-6-13-r4-listener-trigger.test.ts`
+   - `test/p5-7-r9-t5-codex-policy-dedup.test.ts`
+   - `test/p6-feishu-message-context-phase1.test.ts`
+   - `test/p6-feishu-message-context-phase2.test.ts`
 
 当前结果：
 
-- 静态锁文件数：`60 -> 58 -> 54`
+- 静态锁文件数：`60 -> 58 -> 54 -> 50`
 - 关键 targeted：
   - 第一批+第二批：`52 pass / 0 fail`
   - 第三批：`17 pass / 0 fail`
+  - 第四批+相邻主链：`51 pass / 0 fail`
 - 全量回归：
-  - `PATH="$HOME/.bun/bin:$PATH" bun test` -> `1508 pass / 0 fail`
+  - `PATH="$HOME/.bun/bin:$PATH" bun test` -> `1500 pass / 0 fail`
 
 （章节级）评审意见：[留空,用户将给出反馈]

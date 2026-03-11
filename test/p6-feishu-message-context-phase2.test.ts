@@ -10,6 +10,11 @@ function createTempDir(prefix: string): string {
 describe("Phase 2: Feishu recent message roster context", () => {
   let tmpDir = "";
   let workspacePath = "";
+  let originalFetch: typeof globalThis.fetch;
+  let originalAgentBackend: string | undefined;
+  let originalOpenAiModel: string | undefined;
+  let originalOpenAiApiKey: string | undefined;
+  let originalOpenAiBaseUrl: string | undefined;
 
   beforeEach(async () => {
     tmpDir = createTempDir("msgcode-feishu-message-roster-");
@@ -18,6 +23,15 @@ describe("Phase 2: Feishu recent message roster context", () => {
     process.env.AGENT_CONTEXT_WINDOW_TOKENS = "4096";
     process.env.AGENT_RESERVED_OUTPUT_TOKENS = "1024";
     process.env.AGENT_CHARS_PER_TOKEN = "2";
+    originalFetch = globalThis.fetch;
+    originalAgentBackend = process.env.AGENT_BACKEND;
+    originalOpenAiModel = process.env.OPENAI_MODEL;
+    originalOpenAiApiKey = process.env.OPENAI_API_KEY;
+    originalOpenAiBaseUrl = process.env.OPENAI_BASE_URL;
+    process.env.AGENT_BACKEND = "openai";
+    process.env.OPENAI_MODEL = "gpt-test";
+    process.env.OPENAI_API_KEY = "test-key";
+    process.env.OPENAI_BASE_URL = "http://127.0.0.1:18080";
 
     const { clearRuntimeCapabilityCache } = await import("../src/capabilities.js");
     clearRuntimeCapabilityCache();
@@ -27,17 +41,41 @@ describe("Phase 2: Feishu recent message roster context", () => {
     delete process.env.AGENT_CONTEXT_WINDOW_TOKENS;
     delete process.env.AGENT_RESERVED_OUTPUT_TOKENS;
     delete process.env.AGENT_CHARS_PER_TOKEN;
+    if (originalAgentBackend === undefined) {
+      delete process.env.AGENT_BACKEND;
+    } else {
+      process.env.AGENT_BACKEND = originalAgentBackend;
+    }
+    if (originalOpenAiModel === undefined) {
+      delete process.env.OPENAI_MODEL;
+    } else {
+      process.env.OPENAI_MODEL = originalOpenAiModel;
+    }
+    if (originalOpenAiApiKey === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = originalOpenAiApiKey;
+    }
+    if (originalOpenAiBaseUrl === undefined) {
+      delete process.env.OPENAI_BASE_URL;
+    } else {
+      process.env.OPENAI_BASE_URL = originalOpenAiBaseUrl;
+    }
+    globalThis.fetch = originalFetch;
+
     const { clearRuntimeCapabilityCache } = await import("../src/capabilities.js");
     clearRuntimeCapabilityCache();
 
-    if (tmpDir && fs.existsSync(tmpDir)) {
+    if (tmpDir) {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   });
 
   it("应把最近消息的最小结构表注入上下文", async () => {
     const { appendWindow } = await import("../src/session-window.js");
-    const { assembleAgentContext } = await import("../src/runtime/context-policy.js");
+    const { assembleAgentContext } = await import(
+      `../src/runtime/context-policy.js?case=feishu-phase2-roster-${Date.now()}`
+    );
 
     await appendWindow(workspacePath, "feishu:oc_roster_phase2", {
       role: "user",
@@ -91,7 +129,9 @@ describe("Phase 2: Feishu recent message roster context", () => {
 
   it("最近消息索引应保留最近 40 条结构记录，而不是只保留很短窗口", async () => {
     const { appendWindow } = await import("../src/session-window.js");
-    const { assembleAgentContext } = await import("../src/runtime/context-policy.js");
+    const { assembleAgentContext } = await import(
+      `../src/runtime/context-policy.js?case=feishu-phase2-limit-${Date.now()}`
+    );
 
     for (let i = 1; i <= 45; i += 1) {
       await appendWindow(workspacePath, "feishu:oc_roster_limit_phase2", {
@@ -130,7 +170,9 @@ describe("Phase 2: Feishu recent message roster context", () => {
 
   it("应把 summary 中的最近生成产物路径提炼成独立索引", async () => {
     const { saveSummary } = await import("../src/summary.js");
-    const { assembleAgentContext } = await import("../src/runtime/context-policy.js");
+    const { assembleAgentContext } = await import(
+      `../src/runtime/context-policy.js?case=feishu-phase2-artifact-${Date.now()}`
+    );
 
     await saveSummary(workspacePath, "feishu:oc_artifact_phase2", {
       goal: [],
@@ -164,16 +206,63 @@ describe("Phase 2: Feishu recent message roster context", () => {
     expect(result.prompt).toContain("[最近生成产物索引]");
   });
 
-  it("handlers 写回窗口时应保留当前消息元数据", () => {
-    const handlersCode = fs.readFileSync(
-      path.join(process.cwd(), "src/handlers.ts"),
-      "utf-8"
-    );
+  it("RuntimeRouterHandler 写回窗口时应保留当前消息元数据", async () => {
+    const { saveWorkspaceConfig } = await import("../src/config/workspace.js");
+    const { RuntimeRouterHandler } = await import("../src/handlers.js");
+    const { loadWindow } = await import("../src/session-window.js");
 
-    expect(handlersCode).toContain("messageId: context.originalMessage.id");
-    expect(handlersCode).toContain("senderId: context.originalMessage.sender || context.originalMessage.handle");
-    expect(handlersCode).toContain("senderName: context.originalMessage.senderName");
-    expect(handlersCode).toContain("messageType: context.originalMessage.messageType");
-    expect(handlersCode).toContain("isGroup: context.originalMessage.isGroup");
+    await saveWorkspaceConfig(workspacePath, { "tooling.mode": "explicit" });
+
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: { role: "assistant", content: "处理完成" },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        },
+      )) as typeof fetch;
+
+    const handler = new RuntimeRouterHandler();
+    const result = await handler.handle("请记录消息元数据。", {
+      botType: "agent-backend",
+      chatId: "feishu:oc_phase2_handler",
+      groupName: "feishu-phase2",
+      projectDir: workspacePath,
+      originalMessage: {
+        id: "om_phase2_1",
+        chatId: "feishu:oc_phase2_handler",
+        text: "请记录消息元数据。",
+        isFromMe: false,
+        sender: "ou_sender_1",
+        senderName: "老哥",
+        handle: "ou_sender_1",
+        isGroup: true,
+        messageType: "text",
+      },
+    });
+
+    expect(result.success).toBe(true);
+    const windowMessages = await loadWindow(workspacePath, "feishu:oc_phase2_handler");
+    expect(windowMessages).toHaveLength(2);
+    expect(windowMessages[0]).toMatchObject({
+      role: "user",
+      content: "请记录消息元数据。",
+      messageId: "om_phase2_1",
+      senderId: "ou_sender_1",
+      senderName: "老哥",
+      messageType: "text",
+      isGroup: true,
+    });
+    expect(windowMessages[1]).toMatchObject({
+      role: "assistant",
+      content: "处理完成",
+    });
   });
 });
