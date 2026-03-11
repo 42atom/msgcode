@@ -8,7 +8,6 @@
  */
 
 import {
-    PI_ON_TOOLS,
     resolveAgentBackendRuntime,
     type AgentBackendId,
 } from "./agent-backend/index.js";
@@ -40,6 +39,9 @@ export {
 
 export {
     getToolsForLlm as getToolsForAgent,
+} from "./agent-backend/index.js";
+
+export {
     parseToolCallBestEffortFromText,
 } from "./lmstudio.js";
 
@@ -65,9 +67,6 @@ export function resolveAgentBackendConfig(): AgentBackendConfig {
         timeoutMs: runtime.timeoutMs,
     };
 }
-
-// 工具集合（中性命名）
-export const AGENT_TOOLS = PI_ON_TOOLS;
 
 /**
  * @deprecated 请使用 resolveAgentBackendConfig

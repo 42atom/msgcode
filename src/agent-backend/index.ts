@@ -36,8 +36,6 @@ export type {
     AgentRoutedChatResult,
 } from "./types.js";
 
-export { PI_ON_TOOLS } from "./types.js";
-
 // ============================================
 // 配置模块导出
 // ============================================

@@ -10,6 +10,7 @@
  */
 
 import type { LocalAgentBackendId } from "../local-backend/registry.js";
+import type { ToolName } from "../tools/types.js";
 
 // ============================================
 // 后端运行时配置类型
@@ -60,28 +61,13 @@ export interface AgentChatOptions {
 // ============================================
 
 /**
- * PI ON 模式下的工具定义
- */
-export const PI_ON_TOOLS = [
-    { name: "bash", description: "执行 shell 命令" },
-    { name: "read_file", description: "读取文件内容" },
-    { name: "write_file", description: "写入文件" },
-    { name: "edit_file", description: "编辑文件" },
-    { name: "list_directory", description: "列出目录内容" },
-    { name: "search_file", description: "搜索文件" },
-    { name: "search_content", description: "搜索内容" },
-    { name: "todo_read", description: "读取待办" },
-    { name: "todo_write", description: "写入待办" },
-] as const;
-
-/**
  * 工具定义类型（通用格式）
  *
- * P5.7-R8c: 改为通用格式，不再绑定 PI_ON_TOOLS
+ * P5.7-R8c: 改为通用格式，不再绑定历史硬编码工具白名单
  * LLM 工具暴露层从 manifest 单一真相源派生
  */
 export type AidocsToolDef = {
-    name: string;
+    name: ToolName;
     description?: string;
 };
 

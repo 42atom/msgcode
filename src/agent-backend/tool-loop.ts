@@ -23,7 +23,6 @@ import {
     type AgentToolLoopResult,
     type AgentBackendRuntime,
     type ActionJournalEntry,
-    type AidocsToolDef,
     type ParsedToolCall,
     type VerifyJournalEntry,
     type VerifyResult,
@@ -63,10 +62,8 @@ export type {
     AgentToolLoopOptions,
     AgentToolLoopResult,
     ActionJournalEntry,
-    AidocsToolDef,
     ParsedToolCall,
 } from "./types.js";
-export { PI_ON_TOOLS } from "./types.js";
 
 // ============================================
 // Verify Phase 函数（P5.7-R12-T3）
@@ -1081,7 +1078,7 @@ function buildToolFailureVerifyResult(toolName: string, toolResult: ToolRunResul
  * 2. 调用 resolveLlmToolExposure() 解析暴露结果
  * 3. 返回 exposedTools（ToolName[]）
  *
- * 不再使用 PI_ON_TOOLS 硬编码白名单
+ * 不再使用历史硬编码白名单
  */
 export async function getToolsForLlm(workspacePath?: string): Promise<ToolName[]> {
     // 无 workspace 时，也必须走当前默认配置真相源，避免和真实工具面漂移。

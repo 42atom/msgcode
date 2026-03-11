@@ -374,18 +374,14 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
   });
 
   // ============================================
-  // 5. 验证不再依赖 PI_ON_TOOLS 作为暴露清单
+  // 5. 验证旧旁路已删除，兼容导出复用主实现
   // ============================================
-  it("PI_ON_TOOLS 不应包含 browser（历史遗留）", async () => {
-    const { PI_ON_TOOLS } = await import("../src/agent-backend/types.js");
-
-    const toolNames = PI_ON_TOOLS.map((t: any) => t.name || t);
-    // 历史遗留：PI_ON_TOOLS 确实不包含 browser
-    // 这个测试只是记录现状，核心验证在上面
-    expect(toolNames).not.toContain("browser");
+  it("agent-backend/types.ts 不应再导出 PI_ON_TOOLS", async () => {
+    const typesModule = await import("../src/agent-backend/types.js");
+    expect((typesModule as Record<string, unknown>).PI_ON_TOOLS).toBeUndefined();
   });
 
-  it("getToolsForLlm() 不应直接返回 PI_ON_TOOLS", async () => {
+  it("lmstudio.getToolsForLlm() 应直接复用 tool-loop 主实现", async () => {
     const workspacePath = await createTempWorkspace();
     const configPath = join(workspacePath, ".msgcode", "config.json");
 
@@ -400,16 +396,11 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     );
 
     const toolLoopModule = await import("../src/agent-backend/tool-loop.js");
-    const { PI_ON_TOOLS } = await import("../src/agent-backend/types.js");
+    const compatModule = await import("../src/lmstudio.js");
 
-    const tools = await toolLoopModule.getToolsForLlm(workspacePath);
-    // getToolsForLlm() 现在返回 ToolName[]
-    const toolNames = tools as string[];
+    expect(compatModule.getToolsForLlm).toBe(toolLoopModule.getToolsForLlm);
 
-    // 如果 getToolsForLlm() 直接返回 PI_ON_TOOLS，那么不会是“browser + skill 基线”。
-    // 当前真实口径：tooling.allow 决定业务工具，再补 read_file/bash 作为 skill 发现基线。
-    expect(toolNames).toEqual(["read_file", "bash", "browser"]);
-    const piToolNames = PI_ON_TOOLS.map((t: any) => t.name || t);
-    expect(toolNames).not.toEqual(piToolNames);
+    const tools = await compatModule.getToolsForLlm(workspacePath);
+    expect(tools).toEqual(["read_file", "bash", "browser"]);
   });
 });

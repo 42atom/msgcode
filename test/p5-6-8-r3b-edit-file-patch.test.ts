@@ -173,25 +173,17 @@ describe("P5.6.8-R3b: edit_file 补丁语义回归锁", () => {
     });
 
     describe("工具暴露验证", () => {
-        it("agent-backend/types.ts PI_ON_TOOLS 应包含核心工具", () => {
+        it("agent-backend/types.ts 不应再导出历史硬编码工具白名单", () => {
             const code = fs.readFileSync(
                 path.join(process.cwd(), "src/agent-backend/types.ts"),
                 "utf-8"
             );
 
-            // 验证核心四工具存在
-            expect(code).toContain('name: "read_file"');
-            expect(code).toContain('name: "write_file"');
-            expect(code).toContain('name: "edit_file"');
-            expect(code).toContain('name: "bash"');
-
-            // 验证旧工具名已移除（与 list_directory 区分）
-            expect(code).not.toContain('name: "read_text_file"');
-            expect(code).not.toContain('name: "append_text_file"');
+            expect(code).not.toContain("export const PI_ON_TOOLS");
             expect(code).not.toContain('name: "run_skill"');
         });
 
-        it("getToolsForLlm pi.on 默认只返回 read_file 与 bash", async () => {
+        it("getToolsForLlm 在未显式 allow 时应只保留 read_file + bash 基线", async () => {
             const { getToolsForLlm } = await import("../src/lmstudio.js");
 
             // 创建临时工作区
@@ -206,20 +198,18 @@ describe("P5.6.8-R3b: edit_file 补丁语义回归锁", () => {
 
             try {
                 const tools = await getToolsForLlm(tmpDir);
-                // 默认文件主链只暴露 read_file + bash
-                expect(tools.length).toBeGreaterThan(0);
-                const toolNames = tools.map(t => t.name);
-
+                const toolNames = tools as string[];
                 expect(toolNames).toContain("read_file");
                 expect(toolNames).toContain("bash");
                 expect(toolNames).not.toContain("write_file");
                 expect(toolNames).not.toContain("edit_file");
+                expect(toolNames).not.toContain("vision");
             } finally {
                 fs.rmSync(tmpDir, { recursive: true, force: true });
             }
         });
 
-        it("getToolsForLlm pi.off 返回空数组", async () => {
+        it("getToolsForLlm 不应再被 pi.enabled=false 清空", async () => {
             const { getToolsForLlm } = await import("../src/lmstudio.js");
 
             // 创建临时工作区
@@ -234,7 +224,9 @@ describe("P5.6.8-R3b: edit_file 补丁语义回归锁", () => {
 
             try {
                 const tools = await getToolsForLlm(tmpDir);
-                expect(tools).toHaveLength(0);
+                const toolNames = tools as string[];
+                expect(toolNames).toContain("read_file");
+                expect(toolNames).toContain("bash");
             } finally {
                 fs.rmSync(tmpDir, { recursive: true, force: true });
             }

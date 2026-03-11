@@ -10,6 +10,7 @@ import {
     runAgentChat,
     runAgentToolLoop,
     runAgentRoutedChat,
+    getToolsForLlm as getToolsForLlmFromBackend,
     sanitizeLmStudioOutput as sanitizeLmStudioOutputFromBackend,
     type AgentBackendRuntime,
     type AgentChatOptions as AgentChatOptionsFromBackend,
@@ -21,7 +22,6 @@ import {
     type ActionJournalEntry as ActionJournalEntryFromBackend,
     type ParsedToolCall as ParsedToolCallFromBackend,
 } from "./agent-backend/index.js";
-import { filterDefaultLlmTools } from "./tools/manifest.js";
 
 export const LMSTUDIO_DEFAULT_CHAT_MODEL = "huihui-glm-4.7-flash-abliterated-mlx";
 
@@ -79,7 +79,8 @@ export { sanitizeLmStudioOutput } from "./agent-backend/index.js";
 // 兼容别名（向后兼容）
 // ============================================
 
-export const getToolsForAgent = getToolsForLlm;
+export const getToolsForLlm = getToolsForLlmFromBackend;
+export const getToolsForAgent = getToolsForLlmFromBackend;
 
 // 工具名称白名单（用于 parseToolCallBestEffortFromText）
 const DEFAULT_ALLOWED_TOOL_NAMES = new Set(["read_file", "bash"]);
@@ -197,47 +198,4 @@ export function parseToolCallBestEffortFromText(params: {
         { const parsed = parseParenStyleCall(raw, allowed); if (parsed) return parsed; }
         return null;
     } catch { return null; }
-}
-
-export async function getToolsForLlm(workspacePath?: string): Promise<readonly AidocsToolDefFromBackend[]> {
-    // 无 workspace 时也走默认配置真相源，避免和主执行核漂移。
-    if (!workspacePath) {
-        const [{ filterDefaultLlmTools, resolveLlmToolExposure }, { DEFAULT_WORKSPACE_CONFIG }] = await Promise.all([
-            import("./tools/manifest.js"),
-            import("./config/workspace.js"),
-        ]);
-        const configuredTools = Array.isArray(DEFAULT_WORKSPACE_CONFIG["tooling.allow"])
-            ? (DEFAULT_WORKSPACE_CONFIG["tooling.allow"] as string[])
-            : [];
-        const allowedTools = filterDefaultLlmTools(Array.from(new Set(["read_file", "bash", ...configuredTools])) as any);
-        const exposure = resolveLlmToolExposure(allowedTools as any);
-        return exposure.exposedTools.map((name) => ({
-            name,
-            description: "", // 描述在 toOpenAiToolSchemas 中填充
-        }));
-    }
-    try {
-        const { loadWorkspaceConfig } = await import("./config/workspace.js");
-        const cfg = await loadWorkspaceConfig(workspacePath);
-        // P5.7-R8c: 从单一真相源派生工具列表
-        // 导入 manifest 模块
-        const { resolveLlmToolExposure } = await import("./tools/manifest.js");
-
-        // 单一真相源：LLM 工具暴露只看 tooling.allow，再补 skill 发现所需的最小基线。
-        const configuredTools = Array.isArray(cfg["tooling.allow"])
-            ? (cfg["tooling.allow"] as string[])
-            : [];
-        const allowedTools = filterDefaultLlmTools(Array.from(new Set(["read_file", "bash", ...configuredTools])) as any);
-
-        // 解析 LLM 工具暴露结果
-        const exposure = resolveLlmToolExposure(allowedTools);
-
-        // 转换为 AidocsToolDef 格式
-        const toolDefs: AidocsToolDefFromBackend[] = exposure.exposedTools.map((name) => ({
-            name,
-            description: "", // 描述在 toOpenAiToolSchemas 中填充
-        }));
-
-        return toolDefs;
-    } catch { return []; }
 }

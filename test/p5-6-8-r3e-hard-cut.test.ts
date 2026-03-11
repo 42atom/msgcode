@@ -103,16 +103,14 @@ describe("P5.6.8-R3e: 硬切割回归锁", () => {
     });
 
     describe("run_skill 不暴露验证", () => {
-        it("agent-backend/types.ts PI_ON_TOOLS 不应包含 run_skill", () => {
+        it("agent-backend/types.ts 不应再保留历史硬编码工具白名单", () => {
             const code = fs.readFileSync(
                 path.join(process.cwd(), "src/agent-backend/types.ts"),
                 "utf-8"
             );
 
-            // PI_ON_TOOLS 不应包含 run_skill
-            const piOnToolsMatch = code.match(/const PI_ON_TOOLS[\s\S]{0,2000}/);
-            expect(piOnToolsMatch).not.toBeNull();
-            expect(piOnToolsMatch![0]).not.toContain('name: "run_skill"');
+            expect(code).not.toContain("export const PI_ON_TOOLS");
+            expect(code).not.toContain('name: "run_skill"');
         });
 
         it("src/routes/ 不应包含 run_skill 工具调用", () => {
@@ -143,17 +141,16 @@ describe("P5.6.8-R3e: 硬切割回归锁", () => {
     });
 
     describe("PI 四工具验证", () => {
-        it("agent-backend/types.ts PI_ON_TOOLS 必须仅包含四工具", () => {
+        it("TOOL_MANIFESTS 必须注册四基础工具", () => {
             const code = fs.readFileSync(
-                path.join(process.cwd(), "src/agent-backend/types.ts"),
+                path.join(process.cwd(), "src/tools/manifest.ts"),
                 "utf-8"
             );
 
-            // 必须包含四工具
-            expect(code).toContain('name: "read_file"');
-            expect(code).toContain('name: "write_file"');
-            expect(code).toContain('name: "edit_file"');
-            expect(code).toContain('name: "bash"');
+            expect(code).toContain("read_file:");
+            expect(code).toContain("write_file:");
+            expect(code).toContain("edit_file:");
+            expect(code).toContain("bash:");
         });
 
         it("Tool Bus 必须实现四工具", () => {

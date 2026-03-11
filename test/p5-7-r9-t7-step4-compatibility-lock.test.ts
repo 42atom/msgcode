@@ -60,6 +60,11 @@ describe("P5.7-R9-T7 Step 4: agent-backend.ts 核心导出", () => {
         expect(typeof module.getToolsForAgent).toBe("function");
     });
 
+    it("不应再导出 AGENT_TOOLS 历史工具表", async () => {
+        const module = await import("../src/agent-backend.js");
+        expect((module as Record<string, unknown>).AGENT_TOOLS).toBeUndefined();
+    });
+
     it("应导出 parseToolCallBestEffortFromText 函数", async () => {
         const module = await import("../src/agent-backend.js");
         expect(module.parseToolCallBestEffortFromText).toBeDefined();
@@ -218,11 +223,21 @@ describe("P5.7-R9-T7 Step 4: agent-backend 目录模块导出", () => {
         expect(normalizeAgentBackendId("minimax")).toBe("minimax");
     });
 
-    it("应导出 PI_ON_TOOLS 常量", async () => {
+    it("不应再导出 PI_ON_TOOLS 历史白名单", async () => {
         const module = await import("../src/agent-backend/index.js");
-        expect(module.PI_ON_TOOLS).toBeDefined();
-        expect(Array.isArray(module.PI_ON_TOOLS)).toBe(true);
-        expect(module.PI_ON_TOOLS.length).toBeGreaterThan(0);
+        expect((module as Record<string, unknown>).PI_ON_TOOLS).toBeUndefined();
+    });
+
+    it("getToolsForAgent 应直接复用执行核 getToolsForLlm", async () => {
+        const facade = await import("../src/agent-backend.js");
+        const core = await import("../src/agent-backend/index.js");
+        expect(facade.getToolsForAgent).toBe(core.getToolsForLlm);
+    });
+
+    it("lmstudio 兼容层的 getToolsForLlm 应直接复用执行核实现", async () => {
+        const compat = await import("../src/lmstudio.js");
+        const core = await import("../src/agent-backend/index.js");
+        expect(compat.getToolsForLlm).toBe(core.getToolsForLlm);
     });
 
     it("runAgentToolLoop 应在 omlx 本地后端下自动发现模型，并只使用当前 backend 的 API key", async () => {

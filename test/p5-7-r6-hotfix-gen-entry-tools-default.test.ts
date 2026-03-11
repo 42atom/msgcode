@@ -26,7 +26,7 @@ describe("P5.7-R6 HOTFIX: gen 入口 + tools 缺省值", () => {
 
     try {
       const tools = await getToolsForLlm(ws);
-      const toolNames = tools.map(t => t.name);
+      const toolNames = tools as string[];
 
       // P5.7-R15 + R16: 没有 pi.enabled 配置时返回完整工具列表（skill 场景）
       expect(toolNames.length).toBeGreaterThan(0);
@@ -50,7 +50,7 @@ describe("P5.7-R6 HOTFIX: gen 入口 + tools 缺省值", () => {
 
     try {
       const tools = await getToolsForLlm(ws);
-      const toolNames = tools.map(t => t.name);
+      const toolNames = tools as string[];
       expect(toolNames).toContain("read_file");
       expect(toolNames).toContain("bash");
       expect(toolNames).toContain("feishu_send_file");
@@ -63,7 +63,7 @@ describe("P5.7-R6 HOTFIX: gen 入口 + tools 缺省值", () => {
     const { getToolsForLlm } = await import("../src/lmstudio.js");
 
     const tools = await getToolsForLlm(undefined);
-    const toolNames = tools.map((t) => t.name);
+    const toolNames = tools as string[];
 
     expect(toolNames).toContain("read_file");
     expect(toolNames).toContain("bash");
