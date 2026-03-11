@@ -102,5 +102,9 @@ Issue: 0093
   - `package.json` 的 `dev/start` 已从 `src/index.ts` 收口到 `src/cli.ts start debug`
   - 公开 npm 脚本不再默认穿过旧的 imsg-only 入口
   - 黑盒测试已锁定公开脚本必须命中当前 Feishu 主链
+- 已完成 Phase A 第五刀：
+  - `src/index.ts` 已收口为 `startBot()` 薄壳
+  - 仓库内不再保留第二套公开可运行的 imsg-only 主入口
+  - 黑盒测试已锁定直接运行 `src/index.ts` 必须命中当前主链
 
 （章节级）评审意见：[留空,用户将给出反馈]

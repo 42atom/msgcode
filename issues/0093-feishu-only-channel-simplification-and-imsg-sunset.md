@@ -80,6 +80,10 @@ links:
     - `package.json` 的 `npm run dev` / `npm start` 不再指向 `src/index.ts`
     - 对外脚本现统一落到 `tsx src/cli.ts start debug`
     - 黑盒测试已锁定：公开脚本必须命中当前 Feishu 主链，不允许再落回 `index.ts` 的 imsg-only 壳
+  - 直接入口已收口为单一主链：
+    - `src/index.ts` 不再维护第二套 imsg-only runtime
+    - 直接运行 `src/index.ts` 时已统一转发到当前 `startBot()` 主链
+    - 黑盒测试已锁定：`src/index.ts` 不得再返回旧的“仅支持 imsg”错误
   - 用户面文案已开始同步：
     - `src/cli.ts` 默认描述改为中性 runtime 口径
     - `src/tmux/remote_hint.ts` 默认提示词不再写死 iMessage
