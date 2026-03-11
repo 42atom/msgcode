@@ -18,21 +18,18 @@
 先做一轮 reviewer 式清理：
 
 1. 审计 legacy-active skills 的真实使用面
-2. 分类它们的去向
+2. 把确认仍在主线使用的 skill 正式升格进 repo `runtime`
 3. 收口生成类 skill 输出目录到 `AIDOCS/`
 
-不立即平台化 skill 管理，不恢复 `managed` 层。
+不立即平台化 skill 管理，不恢复 `managed` 层，也不继续让关键 skill 靠用户目录残留活着。
 
 ## Plan
 
 - 审计 `~/.config/msgcode/skills/` 与 repo `runtime/optional` 的差集
 - 结合日志与运行时发现路径，判断哪些仍在活跃使用
-- 审计生成类 skill 的 `SKILL.md` / 脚本输出目录合同
-- 对明显误导模型的旧文案先做薄修
-- 最后决定：
-  - 哪些升格进 repo
-  - 哪些继续本地保留
-  - 哪些正式退役
+- 将 `memory/file/thread/todo/media/gen/banana-pro-image-gen` 升格进 repo `src/skills/runtime/`
+- 对 `banana-pro-image-gen` 的输出目录合同统一到 `AIDOCS/banana-images`
+- 更新同步锁和技能目录说明，确保这些能力不再依赖本地残留
 
 ## Risks
 

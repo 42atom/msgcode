@@ -59,7 +59,7 @@ src/skills/
 │   └── reactions/
 │       └── SKILL.md
 └── runtime/                # 仓库托管的 runtime skill 真相源
-    ├── index.json          # 托管 skill 索引（vision-index, local-vision-lmstudio, scheduler, plan-files, character-identity, feishu-send-file, patchright-browser）
+    ├── index.json          # 托管 skill 索引（vision-index, local-vision-lmstudio, scheduler, plan-files, character-identity, feishu-send-file, memory, file, thread, todo, media, gen, banana-pro-image-gen, patchright-browser）
     ├── scheduler/
     │   ├── SKILL.md
     │   └── main.sh
@@ -67,6 +67,30 @@ src/skills/
     │   └── SKILL.md
     ├── character-identity/
     │   └── SKILL.md
+    ├── memory/
+    │   ├── SKILL.md
+    │   └── main.sh
+    ├── file/
+    │   ├── SKILL.md
+    │   └── main.sh
+    ├── thread/
+    │   ├── SKILL.md
+    │   └── main.sh
+    ├── todo/
+    │   ├── SKILL.md
+    │   └── main.sh
+    ├── media/
+    │   ├── SKILL.md
+    │   └── main.sh
+    ├── gen/
+    │   ├── SKILL.md
+    │   └── main.sh
+    ├── banana-pro-image-gen/
+    │   ├── SKILL.md
+    │   ├── main.sh
+    │   ├── references/
+    │   ├── scripts/
+    │   └── templates/
     ├── vision-index/
     │   ├── SKILL.md
     │   └── main.sh

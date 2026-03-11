@@ -39,6 +39,48 @@
       "description": "把当前 workspace 里的文件回传到飞书会话。优先直接调用 feishu_send_file，并让工具从 .msgcode/config.json 读取 runtime.current_chat_id。"
     },
     {
+      "id": "memory",
+      "name": "Memory",
+      "entry": "~/.config/msgcode/skills/memory/SKILL.md",
+      "description": "工作区记忆能力说明书。优先通过 memory wrapper 调用 msgcode memory CLI，做记忆写入、检索、统计与状态查询。"
+    },
+    {
+      "id": "file",
+      "name": "File",
+      "entry": "~/.config/msgcode/skills/file/SKILL.md",
+      "description": "文件能力说明书。优先通过 file wrapper 调用 msgcode file CLI，做查找、读取、写入、复制和发送文件。"
+    },
+    {
+      "id": "thread",
+      "name": "Thread",
+      "entry": "~/.config/msgcode/skills/thread/SKILL.md",
+      "description": "线程能力说明书。优先通过 thread wrapper 调用 msgcode thread CLI，查看线程、读取消息和切换 active thread。"
+    },
+    {
+      "id": "todo",
+      "name": "Todo",
+      "entry": "~/.config/msgcode/skills/todo/SKILL.md",
+      "description": "待办能力说明书。优先通过 todo wrapper 调用 msgcode todo CLI，在当前 workspace 记录、查看和完成待办。"
+    },
+    {
+      "id": "media",
+      "name": "Media",
+      "entry": "~/.config/msgcode/skills/media/SKILL.md",
+      "description": "媒体能力说明书。优先通过 media wrapper 调用 msgcode media CLI 获取当前屏幕截图，并默认把产物落到 AIDOCS。"
+    },
+    {
+      "id": "gen",
+      "name": "Gen",
+      "entry": "~/.config/msgcode/skills/gen/SKILL.md",
+      "description": "统一生成能力说明书。优先通过 gen wrapper 调用 msgcode gen CLI，执行图片、自拍、TTS 和音乐生成。"
+    },
+    {
+      "id": "banana-pro-image-gen",
+      "name": "Banana Pro Image Gen",
+      "entry": "~/.config/msgcode/skills/banana-pro-image-gen/SKILL.md",
+      "description": "Banana Pro 图像生成/编辑/描述能力说明书。优先读取本 skill，再通过相对路径 wrapper 调本地脚本；生成产物统一落到 AIDOCS/banana-images。"
+    },
+    {
       "id": "patchright-browser",
       "name": "Patchright Browser",
       "entry": "~/.config/msgcode/skills/patchright-browser/main.sh",

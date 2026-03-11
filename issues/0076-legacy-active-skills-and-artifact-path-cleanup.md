@@ -1,7 +1,7 @@
 ---
 id: 0076
 title: 收口 legacy-active skills 与生成产物路径双真相源
-status: open
+status: done
 owner: agent
 labels: [refactor, docs, review]
 risk: medium
@@ -37,11 +37,11 @@ links:
 
 ## Plan
 
-- [ ] 审计当前 runtime 中仍活跃的 legacy-active skills 及其真实调用情况
-- [ ] 分类：应升格进 repo / 应继续本地保留 / 应退役
-- [ ] 审计生成类 skill 的输出目录合同，优先统一到 `AIDOCS/`
-- [ ] 清理明显误导模型的旧文案与路径提示
-- [ ] 形成最终分层与迁移建议，必要时拆后续 issue
+- [x] 审计当前 runtime 中仍活跃的 legacy-active skills 及其真实调用情况
+- [x] 分类：应升格进 repo / 应继续本地保留 / 应退役
+- [x] 审计生成类 skill 的输出目录合同，优先统一到 `AIDOCS/`
+- [x] 清理明显误导模型的旧文案与路径提示
+- [x] 形成最终分层与迁移建议，必要时拆后续 issue
 
 ## Acceptance Criteria
 
@@ -52,14 +52,10 @@ links:
 ## Notes
 
 - 这是 reviewer 自派清理单，来源于多轮真实排障暴露的残留，而不是新功能需求。
-- 初始嫌疑点：
-  - `memory`
-  - `file`
-  - `thread`
-  - `todo`
-  - `media`
-  - `gen`
-  - `banana-pro-image-gen`
+- 处理结论：
+  - `memory/file/thread/todo/media/gen/banana-pro-image-gen` 已正式升格进 repo `src/skills/runtime/`
+  - `banana-pro-image-gen` 的 repo 真相源明确统一为 `AIDOCS/banana-images`
+  - `start/restart` 因为走 `syncRuntimeSkills({ overwrite: true })`，后续会以 repo 真相源覆盖运行时目录
 
 ## Links
 

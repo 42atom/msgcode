@@ -3,6 +3,8 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-11
+  - skills/runtime: 把仍在主线使用的 `memory/file/thread/todo/media/gen/banana-pro-image-gen` 正式升格进 repo `runtime` 真相源，不再依赖用户目录残留；同时将 Banana Pro 的输出目录合同统一到 `AIDOCS/banana-images`，减少生成产物路径漂移 (Issue: 0076, Plan: docs/design/plan-260311-legacy-active-skills-and-artifact-path-cleanup.md) [risk: medium] [rollback: 回退 `src/skills/runtime/index.json`、新增 runtime skill 目录、`src/skills/README.md` 与 `test/p5-7-r13-runtime-skill-sync.test.ts`]
+- 2026-03-11
   - feishu/runtime: 最近消息查询与上下文索引统一扩到 40 条，compact 保留最近消息提升到 16 条；同时新增 `[最近生成产物索引]`，并在系统提示词里明确 AI 生成产物默认优先从当前 workspace 的 `AIDOCS/` 查找，减少“最近20条限制”和生成图片路径失忆导致的误判 (Issue: 0073, Plan: docs/design/plan-260311-feishu-message-context-and-actions.md) [risk: low] [rollback: 回退 `src/runtime/context-policy.ts`、`src/tools/bus.ts`、`src/tools/feishu-list-recent-messages.ts`、`prompts/agents-prompt.md` 与相关测试]
 - 2026-03-11
   - runtime/tools: 无 workspace 的工具暴露改为读取默认 workspace 配置真相源，不再继续走旧硬编码名单；同时将 runtime skill 同步实现里的 `managed` 术语收口为 `runtime`，避免和当前 `runtime / optional / legacy-active / retired` 现实口径继续漂移 (Issue: 0074, Plan: docs/design/plan-260311-tool-exposure-and-skill-runtime-terminology-cleanup.md) [risk: low] [rollback: 回退 `src/agent-backend/tool-loop.ts`、`src/lmstudio.ts`、`src/skills/runtime-sync.ts`、相关调用方与测试]
