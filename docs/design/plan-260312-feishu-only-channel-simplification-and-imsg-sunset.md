@@ -94,5 +94,9 @@ Issue: 0093
   - `config.ts` 不再因缺飞书凭据在 import/load 阶段直接报错
   - `preflight` / `start` 会显式暴露 `FEISHU_APP_ID / FEISHU_APP_SECRET` 缺失
   - transport-aware startup deps 已支持按 `feishu-only / imsg-only / hybrid` 动态提升依赖
+- 已完成 Phase A 第三刀：
+  - `msgcode init` 已改为 Feishu-first 上手路径
+  - 不再检查 `chat.db` / 不再引导 Full Disk Access / 不再提示 iMessage 建群
+  - `.env.example` 已把飞书凭据前置为默认入口，`IMSG_PATH` 退回注释态
 
 （章节级）评审意见：[留空,用户将给出反馈]

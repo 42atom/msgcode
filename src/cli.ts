@@ -12,8 +12,8 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { mkdir, copyFile } from "node:fs/promises";
-import { existsSync, accessSync, constants } from "node:fs";
-import { exec, spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { spawn } from "node:child_process";
 import dotenv from "dotenv";
 import { getVersion, getVersionInfo, type VersionInfo } from "./version.js";
 import { logger } from "./logger/index.js";
@@ -624,24 +624,16 @@ async function initBot(options: { overwriteSkills?: boolean } = {}): Promise<voi
     console.log(`已存在: ${envFile}`);
   }
 
-  const chatDbPath = path.join(os.homedir(), "Library/Messages/chat.db");
-  try {
-    accessSync(chatDbPath, constants.R_OK);
-    console.log(`Messages 数据库可读: ${chatDbPath}`);
-  } catch {
-    console.log(`Messages 数据库不可读: ${chatDbPath}`);
-    console.log("请给运行 msgcode 的终端 + imsg 二进制授予 Full Disk Access。");
-    exec('open "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"');
-  }
-
   await copySkillsToUserConfig(options.overwriteSkills === true);
 
   console.log("\n最短上手：");
-  console.log("1) 编辑 ~/.config/msgcode/.env：设置白名单 + IMSG_PATH");
-  console.log("2) 启动：msgcode start");
-  console.log("3) iMessage 手动建群，把 msgcode 账号拉进群，在群里发送：");
+  console.log("1) 编辑 ~/.config/msgcode/.env：设置白名单 + FEISHU_APP_ID + FEISHU_APP_SECRET");
+  console.log("2) 先跑：msgcode preflight");
+  console.log("3) 再启动：msgcode start");
+  console.log("4) 把机器人拉进飞书群，在群里发送：");
   console.log("   /bind acme/ops");
   console.log("   /start");
+  console.log("5) 如需 legacy iMessage，再显式配置 MSGCODE_TRANSPORTS=imsg 或 imsg,feishu");
 }
 
 /**

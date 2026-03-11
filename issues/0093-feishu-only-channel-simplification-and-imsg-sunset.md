@@ -72,6 +72,10 @@ links:
     - 不再因缺少飞书凭据在 `config.ts` import/load 阶段直接炸整仓
     - 缺失 `FEISHU_APP_ID / FEISHU_APP_SECRET` 改为在 `preflight` / `start` 边界显式报错
     - `loadManifest()` 已按 transport 模式动态提升 `feishu_app_id` / `feishu_app_secret` 或 `imsg` / `messages_db`
+  - 默认上手入口已收口为 Feishu-first：
+    - `msgcode init` 不再检查 `chat.db`、不再引导 Full Disk Access、也不再提示 iMessage 建群
+    - `.env.example` 已显式暴露 `FEISHU_APP_ID` / `FEISHU_APP_SECRET`
+    - `IMSG_PATH` 已退回注释态，只保留 legacy 显式启用时的说明
   - 用户面文案已开始同步：
     - `src/cli.ts` 默认描述改为中性 runtime 口径
     - `src/tmux/remote_hint.ts` 默认提示词不再写死 iMessage
