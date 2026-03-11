@@ -138,12 +138,6 @@ export interface WorkspaceConfig {
    */
   "runner.default"?: "agent-backend" | "lmstudio" | "minimax" | "deepseek" | "llama" | "claude" | "openai" | "codex" | "claude-code";
 
-  // ==================== PI 配置 ====================
-  /**
-   * PI 开关（默认 false）
-   */
-  "pi.enabled"?: boolean;
-
   // ==================== Tool Bus 配置 ====================
   /**
    * 工具执行模式：explicit（默认稳态）、autonomous（可选）、tool-calls（预留）
@@ -255,7 +249,6 @@ export const DEFAULT_WORKSPACE_CONFIG: Required<WorkspaceConfig> = {
   "agent.provider": "agent-backend", // P5.7-R9-T6: 默认 agent-backend（中性语义）
   "tmux.client": "codex", // P5.6.14-R1: 默认 codex client
   "runner.default": "agent-backend", // P5.7-R9-T6: 兼容字段，默认 agent-backend
-  "pi.enabled": true, // 测试期默认开启 PI
   "tooling.mode": "autonomous", // P5.5: 测试期统一 autonomous（LLM 自主决策 tool_calls）
   "tooling.allow": ["tts", "asr", "vision", "bash", "browser", "desktop", "read_file", "feishu_list_members", "feishu_list_recent_messages", "feishu_reply_message", "feishu_react_message", "feishu_send_file"], // 默认文件主链收口为 read_file + bash
   "tooling.require_confirm": [], // 默认不要求确认

@@ -56,7 +56,6 @@ async function createToolEnabledWorkspace(root: string): Promise<string> {
     join(workspacePath, ".msgcode", "config.json"),
         JSON.stringify(
       {
-        "pi.enabled": true,
         "tooling.mode": "autonomous",
         "tooling.allow": ["bash", "read_file"],
         "tooling.require_confirm": [],
@@ -76,7 +75,6 @@ async function createBrowserToolEnabledWorkspace(root: string): Promise<string> 
     join(workspacePath, ".msgcode", "config.json"),
     JSON.stringify(
       {
-        "pi.enabled": true,
         "tooling.mode": "autonomous",
         "tooling.allow": ["browser", "bash", "read_file"],
         "tooling.require_confirm": [],

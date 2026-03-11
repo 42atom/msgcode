@@ -18,7 +18,6 @@ async function createToolWorkspace(): Promise<string> {
     await writeFile(
         join(workspacePath, ".msgcode", "config.json"),
         JSON.stringify({
-            "pi.enabled": true,
             "tooling.mode": "autonomous",
             "tooling.allow": ["bash", "read_file"],
             "tooling.require_confirm": [],
@@ -67,6 +66,51 @@ describe("P5.7-R21: routed-chat 松绑 phase3", () => {
             expect(result.route).toBe("no-tool");
             expect(result.decisionSource).toBe("model");
             expect(result.actionJournal).toEqual([]);
+        } finally {
+            globalThis.fetch = originalFetch;
+            await rm(workspacePath, { recursive: true, force: true });
+        }
+    });
+
+    it("tooling.mode=explicit 时应直接走 no-tool 主链，不向模型发送 tools[]", async () => {
+        const originalFetch = globalThis.fetch;
+        const workspacePath = await mkdtemp(join(tmpdir(), "msgcode-r21-routed-chat-explicit-"));
+        await mkdir(join(workspacePath, ".msgcode"), { recursive: true });
+        await writeFile(
+            join(workspacePath, ".msgcode", "config.json"),
+            JSON.stringify({
+                "tooling.mode": "explicit",
+                "tooling.allow": ["bash", "read_file"],
+                "tooling.require_confirm": [],
+            }, null, 2),
+            "utf-8"
+        );
+
+        let capturedBody: Record<string, unknown> = {};
+
+        globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+            capturedBody = typeof init?.body === "string" ? JSON.parse(init.body) : {};
+            return asJsonResponse({
+                choices: [{
+                    message: {
+                        role: "assistant",
+                        content: "显式模式直答。",
+                    },
+                }],
+            });
+        }) as typeof fetch;
+
+        try {
+            const result = await runAgentRoutedChat({
+                prompt: "直接回答，不要用工具",
+                workspacePath,
+                agentProvider: "agent-backend",
+            });
+
+            expect(result.route).toBe("no-tool");
+            expect(result.actionJournal).toEqual([]);
+            expect(result.answer).toBe("显式模式直答。");
+            expect(capturedBody).not.toHaveProperty("tools");
         } finally {
             globalThis.fetch = originalFetch;
             await rm(workspacePath, { recursive: true, force: true });

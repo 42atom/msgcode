@@ -30,7 +30,6 @@ import {
   handleTtsModelCommand as handleTtsModelCommandImpl,
   handleEmbeddingModelCommand as handleEmbeddingModelCommandImpl,
   handlePolicyCommand as handlePolicyCommandImpl,
-  handlePiCommand as handlePiCommandImpl,
 } from "./cmd-model.js";
 import {
   handleOwnerCommand as handleOwnerCommandImpl,
@@ -89,7 +88,6 @@ export const handleResetCursorCommand = handleResetCursorCommandImpl;
 export const handleHelpCommand = handleHelpCommandImpl;
 export const handleMemCommand = handleMemCommandImpl;
 export const handlePolicyCommand = handlePolicyCommandImpl;
-export const handlePiCommand = handlePiCommandImpl;
 export const handleOwnerCommand = handleOwnerCommandImpl;
 export const handleOwnerOnlyCommand = handleOwnerOnlyCommandImpl;
 export const handleSoulListCommand = handleSoulListCommandImpl;
@@ -152,8 +150,6 @@ export async function handleRouteCommand(
       return handleMemCommand(options);
     case "policy":
       return handlePolicyCommand(options);
-    case "pi":
-      return handlePiCommand(options);
     case "owner":
       return handleOwnerCommand(options);
     case "ownerOnly":
@@ -238,8 +234,6 @@ export function isRouteCommand(text: string): boolean {
     trimmed === "/mem" ||
     trimmed.startsWith("/policy ") ||
     trimmed === "/policy" ||
-    trimmed.startsWith("/pi ") ||
-    trimmed === "/pi" ||
     trimmed.startsWith("/owner ") ||
     trimmed === "/owner" ||
     trimmed.startsWith("/owner-only ") ||
@@ -375,13 +369,6 @@ export function parseRouteCommand(text: string): { command: string; args: string
   }
   if (trimmed === "/policy") {
     return { command: "policy", args: [] };
-  }
-  if (trimmed.startsWith("/pi ")) {
-    const parts = trimmed.split(/\s+/);
-    return { command: "pi", args: parts.slice(1) };
-  }
-  if (trimmed === "/pi") {
-    return { command: "pi", args: [] };
   }
   if (trimmed === "/owner") {
     return { command: "owner", args: [] };

@@ -121,11 +121,10 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     const workspacePath = await createTempWorkspace();
     const configPath = join(workspacePath, ".msgcode", "config.json");
 
-    // 写入配置：tooling.allow 包含 browser，pi.enabled=true
+    // 写入配置：tooling.allow 包含 browser
     await writeFile(
       configPath,
       JSON.stringify({
-        "pi.enabled": true,
         "tooling.allow": ["browser", "bash", "read_file"],
       }),
       "utf-8"
@@ -148,7 +147,6 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     await writeFile(
       configPath,
       JSON.stringify({
-        "pi.enabled": true,
         "tooling.allow": ["bash", "read_file", "write_file", "edit_file"],
       }),
       "utf-8"
@@ -170,7 +168,6 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     await writeFile(
       configPath,
       JSON.stringify({
-        "pi.enabled": true,
         "tooling.allow": ["vision", "bash", "read_file"],
       }),
       "utf-8"
@@ -191,7 +188,6 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     await writeFile(
       configPath,
       JSON.stringify({
-        "pi.enabled": true,
         "tooling.allow": ["mem", "bash", "read_file"],
       }),
       "utf-8"
@@ -213,7 +209,6 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     await writeFile(
       configPath,
       JSON.stringify({
-        "pi.enabled": true,
         "tooling.allow": ["bash", "read_file"], // 不含 browser
       }),
       "utf-8"
@@ -225,15 +220,14 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     expect(tools).not.toContain("browser");
   });
 
-  it("pi.enabled=false 时，getToolsForLlm() 应返回完整工具列表（skill 场景）", async () => {
+  it("workspace 未显式放开 browser 时，getToolsForLlm() 仍应保留 read_file + bash 基线", async () => {
     const workspacePath = await createTempWorkspace();
     const configPath = join(workspacePath, ".msgcode", "config.json");
 
-    // 写入配置：pi.enabled=false
+    // 写入配置：仅允许 browser + bash，read_file 基线应由执行核补齐
     await writeFile(
       configPath,
       JSON.stringify({
-        "pi.enabled": false,
         "tooling.allow": ["browser", "bash"],
       }),
       "utf-8"
@@ -242,20 +236,17 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     const toolLoopModule = await import("../src/agent-backend/tool-loop.js");
     const tools = await toolLoopModule.getToolsForLlm(workspacePath);
 
-    // P5.7-R15 + R16: pi.enabled=false 时也返回完整工具列表（skill 场景）
-    // 因为 skill 场景需要默认工具能力来执行后续操作
     expect(tools).toContain("read_file");
     expect(tools).toContain("bash");
   });
 
-  it("pi.enabled=false 且 allow 包含 feishu_send_file 时，getToolsForLlm() 应暴露它", async () => {
+  it("allow 包含 feishu_send_file 时，getToolsForLlm() 应暴露它", async () => {
     const workspacePath = await createTempWorkspace();
     const configPath = join(workspacePath, ".msgcode", "config.json");
 
     await writeFile(
       configPath,
       JSON.stringify({
-        "pi.enabled": false,
         "tooling.allow": ["feishu_send_file"],
       }),
       "utf-8"
@@ -389,7 +380,6 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     await writeFile(
       configPath,
       JSON.stringify({
-        "pi.enabled": true,
         "tooling.allow": ["browser"], // 只允许 browser
       }),
       "utf-8"

@@ -48,7 +48,6 @@ async function createToolEnabledWorkspace(): Promise<string> {
     await writeFile(
         join(workspacePath, ".msgcode", "config.json"),
         JSON.stringify({
-            "pi.enabled": true,
             "tooling.mode": "autonomous",
             "tooling.allow": ["bash", "read_file"],
             "tooling.require_confirm": [],
@@ -59,7 +58,7 @@ async function createToolEnabledWorkspace(): Promise<string> {
 }
 
 describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
-    it("首轮无 tool_calls 时应执行 required 重试并成功", async () => {
+    it("首轮无 tool_calls 时应直接接受模型 no-tool 决策，不再强制 required 重试", async () => {
         const originalFetch = globalThis.fetch;
         const workspacePath = await createToolEnabledWorkspace();
         let callCount = 0;
@@ -135,12 +134,11 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
                 backendRuntime: localOpenAiRuntime,
             });
 
-            expect(callCount).toBe(3);
-            expect(sawRetryChoice).toBe(true);
-            expect(result.toolCall?.name).toBe("bash");
-            // P5.7-R12-T3: verify phase 增加了一条 journal entry
-            expect(result.actionJournal.length).toBe(2);
-            expect(result.actionJournal[0].ok).toBe(true);
+            expect(callCount).toBe(1);
+            expect(sawRetryChoice).toBe(false);
+            expect(result.toolCall).toBeUndefined();
+            expect(result.answer).toContain("我来执行这个命令。");
+            expect(result.actionJournal).toEqual([]);
         } finally {
             globalThis.fetch = originalFetch;
             await rm(workspacePath, { recursive: true, force: true });
@@ -433,7 +431,7 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
         }
     });
 
-    it("显式要求 read_file 但模型持续调用错误工具时，应拒绝执行错误工具", async () => {
+    it("显式要求 read_file 但模型持续调用允许的 bash 时，不应新增前置拒绝层", async () => {
         const originalFetch = globalThis.fetch;
         const workspacePath = await createToolEnabledWorkspace();
         let callCount = 0;
@@ -479,10 +477,10 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
                 backendRuntime: localOpenAiRuntime,
             });
 
-            expect(callCount).toBe(2);
-            expect(result.answer).toContain("工具协议失败");
-            expect(result.answer).toContain("read_file");
-            expect(result.actionJournal).toEqual([]);
+            expect(callCount).toBe(3);
+            expect(result.answer).toContain("unexpected");
+            expect(result.actionJournal.filter((entry) => entry.phase === "act")).toHaveLength(2);
+            expect(result.actionJournal.filter((entry) => entry.phase === "act").every((entry) => entry.tool === "bash")).toBe(true);
         } finally {
             globalThis.fetch = originalFetch;
             await rm(workspacePath, { recursive: true, force: true });
@@ -530,9 +528,11 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
             });
 
             expect(callCount).toBe(1);
-            expect(result.answer).toContain("未暴露工具");
+            expect(result.answer).toContain("TOOL_NOT_ALLOWED");
             expect(result.answer).toContain("edit_file");
-            expect(result.actionJournal).toEqual([]);
+            expect(result.actionJournal).toHaveLength(1);
+            expect(result.actionJournal[0]?.ok).toBe(false);
+            expect(result.actionJournal[0]?.errorCode).toBe("TOOL_NOT_ALLOWED");
         } finally {
             globalThis.fetch = originalFetch;
             await rm(workspacePath, { recursive: true, force: true });

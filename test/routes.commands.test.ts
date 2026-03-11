@@ -22,7 +22,6 @@ import {
   handleCursorCommand,
   handleResetCursorCommand,
   handleRouteCommand,
-  handlePiCommand,
   handleSoulListCommand,
   handleSoulUseCommand,
   handleSoulCurrentCommand,
@@ -126,6 +125,7 @@ describe("路由命令处理器", () => {
       expect(isRouteCommand("/start")).toBe(false);
       expect(isRouteCommand("/stop")).toBe(false);
       expect(isRouteCommand("/status")).toBe(false);
+      expect(isRouteCommand("/pi")).toBe(false);
       expect(isRouteCommand("hello")).toBe(false);
     });
   });
@@ -195,6 +195,7 @@ describe("路由命令处理器", () => {
 
     it("拒绝非路由命令", () => {
       expect(parseRouteCommand("/start")).toBeNull();
+      expect(parseRouteCommand("/pi")).toBeNull();
       expect(parseRouteCommand("hello")).toBeNull();
     });
   });
@@ -398,7 +399,6 @@ describe("路由命令处理器", () => {
       expect(result.message).toContain("/soul");
       expect(result.message).toContain("/schedule");
       expect(result.message).toContain("/mem");
-      expect(result.message).toContain("/pi");
       expect(result.message).toContain("/task");
       expect(result.message).toContain("/toolstats");
       expect(result.message).toContain("/desktop");
@@ -541,83 +541,6 @@ describe("路由命令处理器", () => {
       expect(result.success).toBe(false);
       expect(result.message).toContain("未知命令");
       expect(result.message).toContain("/desktop");
-    });
-  });
-
-  // P3.2: PI 命令测试
-  describe("handlePiCommand", () => {
-    const testChatId = "any;+;pi-test";
-
-    beforeEach(async () => {
-      // 先绑定工作区
-      await handleBindCommand({ chatId: testChatId, args: ["pi-test-workspace"] });
-    });
-
-    it("未绑定工作区时也可查询状态（使用默认工作目录 fallback）", async () => {
-      const options: CommandHandlerOptions = { chatId: "any;+;no-workspace", args: [] };
-      const result = await handlePiCommand(options);
-
-      expect(result.success).toBe(true);
-      expect(result.message).toContain("PI:");
-      expect(result.message).toContain("运行形态");
-    });
-
-    it("/pi status 查看状态（默认应禁用）", async () => {
-      const options: CommandHandlerOptions = { chatId: testChatId, args: [] };
-      const result = await handlePiCommand(options);
-
-      expect(result.success).toBe(true);
-      expect(result.message).toContain("PI: 已禁用");
-      expect(result.message).toContain("运行形态");
-    });
-
-    it("/pi on 启用 PI（仅限 agent 模式）", async () => {
-      const options: CommandHandlerOptions = { chatId: testChatId, args: ["on"] };
-      const result = await handlePiCommand(options);
-
-      // 注意：默认 runtime.kind 是 agent，应该成功
-      expect(result.success).toBe(true);
-      expect(result.message).toContain("PI 已启用");
-    });
-
-    it("/pi off 禁用 PI", async () => {
-      // 先启用
-      await handlePiCommand({ chatId: testChatId, args: ["on"] });
-
-      // 再禁用
-      const options: CommandHandlerOptions = { chatId: testChatId, args: ["off"] };
-      const result = await handlePiCommand(options);
-
-      expect(result.success).toBe(true);
-      expect(result.message).toContain("PI 已禁用");
-    });
-
-    it("/pi <invalid> 返回错误", async () => {
-      const options: CommandHandlerOptions = { chatId: testChatId, args: ["invalid"] };
-      const result = await handlePiCommand(options);
-
-      expect(result.success).toBe(false);
-      expect(result.message).toContain("未知操作");
-    });
-  });
-
-  // P3.2: isRouteCommand 识别 /pi 命令
-  describe("isRouteCommand - PI 命令", () => {
-    it("识别 /pi 命令", () => {
-      expect(isRouteCommand("/pi")).toBe(true);
-      expect(isRouteCommand("/pi on")).toBe(true);
-      expect(isRouteCommand("/pi off")).toBe(true);
-      expect(isRouteCommand("/pi status")).toBe(true);
-    });
-  });
-
-  // P3.2: parseRouteCommand 解析 /pi 命令
-  describe("parseRouteCommand - PI 命令", () => {
-    it("解析 /pi 命令", () => {
-      expect(parseRouteCommand("/pi")).toEqual({ command: "pi", args: [] });
-      expect(parseRouteCommand("/pi on")).toEqual({ command: "pi", args: ["on"] });
-      expect(parseRouteCommand("/pi off")).toEqual({ command: "pi", args: ["off"] });
-      expect(parseRouteCommand("/pi status")).toEqual({ command: "pi", args: ["status"] });
     });
   });
 

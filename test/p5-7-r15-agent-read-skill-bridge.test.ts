@@ -8,6 +8,9 @@
  */
 
 import { describe, expect, it } from "bun:test";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { getToolsForLlm } from "../src/agent-backend/tool-loop.js";
 
 describe("P5.7-R15 + P5.7-R16: skill 场景完整工具暴露", () => {
@@ -28,14 +31,19 @@ describe("P5.7-R15 + P5.7-R16: skill 场景完整工具暴露", () => {
     expect(tools).not.toContain("edit_file");
   });
 
-  it("有 workspacePath 但无 pi.enabled 时也应返回完整工具列表", async () => {
-    // 当 workspace 没有 pi.enabled 时，skill 场景也应该暴露完整工具
-    const tools = await getToolsForLlm("/fake/nonexistent/path");
+  it("workspace 未显式配置 tooling.allow 时也应保留 read_file + bash 基线", async () => {
+    const workspacePath = await mkdtemp(join(tmpdir(), "msgcode-r15-skill-bridge-"));
+    await mkdir(join(workspacePath, ".msgcode"), { recursive: true });
+    await writeFile(join(workspacePath, ".msgcode", "config.json"), JSON.stringify({}, null, 2), "utf-8");
 
-    // 即使 workspace 不存在，也应该返回工具（而不是空数组）
-    // 因为 skill 场景需要默认工具能力
-    expect(tools.length).toBeGreaterThan(0);
-    expect(tools).toContain("read_file");
-    expect(tools).toContain("bash");
+    const tools = await getToolsForLlm(workspacePath);
+
+    try {
+      expect(tools.length).toBeGreaterThan(0);
+      expect(tools).toContain("read_file");
+      expect(tools).toContain("bash");
+    } finally {
+      await rm(workspacePath, { recursive: true, force: true });
+    }
   });
 });

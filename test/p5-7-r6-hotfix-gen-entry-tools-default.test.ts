@@ -13,7 +13,7 @@ import os from "node:os";
 import path from "node:path";
 
 describe("P5.7-R6 HOTFIX: gen 入口 + tools 缺省值", () => {
-  it("getToolsForLlm: config 缺少 pi.enabled 时应返回完整工具列表（skill 场景）", async () => {
+  it("getToolsForLlm: config 缺少 tooling.allow 时应返回 read_file + bash 基线", async () => {
     const { getToolsForLlm } = await import("../src/lmstudio.js");
 
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "msgcode-ws-r6-hotfix-"));
@@ -28,7 +28,6 @@ describe("P5.7-R6 HOTFIX: gen 入口 + tools 缺省值", () => {
       const tools = await getToolsForLlm(ws);
       const toolNames = tools as string[];
 
-      // P5.7-R15 + R16: 没有 pi.enabled 配置时返回完整工具列表（skill 场景）
       expect(toolNames.length).toBeGreaterThan(0);
       expect(toolNames).toContain("read_file");
       expect(toolNames).toContain("bash");
@@ -37,7 +36,7 @@ describe("P5.7-R6 HOTFIX: gen 入口 + tools 缺省值", () => {
     }
   });
 
-  it("getToolsForLlm: config 缺少 pi.enabled 但 allow 包含 feishu_send_file 时应暴露它", async () => {
+  it("getToolsForLlm: config 缺少 tooling.allow 默认项时，allow 包含 feishu_send_file 仍应暴露它", async () => {
     const { getToolsForLlm } = await import("../src/lmstudio.js");
 
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "msgcode-ws-r6-feishu-tools-"));

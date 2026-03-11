@@ -1,5 +1,5 @@
 /**
- * msgcode: 配置域命令（backend/local/api/tmux/model/policy/pi）
+ * msgcode: 配置域命令（backend/local/api/tmux/model/policy）
  *
  * 目标：
  * - `/backend` 只切执行主分支
@@ -12,13 +12,11 @@ import fs from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
 import type { CommandHandlerOptions, CommandResult } from "./cmd-types.js";
-import type { ToolName } from "../tools/types.js";
 import {
   getBackendLane,
   getBranchModel,
   getPolicyMode,
   getTmuxClient,
-  getRuntimeKind,
   loadWorkspaceConfig,
   saveWorkspaceConfig,
   setBranchModel,
@@ -709,64 +707,4 @@ export async function handlePolicyCommand(options: CommandHandlerOptions): Promi
       message: `切换失败：${error instanceof Error ? error.message : String(error)}`,
     };
   }
-}
-
-export async function handlePiCommand(options: CommandHandlerOptions): Promise<CommandResult> {
-  const { chatId, args } = options;
-  const bound = resolveBoundWorkspace(chatId);
-  if (!bound) {
-    return {
-      success: false,
-      message: `未绑定工作目录，请先使用 /bind <dir> 绑定工作空间`,
-    };
-  }
-
-  const kind = await getRuntimeKind(bound.projectDir);
-  const config = await loadWorkspaceConfig(bound.projectDir);
-  const enabled = config["pi.enabled"] ?? false;
-  const action = (args[0] ?? "status").trim().toLowerCase();
-
-  if (action === "status") {
-    return {
-      success: true,
-      message: `PI: ${enabled ? "已启用" : "已禁用"}\n运行形态：${kind}`,
-    };
-  }
-
-  if (action === "on") {
-    if (kind === "tmux") {
-      return {
-        success: false,
-        message: "PI 仅支持 agent 模式（需要上下文编排），当前为 tmux 透传模式",
-      };
-    }
-
-    const { getToolPolicy, setToolingAllow } = await import("../config/workspace.js");
-    const policy = await getToolPolicy(bound.projectDir);
-    const piTools = ["read_file", "bash"] as const;
-    const missingTools = piTools.filter(t => !policy.allow.includes(t));
-    if (missingTools.length > 0) {
-      const newAllow: ToolName[] = [...new Set([...policy.allow, ...piTools])];
-      await setToolingAllow(bound.projectDir, newAllow);
-    }
-
-    await saveWorkspaceConfig(bound.projectDir, { "pi.enabled": true });
-    return {
-      success: true,
-      message: "PI 已启用" + (missingTools.length > 0 ? `\n\n已自动添加工具：${missingTools.join(", ")}` : ""),
-    };
-  }
-
-  if (action === "off") {
-    await saveWorkspaceConfig(bound.projectDir, { "pi.enabled": false });
-    return {
-      success: true,
-      message: "PI 已禁用",
-    };
-  }
-
-  return {
-    success: false,
-    message: `未知操作：${action}\n用法：/pi | /pi on | /pi off`,
-  };
 }

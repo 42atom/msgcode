@@ -192,7 +192,7 @@ describe("P5.6.8-R3b: edit_file 补丁语义回归锁", () => {
             fs.mkdirSync(msgcodeDir, { recursive: true });
             fs.writeFileSync(
                 path.join(msgcodeDir, "config.json"),
-                JSON.stringify({ "pi.enabled": true }),
+                JSON.stringify({}),
                 "utf-8"
             );
 
@@ -209,7 +209,7 @@ describe("P5.6.8-R3b: edit_file 补丁语义回归锁", () => {
             }
         });
 
-        it("getToolsForLlm 不应再被 pi.enabled=false 清空", async () => {
+        it("getToolsForLlm 不应再因缺省配置而被清空", async () => {
             const { getToolsForLlm } = await import("../src/lmstudio.js");
 
             // 创建临时工作区
@@ -218,7 +218,7 @@ describe("P5.6.8-R3b: edit_file 补丁语义回归锁", () => {
             fs.mkdirSync(msgcodeDir, { recursive: true });
             fs.writeFileSync(
                 path.join(msgcodeDir, "config.json"),
-                JSON.stringify({ "pi.enabled": false }),
+                JSON.stringify({}),
                 "utf-8"
             );
 

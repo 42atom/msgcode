@@ -38,6 +38,7 @@ import {
     resolveAgentBackendRuntime,
     normalizeModelOverride,
 } from "./config.js";
+import { runAgentChat } from "./chat.js";
 import {
     filterDefaultLlmTools,
     renderLlmToolIndex,
@@ -1097,7 +1098,7 @@ export async function getToolsForLlm(workspacePath?: string): Promise<ToolName[]
         const { loadWorkspaceConfig } = await import("../config/workspace.js");
         const cfg = await loadWorkspaceConfig(workspacePath);
         // 单一真相源：LLM 工具暴露只看 tooling.allow，再补 skill 发现所需的最小基线。
-        // 不再让 pi.enabled 决定“有没有工具”，否则会吞掉 feishu_send_file 等已允许工具。
+        // 不再依赖任何历史开关决定“有没有工具”，否则会吞掉 feishu_send_file 等已允许工具。
         const configuredTools = Array.isArray(cfg["tooling.allow"])
             ? (cfg["tooling.allow"] as ToolName[])
             : [];
@@ -1815,6 +1816,37 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     const usedModel = model;
     const timeoutMs = options.timeoutMs || backendRuntime.timeoutMs;
     const root = options.allowRoot || config.workspaceRoot || AIDOCS_ROOT;
+    const workspaceRootForTools = options.workspacePath || root;
+
+    if (workspaceRootForTools && !options.tools) {
+        const { getToolPolicy } = await import("../config/workspace.js");
+        const policy = await getToolPolicy(workspaceRootForTools);
+
+        if (policy.mode === "explicit") {
+            const answer = await runAgentChat({
+                prompt: options.prompt,
+                system: options.system,
+                workspace: options.workspacePath,
+                model: modelOverride ?? backendDefaultModel ?? model,
+                temperature: 0,
+                backendRuntime,
+                windowMessages: options.windowMessages,
+                summaryContext: options.summaryContext,
+                soulContext: options.soulContext,
+            });
+
+            return {
+                answer,
+                actionJournal: [],
+                quotaProfile,
+                perTurnToolCallLimit,
+                perTurnToolStepLimit,
+                remainingToolCalls: perTurnToolCallLimit,
+                remainingSteps: perTurnToolStepLimit,
+                decisionSource: "model",
+            };
+        }
+    }
 
     const actionJournal: ActionJournalEntry[] = [];
     let stepId = 0;
@@ -1823,7 +1855,6 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
 
     const baseSystem = await resolveBaseSystemPrompt(options.system);
     const workspacePath = options.workspacePath || root;
-    const workspaceRootForTools = options.workspacePath || root;
     const toolNames = options.tools ? (options.tools as ToolName[]) : await getToolsForLlm(workspaceRootForTools);
     const useMcp = backendRuntime.nativeApiEnabled && process.env.LMSTUDIO_ENABLE_MCP === "1" && !!workspacePath;
     let system = buildExecSystemPrompt(baseSystem, useMcp);

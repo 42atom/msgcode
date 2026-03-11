@@ -44,8 +44,8 @@ describe("P5.6.8-R3d: 彻底去耦回归锁", () => {
         });
     });
 
-    describe("PI 模式验证", () => {
-        it("pi.on 在未显式 allow 时应保留 read_file + bash 基线", async () => {
+    describe("工具默认基线验证", () => {
+        it("未显式 allow 时应保留 read_file + bash 基线", async () => {
             const { getToolsForLlm } = await import("../src/lmstudio.js");
 
             // 创建临时工作区
@@ -54,7 +54,7 @@ describe("P5.6.8-R3d: 彻底去耦回归锁", () => {
             fs.mkdirSync(msgcodeDir, { recursive: true });
             fs.writeFileSync(
                 path.join(msgcodeDir, "config.json"),
-                JSON.stringify({ "pi.enabled": true }),
+                JSON.stringify({}),
                 "utf-8"
             );
 
@@ -73,7 +73,7 @@ describe("P5.6.8-R3d: 彻底去耦回归锁", () => {
             }
         });
 
-        it("pi.off 不应再清空工具列表", async () => {
+        it("缺省配置不应清空工具列表", async () => {
             const { getToolsForLlm } = await import("../src/lmstudio.js");
 
             // 创建临时工作区
@@ -82,7 +82,7 @@ describe("P5.6.8-R3d: 彻底去耦回归锁", () => {
             fs.mkdirSync(msgcodeDir, { recursive: true });
             fs.writeFileSync(
                 path.join(msgcodeDir, "config.json"),
-                JSON.stringify({ "pi.enabled": false }),
+                JSON.stringify({}),
                 "utf-8"
             );
 

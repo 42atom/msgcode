@@ -36,7 +36,6 @@ async function createToolEnabledWorkspace(): Promise<string> {
     await writeFile(
         join(workspacePath, ".msgcode", "config.json"),
         JSON.stringify({
-            "pi.enabled": true,
             "tooling.mode": "autonomous",
             "tooling.allow": ["bash", "read_file", "write_file", "edit_file"],
             "tooling.require_confirm": [],
@@ -54,8 +53,7 @@ describe("P5.7-R10: MiniMax Anthropic provider", () => {
         await writeFile(
             join(workspacePath, ".msgcode", "config.json"),
             JSON.stringify({
-                "pi.enabled": true,
-                "tooling.mode": "autonomous",
+                "tooling.mode": "explicit",
                 "tooling.allow": [],
                 "tooling.require_confirm": [],
             }, null, 2),

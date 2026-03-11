@@ -3,6 +3,8 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-11
+  - runtime/tooling: `/pi` 与 `pi.enabled` 已退出正式主链；工具开关只剩 `tooling.mode + tooling.allow`，`tooling.mode=explicit` 现在会在 `runAgentToolLoop()` 入口直接走 no-tool 主链，退役文件 `src/providers/tool-loop.ts` 也已删除，相关 routed-chat / tool-loop / 命令回归口径同步更新到当前单一真相源 (Issue: 0085, Plan: docs/design/plan-260311-pi-corpse-cleanup-and-tooling-mode-wireup.md) [risk: medium] [rollback: 回退 `src/routes/{commands,cmd-info,cmd-model}.ts`、`src/config/workspace.ts`、`src/agent-backend/tool-loop.ts`、`src/providers/tool-loop.ts` 与本轮工具主链回归测试]
+- 2026-03-11
   - runtime/tooling: LLM 工具暴露已重新收口为 `TOOL_MANIFESTS + agent-backend/tool-loop#getToolsForLlm()` 单一真相源；历史 `PI_ON_TOOLS` 与 `AGENT_TOOLS` 已删除，`lmstudio.ts#getToolsForLlm` 也不再维护影子实现，而是直接转发执行核主实现，避免幽灵工具名和双真相源继续漂移 (Issue: 0084, Plan: docs/design/plan-260311-tool-manifest-single-source-export-cleanup.md) [risk: medium] [rollback: 回退 `src/agent-backend.ts`、`src/agent-backend/{types,index,tool-loop}.ts`、`src/lmstudio.ts` 与本轮工具暴露回归测试]
 - 2026-03-11
   - runtime/archive: IndexTTS 遗留已退出正式真相源；依赖 manifest、preflight 和 model-paths 不再维护 IndexTTS 合同，未使用的 `indexts.ts / indexts-worker.ts / emotion.ts` 已移入 `.trash/2026-03-11-indextts-legacy-runtime/`，专项调优备忘移入 `docs/archive/indextts_optimization_memo_v2.2.md` (Issue: 0082, Plan: docs/design/plan-260311-indextts-archive-cleanup-and-merge-prep.md) [risk: medium] [rollback: 从 `.trash/2026-03-11-indextts-legacy-runtime/` 恢复源码，并回退 `src/deps/manifest.json`、`src/deps/preflight.ts`、`src/media/model-paths.ts` 与相关测试]

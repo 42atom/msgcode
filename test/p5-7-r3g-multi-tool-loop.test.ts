@@ -50,7 +50,6 @@ async function createToolEnabledWorkspace(): Promise<string> {
     await writeFile(
         join(workspacePath, ".msgcode", "config.json"),
         JSON.stringify({
-            "pi.enabled": true,
             "tooling.mode": "autonomous",
             "tooling.allow": ["bash", "read_file", "write_file", "edit_file"],
             "tooling.require_confirm": [],

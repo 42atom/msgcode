@@ -119,7 +119,6 @@ const HELP_ENTRIES: SlashCommandDocEntry[] = [
     summary: "记忆注入开关",
     keywords: ["/mem"],
   },
-  { group: "编排层", usage: "/pi [status|on|off]", summary: "PI 编排开关", keywords: ["/pi"] },
   {
     group: "编排层",
     usage: "/task [run|status|cancel|resume]",

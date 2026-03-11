@@ -14,7 +14,6 @@ async function createTempWorkspace(): Promise<string> {
   await writeFile(
     join(workspacePath, ".msgcode", "config.json"),
     JSON.stringify({
-      "pi.enabled": true,
       "tooling.mode": "autonomous",
       "tooling.allow": ["read_file"],
       "tooling.require_confirm": [],
