@@ -272,7 +272,10 @@ async function ensureTmuxAllowed(projectDir: string): Promise<CommandResult | nu
     return {
       success: false,
       message: `当前策略模式为 local-only，不允许切到 tmux 分支（需要外网访问）。\n\n` +
-        `请先执行 /policy on 或 /policy full`,
+        `请先执行以下命令之一：\n` +
+        `1. /policy on\n` +
+        `2. /policy egress-allowed\n` +
+        `3. /policy full`,
     };
   }
   return null;

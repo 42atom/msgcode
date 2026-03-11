@@ -1,0 +1,78 @@
+# release-gate-stale-regression-lock-alignment
+
+## Problem
+
+merge 后剩余一批 `bun test` 失败，其中多数锁定的是旧实现路径，而不是当前代码真的坏了。继续按旧测试修主代码，只会把刚收口好的真相源重新拉回去。
+
+Issue: 0091
+
+## Occam Check
+
+1. 不加这次收口，系统具体坏在哪？
+   - 发布门槛会持续被“测试锁旧实现”拖住，开发者无法区分真 bug 和假阻断。
+2. 用更少的层能不能解决？
+   - 能。直接改测试去锁当前真相源，不加兼容层、不改运行时架构。
+3. 这个改动让主链数量变多了还是变少了？
+   - 变少了。测试、代码、文档重新指向同一份真相源。
+
+## Decision
+
+采用测试优先收口方案：
+
+1. 默认模型与 ToolName 测试改为读取当前实际实现
+2. browser tool bus 测试改为锁 `patchright + chrome-root` 主链，不再伪造旧 orchestrator
+3. memory/context-policy 测试改为锁 `runtime/context-policy.ts` 与 `assembleAgentContext()`
+4. agent-first 类型测试改为静态检查 `types.ts` 文本，而不是运行时 import 已擦除类型
+5. 对会触发能力探测的上下文测试，显式设置 env override，避免无关网络因素导致超时
+
+## Alternatives
+
+### 方案 A：回退主代码去适配旧测试
+
+- 缺点：把已经收口的真相源重新打散，明显倒退。
+
+### 方案 B：直接删掉整批失败测试
+
+- 缺点：会把本来仍有价值的行为锁一并丢掉，失去回归保护。
+
+### 方案 C：保留测试意图，但更新到当前真相源（推荐）
+
+- 优点：既恢复门槛可信度，又保留回归价值。
+
+## Plan
+
+1. 新建 issue / plan
+   - `issues/0091-release-gate-stale-regression-lock-alignment.md`
+   - `docs/design/plan-260311-release-gate-stale-regression-lock-alignment.md`
+2. 更新测试
+   - `test/p5-7-r6b-default-model-preference.test.ts`
+   - `test/p5-6-8-r4h-tool-root-fail-fantasy.test.ts`
+   - `test/p5-7-r7a-browser-tool-bus.test.ts`
+   - `test/p5-7-r9-t3-memory-persistence-clear-boundary.test.ts`
+   - `test/p5-7-r12-t10-agent-first-router-second.test.ts`
+   - `test/p6-agent-run-core-phase3-context-policy.test.ts`
+   - `test/p6-feishu-message-context-phase2.test.ts`
+3. 运行针对性验证
+   - `PATH="$HOME/.bun/bin:$PATH" bun test <targeted suites>`
+   - `PATH="$HOME/.bun/bin:$PATH" bun test`
+4. 记录剩余失败与下一步
+
+## Risks
+
+1. 某些失败可能掺着真 bug。
+   - 回滚/降级：先跑 targeted suite，看失败是否来自测试口径还是代码行为，再决定是否改主代码。
+2. context-policy 测试如果忘记加 env override，仍可能被本地服务状态拖慢。
+   - 回滚/降级：统一在测试里显式设置 `AGENT_CONTEXT_WINDOW_TOKENS` 等变量。
+3. browser 测试可能依赖本机 Chrome 路径或进程状态。
+   - 回滚/降级：用 runner test deps stub 掉 fetch/spawn/patchright，只测 tool bus 合同。
+
+## Test Plan
+
+1. `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r6b-default-model-preference.test.ts test/p5-6-8-r4h-tool-root-fail-fantasy.test.ts test/p5-7-r7a-browser-tool-bus.test.ts test/p5-7-r9-t3-memory-persistence-clear-boundary.test.ts test/p5-7-r12-t10-agent-first-router-second.test.ts test/p6-agent-run-core-phase3-context-policy.test.ts test/p6-feishu-message-context-phase2.test.ts`
+2. `PATH="$HOME/.bun/bin:$PATH" bun test`
+
+## Observability
+
+- 若 `bun test` 剩余失败仍存在，将明确记录为“真 bug”还是“下一批失真锁”
+
+（章节级）评审意见：[留空,用户将给出反馈]

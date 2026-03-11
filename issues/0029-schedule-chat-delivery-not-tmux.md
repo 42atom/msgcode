@@ -40,6 +40,13 @@ due:
 - [x] 补测试（45 schedule tests pass）
 - [x] 真机验证（status=ok）
 
+## Acceptance Criteria
+
+- `reply-to-same-chat` 不再落成 tmux 通道
+- schedule 投影与执行都直接走聊天消息链
+- 不需要依赖 tmux session 也能正常投递
+- 测试与真机验证均有证据
+
 ## Evidence
 
 ### 问题确认
@@ -56,3 +63,8 @@ due:
 1. 不要用 fallback 兜去 tmux
 2. 不要因为历史 payload 兼容就保留错误默认行为
 3. 不要把"chat delivery"再包一层新中间层
+
+## Links
+
+- Plan: `docs/design/plan-260308-schedule-chat-delivery-not-tmux.md`
+- Issue: `issues/0025-schedule-route-dependency-explicit.md`

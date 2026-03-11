@@ -15,6 +15,9 @@ describe("Phase 3: Context Policy", () => {
     tmpDir = createTempDir("msgcode-context-policy-");
     workspacePath = path.join(tmpDir, "workspace");
     fs.mkdirSync(workspacePath, { recursive: true });
+    process.env.AGENT_CONTEXT_WINDOW_TOKENS = "4096";
+    process.env.AGENT_RESERVED_OUTPUT_TOKENS = "1024";
+    process.env.AGENT_CHARS_PER_TOKEN = "2";
 
     const { clearRuntimeCapabilityCache } = await import("../src/capabilities.js");
     clearRuntimeCapabilityCache();
@@ -167,7 +170,7 @@ describe("Phase 3: Context Policy", () => {
     const { assembleAgentContext } = await import("../src/runtime/context-policy.js");
     clearRuntimeCapabilityCache();
 
-    for (let index = 0; index < 14; index += 1) {
+    for (let index = 0; index < 24; index += 1) {
       const role = index % 2 === 0 ? "user" : "assistant";
       const content = index === 0
         ? "Phase 3 必须统一 context policy，不能再留 handlers 私有 compaction。"
@@ -192,8 +195,8 @@ describe("Phase 3: Context Policy", () => {
     const persistedSummary = await loadSummary(workspacePath, "chat-phase3-compact");
 
     expect(result.compactionTriggered).toBe(true);
-    expect(result.windowMessages).toHaveLength(10);
-    expect(persistedWindow).toHaveLength(10);
+    expect(result.windowMessages).toHaveLength(16);
+    expect(persistedWindow).toHaveLength(16);
     expect(result.postCompactUsagePct).toBeDefined();
     expect(persistedSummary.goal.length).toBeGreaterThan(0);
     expect(result.summaryContext).toContain("Goal:");

@@ -17,18 +17,17 @@ import { resolve } from "node:path";
 // ============================================
 
 describe("P5.7-R9-T3: 记忆默认开启", () => {
-    it("handlers.ts 应在请求前读取 windowMessages", () => {
+    it("handlers.ts 应通过 assembleAgentContext 注入 windowMessages", () => {
         const code = readFileSync(resolve(process.cwd(), "src/handlers.ts"), "utf-8");
-        // 锁定：请求前必读 window
-        expect(code).toContain("loadWindow");
-        expect(code).toContain("windowMessages");
+        expect(code).toContain('import { assembleAgentContext } from "./runtime/context-policy.js"');
+        expect(code).toContain("const assembledContext = await assembleAgentContext({");
+        expect(code).toContain("assembledContext.windowMessages");
     });
 
-    it("handlers.ts 应在请求前读取 summaryContext", () => {
+    it("handlers.ts 应通过 assembleAgentContext 注入 summaryContext", () => {
         const code = readFileSync(resolve(process.cwd(), "src/handlers.ts"), "utf-8");
-        // 锁定：请求前必读 summary
-        expect(code).toContain("loadSummary");
-        expect(code).toContain("summaryContext");
+        expect(code).toContain("assembledContext.summaryContext");
+        expect(code).toContain("memoryInjected: assembledContext.windowMessages.length > 0 || !!assembledContext.summaryContext");
     });
 
     it("handlers.ts 应在请求后写回 window（TTS 路径也写回）", () => {
@@ -81,25 +80,26 @@ describe("P5.7-R9-T3: /clear 边界", () => {
 // ============================================
 
 describe("P5.7-R9-T3: 延迟摘要", () => {
-    it("handlers.ts 应在 70% 阈值触发 compact", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/handlers.ts"), "utf-8");
-        // 锁定：70% 阈值触发
-        expect(code).toContain("COMPACT_SOFT_THRESHOLD = 70");
-        expect(code).toContain("isApproachingBudget");
+    it("context-policy.ts 应在 70% 阈值触发 compact", () => {
+        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
+        expect(code).toContain("export const CONTEXT_COMPACT_SOFT_THRESHOLD = 70");
+        expect(code).toContain("contextUsagePct >= CONTEXT_COMPACT_SOFT_THRESHOLD");
     });
 
-    it("handlers.ts 应只在 isApproachingBudget 时提取摘要", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/handlers.ts"), "utf-8");
-        // 锁定：extractSummary 只在 compact 块内调用
-        expect(code).toContain("extractSummary(trimResult.trimmed");
-        // 低于阈值时不应提前调用
-        expect(code).not.toContain("extractSummary(windowMessages");
+    it("context-policy.ts 应只在 compact 块内提取摘要并重写 summary/window", () => {
+        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
+        expect(code).toContain("const trimResult = trimWindowWithResult(windowMessages, CONTEXT_COMPACT_KEEP_RECENT);");
+        expect(code).toContain("const newSummary = extractSummary(trimResult.trimmed, windowMessages);");
+        expect(code).toContain("await saveSummary(input.workspacePath, input.chatId, mergedSummary);");
+        expect(code).toContain("await rewriteWindow(input.workspacePath, input.chatId, trimResult.messages);");
     });
 
-    it("handlers.ts 应有提前摘要禁止日志", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/handlers.ts"), "utf-8");
-        // 锁定：compact 触发有原因日志
-        expect(code).toContain("compactionReason");
+    it("handlers.ts / context-policy.ts 应暴露 compact 原因", () => {
+        const handlersCode = readFileSync(resolve(process.cwd(), "src/handlers.ts"), "utf-8");
+        const policyCode = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
+        expect(handlersCode).toContain("compactionReason: assembledContext.compactionReason");
+        expect(policyCode).toContain("let compactionReason: string | undefined;");
+        expect(policyCode).toContain("compactionReason");
     });
 });
 
@@ -155,11 +155,12 @@ describe("P5.7-R9-T3: 会话持久化", () => {
         expect(code).toContain("summary.md");
     });
 
-    it("handlers.ts 应在请求前加载持久化上下文", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/handlers.ts"), "utf-8");
-        // 锁定：请求前加载
-        expect(code).toContain("if (context.projectDir)");
-        expect(code).toContain("windowMessages = await loadWindow");
-        expect(code).toContain("summary = await loadSummary");
+    it("统一入口应在有 workspacePath 时加载持久化上下文", () => {
+        const handlersCode = readFileSync(resolve(process.cwd(), "src/handlers.ts"), "utf-8");
+        const policyCode = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
+        expect(handlersCode).toContain("workspacePath: context.projectDir");
+        expect(handlersCode).toContain("const assembledContext = await assembleAgentContext({");
+        expect(policyCode).toContain("windowMessages = await loadWindow(input.workspacePath, input.chatId);");
+        expect(policyCode).toContain("summaryData = await loadSummary(input.workspacePath, input.chatId);");
     });
 });

@@ -13,25 +13,25 @@ import { describe, it, expect } from "bun:test";
 describe("P5.7-R12-T10: Agent-First / Router-Second 改造", () => {
     describe("类型定义验证", () => {
         it("AgentRoutedChatResult 应该包含 decisionSource 字段", async () => {
-            // 这个测试验证类型定义正确，不需要实际调用 LM Studio
-            const types = await import("../src/agent-backend/types.js");
-
-            // 验证 types 导出存在
-            expect(Object.keys(types).length > 0).toBe(true);
+            const fs = await import("node:fs");
+            const content = fs.readFileSync("./src/agent-backend/types.ts", "utf-8");
+            expect(content).toContain("export interface AgentRoutedChatResult");
+            expect(content).toContain('decisionSource?: "model"');
         });
 
         it("AgentToolLoopOptions 应该包含 allowNoTool 字段", async () => {
-            // 验证类型定义存在（编译时检查）
-            const types = await import("../src/agent-backend/types.js");
-            expect(Object.keys(types).length > 0).toBe(true);
+            const fs = await import("node:fs");
+            const content = fs.readFileSync("./src/agent-backend/types.ts", "utf-8");
+            expect(content).toContain("export interface AgentToolLoopOptions");
+            expect(content).toContain("allowNoTool?: boolean");
         });
 
         it("decisionSource 应该是联合类型", async () => {
-            // 验证类型正确
-            const types = await import("../src/agent-backend/types.js");
-
-            // 验证模块正确导出类型
-            expect(Object.keys(types).length > 0).toBe(true);
+            const fs = await import("node:fs");
+            const content = fs.readFileSync("./src/agent-backend/types.ts", "utf-8");
+            expect(content).toContain('decisionSource?: "model"');
+            expect(content).not.toContain('decisionSource?: "router"');
+            expect(content).not.toContain('decisionSource?: "degrade"');
         });
     });
 

@@ -15,12 +15,18 @@ describe("Phase 2: Feishu recent message roster context", () => {
     tmpDir = createTempDir("msgcode-feishu-message-roster-");
     workspacePath = path.join(tmpDir, "workspace");
     fs.mkdirSync(workspacePath, { recursive: true });
+    process.env.AGENT_CONTEXT_WINDOW_TOKENS = "4096";
+    process.env.AGENT_RESERVED_OUTPUT_TOKENS = "1024";
+    process.env.AGENT_CHARS_PER_TOKEN = "2";
 
     const { clearRuntimeCapabilityCache } = await import("../src/capabilities.js");
     clearRuntimeCapabilityCache();
   });
 
   afterEach(async () => {
+    delete process.env.AGENT_CONTEXT_WINDOW_TOKENS;
+    delete process.env.AGENT_RESERVED_OUTPUT_TOKENS;
+    delete process.env.AGENT_CHARS_PER_TOKEN;
     const { clearRuntimeCapabilityCache } = await import("../src/capabilities.js");
     clearRuntimeCapabilityCache();
 

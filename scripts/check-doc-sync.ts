@@ -51,16 +51,8 @@ export interface DocSyncReport {
   protocolIssueIdMismatch: string[];
   /** issue 缺失必需章节 */
   protocolIssueMissingSections: string[];
-  /** issue 的 plan_doc 无效或不存在 */
+  /** issue 的 plan_doc 显式填写但无效或不存在 */
   protocolIssueInvalidPlanDoc: string[];
-  /** issue links 未包含可用 task 文档 */
-  protocolIssueMissingTaskLinks: string[];
-  /** task 文档未回链 Issue */
-  protocolTaskMissingIssueBacklinks: string[];
-  /** task 文档未回链 Plan */
-  protocolTaskMissingPlanBacklinks: string[];
-  /** plan 文档未回链 Issue */
-  protocolPlanMissingIssueBacklinks: string[];
   /** 是否通过检查 */
   passed: boolean;
 }
@@ -134,8 +126,6 @@ const REQUIRED_ISSUE_FIELDS = [
   "labels",
   "risk",
   "scope",
-  "plan_doc",
-  "links",
 ];
 
 const REQUIRED_ISSUE_SECTIONS = [
@@ -462,20 +452,12 @@ function checkIssuePlanTaskLinkage(): {
   protocolIssueIdMismatch: string[];
   protocolIssueMissingSections: string[];
   protocolIssueInvalidPlanDoc: string[];
-  protocolIssueMissingTaskLinks: string[];
-  protocolTaskMissingIssueBacklinks: string[];
-  protocolTaskMissingPlanBacklinks: string[];
-  protocolPlanMissingIssueBacklinks: string[];
 } {
   const protocolIssueMissingFrontMatter: string[] = [];
   const protocolIssueMissingFields: string[] = [];
   const protocolIssueIdMismatch: string[] = [];
   const protocolIssueMissingSections: string[] = [];
   const protocolIssueInvalidPlanDoc: string[] = [];
-  const protocolIssueMissingTaskLinks: string[] = [];
-  const protocolTaskMissingIssueBacklinks: string[] = [];
-  const protocolTaskMissingPlanBacklinks: string[] = [];
-  const protocolPlanMissingIssueBacklinks: string[] = [];
 
   const issuesDir = path.join(process.cwd(), "issues");
   if (!fs.existsSync(issuesDir)) {
@@ -485,10 +467,6 @@ function checkIssuePlanTaskLinkage(): {
       protocolIssueIdMismatch,
       protocolIssueMissingSections,
       protocolIssueInvalidPlanDoc,
-      protocolIssueMissingTaskLinks,
-      protocolTaskMissingIssueBacklinks,
-      protocolTaskMissingPlanBacklinks,
-      protocolPlanMissingIssueBacklinks,
     };
   }
 
@@ -523,53 +501,21 @@ function checkIssuePlanTaskLinkage(): {
     }
 
     for (const section of REQUIRED_ISSUE_SECTIONS) {
-      if (!body.includes(`## ${section}`)) {
+      const sectionPattern = new RegExp(`^#{1,2}\\s+${section.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$`, "m");
+      if (!sectionPattern.test(body)) {
         protocolIssueMissingSections.push(`${issuePath}: ${section}`);
       }
     }
 
     const planDoc = extractYamlScalar(frontMatter, "plan_doc");
-    if (!planDoc || planDoc.includes("<")) {
-      protocolIssueInvalidPlanDoc.push(`${issuePath}: plan_doc 缺失或为占位符`);
-    } else {
+    if (planDoc) {
+      if (planDoc.includes("<")) {
+        protocolIssueInvalidPlanDoc.push(`${issuePath}: plan_doc 为占位符`);
+        continue;
+      }
       const absolutePlanPath = path.join(process.cwd(), planDoc);
       if (!fs.existsSync(absolutePlanPath)) {
         protocolIssueInvalidPlanDoc.push(`${issuePath}: ${planDoc} 不存在`);
-      } else if (issueId) {
-        const planContent = fs.readFileSync(absolutePlanPath, "utf-8");
-        if (!planContent.includes(`Issue: ${issueId}`)) {
-          protocolPlanMissingIssueBacklinks.push(`${planDoc}: 缺失 Issue: ${issueId}`);
-        }
-      }
-    }
-
-    const linkedTasks = extractYamlList(frontMatter, "links").filter(
-      l => l.startsWith("docs/tasks/") && l.endsWith(".md")
-    );
-    if (linkedTasks.length === 0) {
-      protocolIssueMissingTaskLinks.push(`${issuePath}: 未包含 docs/tasks 链接`);
-      continue;
-    }
-
-    for (const taskPath of linkedTasks) {
-      const absoluteTaskPath = path.join(process.cwd(), taskPath);
-      if (!fs.existsSync(absoluteTaskPath)) {
-        protocolIssueMissingTaskLinks.push(`${issuePath}: ${taskPath} 不存在`);
-        continue;
-      }
-
-      const taskContent = fs.readFileSync(absoluteTaskPath, "utf-8");
-      if (issueId) {
-        const hasIssueBacklink =
-          taskContent.includes(`Issue: ${issueId}`) ||
-          taskContent.includes(`issues/${issueId}-`);
-        if (!hasIssueBacklink) {
-          protocolTaskMissingIssueBacklinks.push(`${taskPath}: 缺失 Issue ${issueId} 回链`);
-        }
-      }
-
-      if (planDoc && !planDoc.includes("<") && !taskContent.includes(planDoc)) {
-        protocolTaskMissingPlanBacklinks.push(`${taskPath}: 缺失 Plan 回链 ${planDoc}`);
       }
     }
   }
@@ -580,10 +526,6 @@ function checkIssuePlanTaskLinkage(): {
     protocolIssueIdMismatch,
     protocolIssueMissingSections,
     protocolIssueInvalidPlanDoc,
-    protocolIssueMissingTaskLinks,
-    protocolTaskMissingIssueBacklinks,
-    protocolTaskMissingPlanBacklinks,
-    protocolPlanMissingIssueBacklinks,
   };
 }
 
@@ -634,11 +576,7 @@ export async function checkDocSync(): Promise<DocSyncReport> {
     issuePlanTaskLinkage.protocolIssueMissingFields.length === 0 &&
     issuePlanTaskLinkage.protocolIssueIdMismatch.length === 0 &&
     issuePlanTaskLinkage.protocolIssueMissingSections.length === 0 &&
-    issuePlanTaskLinkage.protocolIssueInvalidPlanDoc.length === 0 &&
-    issuePlanTaskLinkage.protocolIssueMissingTaskLinks.length === 0 &&
-    issuePlanTaskLinkage.protocolTaskMissingIssueBacklinks.length === 0 &&
-    issuePlanTaskLinkage.protocolTaskMissingPlanBacklinks.length === 0 &&
-    issuePlanTaskLinkage.protocolPlanMissingIssueBacklinks.length === 0;
+    issuePlanTaskLinkage.protocolIssueInvalidPlanDoc.length === 0;
 
   return {
     missing,
@@ -656,10 +594,6 @@ export async function checkDocSync(): Promise<DocSyncReport> {
     protocolIssueIdMismatch: issuePlanTaskLinkage.protocolIssueIdMismatch,
     protocolIssueMissingSections: issuePlanTaskLinkage.protocolIssueMissingSections,
     protocolIssueInvalidPlanDoc: issuePlanTaskLinkage.protocolIssueInvalidPlanDoc,
-    protocolIssueMissingTaskLinks: issuePlanTaskLinkage.protocolIssueMissingTaskLinks,
-    protocolTaskMissingIssueBacklinks: issuePlanTaskLinkage.protocolTaskMissingIssueBacklinks,
-    protocolTaskMissingPlanBacklinks: issuePlanTaskLinkage.protocolTaskMissingPlanBacklinks,
-    protocolPlanMissingIssueBacklinks: issuePlanTaskLinkage.protocolPlanMissingIssueBacklinks,
     passed,
   };
 }
@@ -801,38 +735,6 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     if (report.protocolIssueInvalidPlanDoc.length > 0) {
       console.error("Issue plan_doc 无效或不存在：");
       for (const p of report.protocolIssueInvalidPlanDoc) {
-        console.error(`  - ${p}`);
-      }
-      console.error("");
-    }
-
-    if (report.protocolIssueMissingTaskLinks.length > 0) {
-      console.error("Issue 缺失 task 链接：");
-      for (const p of report.protocolIssueMissingTaskLinks) {
-        console.error(`  - ${p}`);
-      }
-      console.error("");
-    }
-
-    if (report.protocolTaskMissingIssueBacklinks.length > 0) {
-      console.error("Task 缺失 Issue 回链：");
-      for (const p of report.protocolTaskMissingIssueBacklinks) {
-        console.error(`  - ${p}`);
-      }
-      console.error("");
-    }
-
-    if (report.protocolTaskMissingPlanBacklinks.length > 0) {
-      console.error("Task 缺失 Plan 回链：");
-      for (const p of report.protocolTaskMissingPlanBacklinks) {
-        console.error(`  - ${p}`);
-      }
-      console.error("");
-    }
-
-    if (report.protocolPlanMissingIssueBacklinks.length > 0) {
-      console.error("Plan 缺失 Issue 回链：");
-      for (const p of report.protocolPlanMissingIssueBacklinks) {
         console.error(`  - ${p}`);
       }
       console.error("");

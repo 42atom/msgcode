@@ -63,6 +63,12 @@ links: []
 4. 测试通过
 5. 真机 smoke 通过
 
+## Notes
+
+- 本单聚焦 CLI 参数合同与删除一致性，不再扩到 scheduler 其他能力
+- 代码层删除一致性已接好，剩余重点是把 LLM 生成命令合同讲硬
+- 真机 smoke 仍是最终验收，但不影响当前文档协议完整性
+
 ## Links
 
 - docs/design/plan-260308-schedule-cli-contract-and-delete-consistency.md

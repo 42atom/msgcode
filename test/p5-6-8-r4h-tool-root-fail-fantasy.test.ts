@@ -95,17 +95,15 @@ describe("P5.6.8-R4h-3: bash 唯一命名锁", () => {
     expect(toolNameMatch![0]).toContain('"bash"');
   });
 
-  it("R4h-3.2: ToolName 不包含 shell（config/workspace.ts）", async () => {
+  it("R4h-3.2: workspace 配置应复用 tools/types.ts 的 ToolName 单一真相源", async () => {
     const workspaceContent = await readFile(
       join(process.cwd(), "src", "config", "workspace.ts"),
       "utf-8"
     );
 
-    // 验证：ToolName 类型不包含 "shell"
-    const toolNameMatch = workspaceContent.match(/export type ToolName[\s\S]*?;/);
-    expect(toolNameMatch).not.toBeNull();
-    expect(toolNameMatch![0]).not.toContain('"shell"');
-    expect(toolNameMatch![0]).toContain('"bash"');
+    expect(workspaceContent).toContain('import type { ToolName, ToolingMode } from "../tools/types.js"');
+    expect(workspaceContent).not.toContain('export type ToolName');
+    expect(workspaceContent).not.toContain('"shell"');
   });
 
   it("R4h-3.3: TOOL_META 不包含 shell", async () => {

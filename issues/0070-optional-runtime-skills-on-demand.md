@@ -81,3 +81,8 @@ links:
 - 验证：
   - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r13-runtime-skill-sync.test.ts`
   - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r3n-system-prompt-file-ref.test.ts`
+
+## Links
+
+- Plan: `docs/design/plan-260310-optional-runtime-skills-on-demand.md`
+- Code: `src/skills/optional/index.json`

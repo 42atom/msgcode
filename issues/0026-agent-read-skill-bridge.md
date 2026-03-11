@@ -45,6 +45,13 @@ due:
 - [x] 真机链路后续转入 Issue 0027 继续验证
 - [x] 提交
 
+## Acceptance Criteria
+
+- skill 场景下 `read_file` 不再被错误隐藏
+- 自然语言触发 runtime skill 时能真实执行 `read_file`
+- 至少一条回归锁覆盖 `read_file` 桥接修复
+- 后续 open-loop 问题明确转交 Issue 0027
+
 ## Evidence
 
 ### 日志证据 (2026-03-07 17:20:58)

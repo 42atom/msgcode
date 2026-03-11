@@ -73,3 +73,7 @@ scope: src/media, src/probe, src/deps, src/runners, prompts
 ### 测试结果
 - TTS 相关测试: 5 pass, 0 fail
 - 模型路径行为锁测试: 11 pass, 0 fail
+
+## Links
+
+- Plan: `docs/design/plan-260309-model-path-hardcode-purge.md`

@@ -50,6 +50,14 @@ links: []
 2. 删除 schedule 后 jobs.json 投影同步删除
 3. 删除后 cron 不再继续跑
 
+## Notes
+
+- 当前证据：
+  - 删除后 schedule 文件已消失，但 jobs 投影未同步删除
+  - 自然语言停止链曾缺失 `--workspace`
+- 后续实现应同时覆盖 CLI 路径与自然语言链路，避免只修一半
+- 本单后续由更具体的 schedule CLI / delete consistency 单继续承接
+
 ## Links
 
 - /Users/admin/GitProjects/msgcode/docs/design/plan-260308-schedule-stop-workspace-and-projection-sync.md

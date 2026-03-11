@@ -26,16 +26,15 @@
 16. `P5.7-R5`：编排与调度域（`todo *` + `schedule *`）
 17. `P5.7-R6`：多模态域（`media *` + `gen *`）
 18. `P5.7-R7`：浏览器域（`browser *`）
-19. `P5.7-R7B`：Gmail 只读验收（首条真实浏览器业务流）
-20. `P5.7-R7C`：非默认 Chrome 数据根 + CDP 验证
-19. `P5.7-R8`：代理域（`agent run/status`）
-20. `P5.7-R8b`：Agent Backend 语义收敛与 MiniMax 2.5 切换（`lmstudio` -> `agent-backend`）
-21. `P5.7-R8d`：模型切换全链路同步（后端模型单源绑定）
-22. `P5.7-R9`：模型真实能力验收门（文件查看/自拍编排/定时提醒/记忆/任务管理）
-23. `P5.7-R9-T1`：真实能力验收执行单（Opus 主执行 + Codex 复核）
-24. `P5.7-R9-T2`：上下文余量感知与 70% 自动 Compact 主链（长会话持续能力硬门）
-25. `P5.7-R9-T3`：记忆默认开启 + PI 基线对齐 + 分支收敛（防回退）
-26. `P5.7-R9-T4`：`lmstudio` 命名去耦到 `agent-backend`（高风险重命名专单）
+19. `P5.7-R7C`：非默认 Chrome 数据根 + CDP 验证
+20. `P5.7-R8`：代理域（`agent run/status`）
+21. `P5.7-R8b`：Agent Backend 语义收敛与 MiniMax 2.5 切换（`lmstudio` -> `agent-backend`）
+22. `P5.7-R8d`：模型切换全链路同步（后端模型单源绑定）
+23. `P5.7-R9`：模型真实能力验收门（文件查看/自拍编排/定时提醒/记忆/任务管理）
+24. `P5.7-R9-T1`：真实能力验收执行单（Opus 主执行 + Codex 复核）
+25. `P5.7-R9-T2`：上下文余量感知与 70% 自动 Compact 主链（长会话持续能力硬门）
+26. `P5.7-R9-T3`：记忆默认开启 + PI 基线对齐 + 分支收敛（防回退）
+27. `P5.7-R9-T4`：`lmstudio` 命名去耦到 `agent-backend`（高风险重命名专单）
 27. `P5.7-R9-T5`：CodexHandler 策略守卫去重（主链反复 if/else 收敛）
 28. `P5.7-R9-T6`：`lmstudio` 硬编码语义清理（配置/路由/类型主语收敛）
 29. `P5.7-R9-T7`：`lmstudio.ts` 兼容壳化与 agent-backend 核心拆分
@@ -222,7 +221,6 @@
 - `p5-7-r6-media-gen-domain.md`：P5.7-R6（多模态域任务单）
 - `p5-7-r6b-image-read-lmstudio-lifecycle.md`：P5.7-R6b（`image read` + LM Studio 按需加载/1h 自动卸载）
 - `p5-7-r7-browser-domain.md`：P5.7-R7（浏览器域任务单）
-- `p5-7-r7b-gmail-readonly-acceptance.md`：P5.7-R7B（Gmail 只读验收）
 - `p5-7-r7c-nondefault-chrome-root-cdp.md`：P5.7-R7C（非默认 Chrome 数据根 + CDP 验证）
 - `p5-7-r8-agent-domain.md`：P5.7-R8（代理域任务单）
 - `p5-7-r8b-agent-backend-switch-minimax-2-5.md`：P5.7-R8b（Agent Backend 切换与 `lmstudio` 语义退场）

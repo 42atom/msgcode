@@ -3,6 +3,12 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-11
+  - release-gate/tests: merge 后失真的回归锁已对齐到当前真相源；browser tool bus、context-policy、agent-first 类型锁、默认模型与 ToolName 测试均已改为锁当前实现，`bun test` 已恢复 `1573 pass / 0 fail` (Issue: 0091, Plan: docs/design/plan-260311-release-gate-stale-regression-lock-alignment.md) [risk: low] [rollback: 回退本轮测试文件改动，重新恢复旧回归锁]
+- 2026-03-11
+  - release-gate/bdd-docsync: 退役的 persona BDD 已退出主链，`docs:check` 也已收口到当前 AGENTS 协议；tmux local-only 拒绝提示同步保留 `/policy egress-allowed` 兼容文案，正式门槛 `npm run test:all` 已恢复通过 (Issue: 0089, Plan: docs/design/plan-260311-release-gate-alignment-docsync-and-bdd.md) [risk: low] [rollback: 回退 `features/`、`scripts/check-doc-sync.ts`、`src/routes/cmd-model.ts` 与相关 issue 文档改动]
+- 2026-03-11
+  - release-gate/browser: 过期的 `gmail-readonly` 回归锁与验收任务已退出主回归；`test/p5-7-r7b-gmail-{contract,readonly}.test.ts` 已从 `bun test` 主集合移除，活跃任务索引也不再把 `P5.7-R7B` 当作当前浏览器域验收，历史任务单转入 `docs/archive/retired-gmail-readonly/` 保存 (Issue: 0090, Plan: docs/design/plan-260311-retire-gmail-readonly-tests-from-release-gate.md) [risk: low] [rollback: 恢复 `test/p5-7-r7b-gmail-*.test.ts`、`docs/tasks/p5-7-r7b-gmail-readonly-acceptance.md` 与 `docs/tasks/README.md` 本轮改动]
+- 2026-03-11
   - merge-prep/typecheck: `npx tsc --noEmit` 已恢复全绿；`feishu/transport.ts` 的文件/图片上传结果改为显式分支收窄，`cmd-schedule.ts` 也已修正 `getWorkspaceRootForDisplay` 的错误来源模块，避免 merge 前继续背着既存 TS 红 (Issue: 0088, Plan: docs/design/plan-260311-typecheck-merge-prep-existing-errors.md) [risk: low] [rollback: 回退 `src/feishu/transport.ts`、`src/routes/cmd-schedule.ts` 与本轮 typecheck/相关回归]
 - 2026-03-11
   - runtime/skills-config: repo 侧 `skills` 历史空壳已退出主链；`src/skills/registry.ts` 与 `src/runtime/skill-orchestrator.ts` 已归档，`src/skills/{types,auto,index}.ts` 只保留最小 `system-info` auto skill 兼容接口；同时 `tools/bus.ts` 不再维护影子 `getToolPolicy()`，`getAgentProvider()` 也只公开真实 provider，历史 `lmstudio/llama/claude` 配置读取时统一归一化到 `agent-backend` (Issue: 0087, Plan: docs/design/plan-260311-skill-legacy-cleanup-and-provider-truth-source.md) [risk: medium] [rollback: 从 `.trash/20260311-skill-legacy/` 恢复历史 skills 文件，并回退 `src/skills/*`、`src/tools/bus.ts`、`src/config/workspace.ts` 与本轮回归测试]
