@@ -2,14 +2,15 @@
  * P5.7-R3e HOTFIX: 模型别名护栏回归锁
  *
  * 目标：
- * - model.executor/model.responder 未配置时不应回退为 provider 别名（如 lmstudio）
- * - lmstudio 调用链应对别名做归一化，避免发送 invalid model identifier
+ * - model.executor/model.responder 未配置时不应回退为 provider 别名
+ * - routed-chat 不应把 provider alias 当作真实模型 ID 发给后端
  */
 
 import { describe, expect, it } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { normalizeModelOverride } from "../src/agent-backend/config.js";
 import { getExecutorModel, getResponderModel } from "../src/config/workspace.js";
 
 describe("P5.7-R3e HOTFIX: model alias guard", () => {
@@ -56,13 +57,35 @@ describe("P5.7-R3e HOTFIX: model alias guard", () => {
     }
   });
 
-  it("lmstudio 调用链必须包含模型别名归一化逻辑", () => {
-    const configCode = fs.readFileSync(path.join(process.cwd(), "src", "agent-backend", "config.ts"), "utf-8");
-    const routedCode = fs.readFileSync(path.join(process.cwd(), "src", "agent-backend", "routed-chat.ts"), "utf-8");
+  it("normalizeModelOverride 应把 provider alias 归一化为 undefined", () => {
+    expect(normalizeModelOverride("lmstudio")).toBeUndefined();
+    expect(normalizeModelOverride("omlx")).toBeUndefined();
+    expect(normalizeModelOverride("minimax")).toBeUndefined();
+    expect(normalizeModelOverride("real-model-id")).toBe("real-model-id");
+  });
 
-    expect(configCode).toContain("const MODEL_ALIAS_SET = new Set");
-    expect(configCode).toContain("function normalizeModelOverride");
-    expect(routedCode).toContain("normalizeModelOverride(await getExecutorModel(workspacePath))");
-    expect(routedCode).toContain("normalizeModelOverride(await getResponderModel(workspacePath))");
+  it("workspace 文本模型若误写 provider alias，归一化后应回到自动解析", async () => {
+    const workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), "msgcode-model-alias-runtime-"));
+    fs.mkdirSync(path.join(workspacePath, ".msgcode"), { recursive: true });
+    fs.writeFileSync(
+      path.join(workspacePath, ".msgcode", "config.json"),
+      JSON.stringify({
+        "model.executor": "lmstudio",
+        "model.responder": "lmstudio",
+      }, null, 2),
+      "utf-8",
+    );
+
+    try {
+      const executor = await getExecutorModel(workspacePath);
+      const responder = await getResponderModel(workspacePath);
+
+      expect(executor).toBe("lmstudio");
+      expect(responder).toBe("lmstudio");
+      expect(normalizeModelOverride(executor)).toBeUndefined();
+      expect(normalizeModelOverride(responder)).toBeUndefined();
+    } finally {
+      fs.rmSync(workspacePath, { recursive: true, force: true });
+    }
   });
 });

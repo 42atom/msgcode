@@ -1,110 +1,184 @@
-/**
- * msgcode: P5.6.7 R6 集成冒烟静态验证
- *
- * 验证代码层面的关键语义一致性
- * 工作区冒烟需要在运行时环境中手工执行
- */
-
-import { describe, it, expect } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
-// 工作区路径（仅用于测试，不进入运行时代码）
 const WORKSPACES = [
-    "/Users/admin/msgcode-workspaces/medicpass",
-    "/Users/admin/msgcode-workspaces/charai",
-    "/Users/admin/msgcode-workspaces/game01",
+  "/Users/admin/msgcode-workspaces/medicpass",
+  "/Users/admin/msgcode-workspaces/charai",
+  "/Users/admin/msgcode-workspaces/game01",
 ];
 
-describe("P5.6.7-R6: 集成冒烟静态验证", () => {
-    describe("工作区配置检查", () => {
-        for (const ws of WORKSPACES) {
-            const name = path.basename(ws);
-            it(`${name}: .msgcode/config.json 存在`, () => {
-                const configPath = path.join(ws, ".msgcode", "config.json");
-                expect(fs.existsSync(configPath)).toBe(true);
-            });
-        }
+function createTempDir(prefix: string): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+}
+
+function writeActiveRoute(routePath: string, chatGuid: string, workspacePath: string): void {
+  fs.mkdirSync(path.dirname(routePath), { recursive: true });
+  fs.writeFileSync(
+    routePath,
+    JSON.stringify(
+      {
+        version: 1,
+        routes: {
+          [chatGuid]: {
+            chatGuid,
+            workspacePath,
+            botType: "default",
+            status: "active",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      },
+      null,
+      2
+    ),
+    "utf-8"
+  );
+}
+
+describe("P5.6.7-R6: 集成冒烟行为验证", () => {
+  let tmpDir = "";
+  let routesPath = "";
+  let jobsPath = "";
+  let runsPath = "";
+  let originalRoutesPath: string | undefined;
+  let originalJobsPath: string | undefined;
+  let originalRunsPath: string | undefined;
+
+  beforeEach(() => {
+    tmpDir = createTempDir("msgcode-smoke-static-");
+    routesPath = path.join(tmpDir, "routes.json");
+    jobsPath = path.join(tmpDir, "cron", "jobs.json");
+    runsPath = path.join(tmpDir, "cron", "runs.jsonl");
+
+    originalRoutesPath = process.env.ROUTES_FILE_PATH;
+    originalJobsPath = process.env.JOBS_FILE_PATH;
+    originalRunsPath = process.env.RUNS_FILE_PATH;
+
+    process.env.ROUTES_FILE_PATH = routesPath;
+    process.env.JOBS_FILE_PATH = jobsPath;
+    process.env.RUNS_FILE_PATH = runsPath;
+  });
+
+  afterEach(() => {
+    if (originalRoutesPath === undefined) {
+      delete process.env.ROUTES_FILE_PATH;
+    } else {
+      process.env.ROUTES_FILE_PATH = originalRoutesPath;
+    }
+    if (originalJobsPath === undefined) {
+      delete process.env.JOBS_FILE_PATH;
+    } else {
+      process.env.JOBS_FILE_PATH = originalJobsPath;
+    }
+    if (originalRunsPath === undefined) {
+      delete process.env.RUNS_FILE_PATH;
+    } else {
+      process.env.RUNS_FILE_PATH = originalRunsPath;
+    }
+
+    if (tmpDir && fs.existsSync(tmpDir)) {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  describe("工作区配置检查", () => {
+    for (const ws of WORKSPACES) {
+      const name = path.basename(ws);
+      it(`${name}: .msgcode/config.json 存在`, () => {
+        const configPath = path.join(ws, ".msgcode", "config.json");
+        expect(fs.existsSync(configPath)).toBe(true);
+      });
+    }
+  });
+
+  describe("关键语义验证", () => {
+    it("clearSessionArtifacts 应清理 window + summary，但不碰其他工作区文件", async () => {
+      const workspacePath = path.join(tmpDir, "workspace-clear");
+      fs.mkdirSync(workspacePath, { recursive: true });
+      fs.mkdirSync(path.join(workspacePath, "AIDOCS"), { recursive: true });
+      fs.writeFileSync(path.join(workspacePath, "AIDOCS", "keep.txt"), "keep", "utf-8");
+
+      const { appendWindow, loadWindow } = await import("../src/session-window.js");
+      const { saveSummary, loadSummary } = await import("../src/summary.js");
+      const { clearSessionArtifacts } = await import("../src/session-artifacts.js");
+
+      await appendWindow(workspacePath, "chat-smoke-clear", {
+        role: "user",
+        content: "上一轮上下文",
+      });
+      await saveSummary(workspacePath, "chat-smoke-clear", {
+        goal: ["保留这轮目标"],
+        constraints: [],
+        decisions: [],
+        openItems: [],
+        toolFacts: [],
+      });
+
+      const result = await clearSessionArtifacts(workspacePath, "chat-smoke-clear");
+
+      expect(result).toEqual({ ok: true });
+      expect(await loadWindow(workspacePath, "chat-smoke-clear")).toEqual([]);
+      expect(await loadSummary(workspacePath, "chat-smoke-clear")).toEqual({
+        goal: [],
+        constraints: [],
+        decisions: [],
+        openItems: [],
+        toolFacts: [],
+      });
+      expect(fs.readFileSync(path.join(workspacePath, "AIDOCS", "keep.txt"), "utf-8")).toBe("keep");
     });
 
-    describe("关键语义验证", () => {
-        it("handlers.ts: direct 路径调用 executeAgentTurn（统一执行入口）", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/handlers.ts"),
-                "utf-8"
-            );
-            // P5.7-R12: 统一通过 executeAgentTurn 收口 direct 主链
-            expect(code).toContain("executeAgentTurn");
-        });
+    it("handleReloadCommand 应返回 schedule 与 SOUL 的真实观测字段", async () => {
+      const workspacePath = path.join(tmpDir, "workspace-reload");
+      fs.mkdirSync(path.join(workspacePath, ".msgcode", "schedules"), { recursive: true });
+      fs.writeFileSync(
+        path.join(workspacePath, ".msgcode", "SOUL.md"),
+        "# Workspace SOUL\n\n来自工作区的 SOUL。",
+        "utf-8"
+      );
+      writeActiveRoute(routesPath, "chat-smoke-reload", workspacePath);
 
-        it("session-orchestrator.ts: /clear 调用 clearSessionArtifacts", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/runtime/session-orchestrator.ts"),
-                "utf-8"
-            );
-            expect(code).toContain("clearSessionArtifacts");
-        });
+      const { handleReloadCommand } = await import("../src/routes/cmd-schedule.ts");
+      const result = await handleReloadCommand({
+        chatId: "chat-smoke-reload",
+        args: [],
+      });
 
-        it("cmd-schedule.ts: /reload 输出 SOUL 字段", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/routes/cmd-schedule.ts"),
-                "utf-8"
-            );
-            // P5.6.9-R4: 更新为字段语义锁（不锁历史文案）
-            expect(code).toContain("SOUL: source=");
-            expect(code).toContain("soulContext");
-            expect(code).toContain("SOUL Entries:");
-        });
-
-        it("skills/auto.ts: runSkill 是单一执行入口", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/skills/auto.ts"),
-                "utf-8"
-            );
-            expect(code).toContain("export async function runSkill");
-        });
-
-        it("session-artifacts.ts: clearSessionArtifacts 清理 window + summary", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/session-artifacts.ts"),
-                "utf-8"
-            );
-            expect(code).toMatch(/clearWindow|clearSummary/);
-        });
-
-        it("session-artifacts.ts: 不包含 clearMemory（/clear 不清 memory）", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/session-artifacts.ts"),
-                "utf-8"
-            );
-            expect(code).not.toContain("clearMemory");
-        });
-
-        it("agent-backend/tool-loop.ts: runAgentToolLoop 通过 Tool Bus 调用（统一执行入口）", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/agent-backend/tool-loop.ts"),
-                "utf-8"
-            );
-            // P5.6.8-R3a: 语义锁（避免绑定具体变量名）
-            expect(code).toContain("async function runTool(");
-            expect(code).toContain('await import("../tools/bus.js")');
-            expect(code).toContain("await executeTool(");
-        });
-
-        // P5.6.13-R1A-EXEC: run_skill 已退役，测试已移除
+      expect(result.success).toBe(true);
+      expect(result.message).toContain("Schedules:");
+      expect(result.message).toContain("Scheduler Refresh:");
+      expect(result.message).toContain("SOUL: source=workspace");
+      expect(result.message).toContain("SOUL Entries:");
+      expect(result.message).toContain(`Workspace SOUL: yes (${path.join(workspacePath, ".msgcode", "SOUL.md")})`);
     });
 
-    describe("回归锁一致性", () => {
-        it("P5.6.2-R1 回归锁存在", () => {
-            const testPath = path.join(process.cwd(), "test/p5-6-2-r1-regression.test.ts");
-            expect(fs.existsSync(testPath)).toBe(true);
-        });
+    it("skills/auto.ts 的 runSkill 应继续作为最小 auto-skill 执行入口", async () => {
+      const { runSkill } = await import("../src/skills/auto.js");
 
-        // P5.6.13-R1A-EXEC: P5.6.3 skill 测试已随 run_skill 一起退役
+      const result = await runSkill("system-info", "system info", {
+        chatId: "chat-smoke-skill",
+        workspacePath: "/tmp/msgcode-smoke-skill",
+      });
 
-        it("P5.6.4 回归锁存在", () => {
-            const testPath = path.join(process.cwd(), "test/p5-6-4-state-boundary.test.ts");
-            expect(fs.existsSync(testPath)).toBe(true);
-        });
+      expect(result.ok).toBe(true);
+      expect(result.skillId).toBe("system-info");
+      expect(result.output).toContain("系统信息");
+      expect(result.output).toContain("Workspace: /tmp/msgcode-smoke-skill");
     });
+  });
+
+  describe("回归锁一致性", () => {
+    it("P5.6.2-R1 回归锁存在", () => {
+      const testPath = path.join(process.cwd(), "test/p5-6-2-r1-regression.test.ts");
+      expect(fs.existsSync(testPath)).toBe(true);
+    });
+
+    it("P5.6.4 回归锁存在", () => {
+      const testPath = path.join(process.cwd(), "test/p5-6-4-state-boundary.test.ts");
+      expect(fs.existsSync(testPath)).toBe(true);
+    });
+  });
 });

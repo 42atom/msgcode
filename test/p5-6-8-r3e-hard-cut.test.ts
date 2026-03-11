@@ -1,247 +1,89 @@
 /**
  * msgcode: P5.6.8-R3e 硬切割回归锁测试
  *
- * 目标：确保 /skill run、run_skill、旧工具名不在主链暴露
+ * 目标：
+ * - 确保退役 skill 编排文件不回流
+ * - 确保历史 PI / run_skill / 旧工具名不再进入运行时真相源
+ * - 保留真正有价值的硬切断言，不锁无关源码写法
  */
 
 import { describe, it, expect } from "bun:test";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 describe("P5.6.8-R3e: 硬切割回归锁", () => {
-    describe("/skill run 命令面删除验证", () => {
-        it("src/runtime/skill-orchestrator.ts 应已退出主链", () => {
-            expect(
-                fs.existsSync(path.join(process.cwd(), "src/runtime/skill-orchestrator.ts"))
-            ).toBe(false);
-        });
+  it("退役的 skill 编排文件应不存在", () => {
+    expect(
+      fs.existsSync(path.join(process.cwd(), "src/runtime/skill-orchestrator.ts"))
+    ).toBe(false);
+    expect(
+      fs.existsSync(path.join(process.cwd(), "src/skills/registry.ts"))
+    ).toBe(false);
+  });
 
-        it("src/handlers.ts 不应调用 handleSkillRunCommand", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/handlers.ts"),
-                "utf-8"
-            );
+  it("repo 侧 skills 入口只应保留最小 auto-skill 兼容导出", async () => {
+    const module = await import("../src/skills/index.js");
 
-            expect(code).not.toContain("handleSkillRunCommand");
-            expect(code).not.toContain("skill.handleSkillRunCommand");
-        });
+    expect(module.detectAutoSkill).toBeDefined();
+    expect(module.runSkill).toBeDefined();
+    expect((module as Record<string, unknown>).runLegacySkill).toBeUndefined();
+    expect((module as Record<string, unknown>).getSkillIndex).toBeUndefined();
+  });
 
-        it("src/handlers.ts 不应导入 skill-orchestrator", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/handlers.ts"),
-                "utf-8"
-            );
+  it("agent-backend 不应回流 PI 幽灵导出", async () => {
+    const facade = await import("../src/agent-backend.js");
+    const core = await import("../src/agent-backend/index.js");
 
-            // handlers.ts 不应导入 skill 模块
-            expect(code).not.toContain('import * as skill from "./runtime/skill-orchestrator"');
-            expect(code).not.toContain('import { handleSkillRunCommand }');
-        });
+    expect((facade as Record<string, unknown>).AGENT_TOOLS).toBeUndefined();
+    expect((core as Record<string, unknown>).PI_ON_TOOLS).toBeUndefined();
+  });
 
-        it("src/skills/registry.ts 应已退出主链", () => {
-            expect(
-                fs.existsSync(path.join(process.cwd(), "src/skills/registry.ts"))
-            ).toBe(false);
-        });
+  it("TOOL_MANIFESTS 应只包含当前正式工具，不回流旧工具名", async () => {
+    const { TOOL_MANIFESTS, resolveLlmToolExposure } = await import("../src/tools/manifest.js");
 
-        it("src/skills/index.ts 不应再转发 registry", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/skills/index.ts"),
-                "utf-8"
-            );
+    const toolNames = Object.keys(TOOL_MANIFESTS);
+    expect(toolNames).toContain("bash");
+    expect(toolNames).toContain("read_file");
+    expect(toolNames).toContain("write_file");
+    expect(toolNames).toContain("edit_file");
 
-            expect(code).not.toContain('./registry.js');
-            expect(code).not.toContain("runLegacySkill");
-        });
-    });
+    for (const retiredName of ["run_skill", "list_directory", "read_text_file", "append_text_file"]) {
+      expect(toolNames).not.toContain(retiredName);
+    }
 
-    describe("旧工具名清理验证", () => {
-        it("src/lmstudio.ts 不应包含 list_directory", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
-                "utf-8"
-            );
+    const exposure = resolveLlmToolExposure(["bash", "read_file", "list_directory" as any]);
+    expect(exposure.exposedTools).toContain("bash");
+    expect(exposure.exposedTools).toContain("read_file");
+    expect(exposure.exposedTools).not.toContain("list_directory" as any);
+    expect(exposure.missingManifests).toContain("list_directory" as any);
+  });
 
-            // 不应在工具定义中出现
-            expect(code).not.toContain('name: "list_directory"');
-            expect(code).not.toContain('case "list_directory"');
-        });
+  it("lmstudio 兼容层的工具入口应直接复用执行核真相源", async () => {
+    const tmpWorkspace = fs.mkdtempSync(path.join(os.tmpdir(), "msgcode-r3e-"));
 
-        it("src/lmstudio.ts 不应包含 read_text_file", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
-                "utf-8"
-            );
+    try {
+      fs.mkdirSync(path.join(tmpWorkspace, ".msgcode"), { recursive: true });
+      fs.writeFileSync(
+        path.join(tmpWorkspace, ".msgcode", "config.json"),
+        JSON.stringify({
+          "tooling.allow": ["bash", "read_file"],
+        }),
+        "utf-8"
+      );
 
-            // 不应在工具定义中出现
-            expect(code).not.toContain('name: "read_text_file"');
-            expect(code).not.toContain('case "read_text_file"');
-        });
+      const compat = await import("../src/lmstudio.js");
+      const core = await import("../src/agent-backend/index.js");
 
-        it("src/lmstudio.ts 不应包含 append_text_file", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
-                "utf-8"
-            );
+      expect(compat.getToolsForLlm).toBe(core.getToolsForLlm);
+      expect(compat.getToolsForAgent).toBe(core.getToolsForLlm);
 
-            // 不应在工具定义中出现
-            expect(code).not.toContain('name: "append_text_file"');
-            expect(code).not.toContain('case "append_text_file"');
-        });
-
-        it("src/routes/ 不应包含旧工具名", () => {
-            const routesDir = path.join(process.cwd(), "src/routes");
-
-            const grepRecursive = (dir: string, pattern: RegExp): string[] => {
-                const results: string[] = [];
-                const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-                for (const entry of entries) {
-                    const fullPath = path.join(dir, entry.name);
-                    if (entry.isDirectory()) {
-                        results.push(...grepRecursive(fullPath, pattern));
-                    } else if (entry.isFile() && entry.name.endsWith(".ts")) {
-                        const content = fs.readFileSync(fullPath, "utf-8");
-                        if (pattern.test(content)) {
-                            results.push(fullPath);
-                        }
-                    }
-                }
-                return results;
-            };
-
-            // 检测旧工具名
-            const matches = grepRecursive(routesDir, /list_directory|read_text_file|append_text_file/);
-            expect(matches).toHaveLength(0);
-        });
-    });
-
-    describe("run_skill 不暴露验证", () => {
-        it("agent-backend/types.ts 不应再保留历史硬编码工具白名单", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/agent-backend/types.ts"),
-                "utf-8"
-            );
-
-            expect(code).not.toContain("export const PI_ON_TOOLS");
-            expect(code).not.toContain('name: "run_skill"');
-        });
-
-        it("src/routes/ 不应包含 run_skill 工具调用", () => {
-            const routesDir = path.join(process.cwd(), "src/routes");
-
-            const grepRecursive = (dir: string, pattern: RegExp): string[] => {
-                const results: string[] = [];
-                const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-                for (const entry of entries) {
-                    const fullPath = path.join(dir, entry.name);
-                    if (entry.isDirectory()) {
-                        results.push(...grepRecursive(fullPath, pattern));
-                    } else if (entry.isFile() && entry.name.endsWith(".ts")) {
-                        const content = fs.readFileSync(fullPath, "utf-8");
-                        if (pattern.test(content)) {
-                            results.push(fullPath);
-                        }
-                    }
-                }
-                return results;
-            };
-
-            // 检测 run_skill 工具调用（排除注释）
-            const matches = grepRecursive(routesDir, /name:\s*"run_skill"|case\s+"run_skill"/);
-            expect(matches).toHaveLength(0);
-        });
-    });
-
-    describe("PI 四工具验证", () => {
-        it("TOOL_MANIFESTS 必须注册四基础工具", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/tools/manifest.ts"),
-                "utf-8"
-            );
-
-            expect(code).toContain("read_file:");
-            expect(code).toContain("write_file:");
-            expect(code).toContain("edit_file:");
-            expect(code).toContain("bash:");
-        });
-
-        it("Tool Bus 必须实现四工具", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/tools/bus.ts"),
-                "utf-8"
-            );
-
-            // 必须包含四工具实现
-            expect(code).toContain('case "read_file"');
-            expect(code).toContain('case "write_file"');
-            expect(code).toContain('case "edit_file"');
-            expect(code).toContain('case "bash"');
-        });
-    });
-
-    describe("全局扫描（排除任务文档）", () => {
-        it("主链文件不应包含 /skill run 命令", () => {
-            const mainFiles = [
-                "src/handlers.ts",
-                "src/lmstudio.ts",
-                "src/skills/index.ts"
-            ];
-
-            for (const file of mainFiles) {
-                const code = fs.readFileSync(
-                    path.join(process.cwd(), file),
-                    "utf-8"
-                );
-
-                // 排除注释和字符串中的说明文字
-                const codeWithoutComments = code
-                    .split("\n")
-                    .filter(line => !line.trim().startsWith("//") && !line.trim().startsWith("*"))
-                    .join("\n");
-
-                // 不应包含 /skill run 的实际实现
-                expect(codeWithoutComments).not.toContain('parts[1] === "run"');
-                expect(codeWithoutComments).not.toContain('/skill run <skillId>');
-            }
-        });
-    });
-});
-
-// P5.6.13-R1A-EXEC: 静态锁 - 禁止 run_skill 回归
-// 验收口径：run_skill 在可执行代码路径必须为 0；测试断言与退役注释可保留
-describe("run_skill 硬退场静态锁", () => {
-    // 工具函数：递归搜索文件
-    const grepRecursive = (dir: string, pattern: RegExp): string[] => {
-        const results: string[] = [];
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-
-        for (const entry of entries) {
-            const fullPath = path.join(dir, entry.name);
-            if (entry.isDirectory()) {
-                results.push(...grepRecursive(fullPath, pattern));
-            } else if (entry.isFile() && entry.name.endsWith(".ts")) {
-                const content = fs.readFileSync(fullPath, "utf-8");
-                if (pattern.test(content)) {
-                    results.push(fullPath);
-                }
-            }
-        }
-        return results;
-    };
-
-    it("src/tools/ 不应包含 case \"run_skill\"", () => {
-        const toolsDir = path.join(process.cwd(), "src/tools");
-        const matches = grepRecursive(toolsDir, /case\s+"run_skill"/);
-        expect(matches.length).toBe(0);
-    });
-
-    it("src/tools/types.ts 不应包含 ToolName = \"run_skill\"", () => {
-        const code = fs.readFileSync(path.join(process.cwd(), "src/tools/types.ts"), "utf-8");
-        // 允许注释中包含 run_skill，但不允许类型定义中包含
-        const typeDefMatch = code.match(/type\s+ToolName\s*=\s*[\s\S]*?;\s*\n/);
-        if (typeDefMatch) {
-            expect(typeDefMatch[0]).not.toContain('"run_skill"');
-        }
-    });
+      const tools = await compat.getToolsForLlm(tmpWorkspace);
+      expect(tools).toContain("bash");
+      expect(tools).toContain("read_file");
+      expect(tools).not.toContain("run_skill" as any);
+    } finally {
+      fs.rmSync(tmpWorkspace, { recursive: true, force: true });
+    }
+  });
 });

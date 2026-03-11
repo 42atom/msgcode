@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { runAgentRoutedChat } from "../src/agent-backend/routed-chat.js";
@@ -28,24 +27,15 @@ async function createToolWorkspace(): Promise<string> {
 }
 
 describe("P5.7-R21: routed-chat 松绑 phase3", () => {
-    it("routed-chat 源码中不再保留前置路由残影", () => {
-        const source = readFileSync(join(process.cwd(), "src/agent-backend", "routed-chat.ts"), "utf-8");
-
-        expect(source).not.toContain("forceComplexTool");
-        expect(source).not.toContain("hasToolsAvailable");
-        expect(source).not.toContain("allowNoTool");
-        expect(source).not.toContain("degrade mode: forcing no-tool");
-        expect(source).not.toContain('decisionSource: "router"');
-        expect(source).not.toContain('decisionSource: "degrade"');
-    });
-
     it("默认 routed-chat 应直接进入 tool-loop，并保留模型真实 no-tool 决策", async () => {
         const originalFetch = globalThis.fetch;
         const workspacePath = await createToolWorkspace();
         let callCount = 0;
+        let capturedBody: Record<string, unknown> = {};
 
-        globalThis.fetch = (async () => {
+        globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
             callCount += 1;
+            capturedBody = typeof init?.body === "string" ? JSON.parse(init.body) : {};
             return asJsonResponse({
                 choices: [{
                     message: {
@@ -66,6 +56,8 @@ describe("P5.7-R21: routed-chat 松绑 phase3", () => {
             expect(result.route).toBe("no-tool");
             expect(result.decisionSource).toBe("model");
             expect(result.actionJournal).toEqual([]);
+            expect(Array.isArray(capturedBody.tools)).toBe(true);
+            expect((capturedBody.tools as unknown[]).length).toBeGreaterThan(0);
         } finally {
             globalThis.fetch = originalFetch;
             await rm(workspacePath, { recursive: true, force: true });

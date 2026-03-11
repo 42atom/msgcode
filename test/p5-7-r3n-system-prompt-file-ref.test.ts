@@ -1,62 +1,117 @@
-/**
- * msgcode: P5.7-R3n 系统提示词文件引用回归锁
- *
- * 目标：
- * - LM Studio 支持通过文件加载系统提示词，便于反复调试
- * - 文件提示词可承载 SOUL 路径约束口径
- */
-
-import { describe, it, expect } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 
 function readText(relPath: string): string {
-    return fs.readFileSync(path.join(process.cwd(), relPath), "utf-8");
+  return fs.readFileSync(path.join(process.cwd(), relPath), "utf-8");
 }
 
 describe("P5.7-R3n: system prompt file reference", () => {
-    it("应存在默认系统提示词文件", () => {
-        const promptPath = path.join(process.cwd(), "prompts", "agents-prompt.md");
-        expect(fs.existsSync(promptPath)).toBe(true);
-    });
+  let tmpDir = "";
+  let originalEnv: Record<string, string | undefined> = {};
 
-    it("默认提示词文件应包含 SOUL 固定路径口径", () => {
-        const content = readText("prompts/agents-prompt.md");
-        expect(content).toContain("<workspace>/.msgcode/SOUL.md");
-        expect(content).toContain("不要猜测 soul 或 soul.md");
-        expect(content).toContain("feishu_list_members");
-        expect(content).toContain("feishu_list_recent_messages");
-        expect(content).toContain("feishu_reply_message");
-        expect(content).toContain("feishu_react_message");
-        expect(content).toContain('<at user_id="对方ID">称呼</at>');
-        expect(content).toContain("optional/index.json");
-        expect(content).toContain("twitter-media");
-        expect(content).toContain("主索引已经汇总了基础 skill 和可选 skill 的摘要");
-        expect(content).toContain("`memory` 不是工具名");
-        expect(content).toContain("判断某个 skill 能做什么、不能做什么之前，必须仔细阅读对应的 SKILL.md");
-        expect(content).toContain("如果看完仍然不确定能力边界或调用方式，先向用户说明不确定点并沟通");
-        expect(content).toContain("凡是 AI 生成的图片、音频、视频以及其他生成产物，优先在当前 workspace 的 `AIDOCS/` 目录下查找");
-    });
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "msgcode-prompt-ref-"));
+    originalEnv = {
+      NODE_ENV: process.env.NODE_ENV,
+      MSGCODE_TRANSPORTS: process.env.MSGCODE_TRANSPORTS,
+      FEISHU_APP_ID: process.env.FEISHU_APP_ID,
+      FEISHU_APP_SECRET: process.env.FEISHU_APP_SECRET,
+      AGENT_SYSTEM_PROMPT_FILE: process.env.AGENT_SYSTEM_PROMPT_FILE,
+      AGENT_SYSTEM_PROMPT: process.env.AGENT_SYSTEM_PROMPT,
+      MSGCODE_CONFIG_DIR: process.env.MSGCODE_CONFIG_DIR,
+      HOME: process.env.HOME,
+    };
 
-    it("配置层应暴露 AGENT_SYSTEM_PROMPT_FILE", () => {
-        const configCode = readText("src/config.ts");
-        expect(configCode).toContain("agentSystemPromptFile?: string");
-        expect(configCode).toContain("process.env.AGENT_SYSTEM_PROMPT_FILE");
-        expect(configCode).not.toContain("process.env.LMSTUDIO_SYSTEM_PROMPT_FILE");
-    });
+    process.env.NODE_ENV = "test";
+    process.env.MSGCODE_TRANSPORTS = "feishu";
+    process.env.FEISHU_APP_ID = "cli-test-app";
+    process.env.FEISHU_APP_SECRET = "cli-test-secret";
+    process.env.MSGCODE_CONFIG_DIR = path.join(tmpDir, ".config", "msgcode");
+  });
 
-    it("LM Studio 主链应通过 resolveBaseSystemPrompt 读取基础提示词", () => {
-        const promptCode = readText("src/agent-backend/prompt.ts");
-        expect(promptCode).toContain("async function resolveBaseSystemPrompt");
+  afterEach(() => {
+    for (const [key, value] of Object.entries(originalEnv)) {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
 
-        const chatCode = readText("src/agent-backend/chat.ts");
-        const matches = chatCode.match(/resolveBaseSystemPrompt\(/g) || [];
-        expect(matches.length).toBeGreaterThanOrEqual(1);
-    });
+    if (tmpDir && fs.existsSync(tmpDir)) {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
 
-    it(".env 示例应包含 AGENT 提示词文件配置项", () => {
-        const envExample = readText(".env.example");
-        expect(envExample).toContain("AGENT_SYSTEM_PROMPT_FILE=");
-        expect(envExample).not.toContain("LMSTUDIO_SYSTEM_PROMPT_FILE=");
-    });
+  it("应存在默认系统提示词文件", () => {
+    const promptPath = path.join(process.cwd(), "prompts", "agents-prompt.md");
+    expect(fs.existsSync(promptPath)).toBe(true);
+  });
+
+  it("默认提示词文件应包含 SOUL 固定路径口径", () => {
+    const content = readText("prompts/agents-prompt.md");
+    expect(content).toContain("<workspace>/.msgcode/SOUL.md");
+    expect(content).toContain("不要猜测 soul 或 soul.md");
+    expect(content).toContain("feishu_list_members");
+    expect(content).toContain("feishu_list_recent_messages");
+    expect(content).toContain("feishu_reply_message");
+    expect(content).toContain("feishu_react_message");
+    expect(content).toContain('<at user_id="对方ID">称呼</at>');
+    expect(content).toContain("optional/index.json");
+    expect(content).toContain("twitter-media");
+    expect(content).toContain("主索引已经汇总了基础 skill 和可选 skill 的摘要");
+    expect(content).toContain("`memory` 不是工具名");
+    expect(content).toContain("判断某个 skill 能做什么、不能做什么之前，必须仔细阅读对应的 SKILL.md");
+    expect(content).toContain("如果看完仍然不确定能力边界或调用方式，先向用户说明不确定点并沟通");
+    expect(content).toContain("凡是 AI 生成的图片、音频、视频以及其他生成产物，优先在当前 workspace 的 `AIDOCS/` 目录下查找");
+  });
+
+  it("配置层应通过 loadConfig 暴露 AGENT_SYSTEM_PROMPT_FILE", async () => {
+    process.env.AGENT_SYSTEM_PROMPT_FILE = "prompts/custom-agent.md";
+    delete process.env.AGENT_SYSTEM_PROMPT;
+
+    const { loadConfig } = await import("../src/config.js");
+    const loaded = loadConfig();
+
+    expect(loaded.agentSystemPromptFile).toBe("prompts/custom-agent.md");
+    expect(loaded.agentSystemPrompt).toBeUndefined();
+  });
+
+  it("prompt 模块应解析文件路径并注入运行时目录占位符", async () => {
+    const promptFile = path.join(tmpDir, "custom-agent.md");
+    fs.writeFileSync(
+      promptFile,
+      [
+        "# test prompt",
+        "config={{MSGCODE_CONFIG_DIR}}",
+        "skills={{MSGCODE_SKILLS_DIR}}",
+      ].join("\n"),
+      "utf-8"
+    );
+
+    const {
+      resolvePromptFilePath,
+      loadSystemPromptFromFile,
+      resolveBaseSystemPrompt,
+    } = await import("../src/agent-backend/prompt.js");
+
+    expect(resolvePromptFilePath(promptFile)).toBe(promptFile);
+    expect(resolvePromptFilePath("prompts/agents-prompt.md")).toBe(
+      path.join(process.cwd(), "prompts", "agents-prompt.md")
+    );
+
+    const loaded = await loadSystemPromptFromFile(promptFile);
+    expect(loaded).toContain(`config=${path.join(tmpDir, ".config", "msgcode")}`);
+    expect(loaded).toContain(`skills=${path.join(tmpDir, ".config", "msgcode", "skills")}`);
+
+    expect(await resolveBaseSystemPrompt("直接覆盖提示词")).toBe("直接覆盖提示词");
+  });
+
+  it(".env 示例应包含 AGENT 提示词文件配置项", () => {
+    const envExample = readText(".env.example");
+    expect(envExample).toContain("AGENT_SYSTEM_PROMPT_FILE=");
+    expect(envExample).not.toContain("LMSTUDIO_SYSTEM_PROMPT_FILE=");
+  });
 });

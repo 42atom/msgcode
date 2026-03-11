@@ -1,162 +1,122 @@
-/**
- * msgcode: P5.6.8-R4b window/summary 注入回归锁测试
- *
- * 目标：确保 handlers 读取的 window/summary 必须进入 executeAgentTurn 请求构造
- * P5.7-R3e: 更新测试以匹配新的路由分发函数
- * P5.7-R12: handlers 通过 executeAgentTurn 统一收口
- * P5.7-R9-T7: 更新测试以读取 agent-backend 模块
- */
-
-import { describe, it, expect } from "bun:test";
-import fs from "node:fs";
-import path from "node:path";
+import { afterEach, describe, expect, it } from "bun:test";
+import {
+  buildConversationContextBlocks,
+  buildDialogPromptWithContext,
+  runAgentToolLoop,
+  type AgentBackendRuntime,
+} from "../src/agent-backend/index.js";
 
 describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
-    describe("AgentToolLoopOptions 接口验证", () => {
-        it("AgentToolLoopOptions 必须包含 windowMessages 字段", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/agent-backend/types.ts"),
-                "utf-8"
-            );
+  const originalFetch = globalThis.fetch;
 
-            expect(code).toContain("windowMessages?");
-            expect(code).toContain("历史窗口消息");
-        });
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
 
-        it("AgentToolLoopOptions 必须包含 summaryContext 字段", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/agent-backend/types.ts"),
-                "utf-8"
-            );
-
-            expect(code).toContain("summaryContext?");
-            expect(code).toContain("summary 格式化后的上下文");
-        });
+  it("buildConversationContextBlocks 应按 summary/window 预算裁剪上下文", () => {
+    const result = buildConversationContextBlocks({
+      summaryContext: "摘要".repeat(40),
+      windowMessages: [
+        { role: "user", content: "第 1 条消息，长度较长，需要被裁剪处理。" },
+        { role: "assistant", content: "第 2 条回答，应该保留在最近窗口里。" },
+        { role: "user", content: "第 3 条问题，必须优先保留，因为它离当前轮次最近。" },
+      ],
+      budget: {
+        maxSummaryChars: 30,
+        maxWindowMessages: 2,
+        maxWindowChars: 60,
+        maxTotalContextChars: 90,
+        maxMessageChars: 20,
+      },
     });
 
-    describe("handlers.ts 注入验证", () => {
-        it("handlers.ts 必须导入统一的 assembleAgentContext", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/handlers.ts"),
-                "utf-8"
-            );
+    expect(result.summaryText).toBeDefined();
+    expect(result.summaryText!.length).toBeLessThanOrEqual(30);
+    expect(result.windowMessages).toHaveLength(2);
+    expect(result.windowMessages[0]?.role).toBe("assistant");
+    expect(result.windowMessages[1]?.role).toBe("user");
+    expect(result.windowMessages[1]?.content).toContain("第 3 条问");
+    expect(result.usedChars).toBeLessThanOrEqual(90);
+  });
 
-            expect(code).toMatch(/import\s*\{[\s\S]*assembleAgentContext[\s\S]*\}\s*from\s*["']\.\/runtime\/context-policy\.js["']/);
-        });
-
-        it("handlers.ts 必须通过 assembleAgentContext 读取上下文", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/handlers.ts"),
-                "utf-8"
-            );
-
-            expect(code).toContain("const assembledContext = await assembleAgentContext({");
-            expect(code).toContain('source: "message"');
-            expect(code).toContain("chatId: context.chatId");
-        });
-
-        it("handlers.ts 必须传递 windowMessages 和 summaryContext 给 executeAgentTurn", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/handlers.ts"),
-                "utf-8"
-            );
-
-            // P5.7-R12: handlers 只依赖 executeAgentTurn 统一入口
-            const executeTurnMatch = code.match(/executeAgentTurn\(\{[\s\S]{0,900}/);
-            expect(executeTurnMatch).not.toBeNull();
-
-            // 验证传递了 windowMessages 和 summaryContext
-            expect(executeTurnMatch![0]).toContain("assembledContext.windowMessages");
-            expect(executeTurnMatch![0]).toContain("assembledContext.summaryContext");
-        });
+  it("buildDialogPromptWithContext 应保持 summary -> window -> user 顺序", () => {
+    const prompt = buildDialogPromptWithContext({
+      prompt: "请继续回答当前问题",
+      summaryContext: "这里是历史摘要",
+      windowMessages: [
+        { role: "user", content: "上一轮用户提问" },
+        { role: "assistant", content: "上一轮助手回答" },
+      ],
     });
 
-    describe("runAgentToolLoop 注入逻辑验证", () => {
-        it("runAgentToolLoop 必须注入 summaryContext", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/agent-backend/tool-loop.ts"),
-                "utf-8"
-            );
+    const summaryIndex = prompt.indexOf("[历史对话摘要]");
+    const windowIndex = prompt.indexOf("[最近对话窗口]");
+    const userIndex = prompt.indexOf("[当前用户问题]");
 
-            // 验证 summary 注入逻辑
-            expect(code).toContain('options.summaryContext');
-            expect(code).toContain('[历史对话摘要]');
-        });
+    expect(summaryIndex).toBeGreaterThanOrEqual(0);
+    expect(windowIndex).toBeGreaterThan(summaryIndex);
+    expect(userIndex).toBeGreaterThan(windowIndex);
+    expect(prompt).toContain("[user] 上一轮用户提问");
+    expect(prompt).toContain("[assistant] 上一轮助手回答");
+    expect(prompt).toContain("请继续回答当前问题");
+  });
 
-        it("runAgentToolLoop 必须注入 windowMessages", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/agent-backend/tool-loop.ts"),
-                "utf-8"
-            );
+  it("runAgentToolLoop 应把 summary/window 真实注入发给模型的 messages", async () => {
+    const capturedBodies: Array<{ messages?: Array<{ role: string; content?: string }> }> = [];
 
-            // 验证 window messages 注入逻辑
-            expect(code).toContain('options.windowMessages');
-            expect(code).toContain('buildConversationContextBlocks');
-            expect(code).toContain('contextBlocks.windowMessages');
-        });
+    globalThis.fetch = async (_url, init) => {
+      capturedBodies.push(JSON.parse(String(init?.body ?? "{}")));
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content: "最终答复",
+              },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }
+      );
+    };
 
-        it("runAgentToolLoop 必须有预算限制", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/agent-backend/tool-loop.ts"),
-                "utf-8"
-            );
+    const backendRuntime: AgentBackendRuntime = {
+      id: "openai",
+      baseUrl: "http://unit-test.local",
+      apiKey: "test-key",
+      model: "unit-test-model",
+      timeoutMs: 500,
+      nativeApiEnabled: false,
+    };
 
-            // 验证预算限制
-            expect(code).toContain('buildConversationContextBlocks');
-            expect(code).toContain('contextBlocks.summaryText');
-            expect(code).toContain('contextBlocks.windowMessages');
-        });
-
-        it("messages 构造顺序必须是：system -> summary -> window -> user", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/agent-backend/tool-loop.ts"),
-                "utf-8"
-            );
-
-            // 验证注入顺序
-            const messagesSection = code.match(
-                /const messages.*?[\s\S]{0,2000}messages\.push\(\{ role: "user", content: options\.prompt \}\)/
-            );
-            expect(messagesSection).not.toBeNull();
-
-            const section = messagesSection![0];
-
-            // 验证顺序
-            const systemIndex = section.indexOf('role: "system"');
-            const summaryIndex = section.indexOf('[历史对话摘要]');
-            const windowIndex = section.indexOf('contextBlocks.windowMessages');
-            const userIndex = section.indexOf('role: "user", content: options.prompt');
-
-            expect(systemIndex).toBeLessThan(summaryIndex);
-            expect(summaryIndex).toBeLessThan(windowIndex);
-            expect(windowIndex).toBeLessThan(userIndex);
-        });
+    const result = await runAgentToolLoop({
+      prompt: "当前用户问题",
+      summaryContext: "这里是历史摘要",
+      windowMessages: [
+        { role: "user", content: "上轮用户问题" },
+        { role: "assistant", content: "上轮助手回答" },
+      ],
+      backendRuntime,
+      model: "unit-test-model",
+      tools: [],
+      timeoutMs: 500,
     });
 
-    describe("注入不是只读验证", () => {
-        it("windowMessages 不是只读取不使用", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/agent-backend/tool-loop.ts"),
-                "utf-8"
-            );
+    expect(result.answer).toBe("最终答复");
+    expect(capturedBodies).toHaveLength(1);
 
-            // 验证 windowMessages 被实际使用（遍历并注入到 messages）
-            expect(code).toContain('for (const msg of contextBlocks.windowMessages)');
-            expect(code).toContain('messages.push({');
-            expect(code).toContain('role: msg.role');
-            expect(code).toContain('content: msg.content');
-        });
-
-        it("summaryContext 不是只读取不使用", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/agent-backend/tool-loop.ts"),
-                "utf-8"
-            );
-
-            // 验证 summaryContext 被实际注入到 messages 数组
-            expect(code).toContain('messages.push');
-            expect(code).toContain('[历史对话摘要]');
-            expect(code).toContain('options.summaryContext');
-        });
-    });
+    const messages = capturedBodies[0]?.messages ?? [];
+    expect(messages[0]?.role).toBe("system");
+    expect(messages[1]?.role).toBe("assistant");
+    expect(messages[1]?.content).toContain("[历史对话摘要]");
+    expect(messages[1]?.content).toContain("这里是历史摘要");
+    expect(messages[2]).toEqual({ role: "user", content: "上轮用户问题" });
+    expect(messages[3]).toEqual({ role: "assistant", content: "上轮助手回答" });
+    expect(messages[4]).toEqual({ role: "user", content: "当前用户问题" });
+  });
 });

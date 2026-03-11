@@ -2,142 +2,155 @@
  * msgcode: P5.7-R9-T2 上下文预算与 Compact 回归锁
  *
  * 目标：
- * - 锁定 70% 触发阈值
- * - 锁定 85% 硬保护阈值
- * - 锁定重启后恢复能力
- * - 锁定换模型后恢复能力
- * - 锁定路由一致性（三种路由使用同一上下文资产）
+ * - 锁定上下文预算常量与 helper 合同
+ * - 锁定 compact 触发与落盘行为
+ * - 锁定 routed-chat 对 summaryContext 的真实透传
  */
 
-import { describe, it, expect } from "bun:test";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 
-// ============================================
-// 回归锁 1: 70% 触发阈值常量
-// ============================================
+function createTempDir(prefix: string): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+}
 
-describe("P5.7-R9-T2: 70% 触发阈值", () => {
-    it("context-policy.ts 应包含 70% 软阈值常量", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
-        // 锁定：70% 软阈值触发 compact
-        expect(code).toContain("CONTEXT_COMPACT_SOFT_THRESHOLD = 70");
+describe("P5.7-R9-T2: Context Budget & Compact", () => {
+  let tmpDir = "";
+  let workspacePath = "";
+
+  beforeEach(async () => {
+    tmpDir = createTempDir("msgcode-r9-t2-");
+    workspacePath = path.join(tmpDir, "workspace");
+    fs.mkdirSync(workspacePath, { recursive: true });
+    process.env.AGENT_CONTEXT_WINDOW_TOKENS = "4096";
+    process.env.AGENT_RESERVED_OUTPUT_TOKENS = "1024";
+    process.env.AGENT_CHARS_PER_TOKEN = "2";
+
+    const { clearRuntimeCapabilityCache } = await import("../src/capabilities.js");
+    clearRuntimeCapabilityCache();
+  });
+
+  afterEach(async () => {
+    delete process.env.AGENT_CONTEXT_WINDOW_TOKENS;
+    delete process.env.AGENT_RESERVED_OUTPUT_TOKENS;
+    delete process.env.AGENT_CHARS_PER_TOKEN;
+
+    const { clearRuntimeCapabilityCache } = await import("../src/capabilities.js");
+    clearRuntimeCapabilityCache();
+
+    if (tmpDir && fs.existsSync(tmpDir)) {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+  });
+
+  it("应导出稳定的 compact 常量", async () => {
+    const {
+      CONTEXT_COMPACT_SOFT_THRESHOLD,
+      CONTEXT_COMPACT_HARD_THRESHOLD,
+      CONTEXT_COMPACT_KEEP_RECENT,
+    } = await import("../src/runtime/context-policy.js");
+
+    expect(CONTEXT_COMPACT_SOFT_THRESHOLD).toBe(70);
+    expect(CONTEXT_COMPACT_HARD_THRESHOLD).toBe(85);
+    expect(CONTEXT_COMPACT_KEEP_RECENT).toBe(16);
+  });
+
+  it("buildConversationContextBlocks / buildDialogPromptWithContext 应按预算裁剪并生成上下文块", async () => {
+    const {
+      buildConversationContextBlocks,
+      buildDialogPromptWithContext,
+      clipToolPreviewText,
+    } = await import("../src/runtime/context-policy.js");
+
+    const blocks = buildConversationContextBlocks({
+      summaryContext: "这是一个很长的历史摘要，用来验证摘要预算会被裁剪。",
+      windowMessages: [
+        { role: "user", content: "第一条消息会被窗口预算裁掉" },
+        { role: "assistant", content: "第二条消息保留" },
+        { role: "user", content: "第三条消息也保留" },
+      ],
+      budget: {
+        maxSummaryChars: 12,
+        maxWindowMessages: 2,
+        maxWindowChars: 40,
+        maxTotalContextChars: 60,
+        maxMessageChars: 8,
+      },
     });
 
-    it("context-policy.ts 应包含 isApproachingBudget 判定逻辑", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
-        // 锁定：使用率 >= 70% 标记为 isApproachingBudget
-        expect(code).toContain("contextUsagePct >= CONTEXT_COMPACT_SOFT_THRESHOLD");
-    });
-});
+    expect(blocks.summaryText).toBe("这是一个很长的历史摘要，");
+    expect(blocks.windowMessages).toEqual([
+      { role: "assistant", content: "第二条消息保留" },
+      { role: "user", content: "第三条消息也保留" },
+    ]);
+    expect(blocks.usedChars).toBeLessThanOrEqual(60);
 
-// ============================================
-// 回归锁 2: 85% 硬保护阈值
-// ============================================
-
-describe("P5.7-R9-T2: 85% 硬保护阈值", () => {
-    it("context-policy.ts 应包含 85% 硬保护阈值常量", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
-        // 锁定：85% 硬保护阈值
-        expect(code).toContain("CONTEXT_COMPACT_HARD_THRESHOLD = 85");
+    const prompt = buildDialogPromptWithContext({
+      prompt: "继续执行",
+      summaryContext: "Goal:\n- 收口 compact",
+      windowMessages: [
+        { role: "user", content: "用户上下文" },
+        { role: "assistant", content: "助手上下文" },
+      ],
     });
 
-    it("context-policy.ts 应包含硬保护警告日志", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
-        // 锁定：compact 后仍超过 85% 应有警告
-        expect(code).toContain("context overflow protected");
-    });
-});
+    expect(prompt).toContain("[历史对话摘要]");
+    expect(prompt).toContain("[最近对话窗口]");
+    expect(prompt).toContain("[当前用户问题]");
+    expect(prompt).toContain("继续执行");
+    expect(clipToolPreviewText("abcdefghij", 5)).toBe("abcde...");
+  });
 
-// ============================================
-// 回归锁 3: 观测字段冻结
-// ============================================
+  it("assembleAgentContext 超过软阈值时应 compact 并落盘", async () => {
+    process.env.AGENT_CONTEXT_WINDOW_TOKENS = "20";
+    process.env.AGENT_RESERVED_OUTPUT_TOKENS = "10";
+    process.env.AGENT_CHARS_PER_TOKEN = "1";
 
-describe("P5.7-R9-T2: 观测字段冻结", () => {
-    it("context-policy.ts 应包含所有必需的观测字段", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
-        // 锁定：观测字段必须包含
-        expect(code).toContain("contextWindowTokens");
-        expect(code).toContain("contextUsedTokens");
-        expect(code).toContain("contextUsagePct");
-        expect(code).toContain("compactionTriggered");
-        expect(code).toContain("compactionReason");
-    });
-});
+    const { clearRuntimeCapabilityCache } = await import("../src/capabilities.js");
+    const { appendWindow, loadWindow } = await import("../src/session-window.js");
+    const { loadSummary } = await import("../src/summary.js");
+    const { assembleAgentContext, CONTEXT_COMPACT_SOFT_THRESHOLD } = await import("../src/runtime/context-policy.js");
+    clearRuntimeCapabilityCache();
 
-// ============================================
-// 回归锁 4: Compact 策略
-// ============================================
+    for (let index = 0; index < 24; index += 1) {
+      await appendWindow(workspacePath, "chat-r9-t2-compact", {
+        role: index % 2 === 0 ? "user" : "assistant",
+        content: `第 ${index} 条上下文消息，用来压满窗口并触发 compact。`.repeat(2),
+      });
+    }
 
-describe("P5.7-R9-T2: Compact 策略", () => {
-  it("context-policy.ts 应保留最近 16 条消息", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
-        // 锁定：保留最近 16 条消息
-        expect(code).toContain("CONTEXT_COMPACT_KEEP_RECENT = 16");
-    });
-
-    it("context-policy.ts 应调用 trimWindowWithResult 进行裁剪", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
-        // 锁定：使用 trimWindowWithResult 裁剪
-        expect(code).toContain("trimWindowWithResult");
+    const result = await assembleAgentContext({
+      source: "message",
+      chatId: "chat-r9-t2-compact",
+      prompt: "继续推进 compact 验证",
+      workspacePath,
+      runId: "run-r9-t2-compact",
+      sessionKey: "session:v1:test:r9-t2",
     });
 
-    it("context-policy.ts 应调用 extractSummary 提取摘要", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
-        // 锁定：使用 extractSummary 提取摘要
-        expect(code).toContain("extractSummary");
-    });
+    const persistedWindow = await loadWindow(workspacePath, "chat-r9-t2-compact");
+    const persistedSummary = await loadSummary(workspacePath, "chat-r9-t2-compact");
 
-    it("context-policy.ts 应调用 rewriteWindow 重写窗口", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
-        // 锁定：使用 rewriteWindow 重写窗口文件
-        expect(code).toContain("rewriteWindow");
-    });
+    expect(result.compactionTriggered).toBe(true);
+    expect(result.compactionReason).toContain(`${CONTEXT_COMPACT_SOFT_THRESHOLD}% threshold`);
+    expect(result.contextUsagePct).toBeGreaterThanOrEqual(CONTEXT_COMPACT_SOFT_THRESHOLD);
+    expect(result.postCompactUsagePct).toBeDefined();
+    expect(result.contextWindowTokens).toBeGreaterThan(0);
+    expect(result.contextBudget).toBeGreaterThan(0);
+    expect(result.windowMessages).toHaveLength(16);
+    expect(persistedWindow).toHaveLength(16);
+    expect(persistedSummary.goal.length).toBeGreaterThan(0);
+    expect(result.summaryContext).toContain("Goal:");
+  });
 
-    it("handlers.ts 不应再独占 compact 主逻辑", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/handlers.ts"), "utf-8");
-        expect(code).toContain("assembleAgentContext");
-        expect(code).not.toContain("trimWindowWithResult");
-        expect(code).not.toContain("extractSummary");
-    });
-});
+  it("routed-chat 应把 summaryContext 透传给 tool-loop 主链", async () => {
+    const routedChatCode = fs.readFileSync(
+      path.join(process.cwd(), "src/agent-backend/routed-chat.ts"),
+      "utf-8"
+    );
 
-// ============================================
-// 回归锁 5: 路由一致性
-// ============================================
-
-describe("P5.7-R9-T2: 路由一致性", () => {
-    it("agent-backend/routed-chat.ts 的 tool 路由应注入 summaryContext", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/agent-backend/routed-chat.ts"), "utf-8");
-        // 锁定：tool 路由注入 summaryContext（P5.7-R9-T2 Step 3）
-        // 找到 tool 路由的 runAgentToolLoop 调用
-        expect(code).toContain("summaryContext: options.summaryContext");
-    });
-
-    it("session-window.ts 应包含 rewriteWindow 函数", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/session-window.ts"), "utf-8");
-        // 锁定：rewriteWindow 函数存在（用于 compact 后落盘）
-        expect(code).toContain("export async function rewriteWindow");
-    });
-});
-
-// ============================================
-// 回归锁 6: 预算感知模块导入
-// ============================================
-
-describe("P5.7-R9-T2: 预算感知模块导入", () => {
-    it("context-policy.ts 应导入 estimateTotalTokens", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
-        expect(code).toContain("estimateTotalTokens");
-    });
-
-    it("context-policy.ts 应导入 getInputBudgetFromCapabilities", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
-        expect(code).toContain("getInputBudgetFromCapabilities");
-    });
-
-    it("context-policy.ts 应导入 resolveRuntimeCapabilities", () => {
-        const code = readFileSync(resolve(process.cwd(), "src/runtime/context-policy.ts"), "utf-8");
-        expect(code).toContain("resolveRuntimeCapabilities");
-    });
+    expect(routedChatCode).toContain("summaryContext: options.summaryContext");
+  });
 });

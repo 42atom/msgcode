@@ -36,29 +36,58 @@ describe("Phase 3: Context Policy", () => {
     }
   });
 
-  it("普通消息链和 task 续跑链应共用同一个 assembleAgentContext 入口", () => {
-    const handlersCode = fs.readFileSync(
-      path.join(process.cwd(), "src/handlers.ts"),
-      "utf-8"
-    );
-    const commandsCode = fs.readFileSync(
-      path.join(process.cwd(), "src/commands.ts"),
-      "utf-8"
-    );
+  it("普通消息链和 task 续跑链应共享同一 assembleAgentContext 合同", async () => {
+    const { appendWindow } = await import("../src/session-window.js");
+    const { saveSummary } = await import("../src/summary.js");
+    const { assembleAgentContext } = await import("../src/runtime/context-policy.js");
 
-    expect(handlersCode).toContain('import { assembleAgentContext } from "./runtime/context-policy.js"');
-    expect(handlersCode).toContain("const assembledContext = await assembleAgentContext({");
-    expect(handlersCode).toContain("currentChannel: sessionChannel");
-    expect(handlersCode).toContain("currentSpeakerId: context.originalMessage.sender || context.originalMessage.handle");
-    expect(handlersCode).toContain("primaryOwnerIds: getPrimaryOwnerIdsForChannel(sessionChannel)");
+    await appendWindow(workspacePath, "chat-phase3-shared", {
+      role: "user",
+      content: "普通消息链和 task 续跑链都应该复用统一 assembler。",
+    });
+    await saveSummary(workspacePath, "chat-phase3-shared", {
+      goal: ["共享统一上下文装配入口"],
+      constraints: ["不要回退到 handlers 私有拼装"],
+      decisions: [],
+      openItems: [],
+      toolFacts: [],
+    });
 
-    expect(commandsCode).toContain('const { assembleAgentContext } = await import("./runtime/context-policy.js")');
-    expect(commandsCode).toContain("const assembledContext = await assembleAgentContext({");
-    expect(commandsCode).toContain("includeSoulContext: true");
-    expect(commandsCode).toContain("sessionKey: runContext.sessionKey");
-    expect(commandsCode).toContain("soulContext: assembledContext.soulContext");
-    expect(commandsCode).not.toContain("loadWindow(task.workspacePath, task.chatId)");
-    expect(commandsCode).not.toContain("loadSummary(task.workspacePath, task.chatId)");
+    const messageResult = await assembleAgentContext({
+      source: "message",
+      chatId: "chat-phase3-shared",
+      prompt: "继续普通消息链",
+      workspacePath,
+      currentChannel: "feishu",
+      currentSpeakerId: "ou_phase3",
+      primaryOwnerIds: ["ou_phase3"],
+      runId: "run-phase3-shared-message",
+      sessionKey: "session:v1:phase3:shared-message",
+    });
+
+    const taskResult = await assembleAgentContext({
+      source: "task",
+      chatId: "chat-phase3-shared",
+      prompt: "继续 task 续跑链",
+      workspacePath,
+      taskGoal: "统一消息链与 task 链的上下文合同",
+      checkpoint: {
+        currentPhase: "running",
+        summary: "当前正在校验两条链共享 assembler。",
+        nextAction: "确认输出字段与持久化上下文一致",
+        updatedAt: Date.now(),
+      },
+      runId: "run-phase3-shared-task",
+      sessionKey: "session:v1:phase3:shared-task",
+    });
+
+    expect(messageResult.windowMessages.length).toBeGreaterThan(0);
+    expect(taskResult.windowMessages.length).toBeGreaterThan(0);
+    expect(messageResult.summaryContext).toContain("Goal:");
+    expect(taskResult.summaryContext).toContain("Goal:");
+    expect(messageResult.prompt).toContain("继续普通消息链");
+    expect(taskResult.prompt).toContain("[任务检查点]");
+    expect(taskResult.prompt).toContain("确认输出字段与持久化上下文一致");
   });
 
   it("task 续跑应通过统一 assembler 拼入 checkpoint 和 summary/window", async () => {
@@ -202,15 +231,10 @@ describe("Phase 3: Context Policy", () => {
     expect(result.summaryContext).toContain("Goal:");
   });
 
-  it("tool preview 裁剪应复用 context-policy helper", async () => {
-    const code = fs.readFileSync(
-      path.join(process.cwd(), "src/agent-backend/tool-loop.ts"),
-      "utf-8"
-    );
+  it("tool preview 裁剪 helper 应保持稳定输出", async () => {
     const { clipToolPreviewText } = await import("../src/runtime/context-policy.js");
 
-    expect(code).toContain('import { clipToolPreviewText } from "../runtime/context-policy.js"');
-    expect(code).toContain("return clipToolPreviewText(raw, TOOL_RESULT_CONTEXT_MAX_CHARS);");
     expect(clipToolPreviewText("abcdefghij", 5)).toBe("abcde...");
+    expect(clipToolPreviewText("short", 10)).toBe("short");
   });
 });

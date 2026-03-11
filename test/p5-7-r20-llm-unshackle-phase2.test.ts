@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { runLmStudioToolLoop } from "../src/lmstudio.js";
@@ -51,27 +50,17 @@ async function createToolEnabledWorkspace(): Promise<string> {
 }
 
 describe("P5.7-R20: LLM 松绑 phase2", () => {
-    it("prompt 不再包含旧强控制文案", async () => {
-        const { MCP_ANTI_LOOP_RULES, EXEC_TOOL_PROTOCOL_CONSTRAINT } = await import("../src/agent-backend/index.js");
+  it("prompt 不再包含旧强控制文案", async () => {
+    const { MCP_ANTI_LOOP_RULES, EXEC_TOOL_PROTOCOL_CONSTRAINT } = await import("../src/agent-backend/index.js");
 
         expect(MCP_ANTI_LOOP_RULES).not.toContain("整个问题最多调用工具 3 次");
         expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).not.toContain("第一轮必须优先产出 tool_calls");
-        expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).not.toContain("没有工具结果前");
-        expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).toContain("不伪造已经完成的动作或结果");
-    });
+    expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).not.toContain("没有工具结果前");
+    expect(EXEC_TOOL_PROTOCOL_CONSTRAINT).toContain("不伪造已经完成的动作或结果");
+  });
 
-    it("tool-loop 源码中不再保留 preferred-tool 裁判器", () => {
-        const source = readFileSync(join(process.cwd(), "src/agent-backend", "tool-loop.ts"), "utf-8");
-
-        expect(source).not.toContain("detectPreferredToolName");
-        expect(source).not.toContain("hasDisallowedPreferredToolMismatch");
-        expect(source).not.toContain("findUnexpectedToolNames");
-        expect(source).not.toContain("HARD_CAP_TOOL_CALLS = 20");
-        expect(source).not.toContain("HARD_CAP_TOOL_STEPS = 64");
-    });
-
-    it("默认口径下 21 次工具调用不会被旧 hard cap 提前截断", async () => {
-        const originalFetch = globalThis.fetch;
+  it("默认口径下 21 次工具调用不会被旧 hard cap 提前截断", async () => {
+    const originalFetch = globalThis.fetch;
         const workspacePath = await createToolEnabledWorkspace();
         let callCount = 0;
 
@@ -124,6 +113,8 @@ describe("P5.7-R20: LLM 松绑 phase2", () => {
             expect(result.answer).toContain("长循环执行完成");
             expect(result.answer).not.toContain("TOOL_LOOP_LIMIT_EXCEEDED");
             expect(result.actionJournal.length).toBeGreaterThan(20);
+            expect(result.perTurnToolCallLimit).toBe(199);
+            expect(result.perTurnToolStepLimit).toBe(597);
         } finally {
             globalThis.fetch = originalFetch;
             await rm(workspacePath, { recursive: true, force: true });
