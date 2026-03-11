@@ -1,12 +1,11 @@
 /**
- * msgcode: File CLI 命令（P5.7-R1b + R3）
+ * msgcode: File CLI 命令（R3 主链 + legacy send 退役壳）
  *
  * 职责：
- * - msgcode file send --path <path> --to <chat-guid>：真实发送到 iMessage
+ * - msgcode file send：历史 iMessage-only 文件发送入口，现已退役并显式报错
  * - msgcode file find <path>：查找文件
  * - msgcode file read <path>：读取文件内容
  * - msgcode file write <path> --content：写入文件
- * - 仅限制文件大小 <= 1GB（send 命令）
  * - 不做文件区域限制（允许跨 workspace 路径）
  */
 
@@ -16,13 +15,15 @@ import type { Envelope, Diagnostic } from "../memory/types.js";
 import { existsSync, statSync, readdirSync, readFileSync, writeFileSync, appendFileSync, mkdirSync, renameSync, copyFileSync, unlinkSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
-import { config } from "../config.js";
 
 // ============================================
 // 常量和类型定义
 // ============================================
 
-const SIZE_LIMIT_BYTES = 1024 * 1024 * 1024; // 1GB
+const FILE_SEND_RETIRED_MESSAGE =
+  "msgcode file send 已退役：该命令只服务历史 iMessage 文件发送链路。";
+const FILE_SEND_RETIRED_HINT =
+  "请改用当前 Feishu 主链传递文件，或等待后续 app/web 客户端文件入口。";
 
 interface FileSendData {
   ok: boolean;
@@ -128,192 +129,60 @@ function createEnvelope<T>(
 // File Send 命令实现
 // ============================================
 
+function createFileSendRetiredEnvelope(
+  command: string,
+  startTime: number
+): Envelope<FileSendData> {
+  const errors: Diagnostic[] = [
+    {
+      code: "FILE_SEND_RETIRED",
+      message: FILE_SEND_RETIRED_MESSAGE,
+      hint: FILE_SEND_RETIRED_HINT,
+    },
+  ];
+
+  return createEnvelope<FileSendData>(
+    command,
+    startTime,
+    "error",
+    {
+      ok: false,
+      sendResult: "SEND_FAILED",
+      errorCode: "FILE_SEND_RETIRED",
+      errorMessage: FILE_SEND_RETIRED_MESSAGE,
+    },
+    [],
+    errors
+  );
+}
+
 /**
- * 创建 file send 子命令（P5.7-R1b：真实发送）
+ * 创建 file send 子命令（legacy 退役壳）
  */
 function createFileSendCommand(): Command {
   const cmd = new Command("send");
 
   cmd
-    .description("发送文件到 iMessage（真实发送，P5.7-R1b）")
-    .requiredOption("--path <path>", "文件路径")
-    .requiredOption("--to <chat-guid>", "目标聊天 GUID（必填）")
-    .option("--caption <caption>", "可选文案")
-    .option("--mime <mime>", "可选 MIME 提示")
+    .description("已退役：历史 iMessage-only 文件发送入口")
+    .option("--path <path>", "legacy 文件路径（已忽略）")
+    .option("--to <chat-guid>", "legacy 目标 chatGuid（已忽略）")
+    .option("--caption <caption>", "legacy 文案（已忽略）")
+    .option("--mime <mime>", "legacy MIME 提示（已忽略）")
     .option("--json", "JSON 格式输出")
     .action(async (options) => {
       const startTime = Date.now();
-      const command = `msgcode file send --path ${options.path} --to ${options.to}`;
-      const warnings: Diagnostic[] = [];
-      const errors: Diagnostic[] = [];
+      const commandParts = ["msgcode file send"];
+      if (options.path) commandParts.push(`--path ${options.path}`);
+      if (options.to) commandParts.push(`--to ${options.to}`);
+      const envelope = createFileSendRetiredEnvelope(commandParts.join(" "), startTime);
 
-      try {
-        // 验证文件存在
-        if (!existsSync(options.path)) {
-          errors.push({
-            code: "FILE_SEND_NOT_FOUND",
-            message: `文件不存在：${options.path}`,
-          });
-          const envelope = createEnvelope<FileSendData>(
-            command,
-            startTime,
-            "error",
-            {
-              ok: false,
-              sendResult: "SEND_FAILED",
-              errorCode: "FILE_NOT_FOUND",
-              errorMessage: `文件不存在：${options.path}`,
-            },
-            warnings,
-            errors
-          );
-          if (options.json) {
-            console.log(JSON.stringify(envelope, null, 2));
-          } else {
-            console.error(`错误：${errors[0].message}`);
-          }
-          process.exit(1);
-        }
-
-        // 获取文件大小
-        const stats = statSync(options.path);
-        const fileSizeBytes = stats.size;
-
-        // 检查大小限制
-        if (fileSizeBytes > SIZE_LIMIT_BYTES) {
-          errors.push({
-            code: "FILE_SEND_SIZE_EXCEEDED",
-            message: `文件大小超限：${(fileSizeBytes / 1024 / 1024 / 1024).toFixed(2)}GB > 1GB`,
-          });
-          const envelope = createEnvelope<FileSendData>(
-            command,
-            startTime,
-            "error",
-            {
-              ok: false,
-              sendResult: "SIZE_EXCEEDED",
-              fileSizeBytes,
-              limitBytes: SIZE_LIMIT_BYTES,
-            },
-            warnings,
-            errors
-          );
-          if (options.json) {
-            console.log(JSON.stringify(envelope, null, 2));
-          } else {
-            console.error(`错误：${errors[0].message}`);
-          }
-          process.exit(1);
-        }
-
-        // P5.7-R1b: 真实发送到 iMessage
-        const { ImsgRpcClient } = await import("../imsg/rpc-client.js");
-        if (!config.imsgPath) {
-          throw new Error("未配置 IMSG_PATH：msgcode file send 当前仅支持 iMessage");
-        }
-        const client = new ImsgRpcClient(config.imsgPath);
-
-        try {
-          await client.start();
-
-          // 构建发送请求
-          const sendParams = {
-            chat_guid: options.to,
-            text: options.caption || "",
-            file: options.path,
-          };
-
-          // 执行发送
-          const result = await client.send(sendParams);
-
-          if (!result.ok) {
-            // 发送失败
-            errors.push({
-              code: "FILE_SEND_IMSG_FAILED",
-              message: "iMessage 发送失败",
-            });
-            const envelope = createEnvelope<FileSendData>(
-              command,
-              startTime,
-              "error",
-              {
-                ok: false,
-                sendResult: "SEND_FAILED",
-                errorCode: "IMSG_SEND_FAILED",
-                errorMessage: "iMessage 发送失败",
-              },
-              warnings,
-              errors
-            );
-            if (options.json) {
-              console.log(JSON.stringify(envelope, null, 2));
-            } else {
-              console.error(`错误：iMessage 发送失败`);
-            }
-            process.exit(1);
-          }
-
-          // 发送成功
-          const envelope = createEnvelope<FileSendData>(
-            command,
-            startTime,
-            "pass",
-            {
-              ok: true,
-              sendResult: "OK",
-              path: options.path,
-              to: options.to,
-              fileSizeBytes,
-            },
-            warnings,
-            errors
-          );
-
-          if (options.json) {
-            console.log(JSON.stringify(envelope, null, 2));
-          } else {
-            console.log(`文件已发送到 ${options.to}:`);
-            console.log(`  路径：${options.path}`);
-            console.log(`  大小：${(fileSizeBytes / 1024).toFixed(2)} KB`);
-            if (options.caption) {
-              console.log(`  文案：${options.caption}`);
-            }
-          }
-
-          process.exit(0);
-        } finally {
-          await client.stop().catch(() => {
-            // 忽略清理错误
-          });
-        }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        errors.push({
-          code: "FILE_SEND_UNEXPECTED_ERROR",
-          message: `文件发送执行失败：${message}`,
-        });
-
-        const envelope = createEnvelope<FileSendData>(
-          command,
-          startTime,
-          "error",
-          {
-            ok: false,
-            sendResult: "SEND_FAILED",
-            errorCode: "UNEXPECTED_ERROR",
-            errorMessage: message,
-          },
-          warnings,
-          errors
-        );
-
-        if (options.json) {
-          console.log(JSON.stringify(envelope, null, 2));
-        } else {
-          console.error(`错误：${message}`);
-        }
-        process.exit(1);
+      if (options.json) {
+        console.log(JSON.stringify(envelope, null, 2));
+      } else {
+        console.error(`错误：${FILE_SEND_RETIRED_MESSAGE}`);
+        console.error(`提示：${FILE_SEND_RETIRED_HINT}`);
       }
+      process.exit(1);
     });
 
   return cmd;
@@ -1085,7 +954,7 @@ function createFileCopyCommand(): Command {
 export function createFileCommand(): Command {
   const fileCmd = new Command("file");
 
-  fileCmd.description("文件操作（发送/查找/读取/写入/删除/移动/复制等）");
+  fileCmd.description("文件操作（查找/读取/写入/删除/移动/复制等）");
   fileCmd.addCommand(createFileSendCommand());
   fileCmd.addCommand(createFileFindCommand());
   fileCmd.addCommand(createFileReadCommand());
@@ -1095,56 +964,6 @@ export function createFileCommand(): Command {
   fileCmd.addCommand(createFileCopyCommand());
 
   return fileCmd;
-}
-
-/**
- * 导出 file send 合同（供 help-docs --json 使用）
- */
-export function getFileSendContract() {
-  return {
-    name: "file send",
-    description: "发送文件到 iMessage（真实发送，P5.7-R1b）",
-    options: {
-      required: {
-        "--path <path>": "文件路径（不做路径边界/可读/workspace 限制）",
-        "--to <chat-guid>": "目标聊天 GUID（必填）",
-      },
-      optional: {
-        "--caption <caption>": "可选文案",
-        "--mime <mime>": "可选 MIME 提示",
-        "--json": "JSON 格式输出",
-      },
-    },
-    output: {
-      success: {
-        ok: true,
-        sendResult: "OK",
-        path: "<文件路径>",
-        to: "<目标聊天 GUID>",
-        fileSizeBytes: "<文件大小（字节）>",
-      },
-      sizeExceeded: {
-        ok: false,
-        sendResult: "SIZE_EXCEEDED",
-        fileSizeBytes: "<实际大小>",
-        limitBytes: SIZE_LIMIT_BYTES,
-      },
-      sendFailed: {
-        ok: false,
-        sendResult: "SEND_FAILED",
-        errorCode: "<错误码>",
-        errorMessage: "<错误信息>",
-      },
-    },
-    errorCodes: ["OK", "SIZE_EXCEEDED", "SEND_FAILED"],
-    constraints: {
-      sizeLimit: "1GB",
-      pathValidation: "none（按任务单口径）",
-      workspaceCheck: "none",
-      readabilityCheck: "none",
-      deliveryChannel: "iMessage RPC (send)",
-    },
-  };
 }
 
 /**

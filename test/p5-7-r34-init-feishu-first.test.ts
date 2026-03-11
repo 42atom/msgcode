@@ -34,8 +34,8 @@ describe("P5.7-R34: init feishu-first onboarding", () => {
 
       expect(envText).toContain("FEISHU_APP_ID=");
       expect(envText).toContain("FEISHU_APP_SECRET=");
-      expect(envText).not.toMatch(/^IMSG_PATH=/m);
-      expect(envText).toContain("# IMSG_PATH=");
+      expect(envText).not.toContain("IMSG_PATH");
+      expect(envText).not.toContain("MSGCODE_TRANSPORTS=imsg");
     } finally {
       fs.rmSync(tempHome, { recursive: true, force: true });
       fs.rmSync(tempCwd, { recursive: true, force: true });

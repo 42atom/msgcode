@@ -9,6 +9,8 @@ docs/archive/
 ├── deep-dive-into-imessage.md
 ├── review-report.md
 ├── PRD.md
+├── retired-imsg-cli/
+│   └── README.md
 └── protocol-migration/
     └── README.md
 ```
@@ -33,6 +35,8 @@ docs/archive/
    - `docs/archive/indextts_optimization_memo_v2.2.md`
 5. 2026-03-11 起，剩余的 IndexTTS CLI/worker 脚本不再保留在正式 `scripts/` 入口，统一迁入：
    - `docs/archive/indextts-runtime/`
+6. 2026-03-12 起，已退役的 iMessage-only `file send` 任务单统一迁入：
+   - `docs/archive/retired-imsg-cli/`
 
 ## 变更日志
 
@@ -40,3 +44,4 @@ docs/archive/
 2. 2026-02-23：新增根目录历史文档清理映射，完成重复文档收敛。
 3. 2026-03-11：收入口径收窄后，将 IndexTTS 专项优化备忘移入归档。
 4. 2026-03-11：剩余 IndexTTS CLI/worker 脚本从 `scripts/` 迁入 `docs/archive/indextts-runtime/`。
+5. 2026-03-12：iMessage-only `file send` 历史任务单从 `docs/tasks/` 迁入 `docs/archive/retired-imsg-cli/`。

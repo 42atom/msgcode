@@ -16,9 +16,9 @@
 6. `P5.6.13-R2`：Workspace 对话落盘（`.msgcode/threads`）
 7. `P5.6.14`：运行臂二分（agent/tmux）+ provider 下沉（专项）
 8. `P5.7-PLAN`：CLI-First Skill 能力扩充总纲（Unix 风格 CLI，Alma 仅作参考样例）
-9. `P5.7-R1`：CLI-First 文件发送先跑通（`help-docs --json` + `file send`，合同层）
+9. `P5.7-R1`：CLI-First 文件发送先跑通（已归档；见 `docs/archive/retired-imsg-cli/`）
 10. `P5.7-R2`：实时信息三件套（`web search` / `web fetch` / `system info`）
-11. `P5.7-R1b`：文件发送真实交付闭环（禁止“合同壳即通过”）
+11. `P5.7-R1b`：文件发送真实交付闭环（已归档；见 `docs/archive/retired-imsg-cli/`）
 12. `P5.7-R1c`：CLI 基座能力硬门（真执行 + 可观测 + 安全底线）
 13. `P5.7-R3`：文件与环境域（`file *` + `system env`）
 14. `P5.7-R3l`：核心链路硬化改造包（三核最小实现 + 协议硬门 + 状态回写）
@@ -105,9 +105,9 @@
 
 ### 任务列表
 
-1. `P5.7-R1`：文件发送先跑通（`file send` + `help-docs --json`）✅
+1. `P5.7-R1`：文件发送先跑通（已归档，iMessage sunset）✅
 2. `P5.7-R2`：实时信息三件套（`web search` / `web fetch` / `system info`）✅
-3. `P5.7-R1b`：文件发送真实交付闭环（`--to` + 真发送 + 真失败）✅
+3. `P5.7-R1b`：文件发送真实交付闭环（已归档，iMessage sunset）✅
 4. `P5.7-R1c`：CLI 基座能力硬门（真执行 + 可观测 + 安全底线）✅
 5. `P5.7-R3`：文件与环境域（`file find/read/write/move/rename/delete/copy/zip` + `system env`）
 6. `P5.7-R3d`：LM Studio GLM ToolCall 温度锁定（`temperature=0`）

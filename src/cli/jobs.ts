@@ -595,7 +595,6 @@ export function createJobRunCommand(): Command {
     .description("立即执行任务（不改变 schedule）")
     .argument("<id>", "任务 ID")
     .option("--json", "JSON 格式输出")
-    .option("--no-delivery", "不发送消息回 iMessage（用于测试）")
     .action(async (id, options) => {
       const startTime = Date.now();
       const command = `msgcode job run ${id}`;
@@ -652,14 +651,10 @@ export function createJobRunCommand(): Command {
         job.state.runningAtMs = Date.now();
         store.upsertJob(job);
 
-        // M3.2-3: 使用真实执行器
         const result = await executeJob(job, {
-          delivery: options.delivery !== false, // --no-delivery 时为 false
-          // CLI 手动 run 暂不支持回发（需要 imsg client，但 CLI 是一次性执行）
-          // 可以通过 --no-delivery 跳过回发
-          imsgSend: options.delivery === false ? undefined : async (chatGuid, text) => {
-            // TODO: CLI 模式下需要启动临时 imsg client 来发送消息
-            // 暂时只打印不发送
+          delivery: true,
+          // CLI 手动 run 当前只做本地 delivery 预览，不额外启动 transport 发送器。
+          imsgSend: async (chatGuid, text) => {
             console.log(`[回发] ${chatGuid}: ${text.slice(0, 50)}...`);
           },
         });

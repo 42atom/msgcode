@@ -59,14 +59,16 @@
 
 ### R1（P0）：文件发送先跑通
 
-- 任务单：`p5-7-r1-cli-first-file-send.md`
+- 任务单：`docs/archive/retired-imsg-cli/p5-7-r1-cli-first-file-send.md`
+- 状态：已归档（2026-03-12，Issue 0093）
 - 目标：`msgcode file send` + `msgcode help-docs --json` 首次打通。
 - 产物合同：
   - `msgcode file send --path <path> [--caption] [--mime]`
 
 ### R1b（P0）：文件发送真实交付闭环
 
-- 任务单：`p5-7-r1b-file-send-real-delivery.md`
+- 任务单：`docs/archive/retired-imsg-cli/p5-7-r1b-file-send-real-delivery.md`
+- 状态：已归档（2026-03-12，Issue 0093）
 - 目标：`msgcode file send` 从“合同层”升级为“真发送”，必须可指定目标并通过现有 iMessage 通道送达。
 - 产物合同：
   - `msgcode file send --path <path> --to <chat-guid> [--caption] [--mime] [--json]`

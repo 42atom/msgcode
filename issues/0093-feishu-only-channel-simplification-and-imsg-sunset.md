@@ -45,7 +45,7 @@ links:
 ## Plan
 
 - [x] 把 `remove-imessage-channel.md` 收口成正式迁移步骤与边界清单
-- [ ] 第一阶段：先做 channel-neutral cleanup，清理配置/命名/CLI/help 中的 iMessage 默认假设
+- [x] 第一阶段：先做 channel-neutral cleanup，清理配置/命名/CLI/help 中的 iMessage 默认假设
 - [ ] 第二阶段：清理 runtime/probe 对 imsg 的启动硬依赖与默认探测
 - [ ] 第三阶段：移除 `src/imsg/` 主链入口，并同步归档 `vendor/imsg` 与历史脚本
 - [ ] 第四阶段：清理受影响测试，改为 Feishu-only / channel-neutral 真相源
@@ -82,8 +82,13 @@ links:
     - 黑盒测试已锁定：公开脚本必须命中当前 Feishu 主链，不允许再落回 `index.ts` 的 imsg-only 壳
   - 直接入口已收口为单一主链：
     - `src/index.ts` 不再维护第二套 imsg-only runtime
-    - 直接运行 `src/index.ts` 时已统一转发到当前 `startBot()` 主链
-    - 黑盒测试已锁定：`src/index.ts` 不得再返回旧的“仅支持 imsg”错误
+  - 直接运行 `src/index.ts` 时已统一转发到当前 `startBot()` 主链
+  - 黑盒测试已锁定：`src/index.ts` 不得再返回旧的“仅支持 imsg”错误
+  - 公开 legacy CLI 面已继续收口：
+    - `msgcode file send` 已退役为显式错误壳，不再进入 `help-docs --json`
+    - `docs/tasks/p5-7-r1*.md` 已迁入 `docs/archive/retired-imsg-cli/`
+    - `msgcode job run --help` 不再暴露 `--no-delivery`
+    - README 与 `.env.example` 不再继续公开 `IMSG_PATH` / `file send` 主叙事
   - 用户面文案已开始同步：
     - `src/cli.ts` 默认描述改为中性 runtime 口径
     - `src/tmux/remote_hint.ts` 默认提示词不再写死 iMessage

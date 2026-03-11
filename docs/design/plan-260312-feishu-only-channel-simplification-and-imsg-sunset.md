@@ -106,5 +106,11 @@ Issue: 0093
   - `src/index.ts` 已收口为 `startBot()` 薄壳
   - 仓库内不再保留第二套公开可运行的 imsg-only 主入口
   - 黑盒测试已锁定直接运行 `src/index.ts` 必须命中当前主链
+- 已完成 Phase A 第六刀：
+  - `msgcode file send` 已退役为显式错误壳，不再继续伪装为现役能力
+  - `help-docs --json` 已停止暴露 `file send` 合同
+  - `job run --help` 已移除 `--no-delivery`
+  - `docs/tasks/p5-7-r1*.md` 已归档到 `docs/archive/retired-imsg-cli/`
+  - README / `.env.example` 不再公开 `IMSG_PATH` 示例和旧入口叙事
 
 （章节级）评审意见：[留空,用户将给出反馈]

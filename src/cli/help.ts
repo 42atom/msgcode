@@ -9,7 +9,7 @@
 import { Command } from "commander";
 import { randomUUID } from "node:crypto";
 import type { Envelope, Diagnostic } from "../memory/types.js";
-import { getFileSendContract, getFileFindContract, getFileReadContract, getFileWriteContract, getFileDeleteContract, getFileMoveContract, getFileCopyContract } from "./file.js";
+import { getFileFindContract, getFileReadContract, getFileWriteContract, getFileDeleteContract, getFileMoveContract, getFileCopyContract } from "./file.js";
 import { getWebCommandContract } from "./web.js";
 import { getSystemCommandContract } from "./system.js";
 import { getMemoryAddContract, getMemorySearchContract, getMemoryStatsContract } from "./memory.js";
@@ -103,8 +103,7 @@ export function createHelpDocsCommand(): Command {
 
         // 构建命令合同列表
         const commands: Record<string, unknown>[] = [
-          // File 命令组（P5.7-R1b + R3-1/R3-2/R3-3）
-          getFileSendContract() as Record<string, unknown>,
+          // File 命令组（R3 主链；legacy send 已退役，不再公开暴露）
           getFileFindContract() as Record<string, unknown>,
           getFileReadContract() as Record<string, unknown>,
           getFileWriteContract() as Record<string, unknown>,

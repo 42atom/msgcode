@@ -8,79 +8,65 @@
  */
 
 import { describe, it, expect } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-// ============================================
-// 辅助函数
-// ============================================
-
-/**
- * 递归查找目录下所有 .md 文件
- */
-function findMarkdownFiles(dir: string, files: string[] = []): string[] {
-  const entries = readdirSync(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = join(dir, entry.name);
-    if (entry.isDirectory() && !entry.name.startsWith('.')) {
-      findMarkdownFiles(fullPath, files);
-    } else if (entry.isFile() && entry.name.endsWith('.md')) {
-      files.push(fullPath);
-    }
-  }
-  return files;
+function runCli(args: string[]) {
+  return spawnSync("node", ["src/cli.ts", ...args], {
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      MSGCODE_ENV_BOOTSTRAPPED: "1",
+      NODE_OPTIONS: "--import tsx",
+    },
+    encoding: "utf-8",
+  });
 }
 
 /**
  * 检查任务单是否包含真实链路证据
  */
 function hasRealDeliveryEvidence(content: string): boolean {
-  // 检查是否包含真实成功/失败证据的关键词
   const successKeywords = [
-    '真实成功',
-    '真实成功证据',
-    '真实链路',
-    '成功链路',
-    '真发送',
-    '真抓取',
-    '真实执行',
-    '非 mock',
+    "真实成功",
+    "真实成功证据",
+    "真实链路",
+    "成功链路",
+    "真发送",
+    "真抓取",
+    "真实执行",
+    "非 mock",
   ];
 
   const failureKeywords = [
-    '真实失败',
-    '真实失败证据',
-    '失败链路',
-    '错误码',
-    'errorCode',
-    'SEND_FAILED',
-    'FETCH_FAILED',
+    "真实失败",
+    "真实失败证据",
+    "失败链路",
+    "错误码",
+    "errorCode",
+    "SEND_FAILED",
+    "FETCH_FAILED",
   ];
 
-  const hasSuccess = successKeywords.some(kw => content.includes(kw));
-  const hasFailure = failureKeywords.some(kw => content.includes(kw));
+  const hasSuccess = successKeywords.some((kw) => content.includes(kw));
+  const hasFailure = failureKeywords.some((kw) => content.includes(kw));
 
   return hasSuccess && hasFailure;
 }
 
-/**
- * 检查是否有 .only 或 .skip
- */
 function hasOnlyOrSkip(content: string): boolean {
   return /\.only\s*\(/.test(content) || /\.skip\s*\(/.test(content);
 }
 
-// ============================================
-// 测试：硬门检查
-// ============================================
-
 describe("P5.7-R1c: CLI 基座能力硬门回归锁", () => {
   const tasksDir = join(process.cwd(), "docs/tasks");
+  const archiveDir = join(process.cwd(), "docs/archive/retired-imsg-cli");
 
   describe("R1c-1: 任务单真实链路证据", () => {
-    it("P5.7-R1b 任务单包含真实成功/失败证据", () => {
+    it("归档的 P5.7-R1b 任务单仍保留真实成功/失败证据", () => {
       const content = readFileSync(
-        join(tasksDir, "p5-7-r1b-file-send-real-delivery.md"),
+        join(archiveDir, "p5-7-r1b-file-send-real-delivery.md"),
         "utf-8"
       );
       expect(hasRealDeliveryEvidence(content)).toBe(true);
@@ -109,46 +95,44 @@ describe("P5.7-R1c: CLI 基座能力硬门回归锁", () => {
 
   describe("R1c-2: 阻止 .only/.skip 漏网", () => {
     it("test/p5-7*.test.ts 无 .only/.skip", () => {
-      const testFiles = readdirSync(join(process.cwd(), "test"))
-        .filter(f => f.startsWith("p5-7") && f.endsWith(".test.ts"));
+      const testFiles = readdirSync(join(process.cwd(), "test")).filter(
+        (f) => f.startsWith("p5-7") && f.endsWith(".test.ts")
+      );
 
       for (const file of testFiles) {
-        const content = readFileSync(
-          join(process.cwd(), "test", file),
-          "utf-8"
-        );
+        const content = readFileSync(join(process.cwd(), "test", file), "utf-8");
         expect(hasOnlyOrSkip(content)).toBe(false);
       }
     });
 
     it("src/cli/*.ts 无 .only/.skip", () => {
-      const cliFiles = readdirSync(join(process.cwd(), "src/cli"))
-        .filter(f => f.endsWith(".ts"));
+      const cliFiles = readdirSync(join(process.cwd(), "src/cli")).filter((f) =>
+        f.endsWith(".ts")
+      );
 
       for (const file of cliFiles) {
-        const content = readFileSync(
-          join(process.cwd(), "src/cli", file),
-          "utf-8"
-        );
+        const content = readFileSync(join(process.cwd(), "src/cli", file), "utf-8");
         expect(hasOnlyOrSkip(content)).toBe(false);
       }
     });
   });
 
   describe("R1c-3: help-docs 合同完整性", () => {
-    it("file send 合同包含 --to 必填参数", () => {
-      const { getFileSendContract } = require("../src/cli/file.js");
-      const contract = getFileSendContract();
+    it("help-docs --json 不应再暴露 retired file send 合同", () => {
+      const result = runCli(["help-docs", "--json"]);
+      expect(result.status).toBe(0);
 
-      expect(contract.options?.required).toHaveProperty("--path <path>");
-      expect(contract.options?.required).toHaveProperty("--to <chat-guid>");
+      const envelope = JSON.parse(result.stdout);
+      const names = envelope.data.commands.map((command: { name: string }) => command.name);
+      expect(names).not.toContain("file send");
     });
 
-    it("file send 合同包含 deliveryChannel", () => {
-      const { getFileSendContract } = require("../src/cli/file.js");
-      const contract = getFileSendContract();
+    it("file send retired 错误码固定为 FILE_SEND_RETIRED", () => {
+      const result = runCli(["file", "send", "--json"]);
+      expect(result.status).toBe(1);
 
-      expect(contract.constraints).toHaveProperty("deliveryChannel");
+      const envelope = JSON.parse(result.stdout);
+      expect(envelope.data.errorCode).toBe("FILE_SEND_RETIRED");
     });
 
     it("web search 合同包含错误码", () => {
@@ -171,7 +155,7 @@ describe("P5.7-R1c: CLI 基座能力硬门回归锁", () => {
   });
 
   describe("R1c-4: 退出码规范", () => {
-    it("file send 退出码映射正确", () => {
+    it("file helpers 的 exitCode 映射正确", () => {
       const { createEnvelope } = require("../src/cli/file.js");
 
       const passEnvelope = createEnvelope("test", Date.now(), "pass", { ok: true });
@@ -182,6 +166,13 @@ describe("P5.7-R1c: CLI 基座能力硬门回归锁", () => {
 
       const errorEnvelope = createEnvelope("test", Date.now(), "error", { ok: false });
       expect(errorEnvelope.exitCode).toBe(1);
+    });
+
+    it("job run --help 不应再暴露 --no-delivery", () => {
+      const result = runCli(["job", "run", "--help"]);
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).not.toContain("--no-delivery");
     });
   });
 });

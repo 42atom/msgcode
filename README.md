@@ -46,7 +46,6 @@ msgcode 的默认原则不是“约束 LLM”，而是“支持 LLM 完成任务
 - `tmux`
 - 飞书企业自建应用凭据（`FEISHU_APP_ID` / `FEISHU_APP_SECRET`）
 - Chrome/Chromium（供浏览器自动化底座使用）
-- iMessage 仅用于 legacy transport 兼容；默认主叙事已转为 Feishu
 
 ### 2. 安装依赖
 
@@ -82,16 +81,11 @@ MY_EMAIL=me@company.com
 FEISHU_APP_ID=cli_xxx
 FEISHU_APP_SECRET=xxx
 WORKSPACE_ROOT=/Users/<you>/msgcode-workspaces
-
-# 可选：仅在启用 legacy imsg transport 时需要
-# MSGCODE_TRANSPORTS=imsg,feishu
-# IMSG_PATH=/Users/<you>/msgcode/vendor/imsg/v0.4.0/imsg
 ```
 
 默认 transport 口径：
 - 未显式配置 `MSGCODE_TRANSPORTS` 时，默认只启 `feishu`
 - 未配置飞书凭据时，`preflight/start` 会明确报缺 `FEISHU_APP_ID / FEISHU_APP_SECRET`
-- 如需显式启用 iMessage，请设置 `MSGCODE_TRANSPORTS=imsg` 或 `MSGCODE_TRANSPORTS=imsg,feishu`
 
 Browser Core 配置口径：
 - 正式浏览器主链不再依赖 PinchTab orchestrator/baseUrl/binary 环境变量。
