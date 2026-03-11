@@ -65,7 +65,11 @@ links: []
   - `src/feishu/transport.ts`
   - `src/config/workspace.ts`
   - `src/router.ts`
+- 后续执行归类：
+  - `AIDOCS/reviews/remove-imessage-channel.md` 属于本 issue 的执行输入，不是新的真相源
+  - 具体落地拆分到 [Issue 0093](/Users/admin/GitProjects/msgcode/issues/0093-feishu-only-channel-simplification-and-imsg-sunset.md)
 
 # Links
 
 - [Plan](/Users/admin/GitProjects/msgcode/docs/design/plan-260310-post-imessage-channel-strategy.md)
+- [Follow-up](/Users/admin/GitProjects/msgcode/issues/0093-feishu-only-channel-simplification-and-imsg-sunset.md)
