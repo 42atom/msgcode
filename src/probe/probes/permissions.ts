@@ -1,7 +1,7 @@
 /**
  * msgcode: 权限探针
  *
- * 检查文件系统访问权限
+ * 检查当前正式主链需要的文件系统访问权限
  */
 
 import { promises as fs } from "node:fs";
@@ -14,25 +14,11 @@ import type { ProbeResult, ProbeOptions } from "../types.js";
  * 权限探针
  */
 export async function probePermissions(options?: ProbeOptions): Promise<ProbeResult> {
+    void options;
     const details: Record<string, unknown> = {};
     const issues: string[] = [];
-    const enableImsg = config.transports.includes("imsg");
 
-    if (enableImsg) {
-        // 1. ~/Library/Messages 访问权限
-        const messagesPath = path.join(os.homedir(), "Library/Messages");
-        try {
-            await fs.access(messagesPath, fs.constants.R_OK);
-            details.messages_readable = true;
-        } catch {
-            details.messages_readable = false;
-            issues.push("~/Library/Messages 不可读");
-        }
-    } else {
-        details.messages_readable = null;
-    }
-
-    // 2. ~/.config/msgcode 写权限
+    // 1. ~/.config/msgcode 写权限
     const configDir = path.join(os.homedir(), ".config/msgcode");
     try {
         await fs.access(configDir, fs.constants.W_OK);
@@ -42,7 +28,7 @@ export async function probePermissions(options?: ProbeOptions): Promise<ProbeRes
         issues.push("~/.config/msgcode 不可写");
     }
 
-    // 3. WORKSPACE_ROOT 访问权限
+    // 2. WORKSPACE_ROOT 访问权限
     try {
         await fs.access(config.workspaceRoot, fs.constants.R_OK | fs.constants.W_OK);
         details.workspace_root_accessible = true;
@@ -51,23 +37,9 @@ export async function probePermissions(options?: ProbeOptions): Promise<ProbeRes
         issues.push("WORKSPACE_ROOT 不可访问");
     }
 
-    if (enableImsg) {
-        // 4. 完全磁盘访问（通过检查 Messages 数据库来推断）
-        const dbPath = config.imsgDbPath || path.join(os.homedir(), "Library/Messages/chat.db");
-        try {
-            await fs.access(dbPath, fs.constants.R_OK);
-            details.full_disk_access = true;
-        } catch {
-            details.full_disk_access = false;
-            issues.push("完全磁盘访问可能未授权（无法读取 chat.db）");
-        }
-    } else {
-        details.full_disk_access = null;
-    }
-
     // 判断状态
     let status: ProbeResult["status"] = "pass";
-    if (enableImsg && (!details.messages_readable || !details.full_disk_access)) {
+    if (!details.config_writable || !details.workspace_root_accessible) {
         status = "error";
     } else if (issues.length > 0) {
         status = "warning";

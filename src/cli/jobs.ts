@@ -654,7 +654,7 @@ export function createJobRunCommand(): Command {
         const result = await executeJob(job, {
           delivery: true,
           // CLI 手动 run 当前只做本地 delivery 预览，不额外启动 transport 发送器。
-          imsgSend: async (chatGuid, text) => {
+          sendReply: async (chatGuid, text) => {
             console.log(`[回发] ${chatGuid}: ${text.slice(0, 50)}...`);
           },
         });

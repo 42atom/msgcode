@@ -14,6 +14,7 @@ import type { ProbeResult, ProbeOptions } from "../types.js";
  * 配置探针
  */
 export async function probeConfig(options?: ProbeOptions): Promise<ProbeResult> {
+    void options;
     const details: Record<string, unknown> = {};
     const issues: string[] = [];
 
@@ -32,16 +33,13 @@ export async function probeConfig(options?: ProbeOptions): Promise<ProbeResult> 
     }
 
     // 2. 必需环境变量（已设置但不输出值）
-    details.imsg_path_set = !!config.imsgPath;
+    details.transports = config.transports;
     details.feishu_app_id_set = !!(process.env.FEISHU_APP_ID || "").trim();
     details.feishu_app_secret_set = !!(process.env.FEISHU_APP_SECRET || "").trim();
     details.feishu_credentials_ready = !!config.feishu;
     details.whitelist_phones_count = config.whitelist.phones.length;
     details.whitelist_emails_count = config.whitelist.emails.length;
 
-    if (config.transports.includes("imsg") && !config.imsgPath) {
-        issues.push("IMSG_PATH 未设置");
-    }
     if (config.transports.includes("feishu") && !config.feishu) {
         issues.push("FEISHU_APP_ID / FEISHU_APP_SECRET 未设置");
     }
@@ -66,10 +64,8 @@ export async function probeConfig(options?: ProbeOptions): Promise<ProbeResult> 
 
     // 判断状态
     let status: ProbeResult["status"] = "pass";
-    const feishuOnlyMissingCreds = config.transports.includes("feishu") && !config.transports.includes("imsg") && !config.feishu;
     if (
-        (config.transports.includes("imsg") && !config.imsgPath)
-        || feishuOnlyMissingCreds
+        (config.transports.includes("feishu") && !config.feishu)
         || (config.whitelist.phones.length === 0 && config.whitelist.emails.length === 0)
     ) {
         status = "error";

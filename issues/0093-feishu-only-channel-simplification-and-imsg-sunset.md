@@ -46,7 +46,7 @@ links:
 
 - [x] 把 `remove-imessage-channel.md` 收口成正式迁移步骤与边界清单
 - [x] 第一阶段：先做 channel-neutral cleanup，清理配置/命名/CLI/help 中的 iMessage 默认假设
-- [ ] 第二阶段：清理 runtime/probe 对 imsg 的启动硬依赖与默认探测
+- [x] 第二阶段：清理 runtime/probe 对 imsg 的启动硬依赖与默认探测
 - [ ] 第三阶段：移除 `src/imsg/` 主链入口，并同步归档 `vendor/imsg` 与历史脚本
 - [ ] 第四阶段：清理受影响测试，改为 Feishu-only / channel-neutral 真相源
 - [ ] 更新 README / docs / package metadata，对外口径收口为 Feishu-first，面向未来 app/web client
@@ -89,6 +89,11 @@ links:
     - `docs/tasks/p5-7-r1*.md` 已迁入 `docs/archive/retired-imsg-cli/`
     - `msgcode job run --help` 不再暴露 `--no-delivery`
     - README 与 `.env.example` 不再继续公开 `IMSG_PATH` / `file send` 主叙事
+  - probe / runtime 默认面已进一步收口：
+    - `doctor/status/about` 不再把 `IMSG_PATH`、`imsg executable`、`chat.db`、Full Disk Access 作为当前正式输出字段
+    - `probe config/environment/connections/permissions` 已移除 legacy imsg 默认探测字段
+    - `listener` / `commands` / `jobs` 的发送接口命名已收口为 channel-neutral，避免 `imsgSend` 继续扩散到现役主链
+    - 黑盒测试已锁定：即使显式配置 legacy imsg，probe 和 `about --json` 也不得再回显这些字段
   - 用户面文案已开始同步：
     - `src/cli.ts` 默认描述改为中性 runtime 口径
     - `src/tmux/remote_hint.ts` 默认提示词不再写死 iMessage

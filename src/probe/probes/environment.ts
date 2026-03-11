@@ -1,14 +1,12 @@
 /**
  * msgcode: 环境探针
  *
- * 检查 macOS 版本、Node.js 版本、imsg 二进制、Claude CLI
+ * 检查 macOS 版本、Node.js 版本、Claude CLI、tmux
  */
 
 import os from "node:os";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
-import { existsSync } from "node:fs";
-import { config } from "../../config.js";
 import type { ProbeResult, ProbeOptions } from "../types.js";
 
 const execAsync = promisify(exec);
@@ -17,6 +15,7 @@ const execAsync = promisify(exec);
  * 环境探针
  */
 export async function probeEnvironment(options?: ProbeOptions): Promise<ProbeResult> {
+    void options;
     const details: Record<string, unknown> = {};
     const issues: string[] = [];
 
@@ -36,33 +35,7 @@ export async function probeEnvironment(options?: ProbeOptions): Promise<ProbeRes
         issues.push("Node.js 版本过低（要求 >= 18.0）");
     }
 
-    // 3. imsg 二进制
-    const imsgPath = config.imsgPath;
-    details.imsg_path = imsgPath;
-    if (config.transports.includes("imsg")) {
-        if (!imsgPath) {
-            details.imsg_executable = false;
-            issues.push("IMSG_PATH 未设置");
-        } else {
-            const imsgExists = existsSync(imsgPath);
-            details.imsg_executable = imsgExists;
-            if (!imsgExists) {
-                issues.push(`imsg 二进制不存在: ${imsgPath}`);
-            } else {
-                // 尝试获取 imsg 版本
-                try {
-                    const { stdout } = await execAsync(`"${imsgPath}" --version`, { timeout: 2000 });
-                    details.imsg_version = stdout.trim();
-                } catch {
-                    // 版本获取失败，但二进制存在
-                }
-            }
-        }
-    } else {
-        details.imsg_executable = null;
-    }
-
-    // 4. Claude CLI
+    // 3. Claude CLI
     try {
         const { stdout } = await execAsync("claude --version", { timeout: 2000 });
         details.claude_cli = true;
@@ -72,7 +45,7 @@ export async function probeEnvironment(options?: ProbeOptions): Promise<ProbeRes
         issues.push("Claude CLI 不可用");
     }
 
-    // 5. tmux
+    // 4. tmux
     try {
         const { stdout } = await execAsync("tmux -V", { timeout: 2000 });
         details.tmux = true;
@@ -84,7 +57,7 @@ export async function probeEnvironment(options?: ProbeOptions): Promise<ProbeRes
 
     // 判断状态
     let status: ProbeResult["status"] = "pass";
-    if (majorNodeVersion < 18 || (config.transports.includes("imsg") && details.imsg_executable === false)) {
+    if (majorNodeVersion < 18) {
         status = "error";
     } else if (issues.length > 0) {
         status = "warning";

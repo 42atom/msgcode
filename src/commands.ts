@@ -2,8 +2,8 @@
  * msgcode: CLI 命令实现（2.0）
  *
  * 原则：
- * - iMessage I/O 统一走 imsg RPC
- * - 无 iMessage SDK / 无 AppleScript
+ * - 统一运行时只保留一条消息主链
+ * - Feishu 是当前正式主通道；legacy imsg 仅在显式启用时保留
  * - start/stop 只解决真实问题，避免过度防御
  */
 
@@ -19,8 +19,18 @@ import type { DependencyCheckResult } from "./deps/types.js";
 
 const execAsync = promisify(exec);
 
+type OutboundSendParams = {
+  chat_guid: string;
+  text: string;
+  file?: string;
+};
+
+type OutboundSendClient = {
+  send(params: OutboundSendParams): Promise<{ ok?: boolean }>;
+};
+
 let imsgClient: ImsgRpcClient | null = null;
-let sendClient: Pick<ImsgRpcClient, "send"> | null = null;
+let sendClient: OutboundSendClient | null = null;
 let feishuTransport: import("./feishu/transport.js").FeishuTransport | null = null;
 let jobScheduler: import("./jobs/scheduler.js").JobScheduler | null = null;
 let heartbeatRunner: import("./runtime/heartbeat.js").HeartbeatRunner | null = null;
@@ -108,7 +118,7 @@ async function handleControlCommandInFastLane(message: InboundMessage): Promise<
   return handleControlCommandInFastLaneWithClient(message, sendClient ?? undefined);
 }
 
-type FastLaneSendClient = Pick<ImsgRpcClient, "send">;
+type FastLaneSendClient = OutboundSendClient;
 
 async function handleControlCommandInFastLaneWithClient(
   message: InboundMessage,
@@ -490,7 +500,7 @@ export async function startBot(): Promise<void> {
       throw new Error(reason);
     }
 
-    logger.warn("imsg transport 初始化失败，已降级为仅保留其余 transport", {
+    logger.warn("legacy imsg transport 初始化失败，已降级为仅保留其余 transport", {
       module: "commands",
       error: reason,
     });
@@ -507,13 +517,13 @@ export async function startBot(): Promise<void> {
   };
 
   // 统一发送口径：按 chat_guid 前缀分发到具体 transport。
-  // - iMessage：chat_guid 为原始 guid（不带前缀）
-  // - Feishu：chat_guid 形如 feishu:<chat_id>
+  // - 当前正式主链：Feishu（feishu:<chat_id>）
+  // - legacy iMessage：仅在显式启用时透传原始 guid
   sendClient = {
-    send: async (params: any) => {
-      const chatGuid = params?.chat_guid;
-      const text = typeof params?.text === "string" ? params.text : String(params?.text ?? "");
-      const file = params?.file ? String(params.file) : undefined;
+    send: async (params: OutboundSendParams) => {
+      const chatGuid = params.chat_guid;
+      const text = typeof params.text === "string" ? params.text : String(params.text ?? "");
+      const file = params.file ? String(params.file) : undefined;
 
       if (typeof chatGuid === "string" && chatGuid.startsWith("feishu:")) {
         if (!feishuTransport) {
@@ -523,9 +533,9 @@ export async function startBot(): Promise<void> {
       }
 
       if (!imsgClient) {
-        throw new Error("imsg transport 未初始化");
+        throw new Error("legacy imsg transport 未初始化");
       }
-      return await imsgClient.send(params);
+      return await imsgClient.send({ chat_guid: chatGuid, text, ...(file ? { file } : {}) });
     },
   };
 
@@ -542,7 +552,7 @@ export async function startBot(): Promise<void> {
       if (!enableFeishu) {
         throw error;
       }
-      logger.warn("imsg transport 启动失败，已降级为仅保留其余 transport", {
+      logger.warn("legacy imsg transport 启动失败，已降级为仅保留其余 transport", {
         module: "commands",
         error: error instanceof Error ? error.message : String(error),
       });
@@ -625,7 +635,7 @@ export async function startBot(): Promise<void> {
       // 使用 lane queue 串行化同一 chatGuid 的执行
       return enqueueLane(job.route.chatGuid, () => executeJob(job, {
         delivery: true,
-        imsgSend: async (chatGuid, text) => {
+        sendReply: async (chatGuid, text) => {
           if (!sendClient) {
             throw new Error("sendClient 未初始化");
           }
@@ -824,7 +834,7 @@ export async function startBot(): Promise<void> {
     perChatQueue.set(chatKey, next);
   };
 
-  // iMessage transport
+  // legacy iMessage transport
   if (imsgClient) {
     imsgClient.on("message", handleInbound);
     imsgClient.on("error", (error: Error) => {

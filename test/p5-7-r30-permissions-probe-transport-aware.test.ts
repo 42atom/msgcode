@@ -64,26 +64,26 @@ function runPermissionsProbe(
 }
 
 describe("P5.7-R30: permissions probe transport-aware", () => {
-  it("feishu-only 时，不应因缺失 Messages/chat.db 权限被打成 error", () => {
+  it("feishu-only 时，不应再暴露 Messages/chat.db 权限字段", () => {
     const result = runPermissionsProbe({
       FEISHU_APP_ID: "cli_test",
       FEISHU_APP_SECRET: "secret_test",
     });
 
     expect(result.status).toBe("pass");
-    expect(result.details.messages_readable).toBeNull();
-    expect(result.details.full_disk_access).toBeNull();
+    expect(result.details).not.toHaveProperty("messages_readable");
+    expect(result.details).not.toHaveProperty("full_disk_access");
   });
 
-  it("imsg 启用时，仍应对 Messages/chat.db 权限保持严格检查", () => {
+  it("legacy imsg 显式启用时，permissions probe 也不再把 chat.db/FDA 暴露为正式诊断项", () => {
     const result = runPermissionsProbe({
       MSGCODE_TRANSPORTS: "imsg",
       IMSG_PATH: "/bin/echo",
     });
 
-    expect(result.status).toBe("error");
-    expect(String(result.message)).toContain("chat.db");
-    expect(result.details.messages_readable).toBe(false);
-    expect(result.details.full_disk_access).toBe(false);
+    expect(result.status).toBe("pass");
+    expect(String(result.message)).not.toContain("chat.db");
+    expect(result.details).not.toHaveProperty("messages_readable");
+    expect(result.details).not.toHaveProperty("full_disk_access");
   });
 });

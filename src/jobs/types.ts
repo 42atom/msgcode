@@ -68,7 +68,7 @@ export interface CronJob {
   /** 做什么：2.1 仅允许 tmuxMessage */
   payload: Payload;
 
-  /** 回发策略（iMessage only） */
+  /** 回发策略（回到同聊天通道） */
   delivery: Delivery;
 
   /** 运行状态（可诊断、可恢复） */

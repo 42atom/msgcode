@@ -1,12 +1,11 @@
 /**
  * msgcode: 连接探针
  *
- * 检查 imsg RPC 和 tmux 连接状态
+ * 检查 tmux 与 Claude CLI 连接状态
  */
 
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
-import { config } from "../../config.js";
 import { withTimeout } from "../types.js";
 import type { ProbeResult, ProbeOptions } from "../types.js";
 
@@ -21,33 +20,10 @@ export async function probeConnections(options?: ProbeOptions): Promise<ProbeRes
 
     const timeout = options?.timeout ?? 2000;
 
-    // 1. imsg RPC 连接（通过检查 imsg 二进制和尝试运行）
-    if (config.transports.includes("imsg")) {
-        if (!config.imsgPath) {
-            details.imsg_executable = false;
-            issues.push("IMSG_PATH 未设置");
-        } else {
-            try {
-                // 检查 imsg 是否可执行
-                await withTimeout(
-                    execAsync(`"${config.imsgPath}" --version`),
-                    timeout,
-                    "imsg --version"
-                );
-                details.imsg_executable = true;
-            } catch {
-                details.imsg_executable = false;
-                issues.push("imsg 不可用");
-            }
-        }
-    } else {
-        details.imsg_executable = null;
-    }
-
-    // 2. tmux 连接（先检查二进制，再检查 server）
+    // 1. tmux 连接（先检查二进制，再检查 server）
     let tmuxInstalled = false;
 
-    // 2.1 检查 tmux 是否安装
+    // 1.1 检查 tmux 是否安装
     try {
         await withTimeout(
             execAsync("tmux -V"),
@@ -62,7 +38,7 @@ export async function probeConnections(options?: ProbeOptions): Promise<ProbeRes
         issues.push("tmux 未安装");
     }
 
-    // 2.2 检查 tmux server 是否运行
+    // 1.2 检查 tmux server 是否运行
     if (tmuxInstalled) {
         try {
             await withTimeout(
@@ -86,7 +62,7 @@ export async function probeConnections(options?: ProbeOptions): Promise<ProbeRes
     // tmux 的可用性判定：已安装即算可用（server 没跑只是 warning）
     details.tmux_available = tmuxInstalled;
 
-    // 3. Claude CLI
+    // 2. Claude CLI
     try {
         await withTimeout(
             execAsync("claude --version"),
@@ -101,7 +77,7 @@ export async function probeConnections(options?: ProbeOptions): Promise<ProbeRes
 
     // 判断状态
     let status: ProbeResult["status"] = "pass";
-    if ((config.transports.includes("imsg") && details.imsg_executable === false) || !details.tmux_available) {
+    if (!details.tmux_available) {
         status = "error";
     } else if (issues.length > 0) {
         status = "warning";

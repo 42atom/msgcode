@@ -2,13 +2,11 @@
  * msgcode: 消息监听器（2.0）
  *
  * 目标：
- * - iMessage I/O 统一走 imsg RPC
- * - 无 iMessage SDK / 无 AppleScript
+ * - 统一处理各通道入站消息
  * - 只做转发、路由、会话控制（不做内容理解/ASR/TTS）
  */
 
 import type { InboundMessage } from "./channels/types.js";
-import type { ImsgRpcClient } from "./imsg/rpc-client.js";
 import { checkWhitelist, formatSender } from "./security.js";
 import { routeByChatId } from "./router.js";
 import { getHandler } from "./handlers.js";
@@ -23,9 +21,13 @@ import { getMemoryInjectConfig, saveCurrentSessionContext } from "./config/works
 import { AutoTtsLane } from "./runners/tts/auto-lane.js";
 import crypto from "node:crypto";
 
+export interface ChannelSendClient {
+  send(params: { chat_guid: string; text: string; file?: string }): Promise<{ ok?: boolean }>;
+}
+
 export interface ListenerConfig {
-  // 统一发送口径：按 chatId 前缀路由到具体 transport（imsg/feishu）
-  sendClient: Pick<ImsgRpcClient, "send">;
+  // 统一发送口径：按 chatId 前缀路由到具体 transport
+  sendClient: ChannelSendClient;
   debug?: boolean;
   signal?: AbortSignal;
 }
@@ -36,7 +38,7 @@ export interface ListenerConfig {
 
 let autoTtsLane: AutoTtsLane | null = null;
 
-type SendClient = Pick<ImsgRpcClient, "send">;
+type SendClient = ChannelSendClient;
 
 function getAutoTtsLane(sendClient: SendClient): AutoTtsLane {
   if (autoTtsLane) return autoTtsLane;
@@ -201,7 +203,7 @@ function shouldSendAcknowledgement(content: string): boolean {
 /**
  * 包装 handler 调用，添加回执机制
  *
- * @param imsgClient iMessage RPC 客户端
+ * @param sendClient 通道发送器
  * @param chatGuid 聊天 GUID
  * @param content 消息内容
  * @param handlerFn handler 调用函数
@@ -530,7 +532,7 @@ export async function handleMessage(
 
   try {
     // E17: 预处理文本（用于后续检查）
-    // E17: 过滤 iMessage 占位符字符（\uFFFC = Object Replacement Character）
+    // E17: 过滤历史附件占位符字符（\uFFFC = Object Replacement Character）
     const placeholderPattern = /[\uFFFC\uFFFD]/g;
     const text = (message.text ?? "").trim().replace(placeholderPattern, "");
     const hasAttachments = Boolean(message.attachments && message.attachments.length > 0);
@@ -583,7 +585,7 @@ export async function handleMessage(
     }
   }
 
-  // 去重（imsg watch 偶发重复推送时兜底）
+  // 去重（入站通道偶发重复推送时兜底）
   const now = Date.now();
   pruneByTtl(handledMessageAt, now, HANDLED_TTL_MS);
   if (message.id) {

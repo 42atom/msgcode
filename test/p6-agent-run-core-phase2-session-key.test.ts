@@ -222,7 +222,7 @@ describe("Phase 2: Run Core Session Key", () => {
         updatedAtMs: Date.now(),
       },
       {
-        imsgSend: async () => undefined,
+        sendReply: async () => undefined,
       }
     );
 
@@ -276,7 +276,7 @@ describe("Phase 2: Run Core Session Key", () => {
     };
 
     const result = await executeJob(job, {
-      imsgSend: async () => undefined,
+      sendReply: async () => undefined,
     });
 
     expect(result.status).toBe("skipped");

@@ -215,7 +215,7 @@ describe("Phase 4: Run Events", () => {
         updatedAtMs: Date.now(),
       },
       {
-        imsgSend: async () => undefined,
+        sendReply: async () => undefined,
       }
     );
 

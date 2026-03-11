@@ -6,7 +6,7 @@
  * 职责：
  * - executeJob(job, ctx): 统一执行入口，scheduler 和 msgcode job run 复用
  * - 支持 payload.kind === "tmuxMessage"
- * - 按 job.delivery.mode 决定是否回发
+ * - 按 job.delivery.mode 决定是否回发到同聊天通道
  * - 按 job.delivery.maxChars 截断
  * - 错误码落盘：ROUTE_NOT_FOUND/ROUTE_INACTIVE/TMUX_SESSION_DEAD 等
  */
@@ -26,10 +26,10 @@ import { beginRun, toRunErrorMessage } from "../runtime/run-store.js";
  * Job 执行上下文
  */
 export interface JobExecutionContext {
-  /** 是否发送消息回 iMessage（false 用于 dry-run 或测试） */
+  /** 是否发送消息回当前聊天通道（false 用于 dry-run 或测试） */
   delivery?: boolean;
-  /** 自定义 imsg 发送函数（可选，用于 CLI 手动 run） */
-  imsgSend?: (chatGuid: string, text: string) => Promise<void>;
+  /** 自定义回发函数（可选，用于 CLI 手动 run / daemon 主链注入） */
+  sendReply?: (chatGuid: string, text: string) => Promise<void>;
 }
 
 // ============================================
@@ -153,7 +153,7 @@ export async function executeJob(
       });
     }
 
-    // 4) 处理 delivery（回发到 iMessage）
+    // 4) 处理 delivery（回发到同聊天通道）
     const shouldDelivery = ctx.delivery !== false;
     let deliveryError: string | undefined;
 
@@ -167,13 +167,10 @@ export async function executeJob(
 
       // 回发消息
       try {
-        if (ctx.imsgSend) {
-          // 使用自定义 imsgSend（CLI 手动 run）
-          await ctx.imsgSend(job.route.chatGuid, responseText);
+        if (ctx.sendReply) {
+          await ctx.sendReply(job.route.chatGuid, responseText);
         } else {
-          // TODO: 使用 imsgClient（daemon 模式）
-          // 目前 CLI 手动 run 需要提供 imsgSend，daemon 模式下通过 context 传入
-          deliveryError = "imsgSend 未提供（daemon 模式需传入）";
+          deliveryError = "sendReply 未提供（daemon 模式需传入）";
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -289,14 +286,13 @@ async function executeChatMessageJob(
 
     // 发送消息
     try {
-      if (ctx.imsgSend) {
-        await ctx.imsgSend(job.route.chatGuid, responseText);
+      if (ctx.sendReply) {
+        await ctx.sendReply(job.route.chatGuid, responseText);
       } else {
-        // 没有 imsgSend，回退为错误
         return {
           status: "error",
           durationMs: Date.now() - startTime,
-          error: "imsgSend 未提供",
+          error: "sendReply 未提供",
           errorCode: "IMSG_SEND_FAILED",
         };
       }

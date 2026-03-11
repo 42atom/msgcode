@@ -4,8 +4,7 @@
  * 对齐 spec: AIDOCS/msgcode-2.1/cli_contract_v2.1.md
  *
  * 探针内容：
- * - IMSG_PATH 可执行性
- * - ~/Library/Messages/chat.db 可读性
+ * - 当前 transport / jobs 所需依赖是否齐备
  * - tmux 可用性
  * - LM Studio 连接性（可选）
  */

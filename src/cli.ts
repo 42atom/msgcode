@@ -239,9 +239,6 @@ program
       console.log(`  binPath: ${versionInfo.binPath}`);
       console.log(`  cliEntry: ${versionInfo.cliEntry}`);
       console.log(`  configPath: ${versionInfo.configPath}`);
-      if (versionInfo.imsgPath) {
-        console.log(`  imsgPath: ${versionInfo.imsgPath}`);
-      }
       if (versionInfo.workspaceRoot) {
         console.log(`  workspaceRoot: ${versionInfo.workspaceRoot}`);
       }

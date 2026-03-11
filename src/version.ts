@@ -57,7 +57,6 @@ export interface VersionInfo {
   binPath: string;
   cliEntry: string;
   configPath: string;
-  imsgPath?: string;
   workspaceRoot?: string;
 }
 
@@ -68,7 +67,6 @@ export function getVersionInfo(): VersionInfo {
     binPath: getBinPath(),
     cliEntry: getCliEntry(),
     configPath: path.join(process.env.HOME || "", ".config/msgcode/.env"),
-    imsgPath: process.env.IMSG_PATH,
     workspaceRoot: process.env.WORKSPACE_ROOT,
   };
 }

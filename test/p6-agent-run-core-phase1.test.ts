@@ -222,7 +222,7 @@ describe("Phase 1: Run Core", () => {
     };
 
     const result = await executeJob(job, {
-      imsgSend: async () => undefined,
+      sendReply: async () => undefined,
     });
 
     expect(result.status).toBe("ok");
@@ -271,7 +271,7 @@ describe("Phase 1: Run Core", () => {
     };
 
     const result = await executeJob(job, {
-      imsgSend: async () => undefined,
+      sendReply: async () => undefined,
     });
 
     expect(result.status).toBe("skipped");

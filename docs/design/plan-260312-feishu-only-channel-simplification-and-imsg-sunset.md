@@ -112,5 +112,13 @@ Issue: 0093
   - `job run --help` 已移除 `--no-delivery`
   - `docs/tasks/p5-7-r1*.md` 已归档到 `docs/archive/retired-imsg-cli/`
   - README / `.env.example` 不再公开 `IMSG_PATH` 示例和旧入口叙事
+- 已完成 Phase A 第七刀：
+  - `probe config/environment/connections/permissions` 已不再把 `IMSG_PATH`、`imsg executable`、`chat.db`、Full Disk Access 作为默认诊断项
+  - `about --json` 不再回显 `imsgPath`
+  - `listener` / `commands` / `jobs` 的回发接口命名已收口为 channel-neutral，不再继续扩散 `imsgSend`
+  - 黑盒测试已锁定：即使显式配置 legacy imsg，probe 正式输出面也不得再回显上述 legacy 字段
+- 下一刀：
+  - 进入 Phase B，清点 `src/imsg/`、`src/commands.ts` legacy transport 分支、`vendor/imsg` 与相关测试的真实剩余调用链
+  - 先判定是否还存在仓库内正式消费者，再决定物理删除还是先迁 archive/compat
 
 （章节级）评审意见：[留空,用户将给出反馈]
