@@ -89,5 +89,10 @@ Issue: 0093
   - `src/channels/chat-id.ts`
   - 主链 imports 已脱离 `src/imsg/*`
   - `src/imsg/types.ts` / `src/imsg/adapter.ts` 暂保留 compat re-export
+- 已完成 Phase A 第二刀：
+  - 默认 transport 已从 `fallback-imsg` 收口为 `feishu`
+  - `config.ts` 不再因缺飞书凭据在 import/load 阶段直接报错
+  - `preflight` / `start` 会显式暴露 `FEISHU_APP_ID / FEISHU_APP_SECRET` 缺失
+  - transport-aware startup deps 已支持按 `feishu-only / imsg-only / hybrid` 动态提升依赖
 
 （章节级）评审意见：[留空,用户将给出反馈]

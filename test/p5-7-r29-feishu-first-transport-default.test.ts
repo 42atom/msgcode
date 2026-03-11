@@ -167,12 +167,10 @@ describe("P5.7-R29: Feishu-first transport defaults", () => {
     expect(transports).toEqual(["feishu"]);
   });
 
-  it("无飞书凭据时，应回退到 imsg 默认值", () => {
-    const transports = readTransportsFromIsolatedProcess({
-      IMSG_PATH: "/bin/echo",
-    });
+  it("无飞书凭据时，默认 transport 仍应收口为 feishu", () => {
+    const transports = readTransportsFromIsolatedProcess({});
 
-    expect(transports).toEqual(["imsg"]);
+    expect(transports).toEqual(["feishu"]);
   });
 
   it("显式 MSGCODE_TRANSPORTS 时，应尊重用户配置", () => {
@@ -200,13 +198,13 @@ describe("P5.7-R29: Feishu-first transport defaults", () => {
     expect(manifest.optional.map((dep) => dep.id)).toContain("messages_db");
   });
 
-  it("fallback-imsg 时，loadManifest 应把 imsg/messages_db 提升为启动必需", () => {
+  it("默认 feishu-only 时，loadManifest 应把 FEISHU_APP_ID/SECRET 提升为启动必需", () => {
     const manifest = readManifestSummaryFromIsolatedProcess({});
 
-    expect(manifest.requiredForStart).toContain("imsg");
-    expect(manifest.requiredForStart).toContain("messages_db");
-    expect(manifest.optional).not.toContain("imsg");
-    expect(manifest.optional).not.toContain("messages_db");
+    expect(manifest.requiredForStart).toContain("feishu_app_id");
+    expect(manifest.requiredForStart).toContain("feishu_app_secret");
+    expect(manifest.requiredForStart).not.toContain("imsg");
+    expect(manifest.requiredForStart).not.toContain("messages_db");
   });
 
   it("feishu-only 时，loadManifest 不应把 iMessage 依赖提升为启动必需", () => {
@@ -215,28 +213,47 @@ describe("P5.7-R29: Feishu-first transport defaults", () => {
       "FEISHU_APP_SECRET=secret_test",
     ].join("\n"));
 
+    expect(manifest.requiredForStart).toContain("feishu_app_id");
+    expect(manifest.requiredForStart).toContain("feishu_app_secret");
     expect(manifest.requiredForStart).not.toContain("imsg");
     expect(manifest.requiredForStart).not.toContain("messages_db");
     expect(manifest.optional).toContain("imsg");
     expect(manifest.optional).toContain("messages_db");
   });
 
-  it("显式 imsg,feishu 双通道时，不应把 iMessage 再拉回全局启动硬门槛", () => {
+  it("显式 imsg-only 时，loadManifest 应把 imsg/messages_db 提升为启动必需", () => {
+    const manifest = readManifestSummaryFromIsolatedProcess({
+      MSGCODE_TRANSPORTS: "imsg",
+      IMSG_PATH: "/bin/echo",
+    });
+
+    expect(manifest.requiredForStart).toContain("imsg");
+    expect(manifest.requiredForStart).toContain("messages_db");
+    expect(manifest.requiredForStart).not.toContain("feishu_app_id");
+    expect(manifest.requiredForStart).not.toContain("feishu_app_secret");
+  });
+
+  it("显式 imsg,feishu 双通道时，不应把任一单通道依赖强行拉回全局启动硬门槛", () => {
     const manifest = readManifestSummaryFromIsolatedProcess({
       MSGCODE_TRANSPORTS: "imsg,feishu",
       FEISHU_APP_ID: "cli_test",
       FEISHU_APP_SECRET: "secret_test",
+      IMSG_PATH: "/bin/echo",
     });
 
     expect(manifest.requiredForStart).not.toContain("imsg");
     expect(manifest.requiredForStart).not.toContain("messages_db");
+    expect(manifest.requiredForStart).not.toContain("feishu_app_id");
+    expect(manifest.requiredForStart).not.toContain("feishu_app_secret");
   });
 
-  it("CLI preflight 在 fallback-imsg 场景下不应再显示 0/0 启动必需", () => {
+  it("CLI preflight 在默认 feishu-only 且缺凭据时，应把 FEISHU_APP_ID/SECRET 列为启动必需", () => {
     const preflight = runPreflightFromIsolatedProcess({});
 
-    expect(preflight.requiredForStart).toContain("imsg");
-    expect(preflight.requiredForStart).toContain("messages_db");
+    expect(preflight.requiredForStart).toContain("feishu_app_id");
+    expect(preflight.requiredForStart).toContain("feishu_app_secret");
+    expect(preflight.requiredForStart).not.toContain("imsg");
+    expect(preflight.requiredForStart).not.toContain("messages_db");
   });
 
   it("CLI preflight 在 feishu-only 场景下不应把 iMessage 依赖列为启动必需", () => {
@@ -245,6 +262,8 @@ describe("P5.7-R29: Feishu-first transport defaults", () => {
       "FEISHU_APP_SECRET=secret_test",
     ].join("\n"));
 
+    expect(preflight.requiredForStart).toContain("feishu_app_id");
+    expect(preflight.requiredForStart).toContain("feishu_app_secret");
     expect(preflight.requiredForStart).not.toContain("imsg");
     expect(preflight.requiredForStart).not.toContain("messages_db");
     expect(preflight.optional).toContain("imsg");

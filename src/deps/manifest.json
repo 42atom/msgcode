@@ -10,6 +10,18 @@
   ],
   "optional": [
     {
+      "id": "feishu_app_id",
+      "kind": "env_set",
+      "pathEnv": "FEISHU_APP_ID",
+      "description": "飞书应用 App ID（启用 feishu transport 时需要）"
+    },
+    {
+      "id": "feishu_app_secret",
+      "kind": "env_set",
+      "pathEnv": "FEISHU_APP_SECRET",
+      "description": "飞书应用 App Secret（启用 feishu transport 时需要）"
+    },
+    {
       "id": "imsg",
       "kind": "bin",
       "pathEnv": "IMSG_PATH",

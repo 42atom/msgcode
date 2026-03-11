@@ -123,12 +123,21 @@ function resolveTransportEnv(baseEnv: NodeJS.ProcessEnv = process.env): NodeJS.P
 function applyTransportAwareStartupDeps(manifest: DependencyManifest): DependencyManifest {
   const transports = parseRuntimeTransports(resolveTransportEnv());
   const shouldRequireImsg = transports.includes("imsg") && !transports.includes("feishu");
+  const shouldRequireFeishu = transports.includes("feishu") && !transports.includes("imsg");
 
-  if (!shouldRequireImsg) {
+  if (!shouldRequireImsg && !shouldRequireFeishu) {
     return manifest;
   }
 
-  const promoteIds = new Set(["imsg", "messages_db"]);
+  const promoteIds = new Set<string>();
+  if (shouldRequireImsg) {
+    promoteIds.add("imsg");
+    promoteIds.add("messages_db");
+  }
+  if (shouldRequireFeishu) {
+    promoteIds.add("feishu_app_id");
+    promoteIds.add("feishu_app_secret");
+  }
   const requiredForStart = [...manifest.requiredForStart];
   const optional = [];
 

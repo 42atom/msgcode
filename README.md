@@ -89,9 +89,8 @@ WORKSPACE_ROOT=/Users/<you>/msgcode-workspaces
 ```
 
 默认 transport 口径：
-- 配置飞书凭据时，默认只启 `feishu`
-- 未配置飞书凭据时，回退到 `imsg`
-- 上面的 `fallback-imsg` 仍是过渡期兼容行为，不再是推荐主链，后续会继续 sunset
+- 未显式配置 `MSGCODE_TRANSPORTS` 时，默认只启 `feishu`
+- 未配置飞书凭据时，`preflight/start` 会明确报缺 `FEISHU_APP_ID / FEISHU_APP_SECRET`
 - 如需显式启用 iMessage，请设置 `MSGCODE_TRANSPORTS=imsg` 或 `MSGCODE_TRANSPORTS=imsg,feishu`
 
 Browser Core 配置口径：

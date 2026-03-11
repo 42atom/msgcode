@@ -67,6 +67,11 @@ links:
   - 已新增 `src/channels/types.ts` 与 `src/channels/chat-id.ts`
   - 核心主链模块已改为依赖 `src/channels/*`，不再从 `src/imsg/*` 借通用消息类型和 chatId 工具
   - `src/imsg/types.ts` / `src/imsg/adapter.ts` 仅保留 legacy compat re-export，便于 Phase A 期间渐进迁移
+  - transport 默认面已进一步收口：
+    - 未显式配置 `MSGCODE_TRANSPORTS` 时默认只启 `feishu`
+    - 不再因缺少飞书凭据在 `config.ts` import/load 阶段直接炸整仓
+    - 缺失 `FEISHU_APP_ID / FEISHU_APP_SECRET` 改为在 `preflight` / `start` 边界显式报错
+    - `loadManifest()` 已按 transport 模式动态提升 `feishu_app_id` / `feishu_app_secret` 或 `imsg` / `messages_db`
   - 用户面文案已开始同步：
     - `src/cli.ts` 默认描述改为中性 runtime 口径
     - `src/tmux/remote_hint.ts` 默认提示词不再写死 iMessage

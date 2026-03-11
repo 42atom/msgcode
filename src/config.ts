@@ -69,7 +69,7 @@ export interface WhitelistConfig {
  */
 export interface Config {
     // Transport 列表（启动时启用哪些通道）
-    // - 默认：有飞书配置则 feishu，否则回退 imsg
+    // - 默认：未显式配置时只启 feishu
     // - 可用 MSGCODE_TRANSPORTS 显式覆盖
     transports: RuntimeTransport[];
     // 白名单
@@ -257,9 +257,6 @@ export function loadConfig(): Config {
     const feishuEncryptKey = (process.env.FEISHU_ENCRYPT_KEY || "").trim();
     const feishuAllowAll = parseBool(process.env.FEISHU_ALLOW_ALL);
 
-    if (enableFeishu && (!feishuAppId || !feishuAppSecret)) {
-        throw new Error("已启用 feishu transport，但未配置 FEISHU_APP_ID / FEISHU_APP_SECRET");
-    }
     if (!enableImsg && !enableFeishu) {
         throw new Error("未启用任何 transport（MSGCODE_TRANSPORTS 为空）");
     }
@@ -299,7 +296,7 @@ export function loadConfig(): Config {
                 discord: [],
             }
             : primaryOwnerIds,
-        ...(enableFeishu
+        ...((enableFeishu && feishuAppId && feishuAppSecret)
             ? {
                 feishu: {
                     appId: feishuAppId,

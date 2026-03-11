@@ -20,6 +20,7 @@ import type { Diagnostic } from "../memory/types.js";
  */
 export type DependencyKind =
   | "bin"           // 可执行文件（通过 cmd 或 pathEnv）
+  | "env_set"       // 环境变量已设置（通过 pathEnv）
   | "fs_read"       // 文件可读（通过 path）
   | "fs_write"      // 文件可写（通过 path）
   | "fs_exists"     // 文件/目录存在（通过 path）
@@ -36,7 +37,7 @@ export interface Dependency {
   kind: DependencyKind;
   /** 可执行文件命令（用于 bin 类型） */
   cmd?: string;
-  /** 环境变量名（用于 bin 的 pathEnv 或 http 的 urlEnv） */
+  /** 环境变量名（用于 bin/env_set 的 pathEnv 或 http 的 urlEnv） */
   pathEnv?: string;
   urlEnv?: string;
   /** 文件路径（用于 fs_read/fs_write） */

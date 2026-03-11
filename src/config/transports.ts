@@ -1,11 +1,8 @@
 export type RuntimeTransport = "imsg" | "feishu";
 
-export function hasFeishuCredentials(env: NodeJS.ProcessEnv = process.env): boolean {
-  return !!(env.FEISHU_APP_ID || "").trim() && !!(env.FEISHU_APP_SECRET || "").trim();
-}
-
 export function resolveDefaultTransports(env: NodeJS.ProcessEnv = process.env): RuntimeTransport[] {
-  return hasFeishuCredentials(env) ? ["feishu"] : ["imsg"];
+  void env;
+  return ["feishu"];
 }
 
 export function parseRuntimeTransports(env: NodeJS.ProcessEnv = process.env): RuntimeTransport[] {

@@ -839,7 +839,7 @@ export async function startBot(): Promise<void> {
   if (enableFeishu) {
     try {
       if (!config.feishu) {
-        throw new Error("enableFeishu=1 但 config.feishu 为空");
+        throw new Error("已启用 feishu transport，但未配置 FEISHU_APP_ID / FEISHU_APP_SECRET");
       }
       const { createFeishuTransport } = await import("./feishu/transport.js");
       feishuTransport = createFeishuTransport({

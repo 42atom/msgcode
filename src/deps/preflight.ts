@@ -207,6 +207,42 @@ async function checkBinDependency(dep: Dependency): Promise<DependencyCheckResul
   }
 }
 
+async function checkEnvSetDependency(dep: Dependency): Promise<DependencyCheckResult> {
+  const result: DependencyCheckResult = {
+    dependencyId: dep.id,
+    available: false,
+  };
+
+  if (!dep.pathEnv) {
+    result.error = "缺少 pathEnv 字段";
+    return result;
+  }
+
+  let source: "process" | "config-file" = "process";
+  let value = process.env[dep.pathEnv];
+  if (!value) {
+    const fallback = readEnvVarFromConfigFiles(dep.pathEnv);
+    if (fallback) {
+      value = fallback;
+      process.env[dep.pathEnv] = fallback;
+      source = "config-file";
+    }
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    result.available = true;
+    result.details = {
+      env: dep.pathEnv,
+      source,
+    };
+    return result;
+  }
+
+  result.error = `环境变量 ${dep.pathEnv} 未设置`;
+  result.details = { env: dep.pathEnv };
+  return result;
+}
+
 /**
  * 校验 fs_read 类型依赖
  */
@@ -408,6 +444,8 @@ export async function checkDependency(dep: Dependency): Promise<DependencyCheckR
   switch (dep.kind) {
     case "bin":
       return checkBinDependency(dep);
+    case "env_set":
+      return checkEnvSetDependency(dep);
     case "fs_read":
       return checkFsReadDependency(dep);
     case "fs_exists":
