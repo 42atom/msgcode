@@ -29,8 +29,11 @@ docs/archive/
    - `docs/release/RELEASE_NOTES_v1.0.0.md`
    - `docs/release/RELEASE_NOTES_v1.0.1.md`
 3. 规则：根目录仅保留当前入口文档与运行必需文件，历史资料统一放归档/发布目录。
+4. 2026-03-11 起，已退役的 IndexTTS 专项备忘统一归档到：
+   - `docs/archive/indextts_optimization_memo_v2.2.md`
 
 ## 变更日志
 
 1. 2026-02-23：新增归档索引，并登记协议迁移映射入口。
 2. 2026-02-23：新增根目录历史文档清理映射，完成重复文档收敛。
+3. 2026-03-11：收入口径收窄后，将 IndexTTS 专项优化备忘移入归档。

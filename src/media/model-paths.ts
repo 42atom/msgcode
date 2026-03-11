@@ -88,69 +88,6 @@ export function qwenTtsRootExists(): boolean {
 }
 
 // ============================================
-// IndexTTS 路径解析
-// ============================================
-
-export interface IndexTtsPaths {
-  source: "env" | "default";
-  root: string;
-  python: string;
-  modelDir: string;
-  config: string;
-}
-
-/**
- * 解析 IndexTTS 路径
- *
- * 默认路径: ~/Models/index-tts
- */
-export function resolveIndexTtsPaths(): IndexTtsPaths {
-  const envRoot = (process.env.INDEX_TTS_ROOT || "").trim();
-  let source: "env" | "default";
-  let root: string;
-
-  if (envRoot) {
-    source = "env";
-    root = resolve(expandHome(envRoot));
-  } else {
-    source = "default";
-    root = resolve(expandHome("~/Models/index-tts"));
-  }
-
-  const envPython = (process.env.INDEX_TTS_PYTHON || "").trim();
-  const python = envPython
-    ? resolve(expandHome(envPython))
-    : join(root, ".venv", "bin", "python");
-
-  // 支持 $INDEX_TTS_ROOT 占位符
-  const envModelDir = (process.env.INDEX_TTS_MODEL_DIR || "").trim();
-  let modelDir: string;
-  if (envModelDir) {
-    modelDir = resolve(expandHome(envModelDir.replaceAll("$INDEX_TTS_ROOT", root)));
-  } else {
-    modelDir = join(root, "checkpoints");
-  }
-
-  const envConfig = (process.env.INDEX_TTS_CONFIG || "").trim();
-  let config: string;
-  if (envConfig) {
-    config = resolve(expandHome(envConfig.replaceAll("$INDEX_TTS_ROOT", root)));
-  } else {
-    config = join(root, "checkpoints", "config.yaml");
-  }
-
-  return { source, root, python, modelDir, config };
-}
-
-/**
- * 检查 IndexTTS 根目录是否存在
- */
-export function indexTtsRootExists(): boolean {
-  const paths = resolveIndexTtsPaths();
-  return existsSync(paths.root);
-}
-
-// ============================================
 // ASR (Whisper) 路径解析
 // ============================================
 

@@ -14,7 +14,7 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import dotenv from "dotenv";
 import type { Dependency, DependencyManifest, PreflightResult, DependencyCheckResult } from "./types.js";
-import { resolveQwenTtsPaths, resolveIndexTtsPaths } from "../media/model-paths.js";
+import { resolveQwenTtsPaths } from "../media/model-paths.js";
 
 const execAsync = promisify(exec);
 
@@ -27,15 +27,6 @@ const execAsync = promisify(exec);
  * 使用 model-paths.ts 的 shared resolver 获取默认路径
  */
 function expandPath(path: string): string {
-  // 支持少量 env 占位符（P0：IndexTTS 用得最多）
-  if (path.includes("$INDEX_TTS_ROOT")) {
-    const root = process.env.INDEX_TTS_ROOT
-      ? expandPath(process.env.INDEX_TTS_ROOT)
-      : resolveIndexTtsPaths().root;
-    if (root) {
-      path = path.replaceAll("$INDEX_TTS_ROOT", root);
-    }
-  }
   if (path.includes("$QWEN_TTS_ROOT")) {
     const root = process.env.QWEN_TTS_ROOT
       ? expandPath(process.env.QWEN_TTS_ROOT)
@@ -118,26 +109,6 @@ async function checkBinDependency(dep: Dependency): Promise<DependencyCheckResul
           result.error = `环境变量 ${dep.pathEnv} 未设置`;
           return result;
         }
-      }
-    }
-
-    // 特殊处理：IndexTTS Python（用 INDEX_TTS_PYTHON 验证 import）
-    if (dep.id === "indexts_python" && binPath) {
-      const expandedPath = expandPath(binPath);
-      if (!existsSync(expandedPath)) {
-        result.error = `文件不存在: ${expandedPath}`;
-        return result;
-      }
-      try {
-        await execAsync(`${expandedPath} -c "import indextts"`, { timeout: 8000 });
-        result.available = true;
-        result.details = { path: expandedPath };
-        return result;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        result.error = `IndexTTS Python 不可用（import indextts 失败）: ${message}`;
-        result.details = { path: expandedPath };
-        return result;
       }
     }
 

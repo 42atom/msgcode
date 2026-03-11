@@ -6,8 +6,6 @@ This directory contains concrete TTS backend adapters used by `src/runners/tts.t
 
 - `types.ts`: shared backend contracts (`TtsBackend`, `TtsOptions`, `TtsResult`).
 - `qwen.ts`: Qwen3-TTS local adapter (Apple Silicon path, custom voice + ref-audio clone).
-- `indexts.ts`: IndexTTS adapter (legacy path, 已退出正式主链).
-- `indexts-worker.ts`: IndexTTS worker process client (legacy only).
 
 ## Runtime Selection
 

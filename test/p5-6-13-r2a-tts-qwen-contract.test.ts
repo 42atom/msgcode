@@ -81,8 +81,7 @@ describe("P5.6.13-R2A: TTS Qwen 合同收口", () => {
     restoreEnv("STATE_FILE_PATH", snapshot.statePath);
   });
 
-  it("坏 ref => fail（单后端不得回退）", async () => {
-    let indexttsCalls = 0;
+  it("坏 ref => fail（单后端直接失败）", async () => {
     const result = await ttsTest.executeWithBackends({
       options: buildBackendOptions("/tmp/invalid-ref.wav"),
       priorityBackends: ttsTest.resolvePriorityBackends(""),
@@ -95,27 +94,14 @@ describe("P5.6.13-R2A: TTS Qwen 合同收口", () => {
             error: "QWEN_TTS_REF_AUDIO 不存在: /tmp/invalid-ref.wav",
           }),
         },
-        {
-          name: "indextts",
-          run: async (): Promise<TtsResult> => {
-            indexttsCalls += 1;
-            return {
-              success: true,
-              backend: "indextts",
-              audioPath: "/tmp/indextts-ok.m4a",
-            };
-          },
-        },
       ],
     });
 
-    expect(indexttsCalls).toBe(0);
     expect(result.result).toBeUndefined();
     expect(result.lastError).toContain("QWEN_TTS_REF_AUDIO 不存在");
   });
 
   it("无 ref + qwen 失败 => 直接 fail（不得回退 indextts）", async () => {
-    let indexttsCalls = 0;
     const result = await ttsTest.executeWithBackends({
       options: buildBackendOptions(),
       priorityBackends: ttsTest.resolvePriorityBackends(""),
@@ -128,21 +114,9 @@ describe("P5.6.13-R2A: TTS Qwen 合同收口", () => {
             error: "Qwen Python 不存在: /tmp/missing-python",
           }),
         },
-        {
-          name: "indextts",
-          run: async (): Promise<TtsResult> => {
-            indexttsCalls += 1;
-            return {
-              success: true,
-              backend: "indextts",
-              audioPath: "/tmp/indextts-fallback.m4a",
-            };
-          },
-        },
       ],
     });
 
-    expect(indexttsCalls).toBe(0);
     expect(result.result).toBeUndefined();
     expect(result.lastError).toContain("Qwen Python 不存在");
   });

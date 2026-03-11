@@ -19,14 +19,12 @@ import path from "node:path";
 describe("P5.7-R9-T6: model-paths 默认路径语义", () => {
     const originalHome = process.env.HOME;
     const originalQwenRoot = process.env.QWEN_TTS_ROOT;
-    const originalIndexRoot = process.env.INDEX_TTS_ROOT;
     const originalWhisperModel = process.env.WHISPER_MODEL_DIR;
     const originalModelRoot = process.env.MODEL_ROOT;
 
     beforeEach(() => {
         // 清空环境变量
         delete process.env.QWEN_TTS_ROOT;
-        delete process.env.INDEX_TTS_ROOT;
         delete process.env.WHISPER_MODEL_DIR;
         delete process.env.MODEL_ROOT;
     });
@@ -35,7 +33,6 @@ describe("P5.7-R9-T6: model-paths 默认路径语义", () => {
         // 恢复环境变量
         process.env.HOME = originalHome;
         if (originalQwenRoot) process.env.QWEN_TTS_ROOT = originalQwenRoot;
-        if (originalIndexRoot) process.env.INDEX_TTS_ROOT = originalIndexRoot;
         if (originalWhisperModel) process.env.WHISPER_MODEL_DIR = originalWhisperModel;
         if (originalModelRoot) process.env.MODEL_ROOT = originalModelRoot;
     });
@@ -49,15 +46,6 @@ describe("P5.7-R9-T6: model-paths 默认路径语义", () => {
         expect(result.root).toContain("qwen3-tts-apple-silicon");
         expect(result.python).toContain(".venv");
         expect(result.python).toContain("python");
-    });
-
-    it("resolveIndexTtsPaths 默认路径为 ~/Models/index-tts", async () => {
-        const { resolveIndexTtsPaths } = await import("../src/media/model-paths.js");
-        const result = resolveIndexTtsPaths();
-
-        expect(result.source).toBe("default");
-        expect(result.root).toContain("Models");
-        expect(result.root).toContain("index-tts");
     });
 
     it("resolveAsrPaths 默认路径为 ~/Models/whisper-large-v3-mlx", async () => {

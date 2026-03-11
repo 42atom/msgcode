@@ -70,18 +70,6 @@
       "kind": "fs_exists",
       "path": "$QWEN_TTS_ROOT/models/Qwen3-TTS-12Hz-0.6B-Base-8bit",
       "description": "Qwen TTS Clone 模型目录（默认: $QWEN_TTS_ROOT/models/Qwen3-TTS-12Hz-0.6B-Base-8bit）"
-    },
-    {
-      "id": "indexts_python",
-      "kind": "bin",
-      "pathEnv": "INDEX_TTS_PYTHON",
-      "description": "IndexTTS Python（建议: $INDEX_TTS_ROOT/.venv/bin/python）"
-    },
-    {
-      "id": "indexts_checkpoints",
-      "kind": "fs_exists",
-      "path": "$INDEX_TTS_ROOT/checkpoints",
-      "description": "IndexTTS 模型文件（默认: $INDEX_TTS_ROOT/checkpoints）"
     }
   ]
 }

@@ -36,16 +36,6 @@ type BackendExecutionResult = {
   lastError?: string;
 };
 
-function shouldAbortFallback(backendName: TtsBackend, error?: string): boolean {
-  if (backendName !== "qwen") return false;
-  const msg = (error || "").trim();
-  if (!msg) return false;
-
-  // Qwen ref-audio path is explicitly configured but invalid.
-  // Do not hide this misconfiguration behind fallback backends.
-  return msg.includes("QWEN_TTS_REF_AUDIO 不存在");
-}
-
 function resolvePriorityBackends(rawBackendMode: string): TtsBackend[] {
   const backendMode = rawBackendMode.trim().toLowerCase();
   if (backendMode === "qwen") return ["qwen"];
@@ -116,10 +106,8 @@ async function executeWithBackends(input: BackendExecutionInput): Promise<Backen
         return { result, backend: backend.name };
       }
       lastError = result.error;
-      if (shouldAbortFallback(backendName, result.error)) break;
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
-      if (shouldAbortFallback(backendName, lastError)) break;
     }
   }
 
@@ -298,7 +286,6 @@ export type { TtsBackend, TtsOptions, TtsResult };
 
 // Test hooks: keep pure and side-effect free.
 export const __test = {
-  shouldAbortFallback,
   resolvePriorityBackends,
   executeWithBackends,
   normalizeConfiguredTtsBackend,

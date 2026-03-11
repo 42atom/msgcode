@@ -3,6 +3,8 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-11
+  - runtime/archive: IndexTTS 遗留已退出正式真相源；依赖 manifest、preflight 和 model-paths 不再维护 IndexTTS 合同，未使用的 `indexts.ts / indexts-worker.ts / emotion.ts` 已移入 `.trash/2026-03-11-indextts-legacy-runtime/`，专项调优备忘移入 `docs/archive/indextts_optimization_memo_v2.2.md` (Issue: 0082, Plan: docs/design/plan-260311-indextts-archive-cleanup-and-merge-prep.md) [risk: medium] [rollback: 从 `.trash/2026-03-11-indextts-legacy-runtime/` 恢复源码，并回退 `src/deps/manifest.json`、`src/deps/preflight.ts`、`src/media/model-paths.ts` 与相关测试]
+- 2026-03-11
   - runtime/tts: TTS 主链已收口为 Qwen-only；`/tts-model` 只保留 `qwen|auto`，当前分支配置会直接驱动 TTS 执行链并优先于 `TTS_BACKEND`，`/mode` 只回显 `strict:qwen|auto:qwen`，doctor/probe 也不再要求 IndexTTS 配置完整 (Issue: 0081, Plan: docs/design/plan-260311-qwen-only-tts-mainline.md) [risk: medium] [rollback: 回退 `src/runners/tts.ts`、`src/handlers.ts`、`src/routes/cmd-model.ts`、`src/routes/cmd-info.ts`、`src/probe/probes/tts.ts`、`src/config/workspace.ts` 与本轮 TTS 测试]
 - 2026-03-11
   - routes/backend-lanes: 新的执行基座命令协议已落地；`/backend local|api|tmux`、`/local`、`/api`、`/tmux`、`/text-model`、`/vision-model`、`/tts-model`、`/embedding-model` 已接入，`/model` 退化为 `status + legacy alias`，同时 `api-provider` 预设已从当前 active backend 解耦，`/model status` 只展示当前分支模型覆盖 (Issue: 0080, Plan: docs/design/plan-260311-backend-command-lanes-v1.md) [risk: medium] [rollback: 回退 `src/routes/{commands,cmd-model,cmd-info,cmd-bind}.ts`、`src/config/workspace.ts`、`src/runtime/session-orchestrator.ts`、`src/handlers.ts` 与新增命令测试]

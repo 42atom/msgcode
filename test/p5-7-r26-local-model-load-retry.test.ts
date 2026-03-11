@@ -51,15 +51,13 @@ describe("P5.7-R26: 本地模型 2 次 load 重试", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("chat/vision/emotion 都应接入同一 reload helper", () => {
+  it("chat/vision 主链都应接入同一 reload helper", () => {
     const chatCode = readFileSync(join(process.cwd(), "src", "agent-backend", "chat.ts"), "utf-8");
     const visionCode = readFileSync(join(process.cwd(), "src", "runners", "vision.ts"), "utf-8");
-    const emotionCode = readFileSync(join(process.cwd(), "src", "runners", "tts", "emotion.ts"), "utf-8");
 
     expect(chatCode).toContain("LOCAL_MODEL_LOAD_MAX_RETRIES");
     expect(chatCode).toContain("maybeReloadLocalModelAndRetry");
     expect(chatCode).toContain("const firstCatalogModel = await fetchFirstModelId");
     expect(visionCode).toContain("maybeReloadLocalModelAndRetry");
-    expect(emotionCode).toContain("maybeReloadLocalModelAndRetry");
   });
 });

@@ -981,7 +981,7 @@ export async function handleMessage(
         // 不阻塞主流程：先让用户拿到即时回复，再后台生成语音附件。
         //
         // P0：自动语音回复必须“串行 + 最新覆盖”，否则会出现：
-        // - 多条 TTS 并发 → IndexTTS worker 内存暴涨 / SIGKILL
+        // - 多条 TTS 并发 → 本地 TTS 统一内存抖动 / SIGKILL
         // - 音频乱序/重复发送（用户感知为“先发合并音频，再发分段音频”）
         const autoTimeoutMs = (() => {
           const raw = (process.env.TTS_AUTO_TIMEOUT_MS || "").trim();
@@ -998,8 +998,7 @@ export async function handleMessage(
           createdAtMs: Date.now(),
           options: {
             timeoutMs: autoTimeoutMs,
-            // P0: 不默认走 IndexTTS 内置 emo_text（慢且易抖）
-            // 将风格作为情绪分析提示（emoAuto 由后端默认策略决定）
+            // P0: 风格提示只作为 Qwen TTS 的语气输入
             instruct: result.defer?.options?.instruct,
             speed: result.defer?.options?.speed,
             temperature: result.defer?.options?.temperature,

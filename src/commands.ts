@@ -356,8 +356,6 @@ async function killMsgcodeProcesses(): Promise<void> {
     "tsx.*src/index.ts",
     "tsx.*src/daemon.ts",
     "npm exec tsx src/index.ts",
-    // IndexTTS 常驻 worker（避免 daemon 重启后遗留孤儿进程）
-    "indexts_worker\\.py",
   ];
 
   for (const pattern of patterns) {
