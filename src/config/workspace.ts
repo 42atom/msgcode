@@ -747,6 +747,16 @@ function normalizeStoredModelValue(raw: string | undefined): string | undefined 
   return normalized ? normalized : undefined;
 }
 
+function normalizeStoredModelValueForSlot(slot: ModelSlot, value: string | undefined): string | undefined {
+  if (slot !== "tts") {
+    return value;
+  }
+  if (!value) {
+    return undefined;
+  }
+  return value.trim().toLowerCase() === "qwen" ? "qwen" : undefined;
+}
+
 function getStoredModelConfigKey(lane: ModelLane, slot: ModelSlot): StoredModelConfigKey {
   if (!MODEL_LANES.includes(lane)) {
     throw new Error(`未知模型分支: ${lane}`);
@@ -804,7 +814,7 @@ export async function getBranchModel(
   const workspaceConfig = await loadWorkspaceConfig(projectDir);
   const stored = readStoredModelValue(workspaceConfig, lane, slot);
   if (stored.present) {
-    return stored.value;
+    return normalizeStoredModelValueForSlot(slot, stored.value);
   }
 
   if (slot !== "text") {

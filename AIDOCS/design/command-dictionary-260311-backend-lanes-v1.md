@@ -109,11 +109,10 @@
 - `local` 和 `api` 分支允许各自保存独立的模型覆盖
 - `tmux` 分支不消费这些模型字段
 - `embedding-model` 主要供内部记忆/检索链使用；默认不强调给普通用户操作，但协议上可见、可配
-- `tts-model` 在 v0.1 先收口为 TTS 后端偏好，只支持 `qwen | indextts | auto`
+- `tts-model` 在 v0.1 先收口为 TTS 后端偏好，只支持 `qwen | auto`
 - `tts-model` 会直接影响当前分支的 TTS 执行链与 `/mode` 回显：
   - `qwen` = `strict:qwen`
-  - `indextts` = `strict:indextts`
-  - `auto` = `fallback:qwen->indextts`
+  - `auto` = `auto:qwen`
 
 约束：
 

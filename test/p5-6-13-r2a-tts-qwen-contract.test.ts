@@ -14,7 +14,6 @@ type EnvSnapshot = {
   ttsBackend: string | undefined;
   agentBackend: string | undefined;
   qwenRef: string | undefined;
-  indexttsRef: string | undefined;
   statePath: string | undefined;
 };
 
@@ -65,7 +64,6 @@ describe("P5.6.13-R2A: TTS Qwen 合同收口", () => {
       ttsBackend: process.env.TTS_BACKEND,
       agentBackend: process.env.AGENT_BACKEND,
       qwenRef: process.env.QWEN_TTS_REF_AUDIO,
-      indexttsRef: process.env.INDEXTTS_REF_AUDIO,
       statePath: process.env.STATE_FILE_PATH,
     };
     process.env.STATE_FILE_PATH = join(tmpdir(), `msgcode-state-r2a-${randomUUID()}.json`);
@@ -80,11 +78,10 @@ describe("P5.6.13-R2A: TTS Qwen 合同收口", () => {
     restoreEnv("TTS_BACKEND", snapshot.ttsBackend);
     restoreEnv("AGENT_BACKEND", snapshot.agentBackend);
     restoreEnv("QWEN_TTS_REF_AUDIO", snapshot.qwenRef);
-    restoreEnv("INDEXTTS_REF_AUDIO", snapshot.indexttsRef);
     restoreEnv("STATE_FILE_PATH", snapshot.statePath);
   });
 
-  it("坏 ref + fallback 模式 => fail（不得回退）", async () => {
+  it("坏 ref => fail（单后端不得回退）", async () => {
     let indexttsCalls = 0;
     const result = await ttsTest.executeWithBackends({
       options: buildBackendOptions("/tmp/invalid-ref.wav"),
@@ -117,7 +114,7 @@ describe("P5.6.13-R2A: TTS Qwen 合同收口", () => {
     expect(result.lastError).toContain("QWEN_TTS_REF_AUDIO 不存在");
   });
 
-  it("无 ref + fallback 模式 => qwen 失败时允许回退 indextts", async () => {
+  it("无 ref + qwen 失败 => 直接 fail（不得回退 indextts）", async () => {
     let indexttsCalls = 0;
     const result = await ttsTest.executeWithBackends({
       options: buildBackendOptions(),
@@ -145,18 +142,17 @@ describe("P5.6.13-R2A: TTS Qwen 合同收口", () => {
       ],
     });
 
-    expect(indexttsCalls).toBe(1);
-    expect(result.backend).toBe("indextts");
-    expect(result.result?.success).toBe(true);
-    expect(result.result?.audioPath).toBe("/tmp/indextts-fallback.m4a");
+    expect(indexttsCalls).toBe(0);
+    expect(result.result).toBeUndefined();
+    expect(result.lastError).toContain("Qwen Python 不存在");
   });
 
-  it("/mode 输出必须与执行模式一致（strict/fallback）", async () => {
+  it("/mode 输出必须与执行模式一致（strict/auto）", async () => {
     const handler = new RuntimeRouterHandler();
     const cases = [
       { envValue: "qwen", expected: "strict:qwen" },
-      { envValue: "indextts", expected: "strict:indextts" },
-      { envValue: "", expected: "fallback:qwen->indextts" },
+      { envValue: "indextts", expected: "auto:qwen" },
+      { envValue: "", expected: "auto:qwen" },
     ];
 
     for (const item of cases) {

@@ -126,7 +126,7 @@ function normalizeModelOverrideInput(input: string): string {
 
 function isSupportedTtsModelOverride(value: string): boolean {
   const normalized = value.trim().toLowerCase();
-  return normalized === "" || normalized === "qwen" || normalized === "indextts";
+  return normalized === "" || normalized === "qwen";
 }
 
 function getActiveAgentProvider(): ActiveAgentProvider {
@@ -323,7 +323,7 @@ async function handleModelFieldCommand(
   if (slot === "tts" && !isSupportedTtsModelOverride(normalized)) {
     return {
       success: false,
-      message: `当前 tts-model 仅支持 qwen | indextts | auto`,
+      message: `当前 tts-model 仅支持 qwen | auto`,
     };
   }
 

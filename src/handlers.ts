@@ -357,12 +357,8 @@ export class RuntimeRouterHandler implements CommandHandler {
                 const ttsMode =
                     backendEnv === "qwen"
                         ? "strict:qwen"
-                        : backendEnv === "indextts"
-                            ? "strict:indextts"
-                            : "fallback:qwen->indextts";
-                const refAudio = (backendEnv === "qwen" || !backendEnv)
-                  ? (process.env.QWEN_TTS_REF_AUDIO || "").trim()
-                  : (process.env.INDEXTTS_REF_AUDIO || "").trim();
+                        : "auto:qwen";
+                const refAudio = (process.env.QWEN_TTS_REF_AUDIO || "").trim();
                 return {
                     success: true,
                     response: [

@@ -6,17 +6,17 @@ This directory contains concrete TTS backend adapters used by `src/runners/tts.t
 
 - `types.ts`: shared backend contracts (`TtsBackend`, `TtsOptions`, `TtsResult`).
 - `qwen.ts`: Qwen3-TTS local adapter (Apple Silicon path, custom voice + ref-audio clone).
-- `indexts.ts`: IndexTTS adapter (legacy/fallback path).
-- `indexts-worker.ts`: IndexTTS worker process client.
+- `indexts.ts`: IndexTTS adapter (legacy path, 已退出正式主链).
+- `indexts-worker.ts`: IndexTTS worker process client (legacy only).
 
 ## Runtime Selection
 
-- Default order when unset: `qwen -> indextts` (fallback mode).
+- Mainline is Qwen-only.
 - `TTS_BACKEND=qwen` means strict qwen only.
-- `TTS_BACKEND=indextts` means strict indextts only.
+- unset/legacy values fall back to `auto:qwen`.
 - Qwen default mode is CustomVoice (`--voice` + `--instruct`).
 - Qwen clone mode is enabled only when `refAudioPath` or `QWEN_TTS_REF_AUDIO` is set.
-- If `QWEN_TTS_REF_AUDIO` is set but invalid, fallback is aborted and returns explicit config error.
+- If `QWEN_TTS_REF_AUDIO` is set but invalid, synthesis returns explicit config error.
 
 ## Boundary
 

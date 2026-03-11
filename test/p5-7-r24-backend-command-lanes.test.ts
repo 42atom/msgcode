@@ -137,15 +137,34 @@ describe("P5.7-R24: backend lanes 命令协议", () => {
     expect(status.message).toContain("embedding-model: n/a (tmux)");
   });
 
-  it("tts-model 只允许 qwen|indextts|auto", async () => {
+  it("tts-model 只允许 qwen|auto", async () => {
     await handleBackendCommand({ chatId: CHAT_ID, args: ["local"] });
 
     const invalid = await handleTtsModelCommand({ chatId: CHAT_ID, args: ["some-random-model"] });
     expect(invalid.success).toBe(false);
-    expect(invalid.message).toContain("当前 tts-model 仅支持 qwen | indextts | auto");
+    expect(invalid.message).toContain("当前 tts-model 仅支持 qwen | auto");
 
     const valid = await handleTtsModelCommand({ chatId: CHAT_ID, args: ["qwen"] });
     expect(valid.success).toBe(true);
     expect(valid.message).toContain("tts-model: qwen");
+  });
+
+  it("旧 workspace 里的 indextts 残值应按 auto 处理，不再回显为正式选项", async () => {
+    await fs.mkdir(path.join(workspacePath, ".msgcode"), { recursive: true });
+    await fs.writeFile(
+      path.join(workspacePath, ".msgcode", "config.json"),
+      JSON.stringify({ "model.local.tts": "indextts" }, null, 2),
+      "utf-8",
+    );
+
+    await handleBackendCommand({ chatId: CHAT_ID, args: ["local"] });
+
+    const status = await handleModelCommand({ chatId: CHAT_ID, args: ["status"] });
+    expect(status.success).toBe(true);
+    expect(status.message).toContain("tts-model: auto");
+
+    const ttsStatus = await handleTtsModelCommand({ chatId: CHAT_ID, args: [] });
+    expect(ttsStatus.success).toBe(true);
+    expect(ttsStatus.message).toContain("tts-model: auto");
   });
 });

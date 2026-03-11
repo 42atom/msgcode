@@ -86,7 +86,7 @@ const HELP_ENTRIES: SlashCommandDocEntry[] = [
   {
     group: "群组绑定",
     usage: "/tts-model [id|auto]",
-    summary: "当前分支 TTS 模式（qwen|indextts|auto）",
+    summary: "当前分支 TTS 模式（qwen|auto）",
     keywords: ["/tts-model"],
   },
   {
