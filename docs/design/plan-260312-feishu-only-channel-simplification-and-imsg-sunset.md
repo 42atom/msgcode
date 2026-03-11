@@ -98,5 +98,9 @@ Issue: 0093
   - `msgcode init` 已改为 Feishu-first 上手路径
   - 不再检查 `chat.db` / 不再引导 Full Disk Access / 不再提示 iMessage 建群
   - `.env.example` 已把飞书凭据前置为默认入口，`IMSG_PATH` 退回注释态
+- 已完成 Phase A 第四刀：
+  - `package.json` 的 `dev/start` 已从 `src/index.ts` 收口到 `src/cli.ts start debug`
+  - 公开 npm 脚本不再默认穿过旧的 imsg-only 入口
+  - 黑盒测试已锁定公开脚本必须命中当前 Feishu 主链
 
 （章节级）评审意见：[留空,用户将给出反馈]

@@ -76,6 +76,10 @@ links:
     - `msgcode init` 不再检查 `chat.db`、不再引导 Full Disk Access、也不再提示 iMessage 建群
     - `.env.example` 已显式暴露 `FEISHU_APP_ID` / `FEISHU_APP_SECRET`
     - `IMSG_PATH` 已退回注释态，只保留 legacy 显式启用时的说明
+  - 公开脚本入口已纠偏：
+    - `package.json` 的 `npm run dev` / `npm start` 不再指向 `src/index.ts`
+    - 对外脚本现统一落到 `tsx src/cli.ts start debug`
+    - 黑盒测试已锁定：公开脚本必须命中当前 Feishu 主链，不允许再落回 `index.ts` 的 imsg-only 壳
   - 用户面文案已开始同步：
     - `src/cli.ts` 默认描述改为中性 runtime 口径
     - `src/tmux/remote_hint.ts` 默认提示词不再写死 iMessage
