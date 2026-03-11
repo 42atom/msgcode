@@ -111,8 +111,7 @@
 5. 本轮还顺手补齐了 `deepseek` API provider 直连能力
 6. `tts-model` 已真接到当前分支的 TTS 执行链：
    - `qwen` -> `strict:qwen`
-   - `indextts` -> `strict:indextts`
-   - `auto` -> `fallback:qwen->indextts`
+   - `auto` -> `auto:qwen`
    并且 `/mode` 会回显当前分支的 `tts-model`
 
 ## Risks

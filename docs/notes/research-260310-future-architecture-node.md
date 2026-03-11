@@ -1,5 +1,8 @@
 # msgcode 终局架构思考节点
 
+> 历史说明：本文保留为终局架构方向记录。
+> 若讨论的是“手机端专门远程控制入口 / thin relay / reachability 实现边界”，当前口径改以 [AIDOCS/notes/mobile-relay-260311/research-260311-mobile-relay-reference-and-design.md](/Users/admin/GitProjects/msgcode/AIDOCS/notes/mobile-relay-260311/research-260311-mobile-relay-reference-and-design.md) 为准；本文在该主题下仅作历史背景。
+
 ## 结论
 
 `msgcode` 的终局不是聊天机器人，也不是单纯的 PWA。
@@ -257,4 +260,3 @@ flowchart LR
 页面是交付。  
 服务是能力宿主。  
 原生壳是移动触达。  
-

@@ -1,5 +1,8 @@
 # 本地优先移动入口方案研究
 
+> 历史说明：本文保留为 2026-03-10 的阶段性研究记录。
+> 关于“手机端专门远程控制入口 / thin relay / reachability 边界”的当前口径，改以 [AIDOCS/notes/mobile-relay-260311/research-260311-mobile-relay-reference-and-design.md](/Users/admin/GitProjects/msgcode/AIDOCS/notes/mobile-relay-260311/research-260311-mobile-relay-reference-and-design.md) 为准；本文在该主题下仅作历史参考。
+
 ## 背景
 
 `msgcode` 当前已经明确进入 `Feishu-first, iMessage-optional`，后续方向也已冻结为：

@@ -1,0 +1,72 @@
+---
+id: 0083
+title: 合并前工作树清理与分支收口
+status: done
+owner: agent
+labels: [chore, docs, refactor, test]
+risk: medium
+scope: 归档剩余 IndexTTS 遗留，收口未提交的 local-backend 功能线，清理合并前工作树
+plan_doc: docs/design/plan-260311-merge-prep-worktree-cleanup.md
+links: []
+---
+
+## Context
+
+在 `0081 Qwen-only TTS` 与 `0082 IndexTTS archive cleanup` 之后，分支上仍残留三类待收口内容：
+
+- 仓库里仍有未归档的 IndexTTS 脚本与缓存文件
+  - `scripts/indexts_cli.py`
+  - `scripts/indexts_worker.py`
+  - `scripts/__pycache__/indexts_*.pyc`
+- 新协议文档中仍有过时的 `indextts` 回显与 fallback 口径
+  - `docs/design/plan-260311-backend-command-lanes-v1.md`
+- 工作树还叠着未提交的 `0079 local-backend / OMLX` 功能线、`mobile-relay` 研究文档与临时产物
+
+用户要求：
+
+- 继续清理 legacy IndexTTS 文件和旧文档，并放入归档
+- 清理工作树
+- 准备把当前分支合并回主链
+
+## Goal / Non-Goals
+
+- Goal: 归档剩余 IndexTTS 脚本与缓存残留
+- Goal: 修正正式/当前文档中的过时 IndexTTS 主链口径
+- Goal: 将 `0079` local-backend / OMLX 功能线收成独立 commit
+- Goal: 处理本轮 untracked notes / artifacts / cache，使工作树归零
+- Non-Goals: 不继续扩展新的 backend 能力
+- Non-Goals: 不改动无关的既存类型错误
+- Non-Goals: 不重写历史版本文档，只做必要的归档与说明
+
+## Plan
+
+- [x] 新建 issue / plan，冻结 merge-prep 清理范围
+- [x] 归档剩余 IndexTTS 脚本与缓存文件
+- [x] 修正文档中仍暴露 `indextts` 正式选项的过时表述
+- [x] 收拢并提交 `0079 local-backend / OMLX` 功能线
+- [x] 处理 `mobile-relay` 研究文档、根目录 `notes.md` 与本轮 artifacts/cache
+- [x] 运行回归，确认 `git status` 干净，可准备合并主链
+
+## Acceptance Criteria
+
+1. 仓库正式主链中不再保留可执行的 IndexTTS 脚本入口
+2. 当前协议/计划文档不再把 `indextts` 当作正式回显或 fallback 选项
+3. `0079` 功能线有单独 commit，研究材料有清晰归档位置
+4. 根目录不再残留临时 `notes.md`，缓存文件不再出现在工作树
+5. 本轮完成后 `git status --short` 为空
+
+## Notes
+
+- `AIDOCS/artifacts/benchmark-phase3-soul-context-fix/` 被 `docs/tasks/benchmark-task-phase3-soul-context-fix-260310.md` 引用，若保留则应正式入库；若不保留则必须同步清理引用
+- `AIDOCS/artifacts/omlx-vision-red-blue.png` 被 OMLX 研究文档引用，不能直接静默删除
+- `mobile-relay` 文档属于独立研究线，若保留应单独 commit，不与 `0079` 混在一起
+- 本轮已将剩余 `scripts/indexts_cli.py` / `scripts/indexts_worker.py` 迁入 `docs/archive/indextts-runtime/`；`scripts/__pycache__/indexts_*.pyc` 已从仓库正式路径移除
+- `notes.md` 已迁回 `AIDOCS/notes/local-backend-control-plane-mvp-260311.md`
+- Tests:
+  - `npm test -- test/p5-7-r8c-agent-backend-single-source.test.ts test/p5-7-r9-t2-runtime-capabilities.test.ts test/p5-7-r9-t7-step4-compatibility-lock.test.ts test/p5-7-r23-vision-mainline.test.ts`
+  - `npm test -- test/p5-6-13-r2a-tts-qwen-contract.test.ts test/p5-7-r31-qwen-only-tts-mainline.test.ts test/p5-7-r24-backend-command-lanes.test.ts`
+
+## Links
+
+- Issue: issues/0079-local-backend-control-plane-mvp.md
+- Plan: docs/design/plan-260311-local-backend-control-plane-mvp.md

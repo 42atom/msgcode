@@ -1,0 +1,123 @@
+# plan-260311-merge-prep-worktree-cleanup
+
+## Problem
+
+当前分支已经完成了 `Qwen-only TTS`、`backend command lanes` 和 `local-backend / OMLX` 多条线，但工作树仍混着剩余 IndexTTS 脚本、过时协议文案、未提交的 `0079` 功能线、研究 notes 与临时 artifacts。若现在直接准备合主链，会把“已退役能力”“正式功能”“研究证据”混成一坨。
+
+## Occam Check
+
+1. 不加这次 merge-prep 清理，系统具体坏在哪？
+   - 分支无法干净合并，审查者看不清哪些是正式主链、哪些是历史归档；残留的 IndexTTS 脚本和过时文案还会继续误导后续维护者。
+2. 用更少的层能不能解决？
+   - 能。按任务线拆 commit，把旧脚本/缓存移到归档或移除，把研究材料放回文档目录，不新增任何新控制层。
+3. 这个改动让主链数量变多了还是变少了？
+   - 变少了。TTS 主链继续保持 Qwen-only，backend 主链保持已完成的 `0079/0080` 结果，研究材料与临时产物不再混入主执行面。
+
+## Decision
+
+采用最小可删方案：
+
+1. 将剩余 IndexTTS 脚本与缓存移出正式执行面
+2. 修正当前协议文档中仍把 `indextts` 视为正式值的口径
+3. 先提交 `0079 local-backend / OMLX` 功能线
+4. 再单独处理 `mobile-relay` 研究文档与引用中的 artifacts
+5. 最终确保工作树清洁，分支可直接进入合并评审
+
+## Alternatives
+
+### 方案 A：不再拆 commit，直接一次性把所有脏改动混提
+
+优点：
+
+- 最省操作
+
+缺点：
+
+- 无法审查边界
+- 把正式功能、历史归档和研究材料混成一个提交
+
+不推荐。
+
+### 方案 B：只清 IndexTTS，其他脏改动继续挂着
+
+优点：
+
+- 当前任务最小
+
+缺点：
+
+- 工作树仍不干净，仍然不能进入“准备合主链”的状态
+
+不推荐。
+
+### 方案 C：按任务线拆 commit，并清到 `git status` 为空（推荐）
+
+优点：
+
+- 边界清晰
+- 审查成本低
+- 真正满足“准备合并主链”
+
+## Plan
+
+1. 归档剩余 IndexTTS 残留
+   - `scripts/indexts_cli.py`
+   - `scripts/indexts_worker.py`
+   - `scripts/__pycache__/indexts_*.pyc`
+   - 修正 `docs/design/plan-260311-backend-command-lanes-v1.md`
+2. 收口 `0079 local-backend / OMLX`
+   - `src/local-backend/registry.ts`
+   - `src/agent-backend/chat.ts`
+   - `src/agent-backend/index.ts`
+   - `src/agent-backend/tool-loop.ts`
+   - `src/capabilities.ts`
+   - `test/p5-7-r23-vision-mainline.test.ts`
+   - `test/p5-7-r9-t2-runtime-capabilities.test.ts`
+   - `test/p5-7-r9-t7-step4-compatibility-lock.test.ts`
+   - `issues/0079-local-backend-control-plane-mvp.md`
+   - `docs/design/plan-260311-local-backend-control-plane-mvp.md`
+3. 收口研究文档与 artifacts
+   - `AIDOCS/notes/mobile-relay-260311/*`
+   - `docs/notes/research-260310-future-architecture-node.md`
+   - `docs/notes/research-260310-mobile-entry-options.md`
+   - 根目录 `notes.md` 迁回 `AIDOCS/notes/`
+   - `AIDOCS/artifacts/*`
+   - 清理 `src/skills/runtime/local-vision-lmstudio/scripts/__pycache__/`
+4. 回归与状态确认
+   - 跑 backend / vision / tts 相关测试
+   - `git status --short`
+
+## Risks
+
+1. `AIDOCS/artifacts/*` 若有外部引用，直接删除会造成悬空链接。
+   - 回滚/降级：保留入库或迁移时同步修正引用。
+2. `0079` 若和本轮清理混 commit，会使评审难以判断行为改动与归档改动。
+   - 回滚/降级：严格按任务线分开提交。
+3. 历史研究文档若被粗暴移动，可能影响后续追溯。
+   - 回滚/降级：优先保留路径，只做增补说明；必须移动时记录映射。
+
+## Test Plan
+
+至少覆盖：
+
+1. local-backend / OMLX 相关测试继续通过
+2. Qwen-only TTS 主链测试继续通过
+3. `rg "indextts|IndexTTS|indexts"` 的结果只剩归档/历史说明/兼容检测
+4. `git status --short` 为空
+
+## Observability
+
+- `docs/CHANGELOG.md` 记录外部可见变化
+- 归档路径和研究 notes 保留可追溯入口
+
+## Result
+
+当前已完成：
+
+1. `scripts/indexts_cli.py` 与 `scripts/indexts_worker.py` 已迁入 `docs/archive/indextts-runtime/`
+2. `scripts/__pycache__/indexts_*.pyc` 已从正式路径移除
+3. `docs/design/plan-260311-backend-command-lanes-v1.md` 已改成 Qwen-only 的当前口径
+4. `0079 local-backend / OMLX` 已独立提交，不再悬挂在工作树
+5. `mobile-relay` 研究文档与 benchmark artifacts 已保留在规范目录中，准备作为本轮 merge-prep 一并入库
+
+（章节级）评审意见：[留空,用户将给出反馈]
