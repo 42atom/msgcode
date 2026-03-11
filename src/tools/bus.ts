@@ -14,6 +14,7 @@
 import type {
   ToolName, ToolSource, ToolPolicy, ToolContext, ToolResult, SideEffectLevel
 } from "./types.js";
+import { resolve as resolvePath, sep as pathSep } from "node:path";
 import { loadWorkspaceConfig, getFsScope, DEFAULT_WORKSPACE_CONFIG } from "../config/workspace.js";
 import { runTts } from "../runners/tts.js";
 import { runAsr } from "../runners/asr.js";
@@ -70,6 +71,21 @@ export async function getToolPolicy(workspacePath: string): Promise<ToolPolicy> 
     allow: cfg["tooling.allow"] as ToolName[] | undefined,
     requireConfirm: cfg["tooling.require_confirm"] as ToolName[] | undefined,
   });
+}
+
+function isPathWithinWorkspace(targetPath: string, workspacePath: string): boolean {
+  const normalizedWorkspace = resolvePath(workspacePath);
+  const normalizedTarget = resolvePath(targetPath);
+
+  if (normalizedTarget === normalizedWorkspace) {
+    return true;
+  }
+
+  const workspacePrefix = normalizedWorkspace.endsWith(pathSep)
+    ? normalizedWorkspace
+    : `${normalizedWorkspace}${pathSep}`;
+
+  return normalizedTarget.startsWith(workspacePrefix);
 }
 
 export function canExecuteTool(
@@ -773,7 +789,7 @@ export async function executeTool(
         }
 
         // P5.7-R3i: workspace 模式下的边界校验
-        if (fsScope === "workspace" && !filePath.startsWith(ctx.workspacePath)) {
+        if (fsScope === "workspace" && !isPathWithinWorkspace(filePath, ctx.workspacePath)) {
           // P5.7-R3i: 日志包含 fsScope/path
           logger.warn("File tool path denied by fs_scope policy", {
             module: "tools-bus",
@@ -849,7 +865,7 @@ export async function executeTool(
         }
 
         // P5.7-R3i: workspace 模式下的边界校验
-        if (fsScope === "workspace" && !filePath.startsWith(ctx.workspacePath)) {
+        if (fsScope === "workspace" && !isPathWithinWorkspace(filePath, ctx.workspacePath)) {
           // P5.7-R3i: 日志包含 fsScope/path
           logger.warn("File tool path denied by fs_scope policy", {
             module: "tools-bus",
@@ -908,7 +924,7 @@ export async function executeTool(
         }
 
         // P5.7-R3i: workspace 模式下的边界校验
-        if (fsScope === "workspace" && !filePath.startsWith(ctx.workspacePath)) {
+        if (fsScope === "workspace" && !isPathWithinWorkspace(filePath, ctx.workspacePath)) {
           // P5.7-R3i: 日志包含 fsScope/path
           logger.warn("File tool path denied by fs_scope policy", {
             module: "tools-bus",

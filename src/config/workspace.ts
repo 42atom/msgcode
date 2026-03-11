@@ -161,9 +161,9 @@ export interface WorkspaceConfig {
 
   // ==================== P5.7-R3i: 文件工具权限策略 ====================
   /**
-   * 文件工具作用域策略：workspace（默认）| unrestricted
+   * 文件工具作用域策略：workspace | unrestricted
    * - workspace: 仅允许访问工作区内的文件（安全模式）
-   * - unrestricted: 允许访问全盘文件（agent 场景）
+   * - unrestricted: 允许访问全盘文件（当前默认，测试期兼容）
    */
   "tooling.fs_scope"?: FsScope;
 
@@ -186,8 +186,8 @@ export interface WorkspaceConfig {
 
 /**
  * P5.7-R3i: 文件工具作用域策略
- * - workspace: 仅允许访问工作区内的文件（默认安全）
- * - unrestricted: 允许访问全盘文件（agent 场景）
+ * - workspace: 仅允许访问工作区内的文件
+ * - unrestricted: 允许访问全盘文件（当前默认，测试期兼容）
  */
 export type FsScope = "workspace" | "unrestricted";
 
@@ -252,7 +252,7 @@ export const DEFAULT_WORKSPACE_CONFIG: Required<WorkspaceConfig> = {
   "tooling.mode": "autonomous", // P5.5: 测试期统一 autonomous（LLM 自主决策 tool_calls）
   "tooling.allow": ["tts", "asr", "vision", "bash", "browser", "desktop", "read_file", "feishu_list_members", "feishu_list_recent_messages", "feishu_reply_message", "feishu_react_message", "feishu_send_file"], // 默认文件主链收口为 read_file + bash
   "tooling.require_confirm": [], // 默认不要求确认
-  "tooling.fs_scope": "unrestricted", // 测试期：文件工具无权限门槛
+  "tooling.fs_scope": "unrestricted", // 当前默认 unrestricted，避免扩大变更面
   "feishu.appId": "", // 飞书 App ID（默认空，需要用户配置）
   "feishu.appSecret": "", // 飞书 App Secret（默认空，需要用户配置）
   "feishu.encryptKey": "", // 飞书 Encrypt Key（默认空，可选）
@@ -693,9 +693,8 @@ export async function setToolingRequireConfirm(
 export async function getFsScope(
   projectDir: string
 ): Promise<"workspace" | "unrestricted"> {
-  void projectDir;
-  // 测试期全开：禁用文件作用域门槛，统一 unrestricted
-  return "unrestricted";
+  const workspaceConfig = await loadWorkspaceConfig(projectDir);
+  return workspaceConfig["tooling.fs_scope"] ?? DEFAULT_WORKSPACE_CONFIG["tooling.fs_scope"];
 }
 
 /**

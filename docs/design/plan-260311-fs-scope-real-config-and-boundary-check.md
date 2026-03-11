@@ -1,0 +1,64 @@
+# plan-260311-fs-scope-real-config-and-boundary-check
+
+## Problem
+
+`tooling.fs_scope` 当前是一个假配置：`setFsScope()` 会写入 workspace config，但 `getFsScope()` 始终返回 `unrestricted`。同时 Tool Bus 的 `workspace` 边界判断依赖字符串前缀比较，一旦目录名发生前缀碰撞，就会把工作区外路径误判为工作区内。
+
+## Occam Check
+
+1. 不加这次修正，系统具体坏在哪？
+   - 用户配置 `"tooling.fs_scope": "workspace"` 也没有任何效果；一旦后续有人开始依赖这层边界，当前实现会把“有安全策略”的表象继续带到运行时。
+2. 用更少的层能不能解决？
+   - 能。直接让 `getFsScope()` 真实读取配置，并把 Tool Bus 的路径判断改为稳定的父子路径判断，不新增任何控制层。
+3. 这个改动让主链数量变多了还是变少了？
+   - 变少了。`fs_scope` 的真实行为只剩 `workspace.ts -> tools/bus.ts` 一条主链，不再存在“配置可写但运行时忽略”的假分支。
+
+## Decision
+
+采用最小可删方案：
+
+1. 保持默认值 `unrestricted` 不变，避免扩大兼容面
+2. 修 `workspace.ts#getFsScope()`，让它真实读取 workspace config
+3. 在 `tools/bus.ts` 增加统一的工作区边界判断 helper，替代 `startsWith(workspacePath)`
+4. 更新 `p5-7-r3i-fs-scope-policy` 等相关测试，锁当前真实语义
+
+## Plan
+
+1. 收口配置读取
+   - `src/config/workspace.ts`
+   - 让 `getFsScope()` 返回 `workspaceConfig["tooling.fs_scope"] ?? DEFAULT_WORKSPACE_CONFIG["tooling.fs_scope"]`
+   - 注释同步说明“当前默认 unrestricted”
+2. 收口文件路径边界判断
+   - `src/tools/bus.ts`
+   - 提供统一 helper 判断目标路径是否位于工作区内
+   - `read_file / write_file / edit_file` 共用同一判断
+3. 更新测试
+   - `test/p5-7-r3i-fs-scope-policy.test.ts`
+   - `test/tools.bus.test.ts`
+   - 必要时补文件工具越界/前缀碰撞场景
+4. 更新文档
+   - `issues/0086-fs-scope-real-config-and-boundary-check.md`
+   - `docs/CHANGELOG.md`
+
+## Risks
+
+1. 一旦 `workspace` 模式真的生效，原本依赖“假 unrestricted”的测试会变红。
+   - 回滚/降级：保持默认值不变，只在显式设置 `workspace` 时启用边界判断。
+2. 路径边界判断若实现不严谨，可能继续留下前缀碰撞漏洞。
+   - 回滚/降级：集中到单一 helper，避免三处复制判断逻辑。
+
+## Test Plan
+
+至少覆盖：
+
+1. `getFsScope()` 默认返回 `unrestricted`
+2. `setFsScope(..., "workspace")` 后读取值为 `workspace`
+3. `workspace` 模式拒绝越界绝对路径
+4. `unrestricted` 模式允许绝对路径
+5. 前缀碰撞路径不被误判为工作区内
+
+## Observability
+
+- `docs/CHANGELOG.md` 记录 `fs_scope` 从假配置变为真实配置
+
+（章节级）评审意见：[留空,用户将给出反馈]

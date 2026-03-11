@@ -8,9 +8,10 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, writeFile, rm, mkdir, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { executeTool } from "../src/tools/bus.js";
 
 describe("P5.7-R3i: File Scope Policy", () => {
     describe("配置扩展", () => {
@@ -125,16 +126,170 @@ describe("P5.7-R3i: File Scope Policy", () => {
             expect(code).toContain('"tooling.fs_scope": "unrestricted"');
         });
 
-        it("getFsScope 应忽略 workspace 配置并始终返回 unrestricted", async () => {
+        it("setFsScope 写入 workspace 后，getFsScope 应返回 workspace", async () => {
             const { getFsScope, setFsScope } = await import("../src/config/workspace.js");
 
             const tmpDir = await mkdtemp(join(tmpdir(), "r3i-test-"));
             try {
                 await setFsScope(tmpDir, "workspace");
                 const scope = await getFsScope(tmpDir);
-                expect(scope).toBe("unrestricted");
+                expect(scope).toBe("workspace");
             } finally {
                 await rm(tmpDir, { recursive: true, force: true });
+            }
+        });
+
+        it("workspace 模式应拒绝 read_file 越界绝对路径", async () => {
+            const { setFsScope } = await import("../src/config/workspace.js");
+
+            const workspacePath = await mkdtemp(join(tmpdir(), "r3i-ws-read-"));
+            const outsideDir = await mkdtemp(join(tmpdir(), "r3i-outside-read-"));
+            const outsideFile = join(outsideDir, "outside.txt");
+            await writeFile(outsideFile, "outside-content", "utf-8");
+
+            try {
+                await setFsScope(workspacePath, "workspace");
+                const result = await executeTool("read_file", { path: outsideFile }, {
+                    workspacePath,
+                    source: "slash-command",
+                    requestId: "r3i-read-deny",
+                });
+
+                expect(result.ok).toBe(false);
+                expect(result.error?.code).toBe("TOOL_NOT_ALLOWED");
+                expect(result.error?.message).toContain("path must be under workspace");
+            } finally {
+                await rm(workspacePath, { recursive: true, force: true });
+                await rm(outsideDir, { recursive: true, force: true });
+            }
+        });
+
+        it("workspace 模式应拒绝 write_file 越界绝对路径", async () => {
+            const { setFsScope, setToolingAllow } = await import("../src/config/workspace.js");
+
+            const workspacePath = await mkdtemp(join(tmpdir(), "r3i-ws-write-"));
+            const outsideDir = await mkdtemp(join(tmpdir(), "r3i-outside-write-"));
+            const outsideFile = join(outsideDir, "outside.txt");
+
+            try {
+                await setFsScope(workspacePath, "workspace");
+                await setToolingAllow(workspacePath, ["write_file"]);
+                const result = await executeTool("write_file", { path: outsideFile, content: "blocked" }, {
+                    workspacePath,
+                    source: "slash-command",
+                    requestId: "r3i-write-deny",
+                });
+
+                expect(result.ok).toBe(false);
+                expect(result.error?.code).toBe("TOOL_NOT_ALLOWED");
+                expect(result.error?.message).toContain("path must be under workspace");
+            } finally {
+                await rm(workspacePath, { recursive: true, force: true });
+                await rm(outsideDir, { recursive: true, force: true });
+            }
+        });
+
+        it("workspace 模式应拒绝 edit_file 越界绝对路径", async () => {
+            const { setFsScope, setToolingAllow } = await import("../src/config/workspace.js");
+
+            const workspacePath = await mkdtemp(join(tmpdir(), "r3i-ws-edit-"));
+            const outsideDir = await mkdtemp(join(tmpdir(), "r3i-outside-edit-"));
+            const outsideFile = join(outsideDir, "outside.txt");
+            await writeFile(outsideFile, "alpha", "utf-8");
+
+            try {
+                await setFsScope(workspacePath, "workspace");
+                await setToolingAllow(workspacePath, ["edit_file"]);
+                const result = await executeTool("edit_file", {
+                    path: outsideFile,
+                    oldText: "alpha",
+                    newText: "beta",
+                }, {
+                    workspacePath,
+                    source: "slash-command",
+                    requestId: "r3i-edit-deny",
+                });
+
+                expect(result.ok).toBe(false);
+                expect(result.error?.code).toBe("TOOL_NOT_ALLOWED");
+                expect(result.error?.message).toContain("path must be under workspace");
+            } finally {
+                await rm(workspacePath, { recursive: true, force: true });
+                await rm(outsideDir, { recursive: true, force: true });
+            }
+        });
+
+        it("unrestricted 模式应允许 read_file 读取越界绝对路径", async () => {
+            const { setFsScope } = await import("../src/config/workspace.js");
+
+            const workspacePath = await mkdtemp(join(tmpdir(), "r3i-ws-read-open-"));
+            const outsideDir = await mkdtemp(join(tmpdir(), "r3i-outside-read-open-"));
+            const outsideFile = join(outsideDir, "outside.txt");
+            await writeFile(outsideFile, "outside-content", "utf-8");
+
+            try {
+                await setFsScope(workspacePath, "unrestricted");
+                const result = await executeTool("read_file", { path: outsideFile }, {
+                    workspacePath,
+                    source: "slash-command",
+                    requestId: "r3i-read-allow",
+                });
+
+                expect(result.ok).toBe(true);
+                expect(result.data?.content).toBe("outside-content");
+            } finally {
+                await rm(workspacePath, { recursive: true, force: true });
+                await rm(outsideDir, { recursive: true, force: true });
+            }
+        });
+
+        it("workspace 模式不应把前缀碰撞路径误判为工作区内", async () => {
+            const { setFsScope } = await import("../src/config/workspace.js");
+
+            const workspacePath = await mkdtemp(join(tmpdir(), "r3i-prefix-ws-"));
+            const outsideDir = `${workspacePath}-evil`;
+            await mkdir(outsideDir, { recursive: true });
+            const outsideFile = join(outsideDir, "outside.txt");
+            await writeFile(outsideFile, "evil", "utf-8");
+
+            try {
+                await setFsScope(workspacePath, "workspace");
+                const result = await executeTool("read_file", { path: outsideFile }, {
+                    workspacePath,
+                    source: "slash-command",
+                    requestId: "r3i-prefix-collision",
+                });
+
+                expect(result.ok).toBe(false);
+                expect(result.error?.code).toBe("TOOL_NOT_ALLOWED");
+            } finally {
+                await rm(workspacePath, { recursive: true, force: true });
+                await rm(outsideDir, { recursive: true, force: true });
+            }
+        });
+
+        it("workspace 模式应允许 workspace 内相对路径写入", async () => {
+            const { setFsScope, setToolingAllow } = await import("../src/config/workspace.js");
+
+            const workspacePath = await mkdtemp(join(tmpdir(), "r3i-ws-write-inside-"));
+            const targetPath = join(workspacePath, "nested", "file.txt");
+
+            try {
+                await setFsScope(workspacePath, "workspace");
+                await setToolingAllow(workspacePath, ["write_file"]);
+                const writeResult = await executeTool("write_file", {
+                    path: "nested/file.txt",
+                    content: "inside",
+                }, {
+                    workspacePath,
+                    source: "slash-command",
+                    requestId: "r3i-write-inside",
+                });
+
+                expect(writeResult.ok).toBe(true);
+                expect(await readFile(targetPath, "utf-8")).toBe("inside");
+            } finally {
+                await rm(workspacePath, { recursive: true, force: true });
             }
         });
     });
