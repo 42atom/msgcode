@@ -54,6 +54,19 @@ export {
     resolveLmStudioBackendRuntime,
 } from "./config.js";
 
+export type {
+    LocalAgentBackendId,
+    LocalBackendRuntime,
+} from "../local-backend/registry.js";
+
+export {
+    normalizeLocalAgentBackendId,
+    resolveConfiguredLocalBackendId,
+    resolveLocalBackendRuntime,
+    resolveLocalVisionModel,
+    resolveLocalEmbeddingModel,
+} from "../local-backend/registry.js";
+
 // ============================================
 // 提示词模块导出
 // ============================================

@@ -11,6 +11,11 @@
  * - Fallback to safe defaults if provider not found
  */
 
+import {
+    resolveLocalBackendRuntime,
+    type LocalAgentBackendId,
+} from "./local-backend/registry.js";
+
 // ============================================
 // Types
 // ============================================
@@ -164,10 +169,12 @@ const CAPABILITY_CACHE_TTL_MS = 5 * 60 * 1000;
 
 interface RuntimeCapabilityContext {
     provider: AgentCapabilityProvider;
+    localBackendId?: LocalAgentBackendId;
     model?: string;
     baseUrl?: string;
     apiKey?: string;
     timeoutMs: number;
+    modelsListPath?: string;
 }
 
 interface RuntimeCapabilityCacheEntry {
@@ -231,9 +238,9 @@ export async function resolveRuntimeCapabilities(params?: {
 }): Promise<RuntimeCapabilities> {
     const runtime = resolveRuntimeCapabilityContext(params?.agentProvider, params?.model);
 
-    const overrideWindow = resolveContextWindowOverride(runtime.provider);
-    const overrideReserved = resolveReservedOutputOverride(runtime.provider);
-    const overrideCharsPerToken = resolveCharsPerTokenOverride(runtime.provider);
+    const overrideWindow = resolveContextWindowOverride(runtime.provider, runtime.localBackendId);
+    const overrideReserved = resolveReservedOutputOverride(runtime.provider, runtime.localBackendId);
+    const overrideCharsPerToken = resolveCharsPerTokenOverride(runtime.provider, runtime.localBackendId);
 
     // 显式覆盖优先，避免人工修正被动态值覆盖
     if (typeof overrideWindow === "number") {
@@ -251,6 +258,7 @@ export async function resolveRuntimeCapabilities(params?: {
 
     const cacheKey = [
         runtime.provider,
+        runtime.localBackendId || "",
         runtime.baseUrl || "",
         runtime.model || "",
         String(overrideReserved ?? ""),
@@ -323,6 +331,7 @@ function normalizeAgentCapabilityProvider(raw?: string): AgentCapabilityProvider
     if (
         !normalized ||
         normalized === "lmstudio" ||
+        normalized === "omlx" ||
         normalized === "agent-backend" ||
         normalized === "local-openai" ||
         normalized === "llama" ||
@@ -357,9 +366,11 @@ function parsePositiveInt(raw?: string): number | undefined {
     return Math.floor(parsed);
 }
 
-function resolveTimeoutMs(provider: AgentCapabilityProvider): number {
+function resolveTimeoutMs(provider: AgentCapabilityProvider, localBackendId?: LocalAgentBackendId): number {
     const providerSpecific = provider === "local-openai"
-        ? parsePositiveInt(process.env.LMSTUDIO_TIMEOUT_MS)
+        ? (localBackendId === "omlx"
+            ? parsePositiveInt(process.env.OMLX_TIMEOUT_MS)
+            : parsePositiveInt(process.env.LMSTUDIO_TIMEOUT_MS))
         : provider === "openai"
             ? parsePositiveInt(process.env.OPENAI_TIMEOUT_MS)
             : provider === "minimax"
@@ -403,12 +414,15 @@ function resolveRuntimeCapabilityContext(rawProvider?: string, modelOverride?: s
         };
     }
 
+    const localRuntime = resolveLocalBackendRuntime(rawProvider);
     return {
         provider: "local-openai",
-        baseUrl: normalizeBaseUrl(process.env.LMSTUDIO_BASE_URL || process.env.AGENT_BASE_URL || "http://127.0.0.1:1234"),
-        apiKey: (process.env.LMSTUDIO_API_KEY || process.env.AGENT_API_KEY || "").trim() || undefined,
-        model: overrideModel || (process.env.LMSTUDIO_MODEL || process.env.AGENT_MODEL || "").trim() || undefined,
-        timeoutMs: resolveTimeoutMs("local-openai"),
+        localBackendId: localRuntime.id,
+        baseUrl: normalizeBaseUrl(localRuntime.baseUrl),
+        apiKey: localRuntime.apiKey,
+        model: overrideModel || localRuntime.model,
+        timeoutMs: localRuntime.timeoutMs || resolveTimeoutMs("local-openai", localRuntime.id),
+        modelsListPath: localRuntime.modelsListPath,
     };
 }
 
@@ -423,12 +437,14 @@ function resolveModelHintCapabilities(model: string): ModelCapabilities | undefi
     return undefined;
 }
 
-function resolveContextWindowOverride(provider: AgentCapabilityProvider): number | undefined {
+function resolveContextWindowOverride(provider: AgentCapabilityProvider, localBackendId?: LocalAgentBackendId): number | undefined {
     const globalValue = parsePositiveInt(process.env.AGENT_CONTEXT_WINDOW_TOKENS);
     if (typeof globalValue === "number") return globalValue;
 
     const providerValue = provider === "local-openai"
-        ? parsePositiveInt(process.env.LMSTUDIO_CONTEXT_WINDOW_TOKENS)
+        ? (localBackendId === "omlx"
+            ? parsePositiveInt(process.env.OMLX_CONTEXT_WINDOW_TOKENS)
+            : parsePositiveInt(process.env.LMSTUDIO_CONTEXT_WINDOW_TOKENS))
         : provider === "openai"
             ? parsePositiveInt(process.env.OPENAI_CONTEXT_WINDOW_TOKENS)
             : provider === "minimax"
@@ -437,12 +453,14 @@ function resolveContextWindowOverride(provider: AgentCapabilityProvider): number
     return providerValue;
 }
 
-function resolveReservedOutputOverride(provider: AgentCapabilityProvider): number | undefined {
+function resolveReservedOutputOverride(provider: AgentCapabilityProvider, localBackendId?: LocalAgentBackendId): number | undefined {
     const globalValue = parsePositiveInt(process.env.AGENT_RESERVED_OUTPUT_TOKENS);
     if (typeof globalValue === "number") return globalValue;
 
     const providerValue = provider === "local-openai"
-        ? parsePositiveInt(process.env.LMSTUDIO_RESERVED_OUTPUT_TOKENS)
+        ? (localBackendId === "omlx"
+            ? parsePositiveInt(process.env.OMLX_RESERVED_OUTPUT_TOKENS)
+            : parsePositiveInt(process.env.LMSTUDIO_RESERVED_OUTPUT_TOKENS))
         : provider === "openai"
             ? parsePositiveInt(process.env.OPENAI_RESERVED_OUTPUT_TOKENS)
             : provider === "minimax"
@@ -451,12 +469,14 @@ function resolveReservedOutputOverride(provider: AgentCapabilityProvider): numbe
     return providerValue;
 }
 
-function resolveCharsPerTokenOverride(provider: AgentCapabilityProvider): number | undefined {
+function resolveCharsPerTokenOverride(provider: AgentCapabilityProvider, localBackendId?: LocalAgentBackendId): number | undefined {
     const globalValue = parsePositiveInt(process.env.AGENT_CHARS_PER_TOKEN);
     if (typeof globalValue === "number") return globalValue;
 
     const providerValue = provider === "local-openai"
-        ? parsePositiveInt(process.env.LMSTUDIO_CHARS_PER_TOKEN)
+        ? (localBackendId === "omlx"
+            ? parsePositiveInt(process.env.OMLX_CHARS_PER_TOKEN)
+            : parsePositiveInt(process.env.LMSTUDIO_CHARS_PER_TOKEN))
         : provider === "openai"
             ? parsePositiveInt(process.env.OPENAI_CHARS_PER_TOKEN)
             : provider === "minimax"
@@ -625,7 +645,7 @@ async function resolveContextWindowFromApi(runtime: RuntimeCapabilityContext): P
     }
 
     const url = runtime.provider === "local-openai"
-        ? `${baseUrl}/api/v1/models`
+        ? `${baseUrl}${runtime.modelsListPath || "/api/v1/models"}`
         : `${baseUrl}/v1/models`;
     const headers = runtime.apiKey
         ? { authorization: `Bearer ${runtime.apiKey}` }

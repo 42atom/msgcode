@@ -26,9 +26,19 @@ describe("P5.7-R9-T2: runtime capabilities resolver", () => {
     "AGENT_CONTEXT_WINDOW_TOKENS",
     "AGENT_RESERVED_OUTPUT_TOKENS",
     "AGENT_CHARS_PER_TOKEN",
+    "LOCAL_AGENT_BACKEND",
     "LMSTUDIO_BASE_URL",
     "LMSTUDIO_MODEL",
     "LMSTUDIO_API_KEY",
+    "LMSTUDIO_CONTEXT_WINDOW_TOKENS",
+    "LMSTUDIO_RESERVED_OUTPUT_TOKENS",
+    "LMSTUDIO_CHARS_PER_TOKEN",
+    "OMLX_BASE_URL",
+    "OMLX_MODEL",
+    "OMLX_API_KEY",
+    "OMLX_CONTEXT_WINDOW_TOKENS",
+    "OMLX_RESERVED_OUTPUT_TOKENS",
+    "OMLX_CHARS_PER_TOKEN",
     "OPENAI_BASE_URL",
     "OPENAI_MODEL",
     "OPENAI_API_KEY",
@@ -135,6 +145,40 @@ describe("P5.7-R9-T2: runtime capabilities resolver", () => {
     expect(caps.contextWindowTokens).toBe(204800);
   });
 
+  it("omlx 本地后端应走 /v1/models，并读取 OMLX 覆盖值", async () => {
+    process.env.AGENT_BACKEND = "agent-backend";
+    process.env.LOCAL_AGENT_BACKEND = "omlx";
+    process.env.OMLX_BASE_URL = "http://127.0.0.1:8000";
+    process.env.OMLX_MODEL = "Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit";
+    process.env.OMLX_RESERVED_OUTPUT_TOKENS = "2222";
+    process.env.OMLX_CHARS_PER_TOKEN = "2";
+
+    let requestedUrl = "";
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      requestedUrl = String(input);
+      return new Response(JSON.stringify({
+        data: [
+          {
+            id: "Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit",
+            max_context_length: 65536,
+          },
+        ],
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as FetchFn;
+
+    const caps = await resolveRuntimeCapabilities({ agentProvider: "omlx" });
+
+    expect(requestedUrl).toBe("http://127.0.0.1:8000/v1/models");
+    expect(caps.provider).toBe("local-openai");
+    expect(caps.source).toBe("api-models");
+    expect(caps.contextWindowTokens).toBe(65536);
+    expect(caps.reservedOutputTokens).toBe(2222);
+    expect(caps.charsPerToken).toBe(2);
+  });
+
   it("模型表未命中时应回退到 provider 默认表", async () => {
     process.env.AGENT_BACKEND = "openai";
     process.env.OPENAI_BASE_URL = "https://api.openai.com";
@@ -180,4 +224,3 @@ describe("P5.7-R9-T2: runtime capabilities resolver", () => {
     expect(second.contextWindowTokens).toBe(128000);
   });
 });
-

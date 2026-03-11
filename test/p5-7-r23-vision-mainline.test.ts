@@ -24,6 +24,7 @@ describe("P5.7-R23: vision 主链收口", () => {
   let workspacePath = "";
   let imagePath = "";
   let originalFetch: typeof globalThis.fetch;
+  let envBackups: Record<string, string | undefined>;
 
   beforeEach(() => {
     workspacePath = join(tmpdir(), `msgcode-vision-${randomUUID()}`);
@@ -31,11 +32,28 @@ describe("P5.7-R23: vision 主链收口", () => {
     mkdirSync(workspacePath, { recursive: true });
     writeTinyPng(imagePath);
     originalFetch = globalThis.fetch;
+    envBackups = {
+      LOCAL_AGENT_BACKEND: process.env.LOCAL_AGENT_BACKEND,
+      OMLX_BASE_URL: process.env.OMLX_BASE_URL,
+      OMLX_API_KEY: process.env.OMLX_API_KEY,
+      OMLX_VISION_MODEL: process.env.OMLX_VISION_MODEL,
+    };
+    process.env.LOCAL_AGENT_BACKEND = "lmstudio";
+    delete process.env.OMLX_BASE_URL;
+    delete process.env.OMLX_API_KEY;
+    delete process.env.OMLX_VISION_MODEL;
   });
 
   afterEach(async () => {
     mock.restore();
     globalThis.fetch = originalFetch;
+    for (const [key, value] of Object.entries(envBackups)) {
+      if (typeof value === "undefined") {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    }
     await resetModelServiceLeaseManager();
     if (workspacePath && existsSync(workspacePath)) {
       rmSync(workspacePath, { recursive: true, force: true });
@@ -128,5 +146,123 @@ describe("P5.7-R23: vision 主链收口", () => {
     expect(result.textPath).toBe(summaryPath);
     expect(result.textPreview).toBe("这是一张表格截图。");
     expect(fetchCalls).toBe(0);
+  });
+
+  it("OMLX 视觉链应在 model_type=llm 时 fail-closed", async () => {
+    const backups = {
+      LOCAL_AGENT_BACKEND: process.env.LOCAL_AGENT_BACKEND,
+      OMLX_BASE_URL: process.env.OMLX_BASE_URL,
+      OMLX_API_KEY: process.env.OMLX_API_KEY,
+      OMLX_VISION_MODEL: process.env.OMLX_VISION_MODEL,
+    };
+
+    try {
+      process.env.LOCAL_AGENT_BACKEND = "omlx";
+      process.env.OMLX_BASE_URL = "http://127.0.0.1:8000";
+      process.env.OMLX_API_KEY = "omlx-key";
+      process.env.OMLX_VISION_MODEL = "Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit";
+
+      const requestedUrls: string[] = [];
+      globalThis.fetch = (async (input: RequestInfo | URL) => {
+        const url = String(input);
+        requestedUrls.push(url);
+
+        if (url.endsWith("/v1/models/status")) {
+          return asJsonResponse({
+            models: [
+              {
+                id: "Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit",
+                model_type: "llm",
+                engine_type: "batched",
+              },
+            ],
+          });
+        }
+
+        throw new Error(`unexpected fetch: ${url}`);
+      }) as typeof globalThis.fetch;
+
+      const { runVision } = await import("../src/runners/vision.js");
+      const result = await runVision({ workspacePath, imagePath });
+
+      expect(result.success).toBe(false);
+      expect(result.error).toContain("model_type=llm");
+      expect(requestedUrls).toEqual(["http://127.0.0.1:8000/v1/models/status"]);
+    } finally {
+      for (const [key, value] of Object.entries(backups)) {
+        if (typeof value === "undefined") {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+    }
+  });
+
+  it("OMLX 视觉链应只在 model_type=vlm 时放行图片请求", async () => {
+    const backups = {
+      LOCAL_AGENT_BACKEND: process.env.LOCAL_AGENT_BACKEND,
+      OMLX_BASE_URL: process.env.OMLX_BASE_URL,
+      OMLX_API_KEY: process.env.OMLX_API_KEY,
+      OMLX_VISION_MODEL: process.env.OMLX_VISION_MODEL,
+    };
+
+    try {
+      process.env.LOCAL_AGENT_BACKEND = "omlx";
+      process.env.OMLX_BASE_URL = "http://127.0.0.1:8000";
+      process.env.OMLX_API_KEY = "omlx-key";
+      process.env.OMLX_VISION_MODEL = "Qwen3.5-4B-MLX-4bit";
+
+      const requestedUrls: string[] = [];
+      globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        requestedUrls.push(url);
+
+        if (url.endsWith("/v1/models/status")) {
+          return asJsonResponse({
+            models: [
+              {
+                id: "Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit",
+                model_type: "llm",
+                engine_type: "batched",
+              },
+              {
+                id: "Qwen3.5-4B-MLX-4bit",
+                model_type: "vlm",
+                engine_type: "vlm",
+              },
+            ],
+          });
+        }
+
+        if (url.endsWith("/v1/chat/completions")) {
+          const headers = init?.headers as Record<string, string> | undefined;
+          expect(headers?.Authorization).toBe("Bearer omlx-key");
+          return asJsonResponse({
+            choices: [{ message: { content: "一个卡通男性头像。" } }],
+          });
+        }
+
+        throw new Error(`unexpected fetch: ${url}`);
+      }) as typeof globalThis.fetch;
+
+      const { runVision } = await import("../src/runners/vision.js");
+      const result = await runVision({ workspacePath, imagePath });
+
+      expect(result.success).toBe(true);
+      expect(result.textPreview).toContain("卡通男性头像");
+      expect(requestedUrls).toEqual([
+        "http://127.0.0.1:8000/v1/models/status",
+        "http://127.0.0.1:8000/v1/chat/completions",
+      ]);
+    } finally {
+      for (const [key, value] of Object.entries(backups)) {
+        if (typeof value === "undefined") {
+          delete process.env[key];
+        } else {
+          process.env[key] = value;
+        }
+      }
+    }
   });
 });

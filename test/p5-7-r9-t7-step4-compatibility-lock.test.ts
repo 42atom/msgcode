@@ -155,11 +155,53 @@ describe("P5.7-R9-T7 Step 4: agent-backend 目录模块导出", () => {
         expect(typeof module.resolveAgentBackendRuntime).toBe("function");
     });
 
+    it("应导出 resolveLocalBackendRuntime 函数", async () => {
+        const module = await import("../src/agent-backend/index.js");
+        expect(module.resolveLocalBackendRuntime).toBeDefined();
+        expect(typeof module.resolveLocalBackendRuntime).toBe("function");
+    });
+
+    it("resolveAgentBackendRuntime 应保留当前本地 backend 预设", async () => {
+        const backups = {
+            AGENT_BACKEND: process.env.AGENT_BACKEND,
+            LOCAL_AGENT_BACKEND: process.env.LOCAL_AGENT_BACKEND,
+            OMLX_BASE_URL: process.env.OMLX_BASE_URL,
+            OMLX_MODEL: process.env.OMLX_MODEL,
+        };
+
+        try {
+            process.env.AGENT_BACKEND = "agent-backend";
+            process.env.LOCAL_AGENT_BACKEND = "omlx";
+            process.env.OMLX_BASE_URL = "http://127.0.0.1:8000";
+            process.env.OMLX_MODEL = "qwen-test";
+
+            const { resolveAgentBackendRuntime } = await import("../src/agent-backend/index.js");
+            const runtime = resolveAgentBackendRuntime("agent-backend");
+
+            expect(runtime.id).toBe("local-openai");
+            expect(runtime.localBackendId).toBe("omlx");
+            expect(runtime.baseUrl).toBe("http://127.0.0.1:8000");
+            expect(runtime.model).toBe("qwen-test");
+            expect(runtime.nativeApiEnabled).toBe(false);
+            expect(runtime.supportsModelLifecycle).toBe(false);
+            expect(runtime.modelsListPath).toBe("/v1/models");
+        } finally {
+            for (const [key, value] of Object.entries(backups)) {
+                if (typeof value === "undefined") {
+                    delete process.env[key];
+                } else {
+                    process.env[key] = value;
+                }
+            }
+        }
+    });
+
     it("normalizeAgentBackendId 应正确处理 local-openai", async () => {
         const { normalizeAgentBackendId } = await import("../src/agent-backend/index.js");
 
         expect(normalizeAgentBackendId("local-openai")).toBe("local-openai");
         expect(normalizeAgentBackendId("lmstudio")).toBe("local-openai");
+        expect(normalizeAgentBackendId("omlx")).toBe("local-openai");
         expect(normalizeAgentBackendId("agent-backend")).toBe("local-openai");
         expect(normalizeAgentBackendId("")).toBe("local-openai");
     });
@@ -181,6 +223,97 @@ describe("P5.7-R9-T7 Step 4: agent-backend 目录模块导出", () => {
         expect(module.PI_ON_TOOLS).toBeDefined();
         expect(Array.isArray(module.PI_ON_TOOLS)).toBe(true);
         expect(module.PI_ON_TOOLS.length).toBeGreaterThan(0);
+    });
+
+    it("runAgentToolLoop 应在 omlx 本地后端下自动发现模型，并只使用当前 backend 的 API key", async () => {
+        const originalFetch = globalThis.fetch;
+        const backups = {
+            AGENT_BACKEND: process.env.AGENT_BACKEND,
+            LOCAL_AGENT_BACKEND: process.env.LOCAL_AGENT_BACKEND,
+            OMLX_BASE_URL: process.env.OMLX_BASE_URL,
+            OMLX_API_KEY: process.env.OMLX_API_KEY,
+            OMLX_MODEL: process.env.OMLX_MODEL,
+            LMSTUDIO_API_KEY: process.env.LMSTUDIO_API_KEY,
+        };
+
+        const requests: Array<{ url: string; authorization?: string | null }> = [];
+
+        function readAuthorization(headers: HeadersInit | undefined): string | null | undefined {
+            if (!headers) return undefined;
+            if (headers instanceof Headers) return headers.get("authorization");
+            if (Array.isArray(headers)) {
+                const match = headers.find(([key]) => key.toLowerCase() === "authorization");
+                return match?.[1];
+            }
+            const record = headers as Record<string, string>;
+            return record.authorization || record.Authorization || undefined;
+        }
+
+        try {
+            process.env.AGENT_BACKEND = "agent-backend";
+            process.env.LOCAL_AGENT_BACKEND = "omlx";
+            process.env.OMLX_BASE_URL = "http://127.0.0.1:8000";
+            process.env.OMLX_API_KEY = "omlx-key";
+            delete process.env.OMLX_MODEL;
+            process.env.LMSTUDIO_API_KEY = "lmstudio-key";
+
+            globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+                const url = String(input);
+                requests.push({
+                    url,
+                    authorization: readAuthorization(init?.headers),
+                });
+
+                if (url === "http://127.0.0.1:8000/v1/models") {
+                    return new Response(JSON.stringify({
+                        data: [{ id: "qwen-tool-loop-test" }],
+                    }), {
+                        status: 200,
+                        headers: { "content-type": "application/json" },
+                    });
+                }
+
+                if (url === "http://127.0.0.1:8000/v1/chat/completions") {
+                    return new Response(JSON.stringify({
+                        choices: [{
+                            message: {
+                                role: "assistant",
+                                content: "tool-loop omlx ok",
+                            },
+                            finish_reason: "stop",
+                        }],
+                    }), {
+                        status: 200,
+                        headers: { "content-type": "application/json" },
+                    });
+                }
+
+                throw new Error(`unexpected url: ${url}`);
+            }) as typeof globalThis.fetch;
+
+            const { runAgentToolLoop, resolveAgentBackendRuntime } = await import("../src/agent-backend/index.js");
+            const result = await runAgentToolLoop({
+                prompt: "只回答一句话",
+                tools: [],
+                workspacePath: process.cwd(),
+                backendRuntime: resolveAgentBackendRuntime("agent-backend"),
+            });
+
+            expect(result.answer).toContain("tool-loop omlx ok");
+            expect(requests[0]?.url).toBe("http://127.0.0.1:8000/v1/models");
+            expect(requests[1]?.url).toBe("http://127.0.0.1:8000/v1/chat/completions");
+            expect(requests[0]?.authorization).toBe("Bearer omlx-key");
+            expect(requests[1]?.authorization).toBe("Bearer omlx-key");
+        } finally {
+            globalThis.fetch = originalFetch;
+            for (const [key, value] of Object.entries(backups)) {
+                if (typeof value === "undefined") {
+                    delete process.env[key];
+                } else {
+                    process.env[key] = value;
+                }
+            }
+        }
     });
 });
 

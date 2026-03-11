@@ -32,6 +32,7 @@ import {
     resolveBaseSystemPrompt,
     buildExecSystemPrompt,
     buildConversationContextBlocks,
+    LMSTUDIO_DEFAULT_CHAT_MODEL,
 } from "./prompt.js";
 import { clipToolPreviewText } from "../runtime/context-policy.js";
 import {
@@ -205,6 +206,15 @@ type ForcedFinalState = {
     verifyResult: VerifyResult;
 };
 
+type ResolveModelParams = {
+    baseUrl: string;
+    configuredModel?: string;
+    apiKey?: string;
+    timeoutMs?: number;
+    nativeApiEnabled?: boolean;
+    modelsListPath?: string;
+};
+
 /**
  * 统一后端 URL 归一化：
  * - 去掉尾部 `/`
@@ -232,6 +242,7 @@ type ChatResponse = {
 const AIDOCS_ROOT = process.env.AIDOCS_ROOT || "AIDOCS";
 const FINISH_SUPERVISOR_MAX_CONTINUES = 3;
 const MAIN_AGENT_MAX_TOKENS = 8192;
+let cachedLocalModel: { baseUrl: string; id: string } | undefined;
 const FINISH_SUPERVISOR_MUTATING_TOOLS = new Set<ToolName>([
     "write_file",
     "edit_file",
@@ -276,7 +287,7 @@ async function fetchTextWithTimeout(params: {
     const timeoutId = setTimeout(() => controller.abort(), params.timeoutMs);
 
     const headers: Record<string, string> = { ...params.headers };
-    const apiKey = params.apiKey?.trim() || config.lmstudioApiKey?.trim();
+    const apiKey = params.apiKey?.trim();
     if (apiKey) {
         headers["authorization"] = `Bearer ${apiKey}`;
     }
@@ -303,6 +314,195 @@ async function fetchTextWithTimeout(params: {
         throw new Error(`API 错误 (${resp.status})：${rawText.slice(0, 200)}`);
     }
     return rawText;
+}
+
+function isModelsList(value: unknown): value is { data: Array<{ id?: unknown; type?: unknown }> } {
+    if (!value || typeof value !== "object") return false;
+    if (!("data" in value)) return false;
+    return Array.isArray((value as { data?: unknown }).data);
+}
+
+function extractNativeModels(value: unknown): Array<{ type?: unknown; key?: unknown; loaded_instances?: unknown }> {
+    if (!value || typeof value !== "object") return [];
+
+    const obj = value as { data?: unknown; models?: unknown };
+    if (Array.isArray(obj.models)) {
+        return obj.models as Array<{ type?: unknown; key?: unknown; loaded_instances?: unknown }>;
+    }
+    if (Array.isArray(obj.data)) {
+        return obj.data as Array<{ type?: unknown; key?: unknown; loaded_instances?: unknown }>;
+    }
+    return [];
+}
+
+async function fetchFirstLoadedModelKeyNative(params: {
+    baseUrl: string;
+    apiKey?: string;
+    timeoutMs?: number;
+}): Promise<string | null> {
+    const url = `${params.baseUrl}/api/v1/models`;
+    const rawText = await fetchTextWithTimeout({
+        url,
+        method: "GET",
+        timeoutMs: params.timeoutMs || (typeof config.lmstudioTimeoutMs === "number" && !Number.isNaN(config.lmstudioTimeoutMs)
+            ? config.lmstudioTimeoutMs
+            : 60_000),
+        apiKey: params.apiKey,
+    });
+
+    let json: unknown;
+    try {
+        json = JSON.parse(rawText);
+    } catch {
+        return null;
+    }
+
+    const models = (json as { models?: unknown[] }).models ?? [];
+    for (const m of models) {
+        if (!m || typeof m !== "object") continue;
+        const model = m as { type?: unknown; key?: string; loaded_instances?: unknown[] };
+        if (model.type !== "llm") continue;
+        if (!Array.isArray(model.loaded_instances) || model.loaded_instances.length === 0) continue;
+        const key = model.key;
+        if (typeof key !== "string") continue;
+        if (key) return key;
+    }
+    return null;
+}
+
+async function isModelPresentInNativeCatalog(params: {
+    baseUrl: string;
+    key: string;
+    apiKey?: string;
+    timeoutMs?: number;
+}): Promise<boolean> {
+    try {
+        const url = `${params.baseUrl}/api/v1/models`;
+        const rawText = await fetchTextWithTimeout({
+            url,
+            method: "GET",
+            timeoutMs: params.timeoutMs || (typeof config.lmstudioTimeoutMs === "number" && !Number.isNaN(config.lmstudioTimeoutMs)
+                ? config.lmstudioTimeoutMs
+                : 60_000),
+            apiKey: params.apiKey,
+        });
+
+        let json: unknown;
+        try {
+            json = JSON.parse(rawText);
+        } catch {
+            return false;
+        }
+
+        const models = extractNativeModels(json);
+        return models.some((m) => m.type === "llm" && typeof m.key === "string" && m.key === params.key);
+    } catch {
+        return false;
+    }
+}
+
+async function fetchFirstModelId(params: {
+    baseUrl: string;
+    apiKey?: string;
+    timeoutMs?: number;
+    modelsListPath?: string;
+    preferNative?: boolean;
+}): Promise<string | null> {
+    if (params.preferNative !== false) {
+        try {
+            const id = await fetchFirstLoadedModelKeyNative({
+                baseUrl: params.baseUrl,
+                apiKey: params.apiKey,
+                timeoutMs: params.timeoutMs,
+            });
+            if (id) return id;
+        } catch {
+            // ignore and fallback
+        }
+    }
+
+    const url = `${params.baseUrl}${params.modelsListPath || "/v1/models"}`;
+    const timeoutMs = params.timeoutMs || (typeof config.lmstudioTimeoutMs === "number" && !Number.isNaN(config.lmstudioTimeoutMs)
+        ? config.lmstudioTimeoutMs
+        : 60_000);
+
+    const rawText = await fetchTextWithTimeout({
+        url,
+        method: "GET",
+        timeoutMs,
+        apiKey: params.apiKey,
+    });
+
+    let json: unknown;
+    try {
+        json = JSON.parse(rawText);
+    } catch {
+        return null;
+    }
+
+    const data = isModelsList(json) ? json.data : [];
+    for (const item of data) {
+        const id = typeof item.id === "string" ? item.id.trim() : "";
+        if (id) return id;
+    }
+
+    throw new Error("本地模型后端未返回可用模型，请先加载至少一个模型，或显式设置对应 backend 的模型变量。");
+}
+
+async function resolveLocalToolLoopModelId(params: ResolveModelParams): Promise<string> {
+    const configured = (params.configuredModel || "").trim();
+    if (configured && configured !== "auto") {
+        return configured;
+    }
+
+    if ((params.nativeApiEnabled ?? true) && !configured) {
+        const preferredAvailable = await isModelPresentInNativeCatalog({
+            baseUrl: params.baseUrl,
+            key: LMSTUDIO_DEFAULT_CHAT_MODEL,
+            apiKey: params.apiKey,
+            timeoutMs: params.timeoutMs,
+        });
+        if (preferredAvailable) {
+            if (
+                cachedLocalModel &&
+                cachedLocalModel.baseUrl === params.baseUrl &&
+                cachedLocalModel.id === LMSTUDIO_DEFAULT_CHAT_MODEL
+            ) {
+                return cachedLocalModel.id;
+            }
+            cachedLocalModel = { baseUrl: params.baseUrl, id: LMSTUDIO_DEFAULT_CHAT_MODEL };
+            return LMSTUDIO_DEFAULT_CHAT_MODEL;
+        }
+    }
+
+    if (params.nativeApiEnabled ?? true) {
+        const loadedModel = await fetchFirstLoadedModelKeyNative({
+            baseUrl: params.baseUrl,
+            apiKey: params.apiKey,
+            timeoutMs: params.timeoutMs,
+        });
+        if (loadedModel) {
+            if (cachedLocalModel && cachedLocalModel.baseUrl === params.baseUrl && cachedLocalModel.id === loadedModel) {
+                return cachedLocalModel.id;
+            }
+            cachedLocalModel = { baseUrl: params.baseUrl, id: loadedModel };
+            return loadedModel;
+        }
+    }
+
+    const firstCatalogModel = await fetchFirstModelId({
+        baseUrl: params.baseUrl,
+        apiKey: params.apiKey,
+        timeoutMs: params.timeoutMs,
+        modelsListPath: params.modelsListPath,
+        preferNative: params.nativeApiEnabled,
+    });
+    if (firstCatalogModel) {
+        cachedLocalModel = { baseUrl: params.baseUrl, id: firstCatalogModel };
+        return firstCatalogModel;
+    }
+
+    throw new Error("本地模型后端中没有已加载或可发现的模型。");
 }
 
 // ============================================
@@ -1600,15 +1800,22 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     const backendDefaultModel = normalizeModelOverride(backendRuntime.model);
     const model = modelOverride
         ?? backendDefaultModel
-        ?? (backendRuntime.nativeApiEnabled
-            ? undefined // 简化：需要模型探测时再实现
+        ?? (backendRuntime.id === "local-openai"
+            ? await resolveLocalToolLoopModelId({
+                baseUrl,
+                configuredModel: backendRuntime.model,
+                apiKey: backendRuntime.apiKey,
+                timeoutMs: backendRuntime.timeoutMs,
+                nativeApiEnabled: backendRuntime.nativeApiEnabled,
+                modelsListPath: backendRuntime.modelsListPath,
+            })
             : undefined);
 
-    if (!model && !backendDefaultModel) {
+    if (!model) {
         throw new Error(`Agent backend(${backendRuntime.id}) 未配置模型。请设置 AGENT_MODEL 或对应后端模型变量。`);
     }
 
-    const usedModel = model || backendDefaultModel || "";
+    const usedModel = model;
     const timeoutMs = options.timeoutMs || backendRuntime.timeoutMs;
     const root = options.allowRoot || config.workspaceRoot || AIDOCS_ROOT;
 

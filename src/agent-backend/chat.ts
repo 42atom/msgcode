@@ -46,6 +46,8 @@ type ResolveModelParams = {
     configuredModel?: string;
     apiKey?: string;
     timeoutMs?: number;
+    nativeApiEnabled?: boolean;
+    modelsListPath?: string;
 };
 
 type LmStudioNativeChatParams = {
@@ -57,6 +59,7 @@ type LmStudioNativeChatParams = {
     timeoutMs: number;
     apiKey?: string;
     temperature?: number;
+    allowLocalModelReload?: boolean;
 };
 
 type LmStudioNativeMcpParams = {
@@ -69,6 +72,7 @@ type LmStudioNativeMcpParams = {
     useMcp: boolean;
     apiKey?: string;
     temperature?: number;
+    allowLocalModelReload?: boolean;
 };
 
 type LmStudioOpenAIChatParams = {
@@ -80,6 +84,7 @@ type LmStudioOpenAIChatParams = {
     timeoutMs: number;
     apiKey?: string;
     temperature?: number;
+    allowLocalModelReload?: boolean;
 };
 
 // ============================================
@@ -208,7 +213,7 @@ async function fetchTextWithTimeout(params: {
     const timeoutId = setTimeout(() => controller.abort(), params.timeoutMs);
 
     const headers: Record<string, string> = { ...params.headers };
-    const apiKey = params.apiKey?.trim() || config.lmstudioApiKey?.trim();
+    const apiKey = params.apiKey?.trim();
     if (apiKey) {
         headers["authorization"] = `Bearer ${apiKey}`;
     }
@@ -248,13 +253,13 @@ async function fetchTextWithTimeout(params: {
 // ============================================
 
 async function resolveLmStudioModelId(params: ResolveModelParams): Promise<string> {
-    const configured = ((params.configuredModel ?? config.lmstudioModel) || "").trim();
+    const configured = (params.configuredModel || "").trim();
 
     if (configured && configured !== "auto") {
         return configured;
     }
 
-    if (!configured) {
+    if ((params.nativeApiEnabled ?? true) && !configured) {
         const preferredAvailable = await isModelPresentInNativeCatalog({
             baseUrl: params.baseUrl,
             key: LMSTUDIO_DEFAULT_CHAT_MODEL,
@@ -274,23 +279,27 @@ async function resolveLmStudioModelId(params: ResolveModelParams): Promise<strin
         }
     }
 
-    const loadedModel = await fetchFirstLoadedModelKeyNative({
-        baseUrl: params.baseUrl,
-        apiKey: params.apiKey,
-        timeoutMs: params.timeoutMs,
-    });
-    if (loadedModel) {
-        if (cachedModel && cachedModel.baseUrl === params.baseUrl && cachedModel.id === loadedModel) {
-            return cachedModel.id;
+    if (params.nativeApiEnabled ?? true) {
+        const loadedModel = await fetchFirstLoadedModelKeyNative({
+            baseUrl: params.baseUrl,
+            apiKey: params.apiKey,
+            timeoutMs: params.timeoutMs,
+        });
+        if (loadedModel) {
+            if (cachedModel && cachedModel.baseUrl === params.baseUrl && cachedModel.id === loadedModel) {
+                return cachedModel.id;
+            }
+            cachedModel = { baseUrl: params.baseUrl, id: loadedModel };
+            return loadedModel;
         }
-        cachedModel = { baseUrl: params.baseUrl, id: loadedModel };
-        return loadedModel;
     }
 
     const firstCatalogModel = await fetchFirstModelId({
         baseUrl: params.baseUrl,
         apiKey: params.apiKey,
         timeoutMs: params.timeoutMs,
+        modelsListPath: params.modelsListPath,
+        preferNative: params.nativeApiEnabled,
     });
     if (firstCatalogModel) {
         cachedModel = { baseUrl: params.baseUrl, id: firstCatalogModel };
@@ -303,19 +312,27 @@ async function resolveLmStudioModelId(params: ResolveModelParams): Promise<strin
     );
 }
 
-async function fetchFirstModelId(params: { baseUrl: string; apiKey?: string; timeoutMs?: number }): Promise<string | null> {
-    try {
-        const id = await fetchFirstLoadedModelKeyNative({
-            baseUrl: params.baseUrl,
-            apiKey: params.apiKey,
-            timeoutMs: params.timeoutMs,
-        });
-        if (id) return id;
-    } catch {
-        // ignore and fallback
+async function fetchFirstModelId(params: {
+    baseUrl: string;
+    apiKey?: string;
+    timeoutMs?: number;
+    modelsListPath?: string;
+    preferNative?: boolean;
+}): Promise<string | null> {
+    if (params.preferNative !== false) {
+        try {
+            const id = await fetchFirstLoadedModelKeyNative({
+                baseUrl: params.baseUrl,
+                apiKey: params.apiKey,
+                timeoutMs: params.timeoutMs,
+            });
+            if (id) return id;
+        } catch {
+            // ignore and fallback
+        }
     }
 
-    const url = `${params.baseUrl}/v1/models`;
+    const url = `${params.baseUrl}${params.modelsListPath || "/v1/models"}`;
 
     const timeoutMs = params.timeoutMs || (typeof config.lmstudioTimeoutMs === "number" && !Number.isNaN(config.lmstudioTimeoutMs)
         ? config.lmstudioTimeoutMs
@@ -495,7 +512,7 @@ async function runLmStudioChatNativeMcp(params: LmStudioNativeMcpParams): Promis
             return message;
         } catch (error: unknown) {
             lastError = error instanceof Error ? error : new Error("LM Studio 调用失败");
-            if (await maybeReloadLocalModelAndRetry({
+            if (params.allowLocalModelReload !== false && await maybeReloadLocalModelAndRetry({
                 module: "agent-backend/chat",
                 baseUrl: params.baseUrl,
                 model: params.model,
@@ -554,7 +571,7 @@ async function runLmStudioChatNative(params: LmStudioNativeChatParams): Promise<
             return message;
         } catch (error: unknown) {
             lastError = error instanceof Error ? error : new Error("LM Studio 调用失败");
-            if (await maybeReloadLocalModelAndRetry({
+            if (params.allowLocalModelReload !== false && await maybeReloadLocalModelAndRetry({
                 module: "agent-backend/chat",
                 baseUrl: params.baseUrl,
                 model: params.model,
@@ -614,7 +631,7 @@ async function runLmStudioChatOpenAICompat(params: LmStudioOpenAIChatParams): Pr
             return text;
         } catch (error: unknown) {
             lastError = error instanceof Error ? error : new Error("LM Studio 调用失败");
-            if (await maybeReloadLocalModelAndRetry({
+            if (params.allowLocalModelReload !== false && await maybeReloadLocalModelAndRetry({
                 module: "agent-backend/chat",
                 baseUrl: params.baseUrl,
                 model: params.model,
@@ -675,12 +692,14 @@ export async function runAgentChat(options: AgentChatOptions): Promise<string> {
 
     const model = modelOverride
         ?? backendDefaultModel
-        ?? (backendRuntime.nativeApiEnabled
+        ?? (backendRuntime.id === "local-openai"
             ? await resolveLmStudioModelId({
                 baseUrl,
                 configuredModel: backendRuntime.model,
                 apiKey: backendRuntime.apiKey,
                 timeoutMs: backendRuntime.timeoutMs,
+                nativeApiEnabled: backendRuntime.nativeApiEnabled,
+                modelsListPath: backendRuntime.modelsListPath,
             })
             : undefined);
 
@@ -700,6 +719,7 @@ export async function runAgentChat(options: AgentChatOptions): Promise<string> {
         : 4000;
 
     const useMcp = backendRuntime.nativeApiEnabled && process.env.LMSTUDIO_ENABLE_MCP === "1" && !!options.workspace;
+    const allowLocalModelReload = backendRuntime.supportsModelLifecycle !== false;
 
     const mcpMaxTokens = Math.max(maxTokens, 1024);
 
@@ -735,6 +755,7 @@ export async function runAgentChat(options: AgentChatOptions): Promise<string> {
             useMcp,
             apiKey: backendRuntime.apiKey,
             temperature,
+            allowLocalModelReload,
         });
         return sanitizeLmStudioOutput(native);
     }
@@ -749,6 +770,7 @@ export async function runAgentChat(options: AgentChatOptions): Promise<string> {
             timeoutMs,
             apiKey: backendRuntime.apiKey,
             temperature,
+            allowLocalModelReload,
         });
         return sanitizeLmStudioOutput(native);
     }
@@ -763,6 +785,7 @@ export async function runAgentChat(options: AgentChatOptions): Promise<string> {
             timeoutMs,
             apiKey: backendRuntime.apiKey,
             temperature,
+            allowLocalModelReload,
         });
         return sanitizeLmStudioOutput(text);
     }
