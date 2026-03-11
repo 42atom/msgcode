@@ -2,8 +2,8 @@
  * msgcode: 记忆域命令（cursor/reset-cursor/mem）
  */
 
-import { getRouteByChatId } from "./store.js";
 import type { CommandHandlerOptions, CommandResult } from "./cmd-types.js";
+import { resolveCommandRoute } from "./workspace-resolver.js";
 
 export async function handleCursorCommand(options: CommandHandlerOptions): Promise<CommandResult> {
   const { loadState } = await import("../state/store.js");
@@ -61,8 +61,9 @@ export async function handleMemCommand(options: CommandHandlerOptions): Promise<
   const { chatId, args } = options;
   const { saveWorkspaceConfig, getMemoryInjectConfig } = await import("../config/workspace.js");
 
-  const entry = getRouteByChatId(chatId);
-  if (!entry || !entry.workspacePath) {
+  const resolved = resolveCommandRoute(chatId);
+  const entry = resolved?.route;
+  if (!entry?.workspacePath) {
     return {
       success: false,
       message: `本群未绑定工作目录\n` +

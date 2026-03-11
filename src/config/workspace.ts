@@ -12,15 +12,24 @@
  * P5.6.14-R1: 配置域拆分
  * - 新增：runtime.kind、agent.provider、tmux.client
  * - 保留：runner.default（只读兼容映射）
+ *
+ * P5.7-R3e: 双模型路由
+ * - 新增：model.executor、model.responder
  */
 
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import type { ToolName, ToolingMode } from "../tools/types.js";
+
+type LegacyAgentProviderAlias = "lmstudio" | "llama" | "claude";
+type StoredAgentProvider = AgentProvider | LegacyAgentProviderAlias;
 
 /**
  * Workspace 配置（存储在 .msgcode/config.json）
  * P5.6.14-R1: 配置域拆分 - 新增 runtime.kind/agent.provider/tmux.client
+ * P5.7-R3e: 双模型路由 - 新增 model.executor/model.responder
+ * P5.7-R24: backend lanes - 新增 model.local.* / model.api.*
  */
 export interface WorkspaceConfig {
   // ==================== 记忆注入配置 ====================
@@ -31,6 +40,43 @@ export interface WorkspaceConfig {
   /** 记忆注入最大字符数（默认 2000） */
   "memory.inject.maxChars"?: number;
 
+  // ==================== P5.7-R3e: 双模型路由配置 ====================
+  /**
+   * 执行模型：用于工具调用（temperature=0）
+   * 默认：空字符串（由调用层自动解析当前已加载模型）
+   */
+  "model.executor"?: string;
+
+  /**
+   * 响应模型：用于非工具回复（temperature=0.2）
+   * 默认：空字符串（由调用层自动解析当前已加载模型）
+   */
+  "model.responder"?: string;
+
+  /**
+   * local 分支文本模型覆盖
+   * - 空字符串：显式 auto（不再回退 legacy executor/responder）
+   */
+  "model.local.text"?: string;
+  /** local 分支视觉模型覆盖 */
+  "model.local.vision"?: string;
+  /** local 分支 TTS 模型覆盖 */
+  "model.local.tts"?: string;
+  /** local 分支 embedding 模型覆盖 */
+  "model.local.embedding"?: string;
+
+  /**
+   * api 分支文本模型覆盖
+   * - 空字符串：显式 auto（不再回退 legacy executor/responder）
+   */
+  "model.api.text"?: string;
+  /** api 分支视觉模型覆盖 */
+  "model.api.vision"?: string;
+  /** api 分支 TTS 模型覆盖 */
+  "model.api.tts"?: string;
+  /** api 分支 embedding 模型覆盖 */
+  "model.api.embedding"?: string;
+
   // ==================== P5.6.14-R1: 运行形态配置 ====================
   /**
    * 运行形态：agent（默认）| tmux
@@ -40,13 +86,35 @@ export interface WorkspaceConfig {
   "runtime.kind"?: "agent" | "tmux";
 
   /**
+   * 当前请求所属 transport（运行时写入）
+   * - imsg: iMessage / 本地消息链路
+   * - feishu: 飞书 Bot 链路
+   */
+  "runtime.current_transport"?: "imsg" | "feishu";
+
+  /**
+   * 当前请求所属 chatId（运行时写入）
+   * - 飞书场景：oc_xxx
+   * - iMessage 场景：归一化 chatId
+   */
+  "runtime.current_chat_id"?: string;
+
+  /**
+   * 当前请求所属完整 chatGuid（运行时写入）
+   * - 飞书场景：feishu:oc_xxx
+   * - iMessage 场景：chat123 / +8613xxxx 等现有 chatGuid
+   */
+  "runtime.current_chat_guid"?: string;
+
+  /**
    * Agent Provider（仅 runtime.kind=agent 时有效）
-   * - lmstudio: 本地 LM Studio 模型（默认）
+   * - agent-backend: 本地后端入口（默认）
    * - minimax: MiniMax 模型
    * - openai: OpenAI API
-   * - ...
+   * - deepseek: DeepSeek API
+   * - 历史配置中可能仍出现 lmstudio/llama/claude，读取时会归一化
    */
-  "agent.provider"?: AgentProvider;
+  "agent.provider"?: StoredAgentProvider;
 
   /**
    * Tmux Client（仅 runtime.kind=tmux 时有效）
@@ -65,18 +133,14 @@ export interface WorkspaceConfig {
 
   /**
    * 默认执行臂（只读兼容，v2.3.x 保留映射，v2.4.0 移除）
+   * P5.7-R9-T6: 新增 agent-backend 中性语义
    * 映射规则：
    * - codex|claude-code -> runtime.kind=tmux + tmux.client=<runner>
-   * - lmstudio|openai|minimax -> runtime.kind=agent + agent.provider=<runner>
-   * - llama|claude -> runtime.kind=agent + agent.provider=lmstudio（兼容降级）
+   * - agent-backend|lmstudio -> runtime.kind=agent + agent.provider=agent-backend
+   * - openai|minimax|deepseek -> runtime.kind=agent + agent.provider=<runner>
+   * - llama|claude -> runtime.kind=agent + agent.provider=agent-backend（兼容降级）
    */
-  "runner.default"?: "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code";
-
-  // ==================== PI 配置 ====================
-  /**
-   * PI 开关（默认 false）
-   */
-  "pi.enabled"?: boolean;
+  "runner.default"?: "agent-backend" | "lmstudio" | "minimax" | "deepseek" | "llama" | "claude" | "openai" | "codex" | "claude-code";
 
   // ==================== Tool Bus 配置 ====================
   /**
@@ -98,21 +162,62 @@ export interface WorkspaceConfig {
    * - 默认：[]
    */
   "tooling.require_confirm"?: ToolName[];
+
+  // ==================== P5.7-R3i: 文件工具权限策略 ====================
+  /**
+   * 文件工具作用域策略：workspace | unrestricted
+   * - workspace: 仅允许访问工作区内的文件（安全模式）
+   * - unrestricted: 允许访问全盘文件（当前默认，测试期兼容）
+   */
+  "tooling.fs_scope"?: FsScope;
+
+  // ==================== 飞书配置 ====================
+  /**
+   * 飞书 App ID
+   */
+  "feishu.appId"?: string;
+
+  /**
+   * 飞书 App Secret
+   */
+  "feishu.appSecret"?: string;
+
+  /**
+   * 飞书 Encrypt Key（可选）
+   */
+  "feishu.encryptKey"?: string;
 }
 
 /**
- * 工具相关类型
- * P5.6.14-R1b: 新增 AgentProvider/TmuxClient 类型别名
+ * P5.7-R3i: 文件工具作用域策略
+ * - workspace: 仅允许访问工作区内的文件
+ * - unrestricted: 允许访问全盘文件（当前默认，测试期兼容）
  */
-export type ToolingMode = "explicit" | "autonomous" | "tool-calls";
-export type ToolName =
-  | "tts" | "asr" | "vision" | "mem" | "bash" | "browser" | "desktop"
-  | "read_file" | "write_file" | "edit_file";
+export type FsScope = "workspace" | "unrestricted";
 
 /**
  * P5.6.14-R1b: Agent Provider 类型（agent 模式下有效）
+ * 只表达当前真实 provider；历史别名读取时在内部归一化
  */
-export type AgentProvider = "lmstudio" | "minimax" | "openai" | "llama" | "claude";
+export type AgentProvider = "agent-backend" | "minimax" | "deepseek" | "openai";
+
+/**
+ * P5.7-R24: 执行基座 lane
+ * - local: agent + 本地后端入口
+ * - api: agent + 远端 API provider
+ * - tmux: tmux 执行臂
+ */
+export type BackendLane = "local" | "api" | "tmux";
+
+/**
+ * P5.7-R24: 可存储模型覆盖的 lane（tmux 不消费模型字段）
+ */
+export type ModelLane = "local" | "api";
+
+/**
+ * P5.7-R24: 模型槽位
+ */
+export type ModelSlot = "text" | "vision" | "tts" | "embedding";
 
 /**
  * P5.6.14-R1b: Tmux Client 类型（tmux 模式下有效）
@@ -124,20 +229,37 @@ export type TmuxClient = "codex" | "claude-code";
  * P5.6.8-R4g: 导出供测试使用
  * P5.6.14-R1: 新增 runtime.kind 默认值为 agent
  * P5.6.14-R1b: 使用 AgentProvider/TmuxClient 类型
+ * P5.7-R3e: 新增 model.executor/model.responder 默认值
  */
 export const DEFAULT_WORKSPACE_CONFIG: Required<WorkspaceConfig> = {
   "memory.inject.enabled": true, // 测试期默认开启记忆注入
   "memory.inject.topK": 5,
   "memory.inject.maxChars": 2000,
+  "model.executor": "", // P5.7-R3e: 空=继承 agent.provider
+  "model.responder": "", // P5.7-R3e: 空=继承 agent.provider
+  "model.local.text": "",
+  "model.local.vision": "",
+  "model.local.tts": "",
+  "model.local.embedding": "",
+  "model.api.text": "",
+  "model.api.vision": "",
+  "model.api.tts": "",
+  "model.api.embedding": "",
   "policy.mode": "egress-allowed", // 默认允许外联（远程场景避免被门禁卡住；高敏 workspace 可手动切回 local-only）
   "runtime.kind": "agent", // P5.6.14-R1: 默认 agent 形态
-  "agent.provider": "lmstudio", // P5.6.14-R1: 默认 lmstudio provider
+  "runtime.current_transport": "imsg",
+  "runtime.current_chat_id": "",
+  "runtime.current_chat_guid": "",
+  "agent.provider": "agent-backend", // P5.7-R9-T6: 默认 agent-backend（中性语义）
   "tmux.client": "codex", // P5.6.14-R1: 默认 codex client
-  "runner.default": "lmstudio", // 兼容字段，默认 lmstudio
-  "pi.enabled": true, // 测试期默认开启 PI
+  "runner.default": "agent-backend", // P5.7-R9-T6: 兼容字段，默认 agent-backend
   "tooling.mode": "autonomous", // P5.5: 测试期统一 autonomous（LLM 自主决策 tool_calls）
-  "tooling.allow": ["tts", "asr", "vision", "mem", "bash", "browser", "desktop", "read_file", "write_file", "edit_file"], // P5.6.8-R4g: PI 四工具直达
+  "tooling.allow": ["tts", "asr", "vision", "bash", "browser", "desktop", "read_file", "feishu_list_members", "feishu_list_recent_messages", "feishu_reply_message", "feishu_react_message", "feishu_send_file"], // 默认文件主链收口为 read_file + bash
   "tooling.require_confirm": [], // 默认不要求确认
+  "tooling.fs_scope": "unrestricted", // 当前默认 unrestricted，避免扩大变更面
+  "feishu.appId": "", // 飞书 App ID（默认空，需要用户配置）
+  "feishu.appSecret": "", // 飞书 App Secret（默认空，需要用户配置）
+  "feishu.encryptKey": "", // 飞书 Encrypt Key（默认空，可选）
 };
 
 /**
@@ -203,6 +325,21 @@ export async function saveWorkspaceConfig(
   await writeFile(configPath, JSON.stringify(merged, null, 2), "utf-8");
 }
 
+export async function saveCurrentSessionContext(
+  projectDir: string,
+  session: {
+    transport: "imsg" | "feishu";
+    chatId: string;
+    chatGuid: string;
+  }
+): Promise<void> {
+  await saveWorkspaceConfig(projectDir, {
+    "runtime.current_transport": session.transport,
+    "runtime.current_chat_id": session.chatId,
+    "runtime.current_chat_guid": session.chatGuid,
+  });
+}
+
 /**
  * 获取记忆注入配置（考虑优先级）
  *
@@ -240,12 +377,13 @@ export async function getMemoryInjectConfig(
  * 从 runner.default 映射到 runtime.kind/provider/client
  * P5.6.14-R1: 兼容映射层（只读）
  * P5.6.14-R1b: 使用 AgentProvider/TmuxClient 类型
+ * P5.7-R9-T6: 新增 agent-backend 支持，默认回退到 agent-backend
  */
 function mapRunnerToKindProviderClient(
-  runner: "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code" | undefined
+  runner: "agent-backend" | "lmstudio" | "minimax" | "deepseek" | "llama" | "claude" | "openai" | "codex" | "claude-code" | undefined
 ): { kind: "agent" | "tmux"; provider?: AgentProvider; client?: TmuxClient } {
   if (!runner) {
-    return { kind: "agent", provider: "lmstudio" };
+    return { kind: "agent", provider: "agent-backend" };
   }
 
   // codex|claude-code -> tmux + client
@@ -253,13 +391,28 @@ function mapRunnerToKindProviderClient(
     return { kind: "tmux", client: runner };
   }
 
-  // lmstudio|openai|minimax -> agent + provider
-  if (runner === "lmstudio" || runner === "openai") {
+  // agent-backend|openai|minimax|deepseek -> agent + provider
+  if (
+    runner === "agent-backend" ||
+    runner === "openai" ||
+    runner === "minimax" ||
+    runner === "deepseek"
+  ) {
     return { kind: "agent", provider: runner };
   }
 
-  // llama|claude -> agent + provider=lmstudio（兼容降级）
-  return { kind: "agent", provider: "lmstudio" };
+  // lmstudio|llama|claude -> agent + provider=agent-backend（兼容降级）
+  return { kind: "agent", provider: "agent-backend" };
+}
+
+function normalizeStoredAgentProvider(
+  raw: StoredAgentProvider | "" | undefined
+): AgentProvider | undefined {
+  if (!raw) return undefined;
+  if (raw === "agent-backend" || raw === "minimax" || raw === "deepseek" || raw === "openai") {
+    return raw;
+  }
+  return "agent-backend";
 }
 
 /**
@@ -290,7 +443,7 @@ export async function getRuntimeKind(
  * P5.6.14-R1b: 使用 AgentProvider 类型
  *
  * @param projectDir 工作区路径
- * @returns Agent Provider（lmstudio | minimax | openai | none）
+ * @returns Agent Provider（agent-backend | minimax | deepseek | openai | none）
  */
 export async function getAgentProvider(
   projectDir: string
@@ -299,7 +452,7 @@ export async function getAgentProvider(
 
   // 优先读新字段
   if (workspaceConfig["agent.provider"]) {
-    return workspaceConfig["agent.provider"];
+    return normalizeStoredAgentProvider(workspaceConfig["agent.provider"]) || "none";
   }
 
   // Fallback: 从 runner.default 映射
@@ -406,13 +559,14 @@ export async function setPolicyMode(
 /**
  * 获取默认执行臂（兼容层，只读）
  * P5.6.14-R1: 从新字段反向映射（只读兼容）
+ * P5.7-R9-T6: 新增 agent-backend 中性语义
  *
  * @param projectDir 工作区路径
- * @returns 默认执行臂（lmstudio | llama | claude | openai | codex | claude-code）
+ * @returns 默认执行臂（agent-backend | lmstudio | llama | claude | openai | codex | claude-code）
  */
 export async function getDefaultRunner(
   projectDir: string
-): Promise<"lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code"> {
+): Promise<"agent-backend" | "lmstudio" | "minimax" | "deepseek" | "llama" | "claude" | "openai" | "codex" | "claude-code"> {
   const workspaceConfig = await loadWorkspaceConfig(projectDir);
 
   // 优先从新字段反向映射
@@ -421,13 +575,9 @@ export async function getDefaultRunner(
   }
 
   if (workspaceConfig["runtime.kind"] === "agent") {
-    const provider = workspaceConfig["agent.provider"];
+    const provider = normalizeStoredAgentProvider(workspaceConfig["agent.provider"]);
     if (provider) {
-      // minimax/llama/claude 映射回 lmstudio（兼容返回）
-      if (provider === "minimax" || provider === "llama" || provider === "claude") {
-        return "lmstudio";
-      }
-      return provider as "lmstudio" | "openai";
+      return provider as "agent-backend" | "minimax" | "deepseek" | "openai";
     }
   }
 
@@ -438,6 +588,7 @@ export async function getDefaultRunner(
 /**
  * 设置默认执行臂（兼容层，写新字段）
  * P5.6.14-R1: 根据 runner 映射到新字段
+ * P5.7-R9-T6: 新增 agent-backend 中性语义
  *
  * @param projectDir 工作区路径
  * @param runner 默认执行臂
@@ -446,7 +597,7 @@ export async function getDefaultRunner(
  */
 export async function setDefaultRunner(
   projectDir: string,
-  runner: "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code",
+  runner: "agent-backend" | "lmstudio" | "minimax" | "deepseek" | "llama" | "claude" | "openai" | "codex" | "claude-code",
   currentMode?: "local-only" | "egress-allowed"
 ): Promise<{ success: boolean; error?: string }> {
   // 如果没有提供 currentMode，读取当前配置
@@ -461,7 +612,7 @@ export async function setDefaultRunner(
       error: `当前策略模式为 local-only，不允许使用 ${runner}（需要外网访问）。\n\n` +
         `请先执行以下命令之一：\n` +
         `1. /policy on             （允许外网访问；等同 /policy egress-allowed）\n` +
-        `2. /model lmstudio        （使用本地模型）`,
+        `2. /model agent-backend   （使用本地后端）`,
     };
   }
 
@@ -540,4 +691,240 @@ export async function setToolingRequireConfirm(
   requireConfirm: ToolName[]
 ): Promise<void> {
   await saveWorkspaceConfig(projectDir, { "tooling.require_confirm": requireConfirm });
+}
+
+/**
+ * P5.7-R3i: 获取文件工具作用域策略
+ *
+ * @param projectDir 工作区路径
+ * @returns 文件工具作用域（workspace | unrestricted）
+ */
+export async function getFsScope(
+  projectDir: string
+): Promise<"workspace" | "unrestricted"> {
+  const workspaceConfig = await loadWorkspaceConfig(projectDir);
+  return workspaceConfig["tooling.fs_scope"] ?? DEFAULT_WORKSPACE_CONFIG["tooling.fs_scope"];
+}
+
+/**
+ * P5.7-R3i: 设置文件工具作用域策略
+ *
+ * @param projectDir 工作区路径
+ * @param scope 文件工具作用域
+ */
+export async function setFsScope(
+  projectDir: string,
+  scope: "workspace" | "unrestricted"
+): Promise<void> {
+  await saveWorkspaceConfig(projectDir, { "tooling.fs_scope": scope });
+}
+
+// ============================================
+// P5.7-R3e: 双模型路由配置
+// ============================================
+
+const MODEL_LANES: readonly ModelLane[] = ["local", "api"] as const;
+const MODEL_SLOTS: readonly ModelSlot[] = ["text", "vision", "tts", "embedding"] as const;
+
+type StoredModelConfigKey =
+  | "model.local.text"
+  | "model.local.vision"
+  | "model.local.tts"
+  | "model.local.embedding"
+  | "model.api.text"
+  | "model.api.vision"
+  | "model.api.tts"
+  | "model.api.embedding";
+
+function hasConfigKey<T extends keyof WorkspaceConfig>(
+  config: WorkspaceConfig,
+  key: T
+): boolean {
+  return Object.prototype.hasOwnProperty.call(config, key);
+}
+
+function normalizeStoredModelValue(raw: string | undefined): string | undefined {
+  const normalized = (raw || "").trim();
+  return normalized ? normalized : undefined;
+}
+
+function normalizeStoredModelValueForSlot(slot: ModelSlot, value: string | undefined): string | undefined {
+  if (slot !== "tts") {
+    return value;
+  }
+  if (!value) {
+    return undefined;
+  }
+  return value.trim().toLowerCase() === "qwen" ? "qwen" : undefined;
+}
+
+function getStoredModelConfigKey(lane: ModelLane, slot: ModelSlot): StoredModelConfigKey {
+  if (!MODEL_LANES.includes(lane)) {
+    throw new Error(`未知模型分支: ${lane}`);
+  }
+  if (!MODEL_SLOTS.includes(slot)) {
+    throw new Error(`未知模型槽位: ${slot}`);
+  }
+  return `model.${lane}.${slot}` as StoredModelConfigKey;
+}
+
+function readStoredModelValue(
+  config: WorkspaceConfig,
+  lane: ModelLane,
+  slot: ModelSlot
+): { present: boolean; value?: string } {
+  const key = getStoredModelConfigKey(lane, slot);
+  if (!hasConfigKey(config, key)) {
+    return { present: false };
+  }
+  return {
+    present: true,
+    value: normalizeStoredModelValue(config[key]),
+  };
+}
+
+function resolveActiveAgentLaneFromEnv(): ModelLane {
+  const raw = (process.env.AGENT_BACKEND || "").trim().toLowerCase();
+  if (!raw || raw === "agent-backend" || raw === "local-openai" || raw === "lmstudio" || raw === "omlx") {
+    return "local";
+  }
+  return "api";
+}
+
+export async function getBackendLane(projectDir: string): Promise<BackendLane> {
+  const kind = await getRuntimeKind(projectDir);
+  if (kind === "tmux") {
+    return "tmux";
+  }
+  return resolveActiveAgentLaneFromEnv();
+}
+
+/**
+ * 读取按分支存储的模型覆盖。
+ *
+ * 规则：
+ * - 显式空字符串 = auto（返回 undefined，但不再回退 legacy 字段）
+ * - 未配置时返回 undefined
+ * - 仅 text 槽位在缺少新字段时回退 legacy executor/responder
+ */
+export async function getBranchModel(
+  projectDir: string,
+  lane: ModelLane,
+  slot: ModelSlot
+): Promise<string | undefined> {
+  const workspaceConfig = await loadWorkspaceConfig(projectDir);
+  const stored = readStoredModelValue(workspaceConfig, lane, slot);
+  if (stored.present) {
+    return normalizeStoredModelValueForSlot(slot, stored.value);
+  }
+
+  if (slot !== "text") {
+    return undefined;
+  }
+
+  const legacyResponder = normalizeStoredModelValue(workspaceConfig["model.responder"]);
+  if (legacyResponder) return legacyResponder;
+  return normalizeStoredModelValue(workspaceConfig["model.executor"]);
+}
+
+export async function setBranchModel(
+  projectDir: string,
+  lane: ModelLane,
+  slot: ModelSlot,
+  model: string
+): Promise<void> {
+  const key = getStoredModelConfigKey(lane, slot);
+  const normalized = model.trim();
+  await saveWorkspaceConfig(projectDir, {
+    [key]: normalized,
+  } as Partial<WorkspaceConfig>);
+}
+
+export async function getCurrentLaneModel(
+  projectDir: string,
+  slot: ModelSlot
+): Promise<string | undefined> {
+  const lane = await getBackendLane(projectDir);
+  if (lane === "tmux") {
+    return undefined;
+  }
+  return getBranchModel(projectDir, lane, slot);
+}
+
+/**
+ * 获取执行模型配置（用于工具调用）
+ * P5.7-R3e: 返回 executor 模型，如果未配置则返回 undefined（由调用层自动解析）
+ *
+ * @param projectDir 工作区路径
+ * @returns 执行模型名称（未配置返回 undefined）
+ */
+export async function getExecutorModel(
+  projectDir: string
+): Promise<string | undefined> {
+  const lane = await getBackendLane(projectDir);
+  if (lane === "tmux") {
+    return undefined;
+  }
+  return getBranchModel(projectDir, lane, "text");
+}
+
+/**
+ * 获取响应模型配置（用于非工具回复）
+ * P5.7-R3e: 返回 responder 模型，如果未配置则返回 undefined（由调用层自动解析）
+ *
+ * @param projectDir 工作区路径
+ * @returns 响应模型名称（未配置返回 undefined）
+ */
+export async function getResponderModel(
+  projectDir: string
+): Promise<string | undefined> {
+  const lane = await getBackendLane(projectDir);
+  if (lane === "tmux") {
+    return undefined;
+  }
+  return getBranchModel(projectDir, lane, "text");
+}
+
+/**
+ * 设置执行模型
+ * P5.7-R3e: 设置工具调用使用的模型
+ *
+ * @param projectDir 工作区路径
+ * @param model 模型名称（空字符串表示继承 agent.provider）
+ */
+export async function setExecutorModel(
+  projectDir: string,
+  model: string
+): Promise<void> {
+  const lane = await getBackendLane(projectDir);
+  if (lane === "tmux") {
+    return;
+  }
+  const normalized = model.trim();
+  await saveWorkspaceConfig(projectDir, {
+    [getStoredModelConfigKey(lane, "text")]: normalized,
+    "model.executor": normalized,
+  } as Partial<WorkspaceConfig>);
+}
+
+/**
+ * 设置响应模型
+ * P5.7-R3e: 设置非工具回复使用的模型
+ *
+ * @param projectDir 工作区路径
+ * @param model 模型名称（空字符串表示继承 agent.provider）
+ */
+export async function setResponderModel(
+  projectDir: string,
+  model: string
+): Promise<void> {
+  const lane = await getBackendLane(projectDir);
+  if (lane === "tmux") {
+    return;
+  }
+  const normalized = model.trim();
+  await saveWorkspaceConfig(projectDir, {
+    [getStoredModelConfigKey(lane, "text")]: normalized,
+    "model.responder": normalized,
+  } as Partial<WorkspaceConfig>);
 }

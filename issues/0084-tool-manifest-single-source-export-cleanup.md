@@ -1,0 +1,67 @@
+---
+id: 0084
+title: 工具暴露单一真相源清理幽灵导出
+status: done
+owner: agent
+labels: [refactor, test, docs]
+risk: medium
+scope: 删除 PI_ON_TOOLS / AGENT_TOOLS / lmstudio 影子 getToolsForLlm，收口到 TOOL_MANIFESTS 与 tool-loop 主链
+plan_doc: docs/design/plan-260311-tool-manifest-single-source-export-cleanup.md
+links: []
+---
+
+## Context
+
+评审指出当前工具暴露层仍残留三处旧旁路：
+
+- `src/agent-backend/types.ts`
+  - `PI_ON_TOOLS` 含有不在 `ToolName` / `TOOL_MANIFESTS` 中的幽灵工具名
+- `src/agent-backend.ts`
+  - `AGENT_TOOLS` 对外导出了一份过时工具表
+- `src/lmstudio.ts`
+  - 存在影子 `getToolsForLlm()`，返回 `AidocsToolDef[]`
+  - 与 `src/agent-backend/tool-loop.ts` 中返回 `ToolName[]` 的主实现形成双真相源
+
+这与既有目标“单一真相源 = `TOOL_MANIFESTS` + `tool-loop.getToolsForLlm()`”相冲突。
+
+## Goal / Non-Goals
+
+- Goal: 删除 `PI_ON_TOOLS`
+- Goal: 删除 `AGENT_TOOLS` 公开导出
+- Goal: 删除 `lmstudio.ts` 中影子 `getToolsForLlm()` 实现
+- Goal: 让 `getToolsForAgent` 只转发执行核的 `getToolsForLlm`
+- Goal: 更新回归锁，显式防止旧旁路回流
+- Non-Goals: 不重写 `parseToolCallBestEffortFromText`
+- Non-Goals: 不清理 `providers/tool-loop.ts` 这类已废弃但有显式 throw 的旧文件
+- Non-Goals: 不扩展新的工具策略或新 manifest 字段
+
+## Plan
+
+- [x] 新建 issue / plan，冻结清理范围
+- [x] 删除 `PI_ON_TOOLS` 及其导出链
+- [x] 删除 `AGENT_TOOLS` 公开导出
+- [x] 将 `lmstudio.ts getToolsForLlm` 改为直接复用执行核主实现
+- [x] 更新旧测试与新增单一真相源行为锁
+- [x] 运行相关回归并更新 changelog
+
+## Acceptance Criteria
+
+1. `src/agent-backend/types.ts` 不再定义 `PI_ON_TOOLS`
+2. `src/agent-backend.ts` 不再导出 `AGENT_TOOLS`
+3. `src/lmstudio.ts` 不再维护独立的 `getToolsForLlm` 逻辑
+4. `getToolsForAgent` 与执行核 `getToolsForLlm` 指向同一真相源
+5. 测试显式覆盖“旧旁路不存在 / 主链唯一”
+
+## Notes
+
+- 评审意见来源：用户当前线程给出的 `PI_ON_TOOLS 审查结论：幽灵工具 + 双真相源`
+- 实际收口：
+  - `src/agent-backend/types.ts` 已删除 `PI_ON_TOOLS`
+  - `src/agent-backend.ts` 已删除 `AGENT_TOOLS`
+  - `src/lmstudio.ts#getToolsForLlm` 已改为直接转发执行核实现
+- Tests:
+  - `npm test -- test/p5-6-8-r3b-edit-file-patch.test.ts test/p5-6-8-r3d-decoupling-regression.test.ts test/p5-6-8-r3e-hard-cut.test.ts test/p5-7-r6-hotfix-gen-entry-tools-default.test.ts test/p5-7-r8c-llm-tool-manifest-single-source.test.ts test/p5-7-r9-t4-agent-backend-neutral-naming.test.ts test/p5-7-r9-t7-step4-compatibility-lock.test.ts`
+
+## Links
+
+- Plan: docs/design/plan-260311-tool-manifest-single-source-export-cleanup.md

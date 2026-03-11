@@ -19,7 +19,7 @@ function getConfigDir(): string {
   return process.env.MSGCODE_CONFIG_DIR ?? path.join(os.homedir(), ".config", "msgcode");
 }
 
-function getPidFilePath(name: string): string {
+export function getPidFilePath(name: string): string {
   return path.join(getConfigDir(), "run", `${name}.pid`);
 }
 
@@ -27,6 +27,35 @@ function isPidAlive(pid: number): boolean {
   if (!Number.isFinite(pid) || pid <= 1) return false;
   try {
     process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function readSingletonPid(name: string): Promise<number | null> {
+  const pidFile = getPidFilePath(name);
+
+  try {
+    const content = await fs.readFile(pidFile, "utf-8");
+    const pid = Number(String(content).trim());
+    return isPidAlive(pid) ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function signalSingletonProcess(
+  name: string,
+  signal: NodeJS.Signals
+): Promise<boolean> {
+  const pid = await readSingletonPid(name);
+  if (!pid) {
+    return false;
+  }
+
+  try {
+    process.kill(pid, signal);
     return true;
   } catch {
     return false;
@@ -95,4 +124,3 @@ export async function acquireSingletonLock(name: string): Promise<AcquireLockRes
   // 理论上不会到这里（重试后应成功或返回已运行）
   return { acquired: false, pidFile };
 }
-

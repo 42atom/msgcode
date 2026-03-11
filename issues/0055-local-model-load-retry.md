@@ -1,0 +1,54 @@
+---
+id: 0055
+title: 本地模型统一加入 2 次 load 重试策略
+status: doing
+owner: agent
+labels: [bug, runtime, local-model]
+risk: medium
+scope: local chat/vision/tts emotion model lifecycle
+plan_doc: docs/design/plan-260309-local-model-load-retry.md
+links: []
+---
+
+## Context
+
+- 当前本地模型调用存在分叉：
+  - `chat.ts` 只对 `Model unloaded` 做 1 次等待重试
+  - `vision.ts` 只对 5xx/连接错误做普通重试，不主动 load 模型
+  - `tts/emotion.ts` 失败后直接回落 neutral，不尝试 load
+- 用户希望本地模型统一具备“最多 2 次 load 后重试”的策略，避免每条链路各自表现不一致。
+
+## Goal / Non-Goals
+
+- Goal: 为本地聊天、本地视觉、LM Studio 情感分析统一补齐 2 次 load 重试。
+- Goal: 无已加载模型时，文本链路允许先拿 catalog model key，再触发 load/retry。
+- Non-Goals: 本轮不做常驻 preload，不做新的模型编排层。
+- Non-Goals: 本轮不改远端 provider（MiniMax/OpenAI）策略。
+
+## Plan
+
+- [x] 在 `runtime/model-service-lease.ts` 增加 load action 与 retryable 错误判定
+- [x] 聊天链路接入统一 reload helper
+- [x] 视觉链路接入统一 reload helper
+- [x] 情感分析链路接入统一 reload helper
+- [x] 补齐回归测试与源码锁
+
+## Acceptance Criteria
+
+1. 本地模型在未加载、unloaded、crash 等可恢复场景下，最多会触发 2 次 load 后重试。
+2. 聊天、视觉、情感分析三条本地模型链路口径一致。
+3. 不新增新的本地模型控制平台，只在现有 lifecycle 文件中补薄 helper。
+
+## Notes
+
+- Code:
+  - `src/runtime/model-service-lease.ts`
+  - `src/agent-backend/chat.ts`
+  - `src/runners/vision.ts`
+  - `src/runners/tts/emotion.ts`
+- Tests:
+  - `test/p5-7-r26-local-model-load-retry.test.ts`
+
+## Links
+
+- /Users/admin/GitProjects/msgcode/docs/design/plan-260309-local-model-load-retry.md

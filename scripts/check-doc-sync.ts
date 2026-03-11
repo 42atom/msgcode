@@ -5,7 +5,7 @@
  * 用途：确保根 README.md 与运行时 /help 命令保持一致
  *
  * 检查逻辑：
- * 1. 读取 commands.ts 中 handleHelpCommand 的命令关键字集合
+ * 1. 读取 cmd-info.ts 中的 help 元数据关键字集合
  * 2. 扫描 README.md：仅允许最小命令集出现
  * 3. 扫描 README.md：命令关键字需为 /help 子集
  * 4. 特判：禁止 README.md 出现幽灵命令
@@ -35,6 +35,32 @@ export interface DocSyncReport {
   aidosBrokenLinks: string[];
   /** AIDOCS 承诺逐字返回文案的违规 */
   aidosVerbosePromises: string[];
+  /** 协议缺失的必需路径（CLAUDE.md） */
+  protocolMissingPaths: string[];
+  /** issues 目录中不符合命名规则的文件 */
+  protocolInvalidIssueFiles: string[];
+  /** docs/design 中不符合命名规则的 Plan 文件 */
+  protocolInvalidPlanFiles: string[];
+  /** 根 CHANGELOG 兼容提示缺失 */
+  protocolRootChangelogCompatibility: string[];
+  /** issue 缺失 front matter */
+  protocolIssueMissingFrontMatter: string[];
+  /** issue 缺失必需 front matter 字段 */
+  protocolIssueMissingFields: string[];
+  /** issue id 与文件名前缀不一致 */
+  protocolIssueIdMismatch: string[];
+  /** issue 缺失必需章节 */
+  protocolIssueMissingSections: string[];
+  /** issue 的 plan_doc 无效或不存在 */
+  protocolIssueInvalidPlanDoc: string[];
+  /** issue links 未包含可用 task 文档 */
+  protocolIssueMissingTaskLinks: string[];
+  /** task 文档未回链 Issue */
+  protocolTaskMissingIssueBacklinks: string[];
+  /** task 文档未回链 Plan */
+  protocolTaskMissingPlanBacklinks: string[];
+  /** plan 文档未回链 Issue */
+  protocolPlanMissingIssueBacklinks: string[];
   /** 是否通过检查 */
   passed: boolean;
 }
@@ -73,11 +99,7 @@ const MINIMAL_COMMAND_ALLOWLIST = new Set([
  * 忽略列表（出现在示例中的路径组件，不是命令）
  */
 const IGNORE_LIST = new Set([
-  "/ops",      // /bind acme/ops 示例
-  "/acme",     // /bind acme/ops 示例
-  "/reload",   // 文档描述中的命令提及
   "/clear",    // 文档描述中的命令提及
-  "/memory",   // 文档描述中的命令提及
 ]);
 
 /**
@@ -89,21 +111,54 @@ const AIDOS_REQUIRED_SECTIONS = [
   "人工检查清单",
 ];
 
+/**
+ * CLAUDE 文档协议必需路径
+ */
+const REQUIRED_PROTOCOL_PATHS = [
+  "issues",
+  "issues/_template.md",
+  "docs/design",
+  "docs/design/plan-template.md",
+  "docs/notes",
+  "docs/notes/research-template.md",
+  "docs/adr",
+  "docs/adr/ADR-template.md",
+  "docs/CHANGELOG.md",
+];
+
+const REQUIRED_ISSUE_FIELDS = [
+  "id",
+  "title",
+  "status",
+  "owner",
+  "labels",
+  "risk",
+  "scope",
+  "plan_doc",
+  "links",
+];
+
+const REQUIRED_ISSUE_SECTIONS = [
+  "Context",
+  "Goal / Non-Goals",
+  "Plan",
+  "Acceptance Criteria",
+  "Notes",
+  "Links",
+];
+
 // ============================================
 // 辅助函数
 // ============================================
 
 /**
- * 从注册表提取命令关键字集合
+ * 从 help 元数据提取命令关键字集合
  *
- * P4.3: 现在帮助信息从注册表渲染，直接从注册表获取可见命令
+ * P4.3: 现在帮助信息从单一 help 元数据渲染，直接读取关键字集合
  */
 async function extractCommandsFromHelp(): Promise<string[]> {
-  const { handleHelpCommand } = await import("../src/routes/commands.js");
-  const result = await handleHelpCommand({ chatId: "doc-sync", args: [] });
-  const base = extractCommandsFromText(result.message || "");
-  const extras = ["/tts", "/voice", "/mode"];
-  return Array.from(new Set([...base, ...extras])).sort();
+  const { getVisibleSlashKeywords } = await import("../src/routes/cmd-info.js");
+  return getVisibleSlashKeywords();
 }
 
 /**
@@ -113,7 +168,13 @@ async function extractCommandsFromHelp(): Promise<string[]> {
  * - 命令格式：`/xxx` 后面是空格、换行、或标点符号
  * - 忽略：文件路径（如 ./AIDOCS, /Users/<you>）
  */
-function extractCommandsFromReadme(): string[] {
+function hasSlashCommandBoundary(line: string, slashIndex: number): boolean {
+  if (slashIndex <= 0) return true;
+  const previous = line[slashIndex - 1];
+  return /\s/.test(previous) || previous === "`" || previous === "|" || previous === "(" || previous === "[" || previous === ":" || previous === "：";
+}
+
+export function extractCommandsFromReadme(): string[] {
   const readmePath = path.join(process.cwd(), "README.md");
   const content = fs.readFileSync(readmePath, "utf-8");
 
@@ -138,7 +199,7 @@ function extractCommandsFromReadme(): string[] {
         line.trim().startsWith("WORKSPACE_ROOT=") ||
         line.includes("/Users/<") ||
         // 跳过 Shell 命令示例（如 npx tsx src/cli.ts /desktop）
-        line.trim().startsWith("#") && line.includes("npx") ||
+        (line.trim().startsWith("#") && line.includes("npx")) ||
         line.includes("npx tsx src/cli.ts")) {
       continue;
     }
@@ -148,31 +209,9 @@ function extractCommandsFromReadme(): string[] {
     const matches = line.matchAll(commandPattern);
 
     for (const match of matches) {
-      const cmd = `/${match[1]}`;
-      // 进一步过滤：确保不是文件路径的一部分
-      // 检查前后文，如果前面是 . 或 ]( 则跳过
-      const beforeMatch = line.slice(Math.max(0, match.index - 10), match.index);
-      if (!beforeMatch.endsWith("./") && !beforeMatch.endsWith("](")) {
-        commands.add(cmd);
+      if (match.index === undefined || !hasSlashCommandBoundary(line, match.index)) {
+        continue;
       }
-    }
-  }
-
-  return Array.from(commands).sort();
-}
-
-/**
- * 从 /help 文本提取命令关键字集合
- */
-function extractCommandsFromText(content: string): string[] {
-  const lines = content.split("\n");
-  const commands = new Set<string>();
-
-  for (const line of lines) {
-    const commandPattern = /\/([a-z][a-z0-9-]*)(?=[\s\`\|\n\)。，、])/g;
-    const matches = line.matchAll(commandPattern);
-
-    for (const match of matches) {
       const cmd = `/${match[1]}`;
       commands.add(cmd);
     }
@@ -307,6 +346,248 @@ function checkAidosVerbosePromises(): string[] {
 }
 
 /**
+ * 检查 CLAUDE 文档协议必需路径
+ */
+function checkProtocolRequiredPaths(): string[] {
+  const missing: string[] = [];
+  for (const relativePath of REQUIRED_PROTOCOL_PATHS) {
+    const absolutePath = path.join(process.cwd(), relativePath);
+    if (!fs.existsSync(absolutePath)) {
+      missing.push(relativePath);
+    }
+  }
+  return missing;
+}
+
+/**
+ * 检查 issues 文件命名规则：NNNN-<slug>.md
+ */
+function checkIssueFilenameProtocol(): string[] {
+  const issuesDir = path.join(process.cwd(), "issues");
+  if (!fs.existsSync(issuesDir)) return [];
+
+  const invalid: string[] = [];
+  const entries = fs.readdirSync(issuesDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    if (!entry.name.endsWith(".md")) continue;
+    if (entry.name === "README.md" || entry.name === "_template.md") continue;
+    if (!/^\d{4}-[a-z0-9][a-z0-9-]*\.md$/.test(entry.name)) {
+      invalid.push(`issues/${entry.name}`);
+    }
+  }
+
+  return invalid;
+}
+
+/**
+ * 检查 Plan 文件命名规则：plan-YYMMDD-<topic>.md
+ */
+function checkPlanFilenameProtocol(): string[] {
+  const designDir = path.join(process.cwd(), "docs", "design");
+  if (!fs.existsSync(designDir)) return [];
+
+  const invalid: string[] = [];
+  const entries = fs.readdirSync(designDir, { withFileTypes: true });
+
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    if (!entry.name.endsWith(".md")) continue;
+    if (entry.name === "README.md" || entry.name === "plan-template.md") continue;
+    if (!/^plan-\d{6}-[a-z0-9][a-z0-9-]*\.md$/.test(entry.name)) {
+      invalid.push(`docs/design/${entry.name}`);
+    }
+  }
+
+  return invalid;
+}
+
+/**
+ * 根 CHANGELOG 兼容提示检查
+ *
+ * 目的：路径迁移后，旧索引仍可定位 docs/CHANGELOG.md
+ */
+function checkRootChangelogCompatibility(): string[] {
+  const rootChangelogPath = path.join(process.cwd(), "CHANGELOG.md");
+  if (!fs.existsSync(rootChangelogPath)) return ["CHANGELOG.md（根）缺失"];
+
+  const content = fs.readFileSync(rootChangelogPath, "utf-8");
+  if (!content.includes("docs/CHANGELOG.md")) {
+    return ["CHANGELOG.md（根）未包含 docs/CHANGELOG.md 指向"];
+  }
+  return [];
+}
+
+function extractFrontMatter(content: string): { frontMatter: string; body: string } | null {
+  const matched = content.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
+  if (!matched) return null;
+  return { frontMatter: matched[1], body: matched[2] ?? "" };
+}
+
+function extractYamlScalar(frontMatter: string, key: string): string | null {
+  const pattern = new RegExp(`^${key}:\\s*(.+)$`, "m");
+  const matched = frontMatter.match(pattern);
+  if (!matched) return null;
+  return matched[1].trim().replace(/^['"`]/, "").replace(/['"`]$/, "");
+}
+
+function extractYamlList(frontMatter: string, key: string): string[] {
+  const inlinePattern = new RegExp(`^${key}:\\s*\\[(.*)\\]\\s*$`, "m");
+  const inlineMatched = frontMatter.match(inlinePattern);
+  if (inlineMatched) {
+    return inlineMatched[1]
+      .split(",")
+      .map(v => v.trim())
+      .filter(Boolean)
+      .map(v => v.replace(/^['"`]/, "").replace(/['"`]$/, ""));
+  }
+
+  const blockPattern = new RegExp(`^${key}:\\s*\\n((?:\\s*-\\s*.+\\n?)*)`, "m");
+  const blockMatched = frontMatter.match(blockPattern);
+  if (!blockMatched) return [];
+
+  return blockMatched[1]
+    .split("\n")
+    .map(line => line.trim())
+    .filter(line => line.startsWith("- "))
+    .map(line => line.slice(2).trim())
+    .filter(Boolean)
+    .map(v => v.replace(/^['"`]/, "").replace(/['"`]$/, ""));
+}
+
+function checkIssuePlanTaskLinkage(): {
+  protocolIssueMissingFrontMatter: string[];
+  protocolIssueMissingFields: string[];
+  protocolIssueIdMismatch: string[];
+  protocolIssueMissingSections: string[];
+  protocolIssueInvalidPlanDoc: string[];
+  protocolIssueMissingTaskLinks: string[];
+  protocolTaskMissingIssueBacklinks: string[];
+  protocolTaskMissingPlanBacklinks: string[];
+  protocolPlanMissingIssueBacklinks: string[];
+} {
+  const protocolIssueMissingFrontMatter: string[] = [];
+  const protocolIssueMissingFields: string[] = [];
+  const protocolIssueIdMismatch: string[] = [];
+  const protocolIssueMissingSections: string[] = [];
+  const protocolIssueInvalidPlanDoc: string[] = [];
+  const protocolIssueMissingTaskLinks: string[] = [];
+  const protocolTaskMissingIssueBacklinks: string[] = [];
+  const protocolTaskMissingPlanBacklinks: string[] = [];
+  const protocolPlanMissingIssueBacklinks: string[] = [];
+
+  const issuesDir = path.join(process.cwd(), "issues");
+  if (!fs.existsSync(issuesDir)) {
+    return {
+      protocolIssueMissingFrontMatter,
+      protocolIssueMissingFields,
+      protocolIssueIdMismatch,
+      protocolIssueMissingSections,
+      protocolIssueInvalidPlanDoc,
+      protocolIssueMissingTaskLinks,
+      protocolTaskMissingIssueBacklinks,
+      protocolTaskMissingPlanBacklinks,
+      protocolPlanMissingIssueBacklinks,
+    };
+  }
+
+  const entries = fs.readdirSync(issuesDir, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    if (!entry.name.endsWith(".md")) continue;
+    if (entry.name === "README.md" || entry.name === "_template.md") continue;
+
+    const issuePath = `issues/${entry.name}`;
+    const raw = fs.readFileSync(path.join(issuesDir, entry.name), "utf-8");
+    const parsed = extractFrontMatter(raw);
+
+    if (!parsed) {
+      protocolIssueMissingFrontMatter.push(issuePath);
+      continue;
+    }
+
+    const { frontMatter, body } = parsed;
+
+    for (const key of REQUIRED_ISSUE_FIELDS) {
+      const keyPattern = new RegExp(`^${key}:`, "m");
+      if (!keyPattern.test(frontMatter)) {
+        protocolIssueMissingFields.push(`${issuePath}: ${key}`);
+      }
+    }
+
+    const issueId = extractYamlScalar(frontMatter, "id");
+    const filenamePrefix = entry.name.split("-")[0] ?? "";
+    if (issueId && issueId !== filenamePrefix) {
+      protocolIssueIdMismatch.push(`${issuePath}: id=${issueId}, filename=${filenamePrefix}`);
+    }
+
+    for (const section of REQUIRED_ISSUE_SECTIONS) {
+      if (!body.includes(`## ${section}`)) {
+        protocolIssueMissingSections.push(`${issuePath}: ${section}`);
+      }
+    }
+
+    const planDoc = extractYamlScalar(frontMatter, "plan_doc");
+    if (!planDoc || planDoc.includes("<")) {
+      protocolIssueInvalidPlanDoc.push(`${issuePath}: plan_doc 缺失或为占位符`);
+    } else {
+      const absolutePlanPath = path.join(process.cwd(), planDoc);
+      if (!fs.existsSync(absolutePlanPath)) {
+        protocolIssueInvalidPlanDoc.push(`${issuePath}: ${planDoc} 不存在`);
+      } else if (issueId) {
+        const planContent = fs.readFileSync(absolutePlanPath, "utf-8");
+        if (!planContent.includes(`Issue: ${issueId}`)) {
+          protocolPlanMissingIssueBacklinks.push(`${planDoc}: 缺失 Issue: ${issueId}`);
+        }
+      }
+    }
+
+    const linkedTasks = extractYamlList(frontMatter, "links").filter(
+      l => l.startsWith("docs/tasks/") && l.endsWith(".md")
+    );
+    if (linkedTasks.length === 0) {
+      protocolIssueMissingTaskLinks.push(`${issuePath}: 未包含 docs/tasks 链接`);
+      continue;
+    }
+
+    for (const taskPath of linkedTasks) {
+      const absoluteTaskPath = path.join(process.cwd(), taskPath);
+      if (!fs.existsSync(absoluteTaskPath)) {
+        protocolIssueMissingTaskLinks.push(`${issuePath}: ${taskPath} 不存在`);
+        continue;
+      }
+
+      const taskContent = fs.readFileSync(absoluteTaskPath, "utf-8");
+      if (issueId) {
+        const hasIssueBacklink =
+          taskContent.includes(`Issue: ${issueId}`) ||
+          taskContent.includes(`issues/${issueId}-`);
+        if (!hasIssueBacklink) {
+          protocolTaskMissingIssueBacklinks.push(`${taskPath}: 缺失 Issue ${issueId} 回链`);
+        }
+      }
+
+      if (planDoc && !planDoc.includes("<") && !taskContent.includes(planDoc)) {
+        protocolTaskMissingPlanBacklinks.push(`${taskPath}: 缺失 Plan 回链 ${planDoc}`);
+      }
+    }
+  }
+
+  return {
+    protocolIssueMissingFrontMatter,
+    protocolIssueMissingFields,
+    protocolIssueIdMismatch,
+    protocolIssueMissingSections,
+    protocolIssueInvalidPlanDoc,
+    protocolIssueMissingTaskLinks,
+    protocolTaskMissingIssueBacklinks,
+    protocolTaskMissingPlanBacklinks,
+    protocolPlanMissingIssueBacklinks,
+  };
+}
+
+/**
  * 检查文档同步状态
  */
 export async function checkDocSync(): Promise<DocSyncReport> {
@@ -332,6 +613,11 @@ export async function checkDocSync(): Promise<DocSyncReport> {
   const aidosMissingSections = checkAidosRequiredSections();
   const aidosBrokenLinks = checkAidosLinksExist();
   const aidosVerbosePromises = checkAidosVerbosePromises();
+  const protocolMissingPaths = checkProtocolRequiredPaths();
+  const protocolInvalidIssueFiles = checkIssueFilenameProtocol();
+  const protocolInvalidPlanFiles = checkPlanFilenameProtocol();
+  const protocolRootChangelogCompatibility = checkRootChangelogCompatibility();
+  const issuePlanTaskLinkage = checkIssuePlanTaskLinkage();
 
   const passed =
     violations.length === 0 &&
@@ -339,7 +625,20 @@ export async function checkDocSync(): Promise<DocSyncReport> {
     missing.length === 0 &&
     aidosMissingSections.length === 0 &&
     aidosBrokenLinks.length === 0 &&
-    aidosVerbosePromises.length === 0;
+    aidosVerbosePromises.length === 0 &&
+    protocolMissingPaths.length === 0 &&
+    protocolInvalidIssueFiles.length === 0 &&
+    protocolInvalidPlanFiles.length === 0 &&
+    protocolRootChangelogCompatibility.length === 0 &&
+    issuePlanTaskLinkage.protocolIssueMissingFrontMatter.length === 0 &&
+    issuePlanTaskLinkage.protocolIssueMissingFields.length === 0 &&
+    issuePlanTaskLinkage.protocolIssueIdMismatch.length === 0 &&
+    issuePlanTaskLinkage.protocolIssueMissingSections.length === 0 &&
+    issuePlanTaskLinkage.protocolIssueInvalidPlanDoc.length === 0 &&
+    issuePlanTaskLinkage.protocolIssueMissingTaskLinks.length === 0 &&
+    issuePlanTaskLinkage.protocolTaskMissingIssueBacklinks.length === 0 &&
+    issuePlanTaskLinkage.protocolTaskMissingPlanBacklinks.length === 0 &&
+    issuePlanTaskLinkage.protocolPlanMissingIssueBacklinks.length === 0;
 
   return {
     missing,
@@ -348,6 +647,19 @@ export async function checkDocSync(): Promise<DocSyncReport> {
     aidosMissingSections,
     aidosBrokenLinks,
     aidosVerbosePromises,
+    protocolMissingPaths,
+    protocolInvalidIssueFiles,
+    protocolInvalidPlanFiles,
+    protocolRootChangelogCompatibility,
+    protocolIssueMissingFrontMatter: issuePlanTaskLinkage.protocolIssueMissingFrontMatter,
+    protocolIssueMissingFields: issuePlanTaskLinkage.protocolIssueMissingFields,
+    protocolIssueIdMismatch: issuePlanTaskLinkage.protocolIssueIdMismatch,
+    protocolIssueMissingSections: issuePlanTaskLinkage.protocolIssueMissingSections,
+    protocolIssueInvalidPlanDoc: issuePlanTaskLinkage.protocolIssueInvalidPlanDoc,
+    protocolIssueMissingTaskLinks: issuePlanTaskLinkage.protocolIssueMissingTaskLinks,
+    protocolTaskMissingIssueBacklinks: issuePlanTaskLinkage.protocolTaskMissingIssueBacklinks,
+    protocolTaskMissingPlanBacklinks: issuePlanTaskLinkage.protocolTaskMissingPlanBacklinks,
+    protocolPlanMissingIssueBacklinks: issuePlanTaskLinkage.protocolPlanMissingIssueBacklinks,
     passed,
   };
 }
@@ -419,6 +731,110 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       console.error("");
       console.error("提示：命令节应只做分类导览，不承诺逐字返回文案");
       console.error("      行为真相源：运行时 /help");
+      console.error("");
+    }
+
+    if (report.protocolMissingPaths.length > 0) {
+      console.error("CLAUDE 协议缺失的必需路径：");
+      for (const p of report.protocolMissingPaths) {
+        console.error(`  - ${p}`);
+      }
+      console.error("");
+    }
+
+    if (report.protocolInvalidIssueFiles.length > 0) {
+      console.error("issues 文件命名不合规（应为 NNNN-<slug>.md）：");
+      for (const p of report.protocolInvalidIssueFiles) {
+        console.error(`  - ${p}`);
+      }
+      console.error("");
+    }
+
+    if (report.protocolInvalidPlanFiles.length > 0) {
+      console.error("Plan 文件命名不合规（应为 plan-YYMMDD-<topic>.md）：");
+      for (const p of report.protocolInvalidPlanFiles) {
+        console.error(`  - ${p}`);
+      }
+      console.error("");
+    }
+
+    if (report.protocolRootChangelogCompatibility.length > 0) {
+      console.error("根 CHANGELOG 兼容提示缺失：");
+      for (const p of report.protocolRootChangelogCompatibility) {
+        console.error(`  - ${p}`);
+      }
+      console.error("");
+    }
+
+    if (report.protocolIssueMissingFrontMatter.length > 0) {
+      console.error("Issue 缺失 front matter：");
+      for (const p of report.protocolIssueMissingFrontMatter) {
+        console.error(`  - ${p}`);
+      }
+      console.error("");
+    }
+
+    if (report.protocolIssueMissingFields.length > 0) {
+      console.error("Issue 缺失必需 front matter 字段：");
+      for (const p of report.protocolIssueMissingFields) {
+        console.error(`  - ${p}`);
+      }
+      console.error("");
+    }
+
+    if (report.protocolIssueIdMismatch.length > 0) {
+      console.error("Issue id 与文件名前缀不一致：");
+      for (const p of report.protocolIssueIdMismatch) {
+        console.error(`  - ${p}`);
+      }
+      console.error("");
+    }
+
+    if (report.protocolIssueMissingSections.length > 0) {
+      console.error("Issue 缺失必需章节：");
+      for (const p of report.protocolIssueMissingSections) {
+        console.error(`  - ${p}`);
+      }
+      console.error("");
+    }
+
+    if (report.protocolIssueInvalidPlanDoc.length > 0) {
+      console.error("Issue plan_doc 无效或不存在：");
+      for (const p of report.protocolIssueInvalidPlanDoc) {
+        console.error(`  - ${p}`);
+      }
+      console.error("");
+    }
+
+    if (report.protocolIssueMissingTaskLinks.length > 0) {
+      console.error("Issue 缺失 task 链接：");
+      for (const p of report.protocolIssueMissingTaskLinks) {
+        console.error(`  - ${p}`);
+      }
+      console.error("");
+    }
+
+    if (report.protocolTaskMissingIssueBacklinks.length > 0) {
+      console.error("Task 缺失 Issue 回链：");
+      for (const p of report.protocolTaskMissingIssueBacklinks) {
+        console.error(`  - ${p}`);
+      }
+      console.error("");
+    }
+
+    if (report.protocolTaskMissingPlanBacklinks.length > 0) {
+      console.error("Task 缺失 Plan 回链：");
+      for (const p of report.protocolTaskMissingPlanBacklinks) {
+        console.error(`  - ${p}`);
+      }
+      console.error("");
+    }
+
+    if (report.protocolPlanMissingIssueBacklinks.length > 0) {
+      console.error("Plan 缺失 Issue 回链：");
+      for (const p of report.protocolPlanMissingIssueBacklinks) {
+        console.error(`  - ${p}`);
+      }
       console.error("");
     }
 

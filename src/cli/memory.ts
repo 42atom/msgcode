@@ -59,11 +59,15 @@ async function resolveWorkspacePathParam(input: string): Promise<string> {
     }
     return route.workspacePath;
   } else {
-    // path 类型：相对于 WORKSPACE_ROOT 解析
+    // path 类型：允许绝对路径；相对路径按 WORKSPACE_ROOT 解析
+    if (path.isAbsolute(param.value)) {
+      return path.resolve(param.value);
+    }
+
     const workspaceRoot = getWorkspaceRootForDisplay();
     const resolved = path.resolve(workspaceRoot, param.value);
 
-    // 检查越界
+    // 检查相对路径越界
     const relative = path.relative(workspaceRoot, resolved);
     if (relative.startsWith("..") || path.isAbsolute(relative)) {
       throw new Error(MEMORY_ERROR_CODES.PATH_TRAVERSAL);
@@ -103,7 +107,7 @@ export function createMemoryRememberCommand(): Command {
   cmd
     .description("写入记忆到 workspace 的 memory/YYYY-MM-DD.md")
     .argument("<text>", "要记录的文本")
-    .requiredOption("--workspace <id|path>", "Workspace ID 或相对路径")
+    .requiredOption("--workspace <id|path>", "Workspace ID、相对路径或绝对路径")
     .option("--dry-run", "只打印计划，不实际写入")
     .option("--json", "JSON 格式输出")
     .action(async (text: string, options) => {
@@ -180,7 +184,7 @@ export function createMemoryRememberCommand(): Command {
             createMemoryDiagnostic(
               MEMORY_ERROR_CODES.PATH_TRAVERSAL,
               "路径越界：路径必须在 workspace 下",
-              "使用相对路径，不要包含 .."
+              "使用 workspace 内相对路径（不包含 ..），或直接传绝对路径"
             )
           );
         } else {
@@ -217,7 +221,7 @@ export function createMemoryIndexCommand(): Command {
 
   cmd
     .description("索引 workspace 的 memory 文件")
-    .requiredOption("--workspace <id|path>", "Workspace ID 或相对路径")
+    .requiredOption("--workspace <id|path>", "Workspace ID、相对路径或绝对路径")
     .option("--force", "强制重新索引（忽略 mtime/sha256）")
     .option("--json", "JSON 格式输出")
     .action(async (options) => {
@@ -338,7 +342,7 @@ export function createMemorySearchCommand(): Command {
   cmd
     .description("搜索 memory（FTS5 BM25）")
     .argument("<query>", "搜索查询")
-    .requiredOption("--workspace <id|path>", "Workspace ID 或相对路径")
+    .requiredOption("--workspace <id|path>", "Workspace ID、相对路径或绝对路径")
     .option("--limit <n>", "返回结果数量", String(DEFAULT_SEARCH_LIMIT))
     .option("--json", "JSON 格式输出")
     .action(async (query: string, options) => {
@@ -348,6 +352,25 @@ export function createMemorySearchCommand(): Command {
       const errors: Diagnostic[] = [];
 
       try {
+        // P5.7-R4-1: 空查询校验
+        if (!query || query.trim() === "") {
+          errors.push(
+            createMemoryDiagnostic(
+              MEMORY_ERROR_CODES.EMPTY_QUERY,
+              "查询词不能为空",
+              "请提供非空的搜索查询词"
+            )
+          );
+          const envelope = createEnvelope(command, startTime, "error", {}, warnings, errors);
+          if (options.json) {
+            console.log(JSON.stringify(envelope, null, 2));
+          } else {
+            console.error("错误: 查询词不能为空");
+          }
+          process.exit(1);
+          return;
+        }
+
         // 解析 workspace
         const workspacePath = await resolveWorkspacePathParam(options.workspace);
         const workspaceId = path.basename(workspacePath);
@@ -418,7 +441,7 @@ export function createMemoryGetCommand(): Command {
 
   cmd
     .description("读取 memory 文件片段")
-    .requiredOption("--workspace <id|path>", "Workspace ID 或相对路径")
+    .requiredOption("--workspace <id|path>", "Workspace ID、相对路径或绝对路径")
     .requiredOption("--path <rel>", "文件相对路径（如 memory/2026-02-01.md）")
     .option("--from <n>", "起始行（1-based）", "1")
     .option("--lines <n>", `读取行数（默认 ${DEFAULT_GET_LINES}）`, String(DEFAULT_GET_LINES))
@@ -492,7 +515,7 @@ export function createMemoryGetCommand(): Command {
             createMemoryDiagnostic(
               MEMORY_ERROR_CODES.PATH_TRAVERSAL,
               "路径越界：路径必须在 workspace 下",
-              "使用相对路径，不要包含 .."
+              "使用 workspace 内相对路径（不包含 ..），或直接传绝对路径"
             )
           );
         } else {
@@ -623,6 +646,320 @@ export function createMemoryCommand(): Command {
   cmd.addCommand(createMemorySearchCommand());
   cmd.addCommand(createMemoryGetCommand());
   cmd.addCommand(createMemoryStatusCommand());
+  // P5.7-R4-1: 新增主命令（add/stats 作为主合同命令）
+  cmd.addCommand(createMemoryAddCommand());
+  cmd.addCommand(createMemoryStatsCommand());
 
   return cmd;
+}
+
+// ============================================
+// P5.7-R4-1: add/stats 主命令
+// ============================================
+
+/**
+ * add 命令 - 主合同命令
+ * 功能与 remember 完全一致，help-docs 只暴露此命令
+ */
+export function createMemoryAddCommand(): Command {
+  const cmd = new Command("add");
+
+  cmd
+    .description("添加记忆到 workspace 的 memory/YYYY-MM-DD.md")
+    .argument("<text>", "要记录的文本")
+    .requiredOption("--workspace <id|path>", "Workspace ID、相对路径或绝对路径")
+    .option("--dry-run", "只打印计划，不实际写入")
+    .option("--json", "JSON 格式输出")
+    .action(async (text: string, options) => {
+      const startTime = Date.now();
+      const command = "msgcode memory add";
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      try {
+        // P5.7-R4-1: 空文本校验
+        if (!text || text.trim() === "") {
+          errors.push(
+            createMemoryDiagnostic(
+              MEMORY_ERROR_CODES.WRITE_FAILED,
+              "文本内容不能为空",
+              "请提供要记录的文本内容"
+            )
+          );
+          const envelope = createEnvelope(command, startTime, "error", {}, warnings, errors);
+          if (options.json) {
+            console.log(JSON.stringify(envelope, null, 2));
+          } else {
+            console.error("错误: 文本内容不能为空");
+          }
+          process.exit(1);
+          return;
+        }
+
+        // 解析 workspace
+        const workspacePath = await resolveWorkspacePathParam(options.workspace);
+
+        // 确保目录存在
+        const memoryDir = path.join(workspacePath, "memory");
+        ensureDir(memoryDir);
+
+        // 获取今天的文件路径
+        const memoryPath = getTodayMemoryPath(workspacePath);
+
+        if (options.dryRun) {
+          const data = {
+            dryRun: true,
+            planned: {
+              path: memoryPath,
+              text,
+              textLength: text.length,
+            },
+          };
+
+          const envelope = createEnvelope(command, startTime, "pass", data, warnings, errors);
+          if (options.json) {
+            console.log(JSON.stringify(envelope, null, 2));
+          } else {
+            console.log(`[计划] 将写入 ${memoryPath}`);
+            console.log(`文本长度: ${text.length}`);
+          }
+          return;
+        }
+
+        // 写入文件（追加）
+        const timestamp = new Date().toISOString().slice(0, 16).replace("T", " ");
+        const entry = `\n## ${timestamp}\n- ${text}\n`;
+        appendFileSync(memoryPath, entry, "utf8");
+
+        const data = {
+          path: memoryPath,
+          textLength: text.length,
+          appendedAt: new Date().toISOString(),
+        };
+
+        const envelope = createEnvelope(command, startTime, "pass", data, warnings, errors);
+
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.log(`已写入 ${memoryPath}`);
+        }
+
+        process.exit(0);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+
+        if (message === MEMORY_ERROR_CODES.WORKSPACE_NOT_FOUND) {
+          errors.push(
+            createMemoryDiagnostic(
+              MEMORY_ERROR_CODES.WORKSPACE_NOT_FOUND,
+              `Workspace 不存在: ${options.workspace}`,
+              "使用 msgcode routes list 查看可用的 workspace"
+            )
+          );
+        } else if (message === MEMORY_ERROR_CODES.PATH_TRAVERSAL) {
+          errors.push(
+            createMemoryDiagnostic(
+              MEMORY_ERROR_CODES.PATH_TRAVERSAL,
+              "路径越界：路径必须在 workspace 下",
+              "使用 workspace 内相对路径（不包含 ..），或直接传绝对路径"
+            )
+          );
+        } else {
+          errors.push(
+            createMemoryDiagnostic(
+              MEMORY_ERROR_CODES.WRITE_FAILED,
+              `写入记忆失败: ${message}`,
+              undefined,
+              { workspace: options.workspace, textLength: text.length }
+            )
+          );
+        }
+
+        const envelope = createEnvelope(command, startTime, "error", {}, warnings, errors);
+
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.error("错误:", message);
+        }
+
+        process.exit(1);
+      }
+    });
+
+  return cmd;
+}
+
+/**
+ * stats 命令 - 主合同命令
+ * 功能与 status 完全一致，help-docs 只暴露此命令
+ */
+export function createMemoryStatsCommand(): Command {
+  const cmd = new Command("stats");
+
+  cmd
+    .description("查看 Memory 索引统计信息")
+    .option("--json", "JSON 格式输出")
+    .action(async (options) => {
+      const startTime = Date.now();
+      const command = "msgcode memory stats";
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      try {
+        // 打开 store
+        const store = createMemoryStore();
+
+        // 获取状态
+        const status = store.getStatus();
+
+        // 获取脏文件
+        const dirtyFiles = store.getDirtyFiles();
+
+        store.close();
+
+        const data = {
+          store: {
+            indexPath: status.indexPath,
+            schemaVersion: status.schemaVersion,
+            indexedWorkspaces: status.indexedWorkspaces,
+            indexedFiles: status.indexedFiles,
+            indexedChunks: status.indexedChunks,
+            ftsAvailable: status.ftsAvailable,
+          },
+          dirty: {
+            workspaces: dirtyFiles.length > 0 ? [...new Set(dirtyFiles.map((f: { workspaceId: string }) => f.workspaceId))] : [],
+            files: dirtyFiles,
+            recommended: (dirtyFiles.length > 0 ? `msgcode memory index --workspace ${dirtyFiles[0].workspaceId}` : undefined) as string | undefined,
+            reason: (dirtyFiles.length > 0 ? `${dirtyFiles.length} 个文件有变更` : undefined) as string | undefined,
+          },
+        };
+
+        const envelope = createEnvelope(command, startTime, "pass", data, warnings, errors);
+
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.log(`Memory 索引状态:`);
+          console.log(`  索引库: ${status.indexPath}`);
+          console.log(`  Schema 版本: ${status.schemaVersion}`);
+          console.log(`  已索引 Workspace: ${status.indexedWorkspaces}`);
+          console.log(`  已索引文件: ${status.indexedFiles}`);
+          console.log(`  已索引 Chunks: ${status.indexedChunks}`);
+          console.log(`  FTS5 可用: ${status.ftsAvailable ? "是" : "否"}`);
+
+          if (dirtyFiles.length > 0) {
+            console.log(`\n需要重新索引的文件: ${dirtyFiles.length}`);
+            console.log(`  建议: ${data.dirty.recommended}`);
+          }
+        }
+
+        process.exit(0);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        errors.push(
+          createMemoryDiagnostic(
+            MEMORY_ERROR_CODES.STATUS_FAILED,
+            `获取状态失败: ${message}`
+          )
+        );
+
+        const envelope = createEnvelope(command, startTime, "error", {}, warnings, errors);
+
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.error("错误:", message);
+        }
+
+        process.exit(1);
+      }
+    });
+
+  return cmd;
+}
+
+// ============================================
+// 合同导出（help-docs 使用）
+// ============================================
+
+/**
+ * 获取 memory add 命令合同
+ */
+export function getMemoryAddContract() {
+  return {
+    name: "msgcode memory add",
+    description: "添加记忆到 workspace 的 memory/YYYY-MM-DD.md",
+    options: {
+      required: {
+        "--workspace": "Workspace ID、相对路径或绝对路径",
+      },
+      optional: {
+        "--dry-run": "只打印计划，不实际写入",
+        "--json": "JSON 格式输出",
+      },
+    },
+    output: {
+      path: "写入的文件路径",
+      textLength: "文本长度",
+      appendedAt: "写入时间（ISO 8601）",
+    },
+    errorCodes: [
+      "MEMORY_WORKSPACE_NOT_FOUND",
+      "MEMORY_PATH_TRAVERSAL",
+      "MEMORY_WRITE_FAILED",
+    ],
+  };
+}
+
+/**
+ * 获取 memory search 命令合同
+ */
+export function getMemorySearchContract() {
+  return {
+    name: "msgcode memory search",
+    description: "搜索 memory（FTS5 BM25）",
+    options: {
+      required: {
+        "--workspace": "Workspace ID、相对路径或绝对路径",
+      },
+      optional: {
+        "--limit": "返回结果数量（默认 8）",
+        "--json": "JSON 格式输出",
+      },
+    },
+    output: {
+      query: "搜索查询词",
+      results: "搜索结果列表",
+      count: "结果数量",
+    },
+    errorCodes: [
+      "MEMORY_EMPTY_QUERY",
+      "MEMORY_WORKSPACE_NOT_FOUND",
+      "MEMORY_SEARCH_FAILED",
+    ],
+  };
+}
+
+/**
+ * 获取 memory stats 命令合同
+ */
+export function getMemoryStatsContract() {
+  return {
+    name: "msgcode memory stats",
+    description: "查看 Memory 索引统计信息",
+    options: {
+      optional: {
+        "--json": "JSON 格式输出",
+      },
+    },
+    output: {
+      store: "索引库状态信息",
+      dirty: "需要重新索引的文件",
+    },
+    errorCodes: [
+      "MEMORY_STATUS_FAILED",
+    ],
+  };
 }

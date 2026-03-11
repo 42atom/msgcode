@@ -1,0 +1,53 @@
+# 评审修复：任务状态收口与 runtime skill 索引一致性
+
+## Problem
+
+`0f203ea` 把长期任务 checkpoint 和 `plan-files` skill 接进来了，但 review 暴露出两处真相源漂移：一是 `TaskSupervisor.updateTaskResult()` 仍按旧逻辑重算状态，导致显式 `failed/completed` 与实际落盘状态不一致；二是 runtime skill 索引已经暴露了 vision skills，但 git 里没把对应目录提交进去，clean checkout 下会直接缺文件。
+
+## Occam Check
+
+- 不加它，系统具体坏在哪？
+  - 长期任务会把明确失败回退成 `pending`，或把无 verify 的任务显示成 `running + completed checkpoint` 的矛盾状态；runtime skill 索引在 clean checkout 下会指向不存在的 vision skill 文档。
+- 用更少的层能不能解决？
+  - 能。直接收口 `task-supervisor` 现有状态推进逻辑，并把已经存在的 runtime skill 目录纳入 git；不新增任何恢复层或索引层。
+- 这个改动让主链数量变多了还是变少了？
+  - 变少了。状态推进只保留一套显式状态真相源，runtime skill 只保留一份仓库真相源。
+
+## Decision
+
+采用最小修法：
+
+1. `updateTaskResult()` 以调用方显式 `result.status` 为主，再对 `completed` 缺 verify 这种唯一特例做降级。
+2. checkpoint 永远与最终落盘状态对齐，避免 `status=running` 但 `checkpoint=completed`。
+3. `/task resume` 只恢复状态，不提前消耗 attempt budget。
+4. 直接把 `vision-index`、`local-vision-lmstudio`、`zai-vision-mcp` 三个 runtime skill 目录纳入 git，并补一条“索引列出的 skill 必须被 git 跟踪”的测试。
+
+## Plan
+
+1. 修 `src/runtime/task-supervisor.ts`
+   - `resumeTask()` 去掉 `attemptCount + 1`
+   - `updateTaskResult()` 尊重显式状态
+   - checkpoint 与最终状态对齐
+   - 验收：显式 failed/completed 测试通过
+2. 收口 runtime skill 真相源
+   - 提交 `src/skills/runtime/vision-index/`
+   - 提交 `src/skills/runtime/local-vision-lmstudio/`
+   - 提交 `src/skills/runtime/zai-vision-mcp/`
+   - 验收：runtime skill sync 测试和 tracked guard 通过
+3. 更新文档与验证
+   - 更新 `issues/0059-...md`
+   - 更新 `docs/CHANGELOG.md`
+   - 跑相关测试
+
+## Risks
+
+1. 修状态机时改坏既有 `/task` 流程；回滚：只回滚 `task-supervisor.ts` 本次 patch，保留其他 checkpoint 结构。
+2. 把 vision runtime skill 纳入 git 后与旧 prompt 口径不一致；回滚：退回索引或对应 skill 目录，始终保持二者一致。
+
+## Test Plan
+
+- `bun test test/p5-7-r12-agent-relentless-task-closure.test.ts`
+- `bun test test/p5-7-r12-t9-mainline-quota-continuation-smoke.test.ts`
+- `bun test test/p5-7-r13-runtime-skill-sync.test.ts`
+
+（章节级）评审意见：[留空,用户将给出反馈]

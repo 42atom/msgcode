@@ -217,6 +217,7 @@ function createLogger(): Logger {
     // 1. 优先从环境变量读取日志级别
     const envLevel = process.env.LOG_LEVEL as LogLevel | undefined;
     const level = envLevel ?? "info";
+    const isTestEnv = process.env.NODE_ENV === "test";
 
     // 验证日志级别
     const validLevels: LogLevel[] = ["debug", "info", "warn", "error"];
@@ -232,7 +233,11 @@ function createLogger(): Logger {
     }
 
     // 文件传输器（可选）
-    if (process.env.LOG_FILE !== "false") {
+    const shouldFileLog = process.env.LOG_FILE === "false"
+        ? false
+        : !isTestEnv;
+
+    if (shouldFileLog) {
         try {
             const logPath = process.env.LOG_PATH ?? "~/.config/msgcode/log/msgcode.log";
             transports.push(new FileTransportClass({

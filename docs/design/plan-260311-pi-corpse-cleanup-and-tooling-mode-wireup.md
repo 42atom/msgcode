@@ -1,0 +1,103 @@
+# plan-260311-pi-corpse-cleanup-and-tooling-mode-wireup
+
+## Problem
+
+`msgcode` 现在真正的工具执行主链已经是 `agent-backend/tool-loop.ts`，但仓库仍保留 `PI` 时代的 `/pi` 命令、`pi.enabled` 配置字段，以及一个已退役的 `src/providers/tool-loop.ts` 文件。同时，`tooling.mode` 虽然已有类型和 Tool Bus 语义，却没有在工具循环入口真正阻止 routed-chat 进入工具主链。
+
+## Occam Check
+
+1. 不加这次清理，系统具体坏在哪？
+   - `/pi` 与 `pi.enabled` 继续暗示存在第二套工具开关；`explicit` 模式下路由层仍进入工具循环，架构意图不自明。
+2. 用更少的层能不能解决？
+   - 能。删除 PI 残留，把 `tooling.mode=explicit` 直接接到 `runAgentToolLoop` 入口，不引入新抽象。
+3. 这个改动让主链数量变多了还是变少了？
+   - 变少了。工具开关只剩 `tooling.mode + tooling.allow`，PI 残骸彻底退出主链。
+
+## Decision
+
+采用最小可删方案：
+
+1. 删除 `/pi` 命令链
+2. 删除 `pi.enabled` 配置字段与默认值
+3. `runAgentToolLoop` 在 `tooling.mode=explicit` 时直接走 no-tool 回答
+4. 删除 `src/providers/tool-loop.ts`
+
+## Alternatives
+
+### 方案 A：保留 `/pi`，仅文案标 deprecated
+
+优点：
+
+- 改动小
+
+缺点：
+
+- 继续保留第二套心智模型
+- 不符合“PI 尸体清掉”的目标
+
+不推荐。
+
+### 方案 B：保留 `pi.enabled`，把它映射到 `tooling.mode`
+
+优点：
+
+- 对旧工作区更“兼容”
+
+缺点：
+
+- 继续保留旧抽象
+- 形成双真相源
+
+不推荐。
+
+### 方案 C：删 PI 残留，直接让 `tooling.mode` 生效（推荐）
+
+优点：
+
+- 主链更短
+- 用户心智清楚
+- 不新增层
+
+## Plan
+
+1. 删除 `/pi`
+   - `src/routes/cmd-model.ts`
+   - `src/routes/commands.ts`
+   - `src/routes/cmd-info.ts`
+   - `src/routes/README.md`
+   - `test/routes.commands.test.ts`
+2. 删除 `pi.enabled`
+   - `src/config/workspace.ts`
+   - 相关测试 fixture
+3. 接上 `tooling.mode`
+   - `src/agent-backend/tool-loop.ts`
+   - 需要时补 routed-chat 回归锁
+4. 删除退役文件
+   - `src/providers/tool-loop.ts`
+5. 更新 changelog / issue
+   - `docs/CHANGELOG.md`
+   - `issues/0085-pi-corpse-cleanup-and-tooling-mode-wireup.md`
+
+## Risks
+
+1. 旧测试仍假设 `/pi` 存在。
+   - 回滚/降级：统一删除相关命令测试，不保留假兼容。
+2. `tooling.mode=explicit` 接入入口后，部分 routed-chat 测试需要补 no-tool 预期。
+   - 回滚/降级：补行为锁，不再依赖 Tool Bus 的晚期拒绝。
+3. 老工作区配置里仍可能留有 `pi.enabled`。
+   - 回滚/降级：不读取、不写入即可；历史残值作为无效字段留在文件里不影响主链。
+
+## Test Plan
+
+至少覆盖：
+
+1. `/pi` 不再被识别/解析/帮助页展示
+2. `tooling.mode=explicit` 时 routed-chat 不进入工具循环
+3. `tooling.mode=autonomous` 时现有工具循环行为不变
+4. 删除 `src/providers/tool-loop.ts` 后无 import 残留
+
+## Observability
+
+- `docs/CHANGELOG.md` 记录 PI 残留退出主链与 tooling.mode 接线
+
+（章节级）评审意见：[留空,用户将给出反馈]

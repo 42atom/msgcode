@@ -1,0 +1,87 @@
+---
+id: 0079
+title: 本地 backend 控制层 MVP 与主后端切回 MiniMax
+status: done
+owner: agent
+labels: [feature, refactor, docs, test]
+risk: medium
+scope: 收口本地 backend 选择真相源，使 lmstudio/omlx 可手动切换，并将全局主后端切回 minimax
+plan_doc: docs/design/plan-260311-local-backend-control-plane-mvp.md
+links: []
+---
+
+## Context
+
+用户希望：
+
+- 先把当前主模型切回 `minimax`
+- 再开始改造本地模型控制层
+- 本地后端先支持手动切换
+- 后续可以继续插拔替换更多本地 backend
+- 云端 API 作为当前兜底主链
+
+现状问题：
+
+- `AGENT_BACKEND` 只区分顶层 provider，没有把“本地 provider 内部到底是 LM Studio 还是 oMLX”独立成真相源
+- `src/runners/vision.ts`、`src/memory/embedding.ts` 仍直接读 `LMSTUDIO_*`
+- `src/capabilities.ts` 对本地动态探测仍写死 `/api/v1/models`
+
+## Goal / Non-Goals
+
+- Goal: 把全局主后端切回 `minimax`
+- Goal: 新增单独的本地 backend 选择真相源
+- Goal: 让 `chat` / `tool-loop` / `vision` / `embedding` / `capability probe` 统一读取同一本地 backend 配置
+- Goal: 支持 `lmstudio` / `omlx` 手动切换
+- Non-Goals: 不做自动故障切换到云端
+- Non-Goals: 不新增平台化控制面或调度层
+- Non-Goals: 不接入 rerank
+
+## Plan
+
+- [x] 新增 Plan 文档
+- [x] 切回 `~/.config/msgcode/.env` 的 `AGENT_BACKEND=minimax`
+- [x] 新增本地 backend 注册表与解析函数
+- [x] 更新 `/model` 命令支持手动选择本地 backend
+- [x] 更新 `agent-backend/config.ts` 与 `capabilities.ts`
+- [x] 更新 `vision` / `embedding` 读取统一本地 backend
+- [x] 修复 `tool-loop` 的本地模型自动发现与 backend 鉴权来源
+- [x] OMLX 视觉链按 `model_type=vlm` fail-closed，并固定文本/视觉模型分工
+- [x] 补测试与 changelog
+
+## Acceptance Criteria
+
+1. 全局 `.env` 中主后端被切回 `AGENT_BACKEND=minimax`
+2. 存在单独的本地 backend 真相源，可表达 `lmstudio` / `omlx`
+3. `chat`、`vision`、`embedding`、`capability probe` 都从该真相源读取本地配置
+4. `/model` 或等价配置入口可以手动切换本地 backend
+5. 本轮不引入自动 fallback 或多阶段控制层
+6. OMLX 带图请求只会发给 `model_type=vlm` 的模型，不再把图片误送给文本模型
+
+## Notes
+
+- Current env: `~/.config/msgcode/.env` 当前为 `AGENT_BACKEND=minimax`
+- Current env: `MINIMAX_BASE_URL=https://api.minimax.chat/v1`
+- Current env: `LOCAL_AGENT_BACKEND=omlx`
+- Current env: `OMLX_MODEL=Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit`
+- Current env: `OMLX_VISION_MODEL=Qwen3.5-4B-MLX-4bit`
+- Code:
+  - `src/routes/cmd-model.ts`
+  - `src/agent-backend/config.ts`
+  - `src/local-backend/registry.ts`
+  - `src/capabilities.ts`
+  - `src/agent-backend/chat.ts`
+  - `src/agent-backend/tool-loop.ts`
+  - `src/runners/vision.ts`
+  - `src/memory/embedding.ts`
+- Tests:
+  - `npm test -- test/p5-7-r23-vision-mainline.test.ts`
+  - `npm test -- test/p5-7-r8c-agent-backend-single-source.test.ts`
+  - `npm test -- test/p5-7-r9-t2-runtime-capabilities.test.ts`
+  - `npm test -- test/p5-7-r9-t7-step4-compatibility-lock.test.ts`
+- Typecheck:
+  - `npx tsc --noEmit` 仍有仓库既存错误，集中在 `src/feishu/transport.ts` 与 `src/routes/cmd-schedule.ts`
+
+## Links
+
+- Plan: docs/design/plan-260311-local-backend-control-plane-mvp.md
+- Notes: AIDOCS/notes/local-backend-control-plane-mvp-260311.md

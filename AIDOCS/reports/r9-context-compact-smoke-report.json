@@ -1,0 +1,48 @@
+{
+  "timestamp": "2026-02-22T13:59:45.147Z",
+  "passed": 8,
+  "total": 8,
+  "allPassed": true,
+  "results": [
+    {
+      "name": "预算感知模块可导入",
+      "passed": true,
+      "evidence": "{\n  \"contextWindowTokens\": 16384,\n  \"reservedOutputTokens\": 2048,\n  \"inputBudget\": 14336\n}"
+    },
+    {
+      "name": "会话窗口模块可导入",
+      "passed": true,
+      "evidence": "函数存在: loadWindow, appendWindow, rewriteWindow, trimWindowWithResult"
+    },
+    {
+      "name": "摘要模块可导入",
+      "passed": true,
+      "evidence": "函数存在: loadSummary, saveSummary, extractSummary, formatSummaryAsContext"
+    },
+    {
+      "name": "窗口写入和读取",
+      "passed": true,
+      "evidence": "{\n  \"messageCount\": 3,\n  \"roles\": [\n    \"user\",\n    \"assistant\",\n    \"user\"\n  ]\n}"
+    },
+    {
+      "name": "预算计算",
+      "passed": true,
+      "evidence": "{\n  \"usedTokens\": 13,\n  \"budget\": 14336,\n  \"usagePct\": 0,\n  \"isWithinBudget\": true\n}"
+    },
+    {
+      "name": "窗口裁剪",
+      "passed": true,
+      "evidence": "{\n  \"originalCount\": 20,\n  \"keptCount\": 10,\n  \"trimmedCount\": 10,\n  \"wasTrimmed\": true\n}"
+    },
+    {
+      "name": "摘要提取",
+      "passed": true,
+      "evidence": "{\n  \"goals\": 1,\n  \"constraints\": 0,\n  \"decisions\": 1,\n  \"openItems\": 0,\n  \"toolFacts\": 0\n}"
+    },
+    {
+      "name": "窗口重写",
+      "passed": true,
+      "evidence": "{\n  \"writtenCount\": 2,\n  \"loadedCount\": 2,\n  \"content\": [\n    \"新消息 1\",\n    \"新回复 1\"\n  ]\n}"
+    }
+  ]
+}

@@ -1,0 +1,238 @@
+# Plan: 飞书入站附件接入统一附件主链，并收口 channel/provider 边界
+
+Issue: 0012
+
+## Problem
+
+当前飞书 transport 已经承担了太多职责：既处理 WebSocket 入站事件，也处理文本解析、文件/图片发送与上传。结果是出站附件先打通了，但入站非文本消息没有被规范地映射到 msgcode 内部附件结构。  
+在现状下，飞书语音、图片、文件即使收到了事件，也可能因为没有 `attachments` 而在 `listener` 前半段被静默跳过。继续在现有 `src/feishu/transport.ts` 上堆分支，只会让边界越来越模糊。
+
+## Occam Check
+
+- 不加它，系统具体坏在哪？
+  飞书入站语音/图片/文件不能稳定进入现有附件主链，ASR/OCR/PDF 提取都无法复用；同时 transport 的职责继续膨胀，后续每补一种消息类型都要改同一个混合文件。
+- 用更少的层能不能解决？
+  能。不是再加一个裁判层或编排层，而是把现有飞书 transport 拆成渠道适配最小边界，统一输出到已有 `InboundMessage.attachments` 主链。
+- 这个改动让主链数量变多了还是变少了？
+  变少了。渠道层只负责“外部事件/资源 -> 内部统一消息”，能力层只负责“附件 -> 派生结果”，`listener` 继续只吃一套统一合同。
+
+## Decision
+
+采用“单一附件主链 + 渠道/能力分层”的最小演进方案：
+
+1. 新增 `src/channels/` 目录，先只迁飞书。
+2. 飞书按三块收口：
+   - `inbound.ts`：事件解析与消息归一化
+   - `outbound.ts`：文本/图片/文件发送
+   - `resources.ts`：飞书消息资源下载
+3. 新增统一合同文件，定义 msgcode 内部的标准入站消息与附件结构。
+4. 既有 `listener -> attachments/vault -> media/pipeline` 主链保持不变，飞书只是负责把外部消息喂进去。
+5. 目录语义收口为两类：
+   - `downloads/`：原始附件
+   - `artifacts/`：过程产物
+6. 自动处理策略只保留图片视觉识别；其他附件只做标准化和落盘，是否进一步处理交给模型决定。
+
+关键理由：
+
+1. 不新增平台化控制面，仍然保留一条执行主链。
+2. 把“渠道协议差异”约束在边界层，减少对 listener 和 media pipeline 的污染。
+3. 先迁飞书，再决定是否把 iMessage 收口到同一目录，降低一次性改动面。
+
+## Alternatives
+
+### 方案 A：继续在 `src/feishu/transport.ts` 里追加 if/else
+
+- 优点：短期改动最小。
+- 缺点：入站、出站、资源下载继续混在一起，后续每加一个消息类型都要重复改边界文件。
+
+### 方案 B：一次性搭建完整 adapter framework / transport platform
+
+- 优点：理论上更“完整”。
+- 缺点：明显过度设计，当前只需要把飞书接入现有附件主链，不需要再造控制面。
+
+### 方案 C：拆飞书为 `channels/feishu/*`，统一内部合同，复用现有附件主链
+
+- 优点：最小可删版本，边界清晰，能直接解决当前 bug。
+- 缺点：需要一次跨模块整理与命名迁移。
+
+推荐：方案 C。
+
+## 方法解释
+
+msgcode 以后只认一套内部输入结构，渠道差异停留在 `channels/` 边界。
+
+示意合同：
+
+```ts
+export type NormalizedAttachmentKind = "audio" | "image" | "file" | "pdf";
+
+export type NormalizedInboundAttachment = {
+  kind: NormalizedAttachmentKind;
+  filename?: string;
+  mime?: string;
+  source: "feishu" | "imsg";
+  localPath?: string;
+  sourceMeta?: Record<string, unknown>;
+};
+
+export type NormalizedInboundMessage = {
+  id: string;
+  chatId: string;
+  text?: string;
+  attachments?: NormalizedInboundAttachment[];
+  sender?: string;
+  isGroup?: boolean;
+};
+```
+
+飞书入站最小职责示意：
+
+```ts
+const raw = data?.message;
+const normalized = await normalizeFeishuInboundMessage(raw, apiClient);
+config.onInbound(normalized);
+```
+
+这样 `listener` 不再关心飞书 `message_type`、`file_key`、`message.content` 这些渠道私有细节。
+
+目录约定：
+
+```text
+<workspace>/
+  downloads/
+    audio/
+    image/
+    video/
+    files/
+
+  artifacts/
+    asr/
+    vision/
+```
+
+规则：
+
+- `downloads/` 只放用户原始附件或渠道下载原件
+- `artifacts/` 只放系统/模型处理后的过程产物
+- 不允许把 `asr/vision/...` 这类派生产物再放回 `downloads/`
+- 自动处理仅保留 `image -> vision`
+- `audio/file/pdf/html/...` 只向模型暴露附件路径与元信息，由模型决定是否调用工具
+
+## Plan
+
+1. 观测先行
+- 修改文件：
+  - `src/feishu/transport.ts` 或未来 `src/channels/feishu/inbound.ts`
+- 改动：
+  - 为每条飞书入站事件记录 `message_type/chat_id/message_id`
+  - 对非文本消息记录 `content` 摘要与是否成功提取 `file_key`
+- 验收点：
+  - 日志可以证明语音/图片/文件到底是“没收到”还是“收到但没映射”
+
+2. 定义统一合同
+- 修改文件：
+  - `src/channels/types.ts`
+  - 视情况更新 `src/shared/*` 里已有 `InboundMessage` 定义
+- 改动：
+  - 明确内部 `InboundMessage` / `InboundAttachment` 最小字段
+  - 约束 `listener` 只依赖统一字段
+- 验收点：
+  - 类型层面能表达音频/图片/文件/PDF，且不暴露飞书私有结构给 listener
+
+3. 拆飞书渠道目录
+- 修改文件：
+  - 新增 `src/channels/feishu/inbound.ts`
+  - 新增 `src/channels/feishu/outbound.ts`
+  - 新增 `src/channels/feishu/resources.ts`
+  - `src/feishu/transport.ts` 作为薄组装层，或逐步迁走后删除
+- 改动：
+  - 入站/出站/资源下载分文件
+  - transport 只负责初始化 client 和装配这些函数
+- 验收点：
+  - 飞书渠道边界清晰，文件职责可单独测试
+
+4. 打通飞书入站附件
+- 修改文件：
+  - `src/channels/feishu/inbound.ts`
+  - `src/channels/feishu/resources.ts`
+  - 必要时 `src/listener.ts`
+- 改动：
+  - `audio`：提取 `file_key`，下载资源，映射为音频附件
+  - `image`：下载资源，映射为图片附件
+  - `file`：下载资源，按 mime/扩展名区分普通文件与 PDF
+  - 未知类型：记录日志并 fail-closed，不猜测式继续
+- 验收点：
+  - 飞书非文本消息进入 `message.attachments`
+  - 图片继续自动视觉；其他附件改为交给模型自行决策
+
+5. 定向测试与回归锁
+- 修改文件：
+  - 新增 `test/*feishu*inbound*.test.ts`
+  - 必要时补 `listener` 定向测试
+- 改动：
+  - 覆盖文本、语音、图片、文件、PDF 五类输入
+  - 锁住“有附件时不再静默早退”
+- 验收点：
+  - 至少一条飞书语音和一条飞书图片测试能证明进入附件主链
+
+6. 第二阶段评估 iMessage
+- 修改文件：
+  - 暂不实现，仅在 plan 中冻结方向
+- 改动：
+  - 评估 iMessage 是否也迁入 `src/channels/imsg/`
+- 验收点：
+  - 不阻塞飞书修复；迁移与否后续独立决策
+
+## 文件路径
+
+- 新增：`src/channels/types.ts`
+- 新增：`src/channels/feishu/inbound.ts`
+- 新增：`src/channels/feishu/outbound.ts`
+- 新增：`src/channels/feishu/resources.ts`
+- 调整：`src/feishu/transport.ts`
+- 调整：`src/listener.ts`
+- 调整：`src/attachments/vault.ts`
+- 调整：`src/media/pipeline.ts`
+- 新增/调整：`test/*feishu*`
+- 目录迁移目标：`<workspace>/downloads/*`、`<workspace>/artifacts/*`
+
+## Risks
+
+1. 飞书事件 `content` 结构在不同 `message_type` 下不同，若直接猜字段，容易再次丢消息。
+回滚/降级：先仅加观测与断言，不立刻改行为；拿到真实事件样本后再补映射。
+
+2. 如果一次性迁太多目录，容易把“修飞书附件”升级成大重构。
+回滚/降级：先迁飞书，不强推 iMessage，不改 provider 实现。
+
+3. 下载资源到本地后，可能引入重复落盘或尺寸限制问题。
+回滚/降级：先复用现有 vault 写入逻辑，尺寸/类型超限时显式失败并记日志。
+
+## Rollback
+
+- 若拆分过程中风险过大，可保留 `src/feishu/transport.ts` 作为单入口，仅把新增逻辑回退到观测日志，不启用非文本附件映射。
+- 若统一合同影响面超出预期，可先让飞书适配层输出现有 `InboundMessage` 兼容结构，延后完全收口命名。
+
+## Test Plan
+
+- 定向测试：
+  - `bun test test/*feishu*inbound*.test.ts`
+  - `bun test test/listener.test.ts`
+- 手工验收：
+  - 飞书群发送语音，日志中可见 `message_type=audio` 与后续 ASR
+  - 飞书群发送图片，日志中可见 `message_type=image` 与后续图片处理
+  - 飞书群发送 PDF，日志中可见附件进入 vault 与提取链
+
+## Observability
+
+- 入站事件日志最少包含：
+  - `chat_id`
+  - `message_id`
+  - `message_type`
+  - 是否产出 `attachments`
+- 附件映射失败必须带原因：
+  - `content parse failed`
+  - `file_key missing`
+  - `messageResource download failed`
+- 不允许再出现“没有正文也没有附件，但日志里看不见任何原因”的静默路径。
+
+（章节级）评审意见：[留空,用户将给出反馈]

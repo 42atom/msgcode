@@ -22,7 +22,6 @@ import {
   handleCursorCommand,
   handleResetCursorCommand,
   handleRouteCommand,
-  handlePiCommand,
   handleSoulListCommand,
   handleSoulUseCommand,
   handleSoulCurrentCommand,
@@ -34,10 +33,17 @@ import {
   loadRoutes,
   type RouteStoreData,
 } from "../src/routes/store.js";
+import {
+  getVisibleSlashKeywords,
+  renderSlashHelpText,
+  renderUnknownCommandHint,
+} from "../src/routes/cmd-info.js";
+import { saveWorkspaceConfig } from "../src/config/workspace.js";
 
 // 测试文件路径
 const TEST_ROUTES_FILE = path.join(os.tmpdir(), ".config/msgcode/routes.json");
 const TEST_STATE_FILE = path.join(os.tmpdir(), ".config/msgcode/state.json");
+const ORIGINAL_AGENT_BACKEND = process.env.AGENT_BACKEND;
 
 describe("路由命令处理器", () => {
   // 在每个测试前后清理测试文件和目录
@@ -58,10 +64,16 @@ describe("路由命令处理器", () => {
     cleanTestData();
     const testWorkspaceRoot = path.join(os.tmpdir(), "msgcode-test-workspace");
     fs.mkdirSync(testWorkspaceRoot, { recursive: true });
+    process.env.AGENT_BACKEND = "agent-backend";
   });
 
   afterEach(() => {
     cleanTestData();
+    if (ORIGINAL_AGENT_BACKEND === undefined) {
+      delete process.env.AGENT_BACKEND;
+    } else {
+      process.env.AGENT_BACKEND = ORIGINAL_AGENT_BACKEND;
+    }
   });
 
   describe("isRouteCommand", () => {
@@ -98,10 +110,22 @@ describe("路由命令处理器", () => {
       expect(isRouteCommand("/owner-only on")).toBe(true);
     });
 
+    it("识别 backend lanes 与模型覆盖命令", () => {
+      expect(isRouteCommand("/backend")).toBe(true);
+      expect(isRouteCommand("/backend local")).toBe(true);
+      expect(isRouteCommand("/local omlx")).toBe(true);
+      expect(isRouteCommand("/api minimax")).toBe(true);
+      expect(isRouteCommand("/tmux codex")).toBe(true);
+      expect(isRouteCommand("/text-model auto")).toBe(true);
+      expect(isRouteCommand("/vision-model glm-4.6v")).toBe(true);
+      expect(isRouteCommand("/embedding-model auto")).toBe(true);
+    });
+
     it("拒绝非路由命令", () => {
       expect(isRouteCommand("/start")).toBe(false);
       expect(isRouteCommand("/stop")).toBe(false);
       expect(isRouteCommand("/status")).toBe(false);
+      expect(isRouteCommand("/pi")).toBe(false);
       expect(isRouteCommand("hello")).toBe(false);
     });
   });
@@ -160,8 +184,18 @@ describe("路由命令处理器", () => {
       });
     });
 
+    it("解析 backend lanes 与模型覆盖命令", () => {
+      expect(parseRouteCommand("/backend local")).toEqual({ command: "backend", args: ["local"] });
+      expect(parseRouteCommand("/local omlx")).toEqual({ command: "local", args: ["omlx"] });
+      expect(parseRouteCommand("/api minimax")).toEqual({ command: "api", args: ["minimax"] });
+      expect(parseRouteCommand("/tmux codex")).toEqual({ command: "tmux", args: ["codex"] });
+      expect(parseRouteCommand("/text-model auto")).toEqual({ command: "textModel", args: ["auto"] });
+      expect(parseRouteCommand("/model status")).toEqual({ command: "model", args: ["status"] });
+    });
+
     it("拒绝非路由命令", () => {
       expect(parseRouteCommand("/start")).toBeNull();
+      expect(parseRouteCommand("/pi")).toBeNull();
       expect(parseRouteCommand("hello")).toBeNull();
     });
   });
@@ -190,6 +224,17 @@ describe("路由命令处理器", () => {
       const workspaceRoot = path.join(os.tmpdir(), "msgcode-test-workspace");
       const expectedPath = path.join(workspaceRoot, "acme/ops");
       expect(fs.existsSync(expectedPath)).toBe(true);
+    });
+
+    it("绑定成功时显示真实 backend lane", async () => {
+      process.env.AGENT_BACKEND = "minimax";
+
+      const options: CommandHandlerOptions = { chatId: testChatId, args: ["agent/backend"] };
+      const result = await handleBindCommand(options);
+
+      expect(result.success).toBe(true);
+      expect(result.message).toContain("backend: api");
+      expect(result.message).toContain("api-provider: minimax");
     });
 
     it("拒绝绝对路径", async () => {
@@ -236,6 +281,47 @@ describe("路由命令处理器", () => {
       expect(result.success).toBe(true);
       expect(result.message).toContain("当前绑定");
       expect(result.message).toContain("test/project");
+    });
+
+    it("legacy runner.default=lmstudio 时仍显示真实 backend lane", async () => {
+      process.env.AGENT_BACKEND = "minimax";
+
+      const bindResult = await handleBindCommand({
+        chatId: testChatId,
+        args: ["legacy/project"],
+      });
+      expect(bindResult.success).toBe(true);
+
+      const workspacePath = path.join(process.env.WORKSPACE_ROOT!, "legacy/project");
+      await saveWorkspaceConfig(workspacePath, { "runner.default": "lmstudio" });
+
+      const result = await handleWhereCommand({ chatId: testChatId, args: [] });
+
+      expect(result.success).toBe(true);
+      expect(result.message).toContain("backend: api");
+      expect(result.message).toContain("api-provider: minimax");
+      expect(result.message).not.toContain("模型客户端: lmstudio");
+    });
+
+    it("tmux 模式时显示真实 Tmux Client", async () => {
+      const bindResult = await handleBindCommand({
+        chatId: testChatId,
+        args: ["tmux/project"],
+      });
+      expect(bindResult.success).toBe(true);
+
+      const workspacePath = path.join(process.env.WORKSPACE_ROOT!, "tmux/project");
+      await saveWorkspaceConfig(workspacePath, {
+        "runtime.kind": "tmux",
+        "tmux.client": "codex",
+      });
+
+      const result = await handleWhereCommand({ chatId: testChatId, args: [] });
+
+      expect(result.success).toBe(true);
+      expect(result.message).toContain("backend: tmux");
+      expect(result.message).toContain("tmux-client: codex");
+      expect(result.message).not.toContain("Agent Backend:");
     });
   });
 
@@ -304,12 +390,56 @@ describe("路由命令处理器", () => {
       expect(result.message).toContain("/start");
       expect(result.message).toContain("/status");
       expect(result.message).toContain("/model");
+      expect(result.message).toContain("/policy");
+      expect(result.message).toContain("/owner");
+      expect(result.message).toContain("/owner-only");
       expect(result.message).toContain("/mode");
       expect(result.message).toContain("/tts");
       expect(result.message).toContain("/voice");
       expect(result.message).toContain("/soul");
+      expect(result.message).toContain("/schedule");
+      expect(result.message).toContain("/mem");
+      expect(result.message).toContain("/task");
+      expect(result.message).toContain("/toolstats");
+      expect(result.message).toContain("/desktop");
       expect(result.message).toContain("/help");
       expect(result.message).toContain("/info");
+    });
+  });
+
+  describe("help 元数据投影", () => {
+    it("renderSlashHelpText 应包含关键命令", () => {
+      const text = renderSlashHelpText();
+
+      expect(text).toContain("msgcode 2.3 命令速查");
+      expect(text).toContain("/bind <dir>");
+      expect(text).toContain("/desktop ...");
+      expect(text).toContain("/mode style-reset");
+      expect(text).toContain("/loglevel [level]");
+    });
+
+    it("getVisibleSlashKeywords 应返回去重后的可见命令关键字", () => {
+      const keywords = getVisibleSlashKeywords();
+
+      expect(keywords).toEqual(expect.arrayContaining([
+        "/bind",
+        "/desktop",
+        "/help",
+        "/loglevel",
+        "/mode",
+        "/start",
+        "/tool",
+      ]));
+      expect(new Set(keywords).size).toBe(keywords.length);
+    });
+
+    it("renderUnknownCommandHint 应从同一份 help 元数据派生命令列表", () => {
+      const hint = renderUnknownCommandHint();
+
+      expect(hint).toContain("可用命令:");
+      expect(hint).toContain("/bind");
+      expect(hint).toContain("/desktop");
+      expect(hint).toContain("/mode");
     });
   });
 
@@ -410,82 +540,7 @@ describe("路由命令处理器", () => {
 
       expect(result.success).toBe(false);
       expect(result.message).toContain("未知命令");
-    });
-  });
-
-  // P3.2: PI 命令测试
-  describe("handlePiCommand", () => {
-    const testChatId = "any;+;pi-test";
-
-    beforeEach(async () => {
-      // 先绑定工作区
-      await handleBindCommand({ chatId: testChatId, args: ["pi-test-workspace"] });
-    });
-
-    it("未绑定工作区时返回错误", async () => {
-      const options: CommandHandlerOptions = { chatId: "any;+;no-workspace", args: [] };
-      const result = await handlePiCommand(options);
-
-      expect(result.success).toBe(false);
-      expect(result.message).toContain("未绑定工作目录");
-    });
-
-    it("/pi status 查看状态（默认应禁用）", async () => {
-      const options: CommandHandlerOptions = { chatId: testChatId, args: [] };
-      const result = await handlePiCommand(options);
-
-      expect(result.success).toBe(true);
-      expect(result.message).toContain("PI: 已禁用");
-      expect(result.message).toContain("运行形态");
-    });
-
-    it("/pi on 启用 PI（仅限 agent 模式）", async () => {
-      const options: CommandHandlerOptions = { chatId: testChatId, args: ["on"] };
-      const result = await handlePiCommand(options);
-
-      // 注意：默认 runtime.kind 是 agent，应该成功
-      expect(result.success).toBe(true);
-      expect(result.message).toContain("PI 已启用");
-    });
-
-    it("/pi off 禁用 PI", async () => {
-      // 先启用
-      await handlePiCommand({ chatId: testChatId, args: ["on"] });
-
-      // 再禁用
-      const options: CommandHandlerOptions = { chatId: testChatId, args: ["off"] };
-      const result = await handlePiCommand(options);
-
-      expect(result.success).toBe(true);
-      expect(result.message).toContain("PI 已禁用");
-    });
-
-    it("/pi <invalid> 返回错误", async () => {
-      const options: CommandHandlerOptions = { chatId: testChatId, args: ["invalid"] };
-      const result = await handlePiCommand(options);
-
-      expect(result.success).toBe(false);
-      expect(result.message).toContain("未知操作");
-    });
-  });
-
-  // P3.2: isRouteCommand 识别 /pi 命令
-  describe("isRouteCommand - PI 命令", () => {
-    it("识别 /pi 命令", () => {
-      expect(isRouteCommand("/pi")).toBe(true);
-      expect(isRouteCommand("/pi on")).toBe(true);
-      expect(isRouteCommand("/pi off")).toBe(true);
-      expect(isRouteCommand("/pi status")).toBe(true);
-    });
-  });
-
-  // P3.2: parseRouteCommand 解析 /pi 命令
-  describe("parseRouteCommand - PI 命令", () => {
-    it("解析 /pi 命令", () => {
-      expect(parseRouteCommand("/pi")).toEqual({ command: "pi", args: [] });
-      expect(parseRouteCommand("/pi on")).toEqual({ command: "pi", args: ["on"] });
-      expect(parseRouteCommand("/pi off")).toEqual({ command: "pi", args: ["off"] });
-      expect(parseRouteCommand("/pi status")).toEqual({ command: "pi", args: ["status"] });
+      expect(result.message).toContain("/desktop");
     });
   });
 

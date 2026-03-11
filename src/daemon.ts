@@ -7,7 +7,30 @@
  */
 
 import { startBot } from "./commands.js";
+import { logger } from "./logger/index.js";
 import { acquireSingletonLock } from "./runtime/singleton.js";
+
+function reportDaemonFatal(kind: "uncaughtException" | "unhandledRejection", error: unknown): void {
+    const message = error instanceof Error ? error.stack ?? error.message : String(error);
+    try {
+        logger.error(`[Daemon] ${kind}`, {
+            module: "daemon",
+            error: message,
+        });
+    } catch {
+        // ignore
+    }
+    console.error(`[Daemon] ${kind}: ${message}`);
+}
+
+process.on("uncaughtException", (error) => {
+    reportDaemonFatal("uncaughtException", error);
+    setTimeout(() => process.exit(1), 200);
+});
+
+process.on("unhandledRejection", (reason) => {
+    reportDaemonFatal("unhandledRejection", reason);
+});
 
 (async () => {
     const lock = await acquireSingletonLock("msgcode");

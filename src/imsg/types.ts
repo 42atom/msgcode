@@ -45,6 +45,8 @@ export interface InboundMessage {
   rowid?: number;
   /** 是否群聊（用于安全策略/风控；来自 imsg RPC 的 is_group） */
   isGroup?: boolean;
+  /** 消息类型（如 text/image/audio/file；通道支持时填充） */
+  messageType?: string;
 }
 
 /**

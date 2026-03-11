@@ -66,13 +66,13 @@ describe("P5.6.14-R1: 配置映射回归锁", () => {
             expect(await getDefaultRunner(workspacePath)).toBe("claude-code");
         });
 
-        it("lmstudio -> runtime.kind=agent + agent.provider=lmstudio", async () => {
+        it("lmstudio -> runtime.kind=agent + agent.provider=agent-backend（兼容归一化）", async () => {
             const { getRuntimeKind, getAgentProvider, getTmuxClient, getDefaultRunner } = await import("../src/config/workspace.js");
 
             await writeConfig(workspacePath, { "runner.default": "lmstudio" });
 
             expect(await getRuntimeKind(workspacePath)).toBe("agent");
-            expect(await getAgentProvider(workspacePath)).toBe("lmstudio");
+            expect(await getAgentProvider(workspacePath)).toBe("agent-backend");
             expect(await getTmuxClient(workspacePath)).toBe("none");
             expect(await getDefaultRunner(workspacePath)).toBe("lmstudio");
         });
@@ -88,25 +88,38 @@ describe("P5.6.14-R1: 配置映射回归锁", () => {
             expect(await getDefaultRunner(workspacePath)).toBe("openai");
         });
 
-        it("llama -> runtime.kind=agent + agent.provider=lmstudio（兼容降级）", async () => {
+        it("minimax -> runtime.kind=agent + agent.provider=minimax", async () => {
+            const { getRuntimeKind, getAgentProvider, getTmuxClient, getDefaultRunner } = await import("../src/config/workspace.js");
+
+            await writeConfig(workspacePath, { "runner.default": "minimax" });
+
+            expect(await getRuntimeKind(workspacePath)).toBe("agent");
+            expect(await getAgentProvider(workspacePath)).toBe("minimax");
+            expect(await getTmuxClient(workspacePath)).toBe("none");
+            expect(await getDefaultRunner(workspacePath)).toBe("minimax");
+        });
+
+        it("llama -> runtime.kind=agent + agent.provider=agent-backend（兼容降级）", async () => {
             const { getRuntimeKind, getAgentProvider, getTmuxClient, getDefaultRunner } = await import("../src/config/workspace.js");
 
             await writeConfig(workspacePath, { "runner.default": "llama" });
 
             expect(await getRuntimeKind(workspacePath)).toBe("agent");
-            expect(await getAgentProvider(workspacePath)).toBe("lmstudio"); // 兼容降级
+            // P5.7-R9-T6: 兼容降级映射到 agent-backend
+            expect(await getAgentProvider(workspacePath)).toBe("agent-backend");
             expect(await getTmuxClient(workspacePath)).toBe("none");
             // getDefaultRunner 返回原始值（保持向后兼容）
             expect(await getDefaultRunner(workspacePath)).toBe("llama");
         });
 
-        it("claude -> runtime.kind=agent + agent.provider=lmstudio（兼容降级）", async () => {
+        it("claude -> runtime.kind=agent + agent.provider=agent-backend（兼容降级）", async () => {
             const { getRuntimeKind, getAgentProvider, getTmuxClient, getDefaultRunner } = await import("../src/config/workspace.js");
 
             await writeConfig(workspacePath, { "runner.default": "claude" });
 
             expect(await getRuntimeKind(workspacePath)).toBe("agent");
-            expect(await getAgentProvider(workspacePath)).toBe("lmstudio"); // 兼容降级
+            // P5.7-R9-T6: 兼容降级映射到 agent-backend
+            expect(await getAgentProvider(workspacePath)).toBe("agent-backend");
             expect(await getTmuxClient(workspacePath)).toBe("none");
             // getDefaultRunner 返回原始值（保持向后兼容）
             expect(await getDefaultRunner(workspacePath)).toBe("claude");
@@ -167,6 +180,17 @@ describe("P5.6.14-R1: 配置映射回归锁", () => {
             expect(config["runtime.kind"]).toBe("agent");
             expect(config["agent.provider"]).toBe("openai");
         });
+
+        it("setDefaultRunner 支持 minimax provider", async () => {
+            const { setDefaultRunner, loadWorkspaceConfig } = await import("../src/config/workspace.js");
+
+            await writeConfig(workspacePath, {});
+            await setDefaultRunner(workspacePath, "minimax");
+
+            const config = await loadWorkspaceConfig(workspacePath);
+            expect(config["runtime.kind"]).toBe("agent");
+            expect(config["agent.provider"]).toBe("minimax");
+        });
     });
 
     describe("R1-4: 默认值", () => {
@@ -175,9 +199,10 @@ describe("P5.6.14-R1: 配置映射回归锁", () => {
 
             // 不写配置文件
             expect(await getRuntimeKind(workspacePath)).toBe("agent");
-            expect(await getAgentProvider(workspacePath)).toBe("lmstudio");
+            // P5.7-R9-T6: 默认值改为 agent-backend
+            expect(await getAgentProvider(workspacePath)).toBe("agent-backend");
             expect(await getTmuxClient(workspacePath)).toBe("none");
-            expect(await getDefaultRunner(workspacePath)).toBe("lmstudio");
+            expect(await getDefaultRunner(workspacePath)).toBe("agent-backend");
         });
     });
 

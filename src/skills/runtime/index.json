@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "source": "global-single-source",
+  "skills": [
+    {
+      "id": "vision-index",
+      "name": "Vision Index",
+      "entry": "~/.config/msgcode/skills/vision-index/SKILL.md",
+      "description": "详细视觉能力索引说明书。系统只负责图片预览摘要；先读本 skill，再判断走当前模型原生看图或本地 LM Studio。"
+    },
+    {
+      "id": "local-vision-lmstudio",
+      "name": "Local Vision LM Studio",
+      "entry": "~/.config/msgcode/skills/local-vision-lmstudio/SKILL.md",
+      "description": "LM Studio 本地详细视觉说明书。先读本 skill，再按文档中的真实调用合同使用本地视觉能力；不要猜 wrapper 或 skill 目录脚本路径。"
+    },
+    {
+      "id": "scheduler",
+      "name": "Scheduler",
+      "entry": "~/.config/msgcode/skills/scheduler/main.sh",
+      "description": "周期定时任务能力说明书。先读本 skill，再通过 scheduler wrapper 调用 msgcode schedule CLI；一次性任务由 LLM 自行决定实现"
+    },
+    {
+      "id": "plan-files",
+      "name": "Plan Files",
+      "entry": "~/.config/msgcode/skills/plan-files/SKILL.md",
+      "description": "file-first planning 说明书。复杂任务时用任务内文件做计划与证据，不新增 plan mode，不替代 memory，也不替代 /task。"
+    },
+    {
+      "id": "character-identity",
+      "name": "Character Identity",
+      "entry": "~/.config/msgcode/skills/character-identity/SKILL.md",
+      "description": "多角色沟通中的人物识别说明书。基于 channel/chatId/senderId 在当前 workspace 维护简单 CSV 对照表，忘记人物身份时先查表，不要猜。"
+    },
+    {
+      "id": "feishu-send-file",
+      "name": "Feishu Send File",
+      "entry": "~/.config/msgcode/skills/feishu-send-file/SKILL.md",
+      "description": "把当前 workspace 里的文件回传到飞书会话。优先直接调用 feishu_send_file，并让工具从 .msgcode/config.json 读取 runtime.current_chat_id。"
+    },
+    {
+      "id": "memory",
+      "name": "Memory",
+      "entry": "~/.config/msgcode/skills/memory/SKILL.md",
+      "description": "工作区记忆能力说明书。优先通过 memory wrapper 调用 msgcode memory CLI，做记忆写入、检索、统计与状态查询。"
+    },
+    {
+      "id": "file",
+      "name": "File",
+      "entry": "~/.config/msgcode/skills/file/SKILL.md",
+      "description": "文件能力说明书。优先通过 file wrapper 调用 msgcode file CLI，做查找、读取、写入、复制和发送文件。"
+    },
+    {
+      "id": "thread",
+      "name": "Thread",
+      "entry": "~/.config/msgcode/skills/thread/SKILL.md",
+      "description": "线程能力说明书。优先通过 thread wrapper 调用 msgcode thread CLI，查看线程、读取消息和切换 active thread。"
+    },
+    {
+      "id": "todo",
+      "name": "Todo",
+      "entry": "~/.config/msgcode/skills/todo/SKILL.md",
+      "description": "待办能力说明书。优先通过 todo wrapper 调用 msgcode todo CLI，在当前 workspace 记录、查看和完成待办。"
+    },
+    {
+      "id": "media",
+      "name": "Media",
+      "entry": "~/.config/msgcode/skills/media/SKILL.md",
+      "description": "媒体能力说明书。优先通过 media wrapper 调用 msgcode media CLI 获取当前屏幕截图，并默认把产物落到 AIDOCS。"
+    },
+    {
+      "id": "gen",
+      "name": "Gen",
+      "entry": "~/.config/msgcode/skills/gen/SKILL.md",
+      "description": "统一生成能力说明书。优先通过 gen wrapper 调用 msgcode gen CLI，执行图片、自拍、TTS 和音乐生成。"
+    },
+    {
+      "id": "banana-pro-image-gen",
+      "name": "Banana Pro Image Gen",
+      "entry": "~/.config/msgcode/skills/banana-pro-image-gen/SKILL.md",
+      "description": "Banana Pro 图像生成/编辑/描述能力说明书。优先读取本 skill，再通过相对路径 wrapper 调本地脚本；生成产物统一落到 AIDOCS/banana-images。"
+    },
+    {
+      "id": "patchright-browser",
+      "name": "Patchright Browser",
+      "entry": "~/.config/msgcode/skills/patchright-browser/main.sh",
+      "description": "Patchright 浏览器能力说明书。先读本 skill，再通过 wrapper 调用 msgcode browser CLI 检查 root、instances、tabs；tabId 必须使用真实返回值，不能猜 1、2、3"
+    }
+  ]
+}

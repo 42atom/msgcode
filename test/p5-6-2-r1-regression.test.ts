@@ -9,7 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 describe("P5.6.2-R1: ToolLoop 主链防回流锁", () => {
-    it("src/handlers.ts 非 slash 聊天必须调用 runLmStudioToolLoop", () => {
+    it("src/handlers.ts 非 slash 聊天必须调用 executeAgentTurn（统一执行入口）", () => {
         const code = fs.readFileSync(
             path.join(process.cwd(), "src/handlers.ts"),
             "utf-8"
@@ -19,8 +19,8 @@ describe("P5.6.2-R1: ToolLoop 主链防回流锁", () => {
             .split("\n")
             .filter(line => !line.trim().startsWith("//"))
             .join("\n");
-        // 必须导入 runLmStudioToolLoop
-        expect(codeWithoutComments).toContain("runLmStudioToolLoop");
+        // P5.7-R12: handlers 应只依赖统一入口，不再直接绑 routed-chat 实现
+        expect(codeWithoutComments).toContain("executeAgentTurn");
     });
 
     it("src/handlers.ts 主链日志必须包含 toolCallCount 字段", () => {
@@ -33,7 +33,7 @@ describe("P5.6.2-R1: ToolLoop 主链防回流锁", () => {
 });
 
 describe("P5.6.2-R2: Session Window 链路防回流锁", () => {
-    it("src/handlers.ts 必须导入 loadWindow 和 appendWindow", () => {
+    it("src/handlers.ts 必须写窗口，窗口读取应收口到 assembleAgentContext", () => {
         const code = fs.readFileSync(
             path.join(process.cwd(), "src/handlers.ts"),
             "utf-8"
@@ -42,8 +42,8 @@ describe("P5.6.2-R2: Session Window 链路防回流锁", () => {
             .split("\n")
             .filter(line => !line.trim().startsWith("//"))
             .join("\n");
-        expect(codeWithoutComments).toContain("loadWindow");
         expect(codeWithoutComments).toContain("appendWindow");
+        expect(codeWithoutComments).toContain("assembleAgentContext");
     });
 });
 
@@ -102,5 +102,10 @@ describe("P5.6.2-R4: SOUL 过滤防回流锁（renderSoulContent 检测）", () 
     it("src/skills/pi-assembler.ts 文件不得存在", () => {
         const piPath = path.join(process.cwd(), "src/skills/pi-assembler.ts");
         expect(fs.existsSync(piPath)).toBe(false);
+    });
+
+    it("src/providers/tool-loop.ts 文件不得存在", () => {
+        const legacyToolLoopPath = path.join(process.cwd(), "src/providers/tool-loop.ts");
+        expect(fs.existsSync(legacyToolLoopPath)).toBe(false);
     });
 });

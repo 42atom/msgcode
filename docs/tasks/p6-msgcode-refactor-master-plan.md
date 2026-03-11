@@ -2,6 +2,11 @@
 
 > 版本定义：本重构计划对应 `msgcode v2.4` 主版本线。
 
+## 回链
+
+- Issue: [0006](../../issues/0006-agent-relentless-task-closure.md)
+- Plan: docs/design/plan-260306-agent-relentless-task-closure.md
+
 ## 0. 目标与边界
 
 ### 0.1 目标

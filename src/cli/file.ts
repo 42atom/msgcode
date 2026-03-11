@@ -208,6 +208,9 @@ function createFileSendCommand(): Command {
 
         // P5.7-R1b: 真实发送到 iMessage
         const { ImsgRpcClient } = await import("../imsg/rpc-client.js");
+        if (!config.imsgPath) {
+          throw new Error("未配置 IMSG_PATH：msgcode file send 当前仅支持 iMessage");
+        }
         const client = new ImsgRpcClient(config.imsgPath);
 
         try {

@@ -220,6 +220,11 @@ export function getRouteByChatId(chatId: string): RouteEntry | null {
   }
 
   // 后缀匹配（兼容 imsg RPC 返回的短 ID，如 953e31）
+  // 注意：只对 iMessage chatId 启用，避免跨 transport（如 feishu:<id>）误命中。
+  if (normalized.includes(":")) {
+    return null;
+  }
+
   const suffix = normalized.slice(-8); // 取后 8 位
   for (const entry of Object.values(data.routes)) {
     const entryNormalized = entry.chatGuid ? normalizeChatId(entry.chatGuid) : "";

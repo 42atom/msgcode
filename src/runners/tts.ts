@@ -3,7 +3,7 @@
  *
  * 目标：
  * - 输入文本 → 生成音频文件 → 返回路径（供 iMessage 发送附件）
- * - 后端：Qwen3-TTS（默认）+ IndexTTS（回退）
+ * - 主链：Qwen3-TTS（唯一正式后端）
  */
 
 import { randomUUID } from "node:crypto";
@@ -13,6 +13,7 @@ import { join, resolve } from "node:path";
 
 import type { TtsBackend, TtsOptions, TtsResult, TtsBackendContext } from "./tts/backends/types.js";
 import { logger } from "../logger/index.js";
+import { getCurrentLaneModel } from "../config/workspace.js";
 
 // ============================================
 // Backend Registry
@@ -35,21 +36,61 @@ type BackendExecutionResult = {
   lastError?: string;
 };
 
-function shouldAbortFallback(backendName: TtsBackend, error?: string): boolean {
-  if (backendName !== "qwen") return false;
-  const msg = (error || "").trim();
-  if (!msg) return false;
-
-  // Qwen ref-audio path is explicitly configured but invalid.
-  // Do not hide this misconfiguration behind fallback backends.
-  return msg.includes("QWEN_TTS_REF_AUDIO 不存在");
-}
-
 function resolvePriorityBackends(rawBackendMode: string): TtsBackend[] {
   const backendMode = rawBackendMode.trim().toLowerCase();
   if (backendMode === "qwen") return ["qwen"];
-  if (backendMode === "indextts") return ["indextts"];
-  return ["qwen", "indextts"];
+  return ["qwen"];
+}
+
+function normalizeConfiguredTtsBackend(raw: string | undefined): TtsBackend | undefined {
+  const normalized = (raw || "").trim().toLowerCase();
+  if (normalized === "qwen") {
+    return normalized;
+  }
+  return undefined;
+}
+
+type TtsBackendSelection = {
+  backendMode: "" | TtsBackend;
+  source: "options" | "workspace" | "env" | "default";
+  configuredValue?: string;
+};
+
+async function resolveTtsBackendSelection(
+  options: Pick<TtsOptions, "workspacePath" | "model">
+): Promise<TtsBackendSelection> {
+  const explicitBackend = normalizeConfiguredTtsBackend(options.model);
+  if (explicitBackend) {
+    return {
+      backendMode: explicitBackend,
+      source: "options",
+      configuredValue: options.model?.trim(),
+    };
+  }
+
+  const workspaceModel = await getCurrentLaneModel(options.workspacePath, "tts");
+  const workspaceBackend = normalizeConfiguredTtsBackend(workspaceModel);
+  if (workspaceBackend) {
+    return {
+      backendMode: workspaceBackend,
+      source: "workspace",
+      configuredValue: workspaceModel,
+    };
+  }
+
+  const envBackend = normalizeConfiguredTtsBackend(process.env.TTS_BACKEND);
+  if (envBackend) {
+    return {
+      backendMode: envBackend,
+      source: "env",
+      configuredValue: process.env.TTS_BACKEND,
+    };
+  }
+
+  return {
+    backendMode: "",
+    source: "default",
+  };
 }
 
 async function executeWithBackends(input: BackendExecutionInput): Promise<BackendExecutionResult> {
@@ -65,10 +106,8 @@ async function executeWithBackends(input: BackendExecutionInput): Promise<Backen
         return { result, backend: backend.name };
       }
       lastError = result.error;
-      if (shouldAbortFallback(backendName, result.error)) break;
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
-      if (shouldAbortFallback(backendName, lastError)) break;
     }
   }
 
@@ -79,10 +118,6 @@ const BACKENDS: BackendRunner[] = [
   {
     name: "qwen",
     run: async (opts) => (await import("./tts/backends/qwen.js")).runQwenTts(opts),
-  },
-  {
-    name: "indextts",
-    run: async (opts) => (await import("./tts/backends/indexts.js")).runIndexTts(opts),
   },
 ];
 
@@ -98,7 +133,7 @@ const BACKENDS: BackendRunner[] = [
  */
 export async function runTts(options: TtsOptions): Promise<TtsResult> {
   // P0: 全局串行（稳定优先）
-  // 原因：IndexTTS 在 MPS/统一内存下峰值非常高；跨 chat 并发 TTS 会极易触发 SIGKILL。
+  // 原因：本地 TTS 模型峰值高；跨 chat 并发 TTS 仍可能造成统一内存抖动。
   // 这里把所有 TTS（显式 /tts 与自动语音 defer）统一串行化。
   const maxConcurrency = (() => {
     const raw = (process.env.TTS_MAX_CONCURRENCY || "").trim();
@@ -143,6 +178,8 @@ async function runTtsInternal(options: TtsOptions): Promise<TtsResult> {
   const t0 = Date.now();
   const textDigest = createHash("sha256").update(text).digest("hex").slice(0, 12);
 
+  const ttsBackendSelection = await resolveTtsBackendSelection(options);
+
   const workspacePath = resolve(options.workspacePath);
   const artifactId = randomUUID().replace(/-/g, "").slice(0, 12);
   const artifactsDir = join(workspacePath, "artifacts", "tts");
@@ -174,6 +211,9 @@ async function runTtsInternal(options: TtsOptions): Promise<TtsResult> {
     textDigest,
     timeoutMs,
     format: outFormat,
+    backendMode: ttsBackendSelection.backendMode ? "strict:qwen" : "auto:qwen",
+    backendSource: ttsBackendSelection.source,
+    backendConfiguredValue: ttsBackendSelection.configuredValue,
   });
 
   // Backend context (shared across all backends)
@@ -188,10 +228,9 @@ async function runTtsInternal(options: TtsOptions): Promise<TtsResult> {
   };
 
   // Backend priority:
-  // - TTS_BACKEND=qwen      -> strict qwen only
-  // - TTS_BACKEND=indextts  -> strict indextts only
-  // - unset/other           -> qwen -> indextts fallback
-  const priorityBackends = resolvePriorityBackends(process.env.TTS_BACKEND || "");
+  // - TTS_BACKEND=qwen -> strict qwen only
+  // - unset/other      -> auto:qwen
+  const priorityBackends = resolvePriorityBackends(ttsBackendSelection.backendMode);
 
   const execResult = await executeWithBackends({
     options: {
@@ -247,7 +286,8 @@ export type { TtsBackend, TtsOptions, TtsResult };
 
 // Test hooks: keep pure and side-effect free.
 export const __test = {
-  shouldAbortFallback,
   resolvePriorityBackends,
   executeWithBackends,
+  normalizeConfiguredTtsBackend,
+  resolveTtsBackendSelection,
 };

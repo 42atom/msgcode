@@ -7,6 +7,7 @@
 import type { InboundMessage } from "./imsg/types.js";
 import { config, isWhitelisted } from "./config.js";
 import { isGroupChatId } from "./imsg/adapter.js";
+import { isFeishuChatGuid } from "./feishu/transport.js";
 
 /**
  * 安全检查结果
@@ -52,6 +53,12 @@ export function checkWhitelist(message: InboundMessage): SecurityCheck {
     // 自己发的消息，总是允许
     if (message.isFromMe) {
         return { allowed: true, sender: "me" };
+    }
+
+    // Feishu 冒烟期：显式开关允许绕过白名单（默认关闭）
+    // 目的：飞书 sender 标识不是 phone/email，MVP 先跑通闭环，后续再收口鉴权。
+    if (isFeishuChatGuid(message.chatId) && config.feishu?.allowAll) {
+        return { allowed: true, sender: message.sender || message.handle || "feishu-user" };
     }
 
     // 使用 message.sender 或 message.handle 作为发送者标识（电话/邮箱）

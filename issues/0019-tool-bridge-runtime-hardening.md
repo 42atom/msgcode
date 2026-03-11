@@ -1,0 +1,71 @@
+---
+id: 0019
+title: 工具桥接运行时收口
+status: done
+owner: agent
+labels: [bug, refactor, tooling, observability]
+risk: medium
+scope: agent-backend/tools-bus/workspace/logging
+plan_doc: docs/design/plan-260307-tool-bridge-runtime-hardening.md
+links:
+  - /Users/admin/.config/msgcode/log/msgcode.log
+created: 2026-03-07
+due:
+---
+
+## Context
+
+- 最新日志已经证明，默认暴露层收口后，执行层仍可能跑到未暴露工具：
+  - `Tool Bus: FAILURE edit_file`
+  - `Tool Bus: SUCCESS edit_file`
+- 这说明“给模型看的工具列表”和“运行时真正允许执行的工具列表”仍不是同一份真相源。
+- 同时，当前日志只记录单个 `toolName`，无法看清整轮工具序列，排障成本高。
+
+## Goal / Non-Goals
+
+### Goals
+
+- 未暴露给模型的工具不得被 `llm-tool-call` 真执行。
+- `llm-tool-call` 的执行 allowlist 与默认暴露层一致。
+- 日志补充整轮工具序列，便于定位桥接问题。
+
+### Non-Goals
+
+- 本轮不约束模型回答内容。
+- 本轮不切换浏览器底座，Patchright 仍按 Issue 0016 单独推进。
+- 本轮不删除 `write_file/edit_file` 底层实现。
+
+## Plan
+
+- [x] 创建并评审 Plan 文档：`docs/design/plan-260307-tool-bridge-runtime-hardening.md`
+- [x] 封死未暴露工具执行
+- [x] 收口 `llm-tool-call` 运行时 allowlist
+- [x] 补整轮工具序列日志
+- [x] 增加并跑通回归测试
+
+## Acceptance Criteria
+
+1. 模型若返回未暴露工具名，执行层直接拒绝，不进入 Tool Bus 实际执行。
+2. 旧工作区即使还允许 `write_file/edit_file`，`llm-tool-call` 也不能执行它们。
+3. 日志能看到整轮工具序列，而不是只看到单个工具名。
+
+## Notes
+
+- Logs: `/Users/admin/.config/msgcode/log/msgcode.log`
+- 关键片段：
+  - `122961 Tool Bus: FAILURE edit_file`
+  - `122988 Tool Bus: FAILURE edit_file`
+  - `123012 Tool Bus: SUCCESS edit_file`
+- Code:
+  - `/Users/admin/GitProjects/msgcode/src/tools/bus.ts`
+  - `/Users/admin/GitProjects/msgcode/src/agent-backend/tool-loop.ts`
+  - `/Users/admin/GitProjects/msgcode/src/agent-backend/routed-chat.ts`
+  - `/Users/admin/GitProjects/msgcode/src/handlers.ts`
+  - `/Users/admin/GitProjects/msgcode/src/logger/file-transport.ts`
+- Tests:
+  - `PATH="$HOME/.bun/bin:$PATH" bun test test/tools.bus.test.ts test/p5-7-r3l-7-tool-protocol-retry-and-soul-normalize.test.ts`
+  - `36 pass, 0 fail`
+
+## Links
+
+- Plan: `docs/design/plan-260307-tool-bridge-runtime-hardening.md`

@@ -1,0 +1,206 @@
+# OpenClaw 保活链路研究
+
+## 结论
+
+`openclaw` 的保活主链不是“内部 heartbeat 拉起死进程”，而是：
+
+1. **用 OS 服务管理器保活主进程**
+   - macOS: `launchd` LaunchAgent
+   - Linux: `systemd --user`
+   - Windows: Scheduled Task
+2. **用 status/probe/log 观察服务状态**
+3. **heartbeat 只管应用内唤醒，不负责进程复活**
+
+对 `msgcode` 来说，最值得借鉴的不是整套平台，而是这条分层边界：
+
+- **进程保活交给 OS**
+- **任务续跑交给应用内 heartbeat / TaskSupervisor**
+- **进程崩溃证据交给 daemon 启动入口和服务日志**
+
+## OpenClaw 如何做
+
+### 1. 安装阶段就把 daemon 交给外部服务
+
+- [README.md](/Users/admin/GitProjects/GithubDown/openclaw/README.md)
+  - `openclaw onboard --install-daemon`
+  - 文档直接写明：wizard 会安装 `launchd/systemd user service`，让 Gateway 持续运行
+
+### 2. 统一抽象“服务管理器”，不是自己写进程守护循环
+
+- [src/daemon/service.ts](/Users/admin/GitProjects/GithubDown/openclaw/src/daemon/service.ts)
+  - `resolveGatewayService()` 按平台返回：
+    - `LaunchAgent`
+    - `systemd`
+    - `Scheduled Task`
+  - 对外只暴露：
+    - `install`
+    - `uninstall`
+    - `stop`
+    - `restart`
+    - `isLoaded`
+    - `readCommand`
+    - `readRuntime`
+
+关键点：
+
+- OpenClaw 没在 app 内再发明一套“无限重启 while(true)”守护器
+- 它直接把保活责任交给系统已有的 supervisor
+
+### 3. macOS 上明确把 Gateway 作为 LaunchAgent
+
+- [docs/platforms/mac/bundled-gateway.md](/Users/admin/GitProjects/GithubDown/openclaw/docs/platforms/mac/bundled-gateway.md)
+  - 明确写了：
+    - app 不再把 gateway 当 child process
+    - 用 per-user LaunchAgent 保持运行
+    - app 退出不影响 gateway，`launchd` 继续保活
+
+- [src/daemon/launchd.ts](/Users/admin/GitProjects/GithubDown/openclaw/src/daemon/launchd.ts)
+  - 负责：
+    - 生成 plist
+    - 读取 `launchctl print`
+    - 解析 `pid / last exit status / last exit reason`
+    - repair bootstrap / kickstart
+    - 管理 stdout/stderr log path
+
+### 4. 观测单独做，不把保活和业务续跑混在一起
+
+- [src/commands/status-all.ts](/Users/admin/GitProjects/GithubDown/openclaw/src/commands/status-all.ts)
+  - 统一读：
+    - service runtime
+    - gateway probe
+    - restart sentinel
+    - last gateway error line
+
+- [src/daemon/diagnostics.ts](/Users/admin/GitProjects/GithubDown/openclaw/src/daemon/diagnostics.ts)
+  - 单独从 stdout/stderr 读最后一条错误线
+
+这说明 openclaw 的设计是：
+
+- 先保证服务活着
+- 再独立读状态和错误
+- 而不是让 heartbeat 同时负责进程保活、任务调度、错误恢复
+
+## msgcode 当前现状
+
+### 1. daemon 只是 detached child，没有 watchdog
+
+- [src/cli.ts](/Users/admin/GitProjects/msgcode/src/cli.ts)
+  - `launchDaemon()` 只是 `spawn(..., { detached: true, stdio: "ignore" })`
+  - 然后 `child.unref()`
+
+这意味着：
+
+- CLI 启完就放手
+- daemon 死了没人拉起
+
+### 2. heartbeat 只在进程活着时工作
+
+- [src/runtime/heartbeat.ts](/Users/admin/GitProjects/msgcode/src/runtime/heartbeat.ts)
+  - 只负责 schedule tick
+  - 不具备进程复活能力
+
+- [src/commands.ts](/Users/admin/GitProjects/msgcode/src/commands.ts)
+  - `HeartbeatRunner` 只用来驱动 `TaskSupervisor`
+  - 是任务续跑，不是进程监督
+
+### 3. daemon 入口缺少顶层 crash 观测
+
+- [src/daemon.ts](/Users/admin/GitProjects/msgcode/src/daemon.ts)
+  - 只有启动期 `catch`
+  - 没有 `uncaughtException` / `unhandledRejection`
+
+- 对比 [src/index.ts](/Users/admin/GitProjects/msgcode/src/index.ts)
+  - 这里其实已经有进程级异常处理
+  - 但 `msgcode start` 走的是 `daemon.ts`，不是 `index.ts`
+
+### 4. 已出现“browser 进行中 daemon 消失，无人复活”
+
+- [msgcode.log](/Users/admin/.config/msgcode/log/msgcode.log)
+  - `2026-03-10 01:35:55` 收到 `看看今天jin10的新闻,对A股大盘走势提出建议`
+  - `01:36:01`、`01:36:09`、`01:36:16` 连续三次 `Tool Bus: SUCCESS browser`
+  - 之后日志直接断掉
+  - 直到 `01:38:35` 才人工重启
+
+同一份日志里，人工重启后再次跑 browser：
+
+- `2026-03-10 01:39:38` 收到 `打开jin10.com;获取关于A股的最新消息`
+- `01:39:46`、`01:39:49` browser success
+- `01:39:59` agent completed
+- `01:40:01` listener 正常回复
+
+这说明：
+
+- browser 链本身不是稳定必死
+- 真问题是 **daemon 死后没有任何外部保活**
+
+## 外部崩溃证据
+
+系统崩溃报告里有两份相关记录：
+
+- [/Users/admin/Library/Logs/DiagnosticReports/node-2026-03-10-002553.ips](/Users/admin/Library/Logs/DiagnosticReports/node-2026-03-10-002553.ips)
+- [/Users/admin/Library/Logs/DiagnosticReports/node-2026-03-10-010500.ips](/Users/admin/Library/Logs/DiagnosticReports/node-2026-03-10-010500.ips)
+
+已知事实：
+
+- 父进程都是 `LM Studio`
+- 属于 LM Studio 旗下 node / MLX 进程 crash
+- 至少一份明确落在 `llm_engine::MLXAmphibianEngine::unload()`
+
+不能直接证明：
+
+- `01:36` 那次 `msgcode` daemon 消失一定就是同一个 native crash 引起
+
+所以当前最稳的结论是：
+
+- `msgcode` 缺的是 **进程级观测 + 外部保活**
+- 不是先给 heartbeat 再塞一层“内部 watchdog”
+
+## 对 msgcode 的启发
+
+### 应该借鉴
+
+1. 保活交给 `launchd`
+2. daemon 入口补 crash 观测
+3. 提供最小 `status`/诊断口径
+
+### 不应该照搬
+
+1. 不要现在就做跨平台 `systemd + launchd + Scheduled Task`
+2. 不要上 `status --all` 那种大而全控制面
+3. 不要把 heartbeat 改造成进程守护器
+4. 不要为了保活再加一层应用内 watchdog loop
+
+## 推荐方向
+
+对 `msgcode` 的最小正确方案是：
+
+1. **Phase 1**
+   - `daemon.ts` 补顶层异常日志
+   - 先拿到“为什么死”的证据
+
+2. **Phase 2**
+   - 增加 macOS `launchd` LaunchAgent 安装/卸载/状态
+   - 让 `msgcode start` 走“安装并交给 launchd”
+
+3. **Phase 3**
+   - 保留现有 `HeartbeatRunner + TaskSupervisor`
+   - 只让它们负责任务推进，不再承担进程保活
+
+## Evidence
+
+- Docs:
+  - [README.md](/Users/admin/GitProjects/GithubDown/openclaw/README.md)
+  - [bundled-gateway.md](/Users/admin/GitProjects/GithubDown/openclaw/docs/platforms/mac/bundled-gateway.md)
+- Code:
+  - [service.ts](/Users/admin/GitProjects/GithubDown/openclaw/src/daemon/service.ts)
+  - [launchd.ts](/Users/admin/GitProjects/GithubDown/openclaw/src/daemon/launchd.ts)
+  - [status-all.ts](/Users/admin/GitProjects/GithubDown/openclaw/src/commands/status-all.ts)
+  - [diagnostics.ts](/Users/admin/GitProjects/GithubDown/openclaw/src/daemon/diagnostics.ts)
+  - [cli.ts](/Users/admin/GitProjects/msgcode/src/cli.ts)
+  - [daemon.ts](/Users/admin/GitProjects/msgcode/src/daemon.ts)
+  - [heartbeat.ts](/Users/admin/GitProjects/msgcode/src/runtime/heartbeat.ts)
+  - [commands.ts](/Users/admin/GitProjects/msgcode/src/commands.ts)
+- Logs:
+  - [msgcode.log](/Users/admin/.config/msgcode/log/msgcode.log)
+  - [node-2026-03-10-002553.ips](/Users/admin/Library/Logs/DiagnosticReports/node-2026-03-10-002553.ips)
+  - [node-2026-03-10-010500.ips](/Users/admin/Library/Logs/DiagnosticReports/node-2026-03-10-010500.ips)

@@ -8,11 +8,13 @@
  */
 
 import { exec } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { open } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
+import dotenv from "dotenv";
 import type { Dependency, DependencyManifest, PreflightResult, DependencyCheckResult } from "./types.js";
+import { resolveQwenTtsPaths } from "../media/model-paths.js";
 
 const execAsync = promisify(exec);
 
@@ -22,21 +24,13 @@ const execAsync = promisify(exec);
 
 /**
  * 展开路径中的 ~
+ * 使用 model-paths.ts 的 shared resolver 获取默认路径
  */
 function expandPath(path: string): string {
-  // 支持少量 env 占位符（P0：IndexTTS 用得最多）
-  if (path.includes("$INDEX_TTS_ROOT")) {
-    const root = process.env.INDEX_TTS_ROOT
-      ? expandPath(process.env.INDEX_TTS_ROOT)
-      : (process.env.HOME ? join(process.env.HOME, "Models", "index-tts") : "");
-    if (root) {
-      path = path.replaceAll("$INDEX_TTS_ROOT", root);
-    }
-  }
   if (path.includes("$QWEN_TTS_ROOT")) {
     const root = process.env.QWEN_TTS_ROOT
       ? expandPath(process.env.QWEN_TTS_ROOT)
-      : "/Users/admin/GitProjects/GithubDown/qwen3-tts-apple-silicon";
+      : resolveQwenTtsPaths().root;
     if (root) {
       path = path.replaceAll("$QWEN_TTS_ROOT", root);
     }
@@ -45,6 +39,36 @@ function expandPath(path: string): string {
     return process.env.HOME + path.slice(1);
   }
   return path;
+}
+
+/**
+ * 从配置文件读取环境变量（仅用于 preflight 兜底，不覆盖进程已有值）
+ *
+ * 搜索顺序：
+ * 1. ~/.config/msgcode/.env
+ * 2. <cwd>/.env
+ */
+function readEnvVarFromConfigFiles(key: string): string | undefined {
+  const candidates = [
+    process.env.HOME ? join(process.env.HOME, ".config", "msgcode", ".env") : "",
+    join(process.cwd(), ".env"),
+  ].filter(Boolean);
+
+  for (const file of candidates) {
+    if (!existsSync(file)) continue;
+    try {
+      const parsed = dotenv.parse(readFileSync(file, "utf-8"));
+      const value = parsed[key];
+      if (typeof value === "string" && value.trim()) {
+        return value.trim();
+      }
+    } catch {
+      // 配置文件解析失败时继续尝试下一个候选文件
+      continue;
+    }
+  }
+
+  return undefined;
 }
 
 // ============================================
@@ -67,35 +91,24 @@ async function checkBinDependency(dep: Dependency): Promise<DependencyCheckResul
     if (dep.pathEnv) {
       binPath = process.env[dep.pathEnv];
       if (!binPath) {
+        // preflight 兜底：允许直接从配置文件读取，避免要求用户手工 source
+        const fallbackValue = readEnvVarFromConfigFiles(dep.pathEnv);
+        if (fallbackValue) {
+          binPath = fallbackValue;
+          // 回写到当前进程，供后续依赖检查复用
+          process.env[dep.pathEnv] = fallbackValue;
+        }
+      }
+      if (!binPath) {
         if (dep.id === "qwen_tts_python") {
           const root = process.env.QWEN_TTS_ROOT
             ? expandPath(process.env.QWEN_TTS_ROOT)
-            : "/Users/admin/GitProjects/GithubDown/qwen3-tts-apple-silicon";
+            : resolveQwenTtsPaths().root;
           binPath = join(root, ".venv", "bin", "python");
         } else {
           result.error = `环境变量 ${dep.pathEnv} 未设置`;
           return result;
         }
-      }
-    }
-
-    // 特殊处理：IndexTTS Python（用 INDEX_TTS_PYTHON 验证 import）
-    if (dep.id === "indexts_python" && binPath) {
-      const expandedPath = expandPath(binPath);
-      if (!existsSync(expandedPath)) {
-        result.error = `文件不存在: ${expandedPath}`;
-        return result;
-      }
-      try {
-        await execAsync(`${expandedPath} -c "import indextts"`, { timeout: 8000 });
-        result.available = true;
-        result.details = { path: expandedPath };
-        return result;
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        result.error = `IndexTTS Python 不可用（import indextts 失败）: ${message}`;
-        result.details = { path: expandedPath };
-        return result;
       }
     }
 
@@ -332,7 +345,7 @@ async function checkModelLoadedDependency(dep: Dependency): Promise<DependencyCh
   };
 
   try {
-    // 获取 LM Studio base URL（和 vision_ocr.ts 一致）
+    // 获取 LM Studio base URL（和 vision.ts 一致）
     const baseUrl = (process.env.LMSTUDIO_BASE_URL || "http://127.0.0.1:1234").replace(/\/+$/, "");
     const apiKey = process.env.LMSTUDIO_API_KEY;
 

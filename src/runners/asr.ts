@@ -14,6 +14,8 @@ import { join } from "node:path";
 import { existsSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { resolveMlxWhisper } from "./utils.js";
+import { getModelServiceLeaseManager } from "../runtime/model-service-lease.js";
+import { resolveAsrPaths, expandHome } from "../media/model-paths.js";
 
 const execAsync = promisify(exec);
 
@@ -74,27 +76,6 @@ interface AsrMetadata {
 // ============================================
 
 /**
- * 展开路径中的 ~
- */
-function expandPath(path: string): string {
-  if (path.startsWith("~/")) {
-    return process.env.HOME + path.slice(1);
-  }
-  return path;
-}
-
-/**
- * 获取默认模型路径
- */
-function getDefaultModelPath(): string {
-  const envModel = process.env.MODEL_ROOT;
-  if (envModel) {
-    return join(envModel, "whisper-large-v3-mlx");
-  }
-  return join(process.env.HOME || "", "Models", "whisper-large-v3-mlx");
-}
-
-/**
  * 获取产物目录
  */
 function getArtifactDir(workspacePath: string): string {
@@ -118,12 +99,15 @@ export async function runAsr(options: AsrOptions): Promise<AsrResult> {
   } = options;
 
   const artifactId = randomUUID();
-  const modelPath = customModelPath || getDefaultModelPath();
-  const expandedInputPath = expandPath(inputPath);
-  const expandedModelPath = expandPath(modelPath);
+  const asrPaths = resolveAsrPaths();
+  const modelPath = customModelPath || asrPaths.modelDir;
+  const expandedInputPath = expandHome(inputPath);
+  const expandedModelPath = expandHome(modelPath);
   const artifactDir = getArtifactDir(workspacePath);
   const txtPath = join(artifactDir, `${artifactId}.txt`);
   const jsonPath = join(artifactDir, `${artifactId}.json`);
+  const modelServiceLease = getModelServiceLeaseManager();
+  const modelServiceName = `asr:mlx-whisper:${expandedModelPath}`;
 
   // dry-run 模式：返回计划写入的文件
   if (dryRun) {
@@ -176,10 +160,17 @@ export async function runAsr(options: AsrOptions): Promise<AsrResult> {
     // E17: 强制中文转写（避免中英漂移）
     const asrLanguage = process.env.ASR_LANGUAGE || "zh";
     const asrInitialPrompt = process.env.ASR_INITIAL_PROMPT || "请用中文转写，数字用阿拉伯数字，'乘以'不要写成'成'";
-    const { stderr } = await execAsync(
-      `${whisperResult.binName} "${expandedInputPath}" --model "${expandedModelPath}" --output-dir "${artifactDir}" --output-name "${artifactId}" --output-format txt --task transcribe --language ${asrLanguage} --temperature 0 --initial-prompt "${asrInitialPrompt}"`,
-      {
-        timeout: 300000, // 5 分钟超时
+    let stderr = "";
+    await modelServiceLease.withService(
+      modelServiceName,
+      async () => {
+        const execResult = await execAsync(
+          `${whisperResult.binName} "${expandedInputPath}" --model "${expandedModelPath}" --output-dir "${artifactDir}" --output-name "${artifactId}" --output-format txt --task transcribe --language ${asrLanguage} --temperature 0 --initial-prompt "${asrInitialPrompt}"`,
+          {
+            timeout: 300000, // 5 分钟超时
+          }
+        );
+        stderr = execResult.stderr;
       }
     );
     const durationMs = Date.now() - startTime;

@@ -15,7 +15,7 @@ describe("Auto Skill", () => {
   });
 
   test("detectAutoSkill 只看首行", () => {
-    const match = detectAutoSkill("系统信息\n[图片文字] test");
+    const match = detectAutoSkill("系统信息\n[图片摘要] test");
     expect(match?.skillId).toBe("system-info");
   });
 

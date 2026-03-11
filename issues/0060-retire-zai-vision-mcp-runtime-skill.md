@@ -1,0 +1,71 @@
+---
+id: 0060
+title: 下线脆弱的 zai-vision-mcp runtime skill
+status: done
+owner: agent
+labels: [refactor, docs]
+risk: low
+scope: runtime skill 索引、同步与视觉说明书收口
+plan_doc: docs/design/plan-260310-retire-zai-vision-mcp-runtime-skill.md
+links: []
+---
+
+## Context
+
+用户明确要求移除 `zai-vision-mcp` runtime skill，原因是这条能力过于脆弱，不适合作为 msgcode 的正式视觉能力面继续保留。
+
+当前正式 runtime skill 索引里仍暴露：
+
+- `vision-index`
+- `local-vision-lmstudio`
+- `zai-vision-mcp`
+
+这会让模型继续把 `zai-vision-mcp` 当作可选正式能力，和当前产品方向冲突。
+
+## Goal / Non-Goals
+
+- Goal:
+  - 从正式 runtime skill 索引中移除 `zai-vision-mcp`
+  - 收口视觉说明书，只保留“原生看图 + 本地 LM Studio”
+  - 让 runtime skill sync 自动把 `zai-vision-mcp` 当作 retired skill 处理
+- Non-Goals:
+  - 不重做整体视觉架构
+  - 不新增新的视觉 provider
+  - 不改系统图片预览摘要主链
+
+## Plan
+
+- [x] 新建 issue / plan 留痕
+- [x] 更新 runtime skill 索引与视觉 skill 文案
+- [x] 更新 runtime-sync 退役列表与相关测试
+- [x] 将 `src/skills/runtime/zai-vision-mcp/` 移到本地 `.trash`
+- [x] 运行针对性测试并更新变更日志
+
+## Acceptance Criteria
+
+1. `src/skills/runtime/index.json` 不再暴露 `zai-vision-mcp`
+2. `vision-index` 不再提示 `zai-vision-mcp`
+3. runtime skill sync 不再复制或保留 `zai-vision-mcp` 索引项
+4. 相关测试通过
+
+## Notes
+
+- Decision source: 用户要求“zai-vision-mcp 这个不要了 太脆弱”
+- Code:
+  - `src/skills/runtime/index.json`
+  - `src/skills/runtime/vision-index/SKILL.md`
+  - `src/skills/runtime/vision-index/main.sh`
+  - `src/skills/runtime-sync.ts`
+  - `src/skills/README.md`
+  - `test/p5-7-r13-runtime-skill-sync.test.ts`
+- Local backup:
+  - `.trash/2026-03-10-zai-vision-mcp/`
+- Tests:
+  - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r13-runtime-skill-sync.test.ts`
+  - `3 pass / 0 fail`
+- Runtime:
+  - `./bin/msgcode restart`
+
+## Links
+
+- Plan: /Users/admin/GitProjects/msgcode/docs/design/plan-260310-retire-zai-vision-mcp-runtime-skill.md

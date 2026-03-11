@@ -7,6 +7,7 @@
  * - 单 timer + unref()（不阻塞进程退出）
  * - 每次 wake 只跑"到期的下一批 job"
  * - 防卡死阈值可配置
+ * - P5.7-R12-T2: idle 保活 + 异常自愈 + 结构化日志
  */
 
 import type { CronJob, JobRun, JobStatus, JobErrorCode, RuntimeJobErrorCode, JobsErrorCode } from "./types.js";
@@ -14,6 +15,11 @@ import type { RouteEntry } from "../routes/store.js";
 import { createJobStore, type JobStore } from "./store.js";
 import { computeNextRunAtMs, computeNextRunAtMsForJobs, computeNextWakeAtMs } from "./cron.js";
 import { DEFAULT_STUCK_TIMEOUT_MS } from "./types.js";
+import { logger } from "../logger/index.js";
+
+// P5.7-R12-T2: Idle 状态保活轮询间隔（60s）
+const IDLE_POLL_INTERVAL_MS = 60_000;
+let activeScheduler: JobScheduler | null = null;
 
 // ============================================
 // 配置
@@ -73,6 +79,24 @@ export class JobScheduler {
     } as typeof this.config;
   }
 
+  async refresh(reason: string = "unknown"): Promise<void> {
+    const jobs = await this.reloadJobsAndState();
+    const rearmed = this.running;
+
+    if (this.running) {
+      this.armTimer(`refresh:${reason}`);
+    }
+
+    logger.info("[Scheduler] 已刷新", {
+      module: "jobs/scheduler",
+      reason,
+      jobCount: jobs.length,
+      jobsPath: this.config.jobsPath,
+      running: this.running,
+      rearmed,
+    });
+  }
+
   // ============================================
   // 启动/停止
   // ============================================
@@ -86,33 +110,9 @@ export class JobScheduler {
     }
 
     this.running = true;
+    await this.refresh("start");
 
-    // 1) 加载 jobs
-    const store = this.store.loadJobs();
-    if (!store) {
-      console.log("[Scheduler] jobs.json 不存在，创建新文件");
-      this.store.saveJobs({ version: 1, jobs: [] });
-    } else {
-      // 2) 校验并更新 routeStatus（对齐点 2）
-      await this.validateAllRoutes();
-
-      // 3) 清理 stuck jobs（启动恢复）
-      await this.cleanupStuckJobs();
-
-      // 4) 计算所有 jobs 的 nextRunAtMs（#8.2）
-      const jobs = this.store.listJobs();
-      computeNextRunAtMsForJobs(jobs);
-      for (const job of jobs) {
-        if (job.state.nextRunAtMs !== null) {
-          this.store.upsertJob(job);
-        }
-      }
-
-      // 5) 启动 timer
-      this.armTimer();
-    }
-
-    console.log("[Scheduler] 已启动");
+    logger.info("[Scheduler] 已启动", { module: "jobs/scheduler" });
   }
 
   /**
@@ -130,7 +130,7 @@ export class JobScheduler {
       this.timerId = null;
     }
 
-    console.log("[Scheduler] 已停止");
+    logger.info("[Scheduler] 已停止", { module: "jobs/scheduler" });
   }
 
   // ============================================
@@ -218,14 +218,35 @@ export class JobScheduler {
     }
   }
 
+  private async reloadJobsAndState(): Promise<CronJob[]> {
+    const store = this.store.loadJobs();
+    if (!store) {
+      logger.info("[Scheduler] jobs.json 不存在，创建新文件", {
+        module: "jobs/scheduler",
+      });
+      this.store.saveJobs({ version: 1, jobs: [] });
+      return [];
+    }
+
+    await this.validateAllRoutes();
+    await this.cleanupStuckJobs();
+
+    const jobs = this.store.listJobs();
+    computeNextRunAtMsForJobs(jobs);
+    this.store.saveJobs({ version: 1, jobs });
+    return jobs;
+  }
+
   // ============================================
   // Timer 管理
   // ============================================
 
   /**
    * 启动下一个 timer
+   *
+   * P5.7-R12-T2: 无任务时改为 idle poll，不再静默停摆
    */
-  private armTimer(): void {
+  private armTimer(reason: string = "unknown"): void {
     if (!this.running) {
       return;
     }
@@ -238,9 +259,26 @@ export class JobScheduler {
     // 计算下次唤醒时间
     const { nextWakeAtMs, dueJobs } = this.calculateNextWake();
 
+    // P5.7-R12-T2: 无任务时使用 idle poll（60s），不再静默停摆
     if (nextWakeAtMs === null) {
-      console.log("[Scheduler] 没有到期的 job，暂停调度");
-      this.timerId = null;
+      logger.info("[Scheduler] 进入 idle poll 模式", {
+        module: "jobs/scheduler",
+        reason,
+        idlePoll: true,
+        intervalMs: IDLE_POLL_INTERVAL_MS,
+        jobsPath: this.config.jobsPath,
+      });
+      this.timerId = setTimeout(() => {
+        this.tick().catch((err) => {
+          logger.error("[Scheduler] idle tick 错误", {
+            module: "jobs/scheduler",
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
+      }, IDLE_POLL_INTERVAL_MS);
+
+      // unref() 允许进程退出
+      this.timerId.unref();
       return;
     }
 
@@ -251,14 +289,26 @@ export class JobScheduler {
 
     this.timerId = setTimeout(() => {
       this.tick().catch((err) => {
-        console.error("[Scheduler] tick 错误:", err);
+        logger.error("[Scheduler] tick 错误", {
+          module: "jobs/scheduler",
+          error: err instanceof Error ? err.message : String(err),
+        });
       });
     }, clampedDelay);
 
     // unref() 允许进程退出
     this.timerId.unref();
 
-    console.log(`[Scheduler] 下次唤醒: ${new Date(nextWakeAtMs).toISOString()} (${dueJobs.length} 个任务)`);
+    // P5.7-R12-T2: 结构化日志包含 nextWakeAtMs、dueJobs
+    logger.info("[Scheduler] 下次唤醒", {
+      module: "jobs/scheduler",
+      reason,
+      nextWakeAtMs,
+      nextWakeAt: new Date(nextWakeAtMs).toISOString(),
+      dueJobsCount: dueJobs.length,
+      idlePoll: false,
+      jobsPath: this.config.jobsPath,
+    });
   }
 
   /**
@@ -278,8 +328,9 @@ export class JobScheduler {
         continue;
       }
 
-      // 计算 nextRunAtMs（如果未计算或过期）
-      if (job.state.nextRunAtMs === null || job.state.nextRunAtMs < now) {
+      // 计算 nextRunAtMs（如果未计算）
+      // 注意：对于已过期但已设置 nextRunAtMs 的 job，不重新计算，允许立即执行
+      if (job.state.nextRunAtMs === null) {
         try {
           const nextRunAtMs = computeNextRunAtMs(job, now);
           job.state.nextRunAtMs = nextRunAtMs;
@@ -313,27 +364,46 @@ export class JobScheduler {
 
   /**
    * 执行 tick
+   *
+   * P5.7-R12-T2: 使用 try-finally 确保 armTimer 始终被调用
    */
   private async tick(): Promise<void> {
-    const { dueJobs } = this.calculateNextWake();
+    let rearmedBy: "success" | "error" | "idle" = "idle";
 
-    if (dueJobs.length === 0) {
-      this.armTimer();
-      return;
+    try {
+      const { dueJobs } = this.calculateNextWake();
+
+      if (dueJobs.length === 0) {
+        // 无任务时 armTimer 会设置 idle poll
+        rearmedBy = "idle";
+        return;
+      }
+
+      // 回调
+      if (this.config.onTick) {
+        this.config.onTick({ dueJobs });
+      }
+
+      // 串行执行所有到期的 job（避免并发问题）
+      for (const job of dueJobs) {
+        await this.executeJob(job);
+      }
+
+      rearmedBy = "success";
+    } catch (err) {
+      rearmedBy = "error";
+      logger.error("[Scheduler] tick 执行异常", {
+        module: "jobs/scheduler",
+        error: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      // P5.7-R12-T2: 无论成功还是异常，都重新 arm timer
+      logger.debug("[Scheduler] tick 完成，准备 re-arm", {
+        module: "jobs/scheduler",
+        rearmedBy,
+      });
+      this.armTimer(`tick:${rearmedBy}`);
     }
-
-    // 回调
-    if (this.config.onTick) {
-      this.config.onTick({ dueJobs });
-    }
-
-    // 串行执行所有到期的 job（避免并发问题）
-    for (const job of dueJobs) {
-      await this.executeJob(job);
-    }
-
-    // 重新计算并启动 timer
-    this.armTimer();
   }
 
   /**
@@ -426,4 +496,17 @@ export class JobScheduler {
  */
 export function createJobScheduler(config: SchedulerConfig): JobScheduler {
   return new JobScheduler(config);
+}
+
+export function registerActiveJobScheduler(scheduler: JobScheduler | null): void {
+  activeScheduler = scheduler;
+}
+
+export async function refreshActiveJobScheduler(reason: string = "unknown"): Promise<boolean> {
+  if (!activeScheduler) {
+    return false;
+  }
+
+  await activeScheduler.refresh(reason);
+  return true;
 }

@@ -6,28 +6,12 @@
 
 import os from "node:os";
 import { logger } from "../logger/index.js";
-
-export type SkillId = "system-info";
-
-export interface SkillMatch {
-  skillId: SkillId;
-  input: string;
-  reason: "keyword";
-}
-
-export interface SkillRunContext {
-  workspacePath?: string;
-  chatId?: string;
-  requestId?: string;
-}
-
-export interface SkillRunResult {
-  ok: boolean;
-  skillId: SkillId;
-  output: string;
-  error?: string;
-  durationMs: number;
-}
+import type {
+  SkillContext as SkillRunContext,
+  SkillId,
+  SkillMatch,
+  SkillResult as SkillRunResult,
+} from "./types.js";
 
 const SYSTEM_INFO_PATTERNS: RegExp[] = [
   /\bsystem[\s-]?info\b/i,

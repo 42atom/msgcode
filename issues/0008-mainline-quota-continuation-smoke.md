@@ -1,0 +1,84 @@
+---
+id: 0008
+title: Tool Loop 配额续跑真实主流程 Smoke 测试
+status: done
+owner: agent
+labels: [test, smoke, quota-strategy]
+risk: low
+scope: routes/task/runtime/task-supervisor/test
+plan_doc: docs/design/plan-260306-mainline-quota-continuation-smoke.md
+links:
+  - issues/0007-tool-loop-quota-strategy.md
+  - docs/tasks/p5-7-r12-t9-mainline-quota-continuation-smoke.md
+created: 2026-03-06
+---
+
+## Context
+
+- `Issue 0007` 的核心配额策略已经落地，三个总预算闸门也已接通。
+- 当前阻断项只剩“真实主流程 smoke”：
+  - `/task run` 创建任务
+  - task-supervisor 驱动执行
+  - tool-loop 触顶返回 `continuable=true`
+  - heartbeat 下一轮继续
+  - 最终进入 `completed` 或 `failed`
+- 现有 `test/p5-7-r12-t8-tool-loop-quota-strategy.test.ts` 更偏向基础设施与预算逻辑验证，不是完整主流程烟测。
+
+## Goal / Non-Goals
+
+- Goal: 通过最小真实主流程 smoke，证明配额续跑链路在主流程中真实成立。
+- Non-Goals: 不修改配额策略默认值；不重写 task-supervisor 核心逻辑；不扩展到多任务/多 chat。
+
+## Plan
+
+- [x] 创建最小真实主流程 smoke 测试文件
+- [x] 验证成功链路：`/task run -> continuable -> heartbeat -> completed`
+- [x] 验证失败链路：`/task run -> continuable -> heartbeat -> BUDGET_EXHAUSTED -> failed`
+- [x] 运行定向测试与文档门禁
+
+## Acceptance Criteria
+
+1. 存在测试文件：`test/p5-7-r12-t9-mainline-quota-continuation-smoke.test.ts`
+2. 至少覆盖 2 个主流程场景：
+   - 续跑成功后 `completed`
+   - 预算耗尽后 `failed`
+3. 测试必须经过：
+   - `/task run` 入口
+   - `TaskSupervisor.handleHeartbeatTick()`
+4. 定向测试通过
+5. `npm run docs:check` 通过
+
+## Notes
+
+- Code:
+  - `src/routes/cmd-task-impl.ts`
+  - `src/runtime/task-supervisor.ts`
+  - `src/agent-backend/routed-chat.ts`
+- Parent Issue:
+  - `issues/0007-tool-loop-quota-strategy.md`
+
+### 完成记录（2026-03-06）
+
+- 新增测试文件：
+  - `test/p5-7-r12-t9-mainline-quota-continuation-smoke.test.ts`
+- 覆盖主流程：
+  - `/task run -> continuable -> heartbeat -> completed`
+  - `/task run -> continuable -> heartbeat -> BUDGET_EXHAUSTED -> failed`
+- 测试策略：
+  - 使用 `/task run` 命令实现入口
+  - 使用 `TaskSupervisor.handleHeartbeatTick()` 驱动 heartbeat 主流程
+  - 使用 `mock.module()` 控制 `runAgentRoutedChat()` 返回序列
+- 验证结果：
+  - `PATH="$HOME/.bun/bin:$PATH" npm test -- test/p5-7-r12-t9-mainline-quota-continuation-smoke.test.ts`：`2 pass / 0 fail`
+  - `npx tsc --noEmit`：通过
+  - `npm run docs:check`：通过
+
+### 结论
+
+- `Issue 0007` 的最后阻断项已清除
+- 当前 smoke 为“最小真实主流程 smoke”，足以作为配额续跑闭环的验收证据
+
+## Links
+
+- Plan: `docs/design/plan-260306-mainline-quota-continuation-smoke.md`
+- Task: `docs/tasks/p5-7-r12-t9-mainline-quota-continuation-smoke.md`

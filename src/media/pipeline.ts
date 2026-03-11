@@ -2,7 +2,7 @@
  * msgcode: MediaPipeline（M4-A 媒体处理流水线）
  *
  * 职责：
- * - 自动处理附件（audio/image/pdf）→ 生成派生文本
+ * - 自动处理图片附件（image）→ 生成图片摘要
  * - 去重（digest key）+ 限流（lane queue）
  * - 失败不崩（优雅降级）
  */
@@ -15,6 +15,8 @@ import type { ImsgAttachment } from "../attachments/vault.js";
 import { isAudioAttachment, isImageAttachment } from "../attachments/vault.js";
 import { resolveMlxWhisper } from "../runners/utils.js";
 import { executeTool } from "../tools/bus.js";
+import { getModelServiceLeaseManager } from "../runtime/model-service-lease.js";
+import { resolveAsrPaths } from "./model-paths.js";
 
 // ============================================
 // 配置常量
@@ -139,9 +141,9 @@ async function calculateDigest(filePath: string): Promise<string> {
 /**
  * 处理音频附件（ASR 转写）
  *
- * P0: ASR 属于媒体预处理，不属于 LLM 工具决策
- * - 通过 digest 去重避免重复处理
- * - Tool Bus 策略检查已在 pipeline 入口完成（source="media-pipeline"）
+ * 说明：
+ * - 该函数保留供模型显式调用 ASR 工具后的后续链路参考
+ * - 自动媒体主链不再默认对音频做预处理
  */
 async function processAudio(
   vaultPath: string,
@@ -176,8 +178,9 @@ async function processAudio(
     return result;
   }
 
-  // 检查模型是否存在
-  const modelPath = join(process.env.HOME || "", "Models", "whisper-large-v3-mlx");
+  // 使用 shared resolver 获取 ASR 模型路径
+  const asrPaths = resolveAsrPaths();
+  const modelPath = asrPaths.modelDir;
   if (!existsSync(modelPath)) {
     result.reason = "Whisper 模型不存在";
     return result;
@@ -186,6 +189,8 @@ async function processAudio(
   // 执行 ASR
   const asrDir = getAsrDir(workspacePath);
   await mkdir(asrDir, { recursive: true });
+  const modelServiceLease = getModelServiceLeaseManager();
+  const modelServiceName = `asr:mlx-whisper:${modelPath}`;
 
   try {
     const { exec } = await import("node:child_process");
@@ -199,9 +204,14 @@ async function processAudio(
     const asrLanguage = process.env.ASR_LANGUAGE || "zh";
     const asrInitialPrompt = process.env.ASR_INITIAL_PROMPT || "请用中文转写，数字用阿拉伯数字，'乘以'不要写成'成'";
 
-    await execAsync(
-      `${binName} "${vaultPath}" --model "${modelPath}" --output-dir "${asrDir}" --output-name "${digest}" --task transcribe --language ${asrLanguage} --temperature 0 --initial-prompt "${asrInitialPrompt}"`,
-      { timeout: ASR_TIMEOUT_MS }
+    await modelServiceLease.withService(
+      modelServiceName,
+      async () => {
+        await execAsync(
+          `${binName} "${vaultPath}" --model "${modelPath}" --output-dir "${asrDir}" --output-name "${digest}" --task transcribe --language ${asrLanguage} --temperature 0 --initial-prompt "${asrInitialPrompt}"`,
+          { timeout: ASR_TIMEOUT_MS }
+        );
+      }
     );
 
     // mlx-whisper 输出文件名可能是 input_name.txt，需要检查
@@ -226,18 +236,17 @@ async function processAudio(
 }
 
 /**
- * 处理图片附件（M4-IMG-P0: Vision OCR）
+ * 处理图片附件（M4-IMG-P0: Vision 摘要）
  *
- * P0: 通过 Tool Bus 执行，明确"自动 OCR 属于预处理，不属于 LLM 工具决策"
+ * P0: 自动层只做摘要预览，不替主模型决定后续视觉任务。
  */
 async function processImage(
   vaultPath: string,
   digest: string,
-  workspacePath: string,
-  userQuery?: string
+  workspacePath: string
 ): Promise<DerivedText> {
   const result: DerivedText = {
-    kind: "vision_ocr",
+    kind: "vision",
     status: "unavailable",
   };
 
@@ -249,15 +258,11 @@ async function processImage(
 
   // P0: 通过 Tool Bus 执行（source="media-pipeline"）
   const requestId = randomUUID();
-  const toolResult = await executeTool(
-    "vision",
-    { imagePath: vaultPath, userQuery },
-    {
-      workspacePath,
-      source: "media-pipeline",
-      requestId,
-    }
-  );
+  const toolResult = await executeTool("vision", { imagePath: vaultPath }, {
+    workspacePath,
+    source: "media-pipeline",
+    requestId,
+  });
 
   if (!toolResult.ok) {
     const errorMsg = toolResult.error?.message || "OCR 失败";
@@ -316,14 +321,12 @@ async function processDoc(
  * @param vaultPath Vault 中的附件路径
  * @param attachment iMessage 附件信息
  * @param workspacePath 工作区路径
- * @param userQuery 用户提问（用于优化 Vision OCR 提示词）
  * @returns 处理结果
  */
 export async function processAttachment(
   vaultPath: string,
   attachment: ImsgAttachment,
-  workspacePath: string,
-  userQuery?: string
+  workspacePath: string
 ): Promise<AttachmentProcessResult> {
   const digest = await calculateDigest(vaultPath);
   const result: AttachmentProcessResult = {
@@ -337,21 +340,11 @@ export async function processAttachment(
   }
 
   // 判断附件类型（B2: 使用 vault.ts 的类型检查函数，支持 mime/UTI/扩展名兜底）
-  const isAudio = isAudioAttachment(attachment);
   const isImage = isImageAttachment(attachment);
-  const isPdf = attachment.mime === "application/pdf";
 
-  // 处理音频
-  if (isAudio && AUTO_ASR) {
-    result.derived = await processAudio(vaultPath, digest, workspacePath);
-  }
-  // 处理图片
-  else if (isImage) {
-    result.derived = await processImage(vaultPath, digest, workspacePath, userQuery);
-  }
-  // 处理文档（占位）
-  else if (isPdf) {
-    result.derived = await processDoc(vaultPath, digest, workspacePath);
+  // 仅对图片做自动视觉处理；其他附件交给模型自行决策
+  if (isImage) {
+    result.derived = await processImage(vaultPath, digest, workspacePath);
   }
 
   return result;
@@ -360,7 +353,7 @@ export async function processAttachment(
 /**
  * B3: 格式化派生文本为自然语言格式
  *
- * - ASR/Vision OCR: 读取 textPath 文件内容（可控全文）
+ * - ASR/Vision: 读取 textPath 文件内容（可控全文）
  * - 其他情况: 输出详细标记
  */
 export async function formatDerivedForTmux(derived: DerivedText): Promise<string> {
@@ -378,8 +371,8 @@ export async function formatDerivedForTmux(derived: DerivedText): Promise<string
     return `[语音转写] ${oneLine}`;
   }
 
-  // Vision OCR：读取全文（带截断控制）
-  if (derived.kind === "vision_ocr" && derived.status === "ok" && derived.textPath) {
+  // Vision 摘要：读取全文（带截断控制）
+  if (derived.kind === "vision" && derived.status === "ok" && derived.textPath) {
     const text = await readDerivedText(derived.textPath, maxChars);
     const oneLine = text
       .replace(/\r\n/g, "\n")
@@ -387,7 +380,7 @@ export async function formatDerivedForTmux(derived: DerivedText): Promise<string
       .replace(/\s*\n+\s*/g, " ")
       .replace(/[ \t]{2,}/g, " ")
       .trim();
-    return `[图片文字] ${oneLine}`;
+    return `[图片摘要] ${oneLine}`;
   }
 
   // 其他情况：输出详细标记

@@ -1,0 +1,91 @@
+---
+id: 0044
+title: 收口 finish supervisor 的失败收尾路径
+status: done
+owner: agent
+labels: [bug, agent]
+risk: medium
+scope: agent-backend tool-loop 的工具失败收尾统一接入 finish supervisor
+plan_doc: docs/design/plan-260308-finish-supervisor-failure-paths.md
+links: []
+---
+
+## Context
+
+`0040` 已经把 finish supervisor 接到“准备结束”的正常出口，但运行时日志证明工具失败仍有一条旁路：失败后会直接返回用户，不经过统一结束口。
+
+已知证据：
+
+- 正常完成时存在 finish supervisor 日志：
+  - `2026-03-08 06:48:30 finish supervisor reviewed [route=tool]`
+  - `2026-03-08 07:45:20 finish supervisor reviewed [route=tool]`
+- 工具失败时没有 finish supervisor 日志：
+  - `2026-03-08 06:51:35` 创建 `live-cron`，`ok:bash -> fail:bash` 后直接 `TOOL_EXEC_FAILED`
+  - `2026-03-08 07:31:08` 创建 `live-cron`，`fail:bash` 后直接 `missing required argument 'scheduleId'`
+
+代码侧初判：
+
+- `src/agent-backend/tool-loop.ts` 的 OpenAI 与 MiniMax 两套 tool-loop 都在 `toolResult.error` 分支里直接 `return`
+- 这条早退路径绕开了现有“最终答案 -> verify -> finish supervisor -> return”出口
+
+## Goal / Non-Goals
+
+- Goal: 让工具失败收尾也接入现有 finish supervisor
+- Goal: 保持 `PASS / CONTINUE / 连续 3 次 CONTINUE 阻塞` 语义不变
+- Goal: 不改变真实失败事实，不把失败包装成成功
+- Non-Goals: 不重构 supervisor 设计
+- Non-Goals: 不新增新的监督规则
+- Non-Goals: 不扩到 scheduler/browser/memory 业务逻辑
+- Non-Goals: 不修改正常成功路径的行为语义
+
+## Plan
+
+- [x] 复核 `tool-loop.ts` 与 `msgcode.log`，确认失败旁路存在于 `toolResult.error` 早退分支
+- [x] 创建 `0044` issue 与 plan 文档，冻结最小修复范围
+- [x] 在 OpenAI / MiniMax 两套 tool-loop 中把工具失败分支并入现有 finish supervisor 结束口
+- [x] 保持失败答案、错误码、退出码、stderrTail 等真实失败事实不变
+- [x] 补测试覆盖：
+  - `ok -> fail` 也会出现 finish supervisor review
+  - `fail` 也会经过 finish supervisor
+  - 连续 3 次 `CONTINUE` 后阻塞退出
+  - 正常成功路径不回归
+- [x] 跑测试、查看真机日志、提交 commit、重启 msgcode
+
+## Acceptance Criteria
+
+1. 工具失败路径也会出现 `finish supervisor reviewed`
+2. finish supervisor 成为统一结束口，而不是只覆盖成功收尾
+3. 失败经过 supervisor 后仍保持真实失败，不伪装成成功
+4. 连续 3 次 `CONTINUE` 后仍按既有语义阻塞退出
+5. 正常成功路径不回归
+6. 测试通过，并有日志证据证明失败路径已接入 supervisor
+
+## Notes
+
+- 真相源：
+  - `/Users/admin/.config/msgcode/log/msgcode.log`
+  - `/Users/admin/GitProjects/msgcode/src/agent-backend/tool-loop.ts`
+  - `/Users/admin/GitProjects/msgcode/src/agent-backend/routed-chat.ts`
+  - `/Users/admin/GitProjects/msgcode/issues/0040-minimal-finish-supervisor.md`
+  - `/Users/admin/GitProjects/msgcode/docs/design/plan-260308-minimal-finish-supervisor.md`
+- 旁路定位：
+  - OpenAI tool-loop：`toolResult.error` 分支直接 `return`
+  - MiniMax tool-loop：`toolResult.error` 分支直接 `return`
+- 这单只补失败出口并回统一结束口，不新增第二套 supervisor 流程
+- 代码改动：
+  - `src/agent-backend/tool-loop.ts`
+  - `test/p5-7-r20-minimal-finish-supervisor.test.ts`
+  - `test/p5-7-r10-minimax-anthropic-provider.test.ts`
+- 测试：
+  - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r20-minimal-finish-supervisor.test.ts test/p5-7-r10-minimax-anthropic-provider.test.ts test/p5-7-r3h-tool-failure-diagnostics.test.ts test/p5-7-r3g-multi-tool-loop.test.ts --timeout 30000`
+  - 结果：`24 pass / 0 fail`
+- 真机日志证据：
+  - `2026-03-08 07:59:17.239 [tools-bus] Tool Bus: FAILURE bash`
+  - `2026-03-08 07:59:23.755 [agent-backend/tool-loop] finish supervisor reviewed [route=tool reason=任务要求使用 Mars/OlympusMons 时区，但该时区无效导致工具执行失败，需要]`
+  - `2026-03-08 07:59:39.299 [agent-backend/tool-loop] finish supervisor blocked completion [route=tool reason=监督员未明确放行]`
+  - `2026-03-08 07:59:39.302 [listener] 消息处理完成 [chatId=023ca4 responseText="任务已停止：结束前监督连续要求继续，未能通过。..."]`
+
+## Links
+
+- Plan: /Users/admin/GitProjects/msgcode/docs/design/plan-260308-finish-supervisor-failure-paths.md
+- Base Issue: /Users/admin/GitProjects/msgcode/issues/0040-minimal-finish-supervisor.md

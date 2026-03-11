@@ -1,0 +1,74 @@
+---
+id: 0056
+title: browser instanceId 合同漂移导致 tabs.list 裸调失败
+status: done
+owner: agent
+labels: [bug, docs, refactor]
+risk: low
+scope: browser 工具提示词、skill 文案与 manifest 合同收口
+plan_doc: docs/design/plan-260310-browser-instanceid-contract-drift.md
+links: []
+---
+
+# Context
+
+2026-03-09 17:20:26，真实运行日志出现：
+
+- `Tool Bus: FAILURE browser`
+- `错误码：TOOL_BAD_ARGS`
+- `browser: 'tabs.list' requires 'instanceId'`
+
+排查发现：
+
+1. `patchright-browser` skill 示例里存在 `tabs list --json`，未显式传 `instanceId`
+2. system prompt 的 browser runtime hint 只强调了 `tabId`，没有强调 `tabs.list` / `instances.stop` 复用真实 `instanceId`
+3. manifest 虽然暴露了 `instanceId` 字段，但描述不够强，没把“不可裸调”的合同讲清楚
+
+# Goal / Non-Goals
+
+## Goal
+
+- 收口 browser 工具关于 `instanceId` 的合同提示
+- 修正 runtime skill 真相源中的错误示例
+- 补回归锁，防止再次把模型带偏
+
+## Non-Goals
+
+- 不改 browser runner 行为
+- 不新增自动 fallback 或猜测式补救层
+- 不改其他浏览器工具协议
+
+# Plan
+
+- [x] 创建最小 Plan 文档，明确只修合同与提示词
+- [x] 更新 `tool-loop.ts` 的 browser runtime hint，强调 `tabs.list` / `instances.stop` 必须传真实 `instanceId`
+- [x] 更新 `patchright-browser/SKILL.md` 错误示例与命令模板
+- [x] 微调 `manifest.ts` 中 `instanceId` 的工具描述
+- [x] 补测试并执行针对性验证
+- [x] 更新 CHANGELOG 与 issue Notes，收口状态为 done
+
+# Acceptance Criteria
+
+- system prompt 中明确写出 `tabs.list` / `instances.stop` 不可裸调
+- runtime skill 文案不再出现 `tabs list --json` 这类错误示例
+- 至少一条测试锁住 browser runtime hint 的 `instanceId` 口径
+- 至少一条测试锁住 runtime skill 文案的 `instanceId` 口径
+
+# Notes
+
+- Logs: `/Users/admin/.config/msgcode/log/msgcode.log`
+- Error: `browser: 'tabs.list' requires 'instanceId'`
+- Code:
+  - `src/agent-backend/tool-loop.ts`
+  - `src/tools/manifest.ts`
+  - `src/skills/runtime/patchright-browser/SKILL.md`
+- Tests:
+  - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r9-t2-skill-global-single-source.test.ts test/p5-7-r13-runtime-skill-sync.test.ts`
+  - `6 pass / 0 fail`
+- Runtime:
+  - `./bin/msgcode restart`
+  - `msgcode 已启动 (PID: 74136)`
+
+# Links
+
+- [Plan](/Users/admin/GitProjects/msgcode/docs/design/plan-260310-browser-instanceid-contract-drift.md)

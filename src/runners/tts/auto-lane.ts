@@ -3,15 +3,15 @@
  *
  * 目标：
  * - 自动语音回复（handler.defer.kind==="tts"）不能并发，否则会：
- *   - 多条 TTS 同时跑 → IndexTTS worker 内存暴涨 / SIGKILL
+ *   - 多条 TTS 同时跑 → 本地 TTS 统一内存抖动 / SIGKILL
  *   - 音频乱序/重复发送（用户感知为“先发合并音频，再发分段音频”）
  *   - 长延迟堆积导致体验不可用
  *
  * 设计：
- * - 全局单 lane（IndexTTS worker 也是单实例）
+ * - 全局单 lane
  * - per-chat 只保留“最新一条”（latest-wins），避免 backlog
  * - 如果一条自动 TTS 在跑，期间来了新任务：
- *   - 不中断当前推理（IndexTTS worker 目前不支持软取消）
+ *   - 不中断当前推理（当前不支持软取消）
  *   - 但“完成后不发送旧音频”（避免过期回复刷屏）
  */
 
@@ -126,4 +126,3 @@ export class AutoTtsLane {
     this.pumping = false;
   }
 }
-

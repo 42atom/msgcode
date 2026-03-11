@@ -31,16 +31,35 @@ export function sanitizeLmStudioOutput(text: string): string {
     // 1. 移除 ANSI 转义码
     let cleaned = stripAnsi(text);
 
-    // 2. 移除元叙事前缀
+    // 2. 剥离 think 标签，避免推理内容泄露到用户可见输出
+    cleaned = dropBeforeLastClosingTag(cleaned, "think");
+    cleaned = cleaned.replace(/<think[\s\S]*?<\/think>/gi, "");
+
+    // 3. 移除元叙事前缀
     cleaned = stripMetaNarrative(cleaned);
 
-    // 3. 移除只读提示
+    // 4. 移除只读提示
     cleaned = stripReadOnlyHint(cleaned);
 
-    // 4. 标准化 JSON 片段
+    // 5. 移除伪工具协议文本，如 [TOOL_CALL], <invoke>, <tool_call> 等
+    // 这些是模型内部协议标记，不应泄露给用户
+    cleaned = cleaned
+        // 移除 [TOOL_CALL]...[/TOOL_CALL] 块
+        .replace(/\[\/?TOOL_CALL\][\s\S]*?\[\/?TOOL_CALL\]/gi, "")
+        // 移除 <invoke>...</invoke> 块
+        .replace(/<invoke[\s\S]*?<\/invoke>/gi, "")
+        // 移除 <tool_call>...</tool_call> 块
+        .replace(/<[\w:-]*tool_call[\w:-]*>[\s\S]*?<\/[\w:-]*tool_call>/gi, "")
+        // 移除 <parameter>...</parameter> 块
+        .replace(/<parameter[\s\S]*?<\/parameter>/gi, "")
+        // 清理残留的空行
+        .replace(/^\s*[\r\n]+\s*/gm, "\n")
+        .replace(/(\n\s*){3,}/g, "\n\n");
+
+    // 6. 标准化 JSON 片段
     cleaned = normalizeJsonishEnvelope(cleaned);
 
-    // 5. 去重噪声行
+    // 7. 去重噪声行
     cleaned = dedupeNoisyLines(cleaned.split("\n")).join("\n");
 
     return cleaned.trim();
@@ -102,7 +121,7 @@ export function stripMetaNarrative(input: string): string {
         "两段式",
         "第1段",
         "第2段",
-        "[图片文字]",
+        "[图片",
         "[图片错误]",
         "[attachment]",
         "[derived]",

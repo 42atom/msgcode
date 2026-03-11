@@ -48,6 +48,10 @@ async function main(): Promise<void> {
         whitelistEmails: config.whitelist.emails.length,
     });
 
+    if (!config.transports.includes("imsg") || !config.imsgPath) {
+        throw new Error("当前配置未启用 imsg transport（index.ts 入口仅支持 imsg）。请使用 `msgcode start`（daemon）启动多 transport。");
+    }
+
     const imsgClient = new ImsgRpcClient(config.imsgPath);
     await imsgClient.start();
     await imsgClient.subscribe();
@@ -101,7 +105,7 @@ async function main(): Promise<void> {
 
     // 收消息（imsg watch 推送）
     imsgClient.on("message", async (message: InboundMessage) => {
-        await handleMessage(message, { imsgClient, debug: config.logLevel === "debug" });
+        await handleMessage(message, { sendClient: imsgClient, debug: config.logLevel === "debug" });
     });
 
     imsgClient.on("error", (error: Error) => {

@@ -91,6 +91,45 @@ describe("P5.6.8-R3b: edit_file 补丁语义回归锁", () => {
             }
         });
 
+        it("edit_file 应兼容 oldText/newText 简写参数", async () => {
+            const { executeTool } = await import("../src/tools/bus.js");
+
+            const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "msgcode-test-"));
+            const testFile = path.join(tmpDir, "test.txt");
+            fs.writeFileSync(testFile, "alpha\nbeta\n", "utf-8");
+
+            const msgcodeDir = path.join(tmpDir, ".msgcode");
+            fs.mkdirSync(msgcodeDir, { recursive: true });
+            fs.writeFileSync(
+                path.join(msgcodeDir, "config.json"),
+                JSON.stringify({
+                    "tooling.mode": "autonomous",
+                    "tooling.allow": ["read_file", "write_file", "edit_file", "bash"]
+                }),
+                "utf-8"
+            );
+
+            try {
+                const result = await executeTool("edit_file", {
+                    path: testFile,
+                    oldText: "alpha",
+                    newText: "gamma",
+                }, {
+                    workspacePath: tmpDir,
+                    source: "slash-command",
+                    requestId: "test-shorthand-edit"
+                });
+
+                expect(result.ok).toBe(true);
+                expect(result.data?.editsApplied).toBe(1);
+                const content = fs.readFileSync(testFile, "utf-8");
+                expect(content).toContain("gamma");
+                expect(content).not.toContain("alpha");
+            } finally {
+                fs.rmSync(tmpDir, { recursive: true, force: true });
+            }
+        });
+
         it("edit_file 执行失败：oldText 不存在", async () => {
             const { executeTool } = await import("../src/tools/bus.js");
 
@@ -134,26 +173,17 @@ describe("P5.6.8-R3b: edit_file 补丁语义回归锁", () => {
     });
 
     describe("工具暴露验证", () => {
-        it("lmstudio.ts PI_ON_TOOLS 必须仅包含四工具", () => {
+        it("agent-backend/types.ts 不应再导出历史硬编码工具白名单", () => {
             const code = fs.readFileSync(
-                path.join(process.cwd(), "src/lmstudio.ts"),
+                path.join(process.cwd(), "src/agent-backend/types.ts"),
                 "utf-8"
             );
 
-            // 验证四工具存在
-            expect(code).toContain('name: "read_file"');
-            expect(code).toContain('name: "write_file"');
-            expect(code).toContain('name: "edit_file"');
-            expect(code).toContain('name: "bash"');
-
-            // 验证旧工具已移除
-            expect(code).not.toContain('name: "list_directory"');
-            expect(code).not.toContain('name: "read_text_file"');
-            expect(code).not.toContain('name: "append_text_file"');
+            expect(code).not.toContain("export const PI_ON_TOOLS");
             expect(code).not.toContain('name: "run_skill"');
         });
 
-        it("getToolsForLlm pi.on 返回四工具", async () => {
+        it("getToolsForLlm 在未显式 allow 时应只保留 read_file + bash 基线", async () => {
             const { getToolsForLlm } = await import("../src/lmstudio.js");
 
             // 创建临时工作区
@@ -162,25 +192,24 @@ describe("P5.6.8-R3b: edit_file 补丁语义回归锁", () => {
             fs.mkdirSync(msgcodeDir, { recursive: true });
             fs.writeFileSync(
                 path.join(msgcodeDir, "config.json"),
-                JSON.stringify({ "pi.enabled": true }),
+                JSON.stringify({}),
                 "utf-8"
             );
 
             try {
                 const tools = await getToolsForLlm(tmpDir);
-                const toolNames = tools.map(t => t.function.name);
-
-                expect(toolNames).toHaveLength(4);
+                const toolNames = tools as string[];
                 expect(toolNames).toContain("read_file");
-                expect(toolNames).toContain("write_file");
-                expect(toolNames).toContain("edit_file");
                 expect(toolNames).toContain("bash");
+                expect(toolNames).not.toContain("write_file");
+                expect(toolNames).not.toContain("edit_file");
+                expect(toolNames).not.toContain("vision");
             } finally {
                 fs.rmSync(tmpDir, { recursive: true, force: true });
             }
         });
 
-        it("getToolsForLlm pi.off 返回空数组", async () => {
+        it("getToolsForLlm 不应再因缺省配置而被清空", async () => {
             const { getToolsForLlm } = await import("../src/lmstudio.js");
 
             // 创建临时工作区
@@ -189,13 +218,15 @@ describe("P5.6.8-R3b: edit_file 补丁语义回归锁", () => {
             fs.mkdirSync(msgcodeDir, { recursive: true });
             fs.writeFileSync(
                 path.join(msgcodeDir, "config.json"),
-                JSON.stringify({ "pi.enabled": false }),
+                JSON.stringify({}),
                 "utf-8"
             );
 
             try {
                 const tools = await getToolsForLlm(tmpDir);
-                expect(tools).toHaveLength(0);
+                const toolNames = tools as string[];
+                expect(toolNames).toContain("read_file");
+                expect(toolNames).toContain("bash");
             } finally {
                 fs.rmSync(tmpDir, { recursive: true, force: true });
             }

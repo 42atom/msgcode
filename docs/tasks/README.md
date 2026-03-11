@@ -21,13 +21,38 @@
 11. `P5.7-R1b`：文件发送真实交付闭环（禁止“合同壳即通过”）
 12. `P5.7-R1c`：CLI 基座能力硬门（真执行 + 可观测 + 安全底线）
 13. `P5.7-R3`：文件与环境域（`file *` + `system env`）
-14. `P5.7-R4`：记忆与线程域（`memory *` + `thread *`）
-15. `P5.7-R5`：编排与调度域（`todo *` + `schedule *`）
-16. `P5.7-R6`：多模态域（`media *` + `gen *`）
-17. `P5.7-R7`：浏览器域（`browser *`）
-18. `P5.7-R8`：代理域（`agent run/status`）
-19. `P5.7-R3a`：runSkill 残留硬清理（技术债插单，R4 前）
-20. `P5.7-R8b`：SKILL.md 与真实能力合同对齐（收尾单）
+14. `P5.7-R3l`：核心链路硬化改造包（三核最小实现 + 协议硬门 + 状态回写）
+15. `P5.7-R4`：记忆与线程域（`memory *` + `thread *`）
+16. `P5.7-R5`：编排与调度域（`todo *` + `schedule *`）
+17. `P5.7-R6`：多模态域（`media *` + `gen *`）
+18. `P5.7-R7`：浏览器域（`browser *`）
+19. `P5.7-R7B`：Gmail 只读验收（首条真实浏览器业务流）
+20. `P5.7-R7C`：非默认 Chrome 数据根 + CDP 验证
+19. `P5.7-R8`：代理域（`agent run/status`）
+20. `P5.7-R8b`：Agent Backend 语义收敛与 MiniMax 2.5 切换（`lmstudio` -> `agent-backend`）
+21. `P5.7-R8d`：模型切换全链路同步（后端模型单源绑定）
+22. `P5.7-R9`：模型真实能力验收门（文件查看/自拍编排/定时提醒/记忆/任务管理）
+23. `P5.7-R9-T1`：真实能力验收执行单（Opus 主执行 + Codex 复核）
+24. `P5.7-R9-T2`：上下文余量感知与 70% 自动 Compact 主链（长会话持续能力硬门）
+25. `P5.7-R9-T3`：记忆默认开启 + PI 基线对齐 + 分支收敛（防回退）
+26. `P5.7-R9-T4`：`lmstudio` 命名去耦到 `agent-backend`（高风险重命名专单）
+27. `P5.7-R9-T5`：CodexHandler 策略守卫去重（主链反复 if/else 收敛）
+28. `P5.7-R9-T6`：`lmstudio` 硬编码语义清理（配置/路由/类型主语收敛）
+29. `P5.7-R9-T7`：`lmstudio.ts` 兼容壳化与 agent-backend 核心拆分
+30. `P5.7-R9-T8`：仓库文档协议目录对齐（issues/design/notes/adr/changelog）
+31. `P5.7-R10`：可用性稳定化派单包（memory/thread/gen image 可用性阻断收口）
+32. `P5.7-R10-1`：memory 零手工索引召回（add 后可直接 search）
+33. `P5.7-R10-2`：thread workspace 作用域一致性（补齐 `--workspace`）
+34. `P5.7-R10-3`：gen image 提供方降级与诊断（区域限制可恢复）
+35. `P5.7-R11`：无子代理执行框架落地（单代理阶段机 + 先读后改 + 先验后交）
+36. `P5.7-R12`：硬前提补齐派单包（常驻唤醒/调度自愈/verify/队列持久化/预算统一/secrets 单源/模型服务生命周期）
+37. `P5.7-R12-T1`：Heartbeat 常驻唤醒与事件唤醒底座
+38. `P5.7-R12-T2`：Scheduler 自愈与热加载（去 `/reload` 依赖）
+39. `P5.7-R12-T3`：`verify` 阶段入主链（plan->act->verify->report）
+40. `P5.7-R12-T4`：事件队列持久化与重启恢复
+41. `P5.7-R12-T5`：上下文预算单源化与跨后端一致性
+42. `P5.7-R12-T6`：Secrets 单源化与 preflight 闭环
+43. `P5.7-R12-T7`：Whisper/本地模型服务空闲 10 分钟释放策略与验收
 
 ## P5 当前唯一执行主线（冻结）
 
@@ -77,7 +102,7 @@
 3. **安全底线**：
    - 禁止静默副作用（关键操作必须显式参数触发）
    - 禁止"伪成功"（失败必须返回非 0 退出码）
-   - 破坏性操作必须显式子命令 + 明确路径参数
+   - 破坏性操作必须 `--force` 显式确认
 
 ### 任务列表
 
@@ -86,23 +111,51 @@
 3. `P5.7-R1b`：文件发送真实交付闭环（`--to` + 真发送 + 真失败）✅
 4. `P5.7-R1c`：CLI 基座能力硬门（真执行 + 可观测 + 安全底线）✅
 5. `P5.7-R3`：文件与环境域（`file find/read/write/move/rename/delete/copy/zip` + `system env`）
-6. `P5.7-R4`：记忆与线程域（`memory search/add/stats` + `thread list/messages/active/switch`）
-7. `P5.7-R5`：编排与调度域（`todo add/list/done` + `schedule add/list/remove`）
-8. `P5.7-R6`：多模态域（`media screen` + `gen image/selfie/tts/music`）
-9. `P5.7-R7`：浏览器域（`browser open/click/type`）
-10. `P5.7-R8`：代理域（`agent run/status`）
-11. `P5.7-R8b`：SKILL.md 与真实能力合同对齐（收尾）
+6. `P5.7-R3d`：LM Studio GLM ToolCall 温度锁定（`temperature=0`）
+7. `P5.7-R3l`：核心链路硬化改造包（先稳主链：协议硬门/三核管道/action_journal/观测锁）
+8. `P5.7-R4`：记忆与线程域（`memory search/add/stats` + `thread list/messages/active/switch`）
+9. `P5.7-R5`：编排与调度域（`todo add/list/done` + `schedule add/list/remove`）✅
+10. `P5.7-R5b`：Job/Schedule 读模型统一（schedule 写入后同步 jobs.json，写隔离读统一）
+11. `P5.7-R5c`：回头优化（File-First 状态收敛：`md/json/yml` 为真相源，DB 仅记忆索引）
+12. `P5.7-R6`：多模态域（`media screen` + `gen image/selfie/tts/music`）
+13. `P5.7-R7`：浏览器域（`browser open/click/type`）
+14. `P5.7-R8`：代理域（`agent run/status`）
+15. `P5.7-R8b`：Agent Backend 切换（`agent-backend/local-openai/minimax`）
+16. `P5.7-R8d`：模型切换全链路同步（切换即全链路同模）
+17. `P5.7-R9`：真实能力验收门（8 项真实场景 + 三重点指标）
+18. `P5.7-R9-T1`：真实能力验收执行单（真机跑测 + 证据回填 + 阻断修复）
+19. `P5.7-R9-T2`：上下文余量感知与自动 Compact（70% 触发 + 重启/换模续聊）
+20. `P5.7-R9-T3`：记忆默认开启与 /clear 边界锁（PI 基线 + 收敛分支）
+21. `P5.7-R9-T4`：后端中性命名重构（文件/函数/文案从 lmstudio 收敛为 agent-backend）
+22. `P5.7-R9-T5`：CodexHandler 策略守卫去重（消除重复块 + 单一守卫函数）
+23. `P5.7-R9-T6`：lmstudio 硬编码语义清理（配置/路由/类型主语收敛）
+24. `P5.7-R9-T7`：agent-backend 核心拆分（`lmstudio.ts` 降级为兼容壳）
+25. `P5.7-R9-T8`：CLAUDE 文档协议目录对齐（目录 + 模板 + docs:check）
+26. `P5.7-R10`：可用性稳定化派单包（真实冒烟阻断收口）
+27. `P5.7-R10-1`：memory 零手工索引召回（`add -> search` 可直接命中）
+28. `P5.7-R10-2`：thread workspace 作用域一致性（参数与行为对齐）
+29. `P5.7-R10-3`：gen image 提供方降级与诊断（主备切换 + 错误码）
+30. `P5.7-R11`：无子代理执行框架落地（规则提炼 + 阶段机 + 验证策略）
+31. `P5.7-R12`：硬前提补齐派单包（连续运行、可验证交付、配置单源）
+32. `P5.7-R12-T1`：Heartbeat 常驻唤醒与事件唤醒底座
+33. `P5.7-R12-T2`：Scheduler 自愈与热加载
+34. `P5.7-R12-T3`：`verify` 阶段入主链
+35. `P5.7-R12-T4`：事件队列持久化与重启恢复
+36. `P5.7-R12-T5`：上下文预算单源化与跨后端一致性
+37. `P5.7-R12-T6`：Secrets 单源化与 preflight 闭环
+38. `P5.7-R12-T7`：Whisper/本地模型服务生命周期验收与 10 分钟空闲释放
 
 ### 派单顺序（冻结）
 
 1. `P5.7-R3`（file 域）
-2. `P5.7-R3a`（runSkill 残留清理技术债插单）
-3. `P5.7-R4`（memory/thread 域）
-4. `P5.7-R5`（todo/schedule 域）
-5. `P5.7-R6`（media/gen 域）
-6. `P5.7-R7`（browser 域）
-7. `P5.7-R8`（agent 域）
-8. `P5.7-R8b`（SKILL.md 与真实能力合同对齐收尾）
+2. `P5.7-R3d`（LM Studio GLM ToolCall 温度锁定，稳定性插单）
+3. `P5.7-R3l`（核心链路硬化：协议硬门 + 三核最小管道）
+4. `P5.7-R4`（memory/thread 域）
+5. `P5.7-R5`（todo/schedule 域）
+6. `P5.7-R6`（media/gen 域）
+7. `P5.7-R7`（browser 域）
+8. `P5.7-R8`（agent 域）
+9. `P5.7-R8b`（agent backend 切换与语义收敛）
 
 ## 当前任务单
 
@@ -152,14 +205,67 @@
 - `p5-7-r1b-file-send-real-delivery.md`：P5.7-R1b（文件发送真实交付闭环，禁止合同壳验收）
 - `p5-7-r1c-cli-substrate-capability-baseline.md`：P5.7-R1c（CLI 基座能力硬门任务单）
 - `p5-7-r3-r8-mainline-dispatch-pack.md`：P5.7-R3~R8 总整理与派单包
-- `p5-7-r3a-runskill-residue-hard-cut.md`：P5.7-R3a（runSkill 残留硬清理技术债插单）
 - `p5-7-r3-file-system-domain.md`：P5.7-R3（文件与环境域任务单）
+- `p5-7-r4-mainline-dispatch-pack.md`：P5.7-R4 总整理与派单包（memory/thread 分步执行）
 - `p5-7-r4-memory-thread-domain.md`：P5.7-R4（记忆与线程域任务单）
+- `p5-7-r4-1-memory-contract.md`：P5.7-R4-1（memory 命令合同收口）
+- `p5-7-r4-2-thread-contract.md`：P5.7-R4-2（thread 命令与 active 强确认）
+- `p5-7-r4-3-help-regression-lock.md`：P5.7-R4-3（help-docs 同步与回归锁）
+- `p5-7-r4-t1-smoke-verification-gate.md`：P5.7-R4-T1（Memory/Thread 真机冒烟门禁）
+- `p5-7-r5-mainline-dispatch-pack.md`：P5.7-R5 总整理与派单包（todo/schedule 分步执行）
 - `p5-7-r5-todo-schedule-domain.md`：P5.7-R5（编排与调度域任务单）
+- `p5-7-r5-1-todo-contract.md`：P5.7-R5-1（todo 命令合同收口）✅
+- `p5-7-r5-2-schedule-contract.md`：P5.7-R5-2（schedule 命令合同收口）✅
+- `p5-7-r5-3-help-regression-lock.md`：P5.7-R5-3（help-docs 同步与回归锁）✅
+- `p5-7-r5b-job-schedule-read-model-unification.md`：P5.7-R5b（Job/Schedule 读模型统一）
+- `p5-7-r5c-file-first-state-refactor.md`：P5.7-R5c（回头优化：File-First 状态收敛，DB 仅记忆索引）
 - `p5-7-r6-media-gen-domain.md`：P5.7-R6（多模态域任务单）
+- `p5-7-r6b-image-read-lmstudio-lifecycle.md`：P5.7-R6b（`image read` + LM Studio 按需加载/1h 自动卸载）
 - `p5-7-r7-browser-domain.md`：P5.7-R7（浏览器域任务单）
+- `p5-7-r7b-gmail-readonly-acceptance.md`：P5.7-R7B（Gmail 只读验收）
+- `p5-7-r7c-nondefault-chrome-root-cdp.md`：P5.7-R7C（非默认 Chrome 数据根 + CDP 验证）
 - `p5-7-r8-agent-domain.md`：P5.7-R8（代理域任务单）
-- `p5-7-r8b-skill-doc-contract-alignment.md`：P5.7-R8b（SKILL.md 与真实能力合同对齐收尾单）
+- `p5-7-r8b-agent-backend-switch-minimax-2-5.md`：P5.7-R8b（Agent Backend 切换与 `lmstudio` 语义退场）
+- `p5-7-r8d-model-switch-chain-sync.md`：P5.7-R8d（后端模型切换全链路同步，单源绑定）
+- `p5-7-r9-real-capability-gate.md`：P5.7-R9（模型真实能力验收门，能力扩展前置硬门）
+- `p5-7-r9-t1-real-capability-execution-dispatch.md`：P5.7-R9-T1（Opus 并行执行单：真机跑测 + 证据 + 最小修复）
+- `p5-7-r9-t2-context-budget-auto-compact.md`：P5.7-R9-T2（上下文预算感知 + 70% 自动 Compact + 持续对话）
+- `p5-7-r9-t3-memory-default-on-pi-baseline-and-branch-convergence.md`：P5.7-R9-T3（记忆默认开启 + /clear 边界 + PI 基线 + 分支收敛）
+- `p5-7-r9-t4-agent-backend-neutral-naming-refactor.md`：P5.7-R9-T4（`lmstudio` 命名去耦，统一 `agent-backend` 主语）
+- `p5-7-r9-t5-codex-policy-dedup.md`：P5.7-R9-T5（CodexHandler 策略守卫去重与回归锁）
+- `p5-7-r9-t6-lmstudio-hardcode-purge.md`：P5.7-R9-T6（`lmstudio` 硬编码语义清理专项）
+- `p5-7-r9-t7-agent-backend-core-extraction.md`：P5.7-R9-T7（`lmstudio.ts` 兼容壳化 + agent-backend 核心拆分）
+- `p5-7-r9-t8-repo-protocol-alignment.md`：P5.7-R9-T8（CLAUDE 协议目录落地与兼容迁移）
+- `p5-7-r10-usability-stabilization-pack.md`：P5.7-R10（可用性稳定化派单包）
+- `p5-7-r10-1-memory-zero-touch-recall.md`：P5.7-R10-1（memory 零手工索引召回）
+- `p5-7-r10-2-thread-workspace-scope-parity.md`：P5.7-R10-2（thread workspace 作用域一致性）
+- `p5-7-r10-3-gen-image-provider-fallback-diagnostics.md`：P5.7-R10-3（gen image 提供方降级与诊断）
+- `p5-7-r11-no-subagent-execution-playbook.md`：P5.7-R11（无子代理执行框架落地）
+- `p5-7-r12-hard-prerequisites-dispatch-pack.md`：P5.7-R12（硬前提补齐派单包）
+- `p5-7-r12-t1-heartbeat-event-wake.md`：P5.7-R12-T1（Heartbeat 常驻唤醒与事件唤醒底座）
+- `p5-7-r12-t1-heartbeat-event-wake-dispatch.md`：P5.7-R12-T1 派单执行单（Opus）
+- `p5-7-r12-t2-scheduler-self-heal-hot-reload.md`：P5.7-R12-T2（Scheduler 自愈与热加载）
+- `p5-7-r12-t2-scheduler-self-heal-hot-reload-dispatch.md`：P5.7-R12-T2 派单执行单（Opus）
+- `p5-7-r12-t3-verify-phase-mainline.md`：P5.7-R12-T3（`verify` 阶段入主链）
+- `p5-7-r12-t4-event-queue-persistence.md`：P5.7-R12-T4（事件队列持久化与重启恢复）
+- `p5-7-r12-t5-context-budget-single-source.md`：P5.7-R12-T5（上下文预算单源化）
+- `p5-7-r12-t6-secrets-single-source-preflight.md`：P5.7-R12-T6（Secrets 单源化与 preflight 闭环）
+- `p5-7-r12-t7-model-service-idle-release.md`：P5.7-R12-T7（Whisper/本地模型服务生命周期验收与 10 分钟空闲释放）
+- `p5-7-r3d-lmstudio-glm-toolcall-temperature-lock.md`：P5.7-R3d（LM Studio GLM ToolCall 温度锁定）
+- `p5-7-r3f-r3k-tool-loop-best-practice-pack.md`：P5.7-R3f~R3k（Tool Loop 最佳实践改造派单包）
+- `p5-7-r3f-bash-runner-engineering.md`：P5.7-R3f（Bash Runner 工程化）
+- `p5-7-r3g-tool-loop-multi-call-closure.md`：P5.7-R3g（Tool Loop 多工具闭环）
+- `p5-7-r3h-tool-failure-contract-diagnostics.md`：P5.7-R3h（工具失败合同与诊断增强）
+- `p5-7-r3i-fs-scope-policy-layering.md`：P5.7-R3i（文件权限策略分层）
+- `p5-7-r3j-dual-model-routing-stabilization.md`：P5.7-R3j（双模型路由稳定化）
+- `p5-7-r3k-tool-loop-slo-gate.md`：P5.7-R3k（Tool Loop SLO 门禁落地）
+- `p5-7-r3l-core-chain-hardening-pack.md`：P5.7-R3l（核心链路硬化改造包）
+- `p5-7-r3l-1-tool-protocol-hard-gate.md`：P5.7-R3l-1（tool 协议硬门：无 tool_calls 禁伪执行）
+- `p5-7-r3l-2-dialog-exec-prompt-split.md`：P5.7-R3l-2（Dialog/Exec 提示词边界拆分）
+- `p5-7-r3l-3-plan-act-report-pipeline.md`：P5.7-R3l-3（Plan->Act->Report 三阶段管道）
+- `p5-7-r3l-4-action-journal-state-sync.md`：P5.7-R3l-4（action_journal 状态回写契约）
+- `p5-7-r3l-5-ttft-observability-lock.md`：P5.7-R3l-5（TTFT 补偿与观测字段锁）
+- `p5-7-r3l-7-tool-protocol-retry-and-soul-normalize.md`：P5.7-R3l-7（tool_calls 重试 + SOUL 路径纠偏）
 
 ## 规则
 

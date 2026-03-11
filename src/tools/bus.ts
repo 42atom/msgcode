@@ -14,12 +14,21 @@
 import type {
   ToolName, ToolSource, ToolPolicy, ToolContext, ToolResult, SideEffectLevel
 } from "./types.js";
-import { loadWorkspaceConfig } from "../config/workspace.js";
+import { resolve as resolvePath, sep as pathSep } from "node:path";
+import { getFsScope, getToolPolicy } from "../config/workspace.js";
 import { runTts } from "../runners/tts.js";
 import { runAsr } from "../runners/asr.js";
-import { runVisionOcr } from "../runners/vision_ocr.js";
+import { runVision } from "../runners/vision.js";
+import { runBashCommand } from "../runners/bash-runner.js";
+import {
+  executeBrowserOperation,
+  BrowserCommandError,
+  BROWSER_ERROR_CODES,
+  type BrowserOperation,
+} from "../runners/browser-patchright.js";
 import { logger } from "../logger/index.js";
 import { recordToolEvent } from "./telemetry.js";
+import { filterDefaultLlmTools } from "./manifest.js";
 
 const TOOL_META: Record<ToolName, { sideEffect: SideEffectLevel }> = {
   tts: { sideEffect: "message-send" },
@@ -33,30 +42,30 @@ const TOOL_META: Record<ToolName, { sideEffect: SideEffectLevel }> = {
   read_file: { sideEffect: "read-only" },  // P5.6.8-R3: PI 四基础工具
   write_file: { sideEffect: "local-write" },
   edit_file: { sideEffect: "local-write" },
+  feishu_send_file: { sideEffect: "message-send" },  // 飞书文件发送
+  feishu_list_members: { sideEffect: "read-only" },  // 飞书群成员查询
+  feishu_list_recent_messages: { sideEffect: "read-only" },  // 飞书最近消息查询
+  feishu_reply_message: { sideEffect: "message-send" },  // 飞书消息回复
+  feishu_react_message: { sideEffect: "message-send" },  // 飞书消息表情回复
 };
 
 const MEDIA_PIPELINE_ALLOWED: ToolName[] = ["asr", "vision"];
 
-function normalizePolicy(raw: Partial<ToolPolicy> | null | undefined): ToolPolicy {
-  // P5.5: 测试期统一 autonomous（让 LLM 自主决策 tool_calls）
-  const mode = raw?.mode === "explicit" || raw?.mode === "autonomous" || raw?.mode === "tool-calls"
-    ? raw.mode
-    : "autonomous"; // P5.5: 测试期默认 autonomous
+export { getToolPolicy } from "../config/workspace.js";
 
-  return {
-    mode,
-    allow: (raw?.allow ?? ["tts", "asr", "vision"]) as ToolName[],
-    requireConfirm: (raw?.requireConfirm ?? []) as ToolName[],
-  };
-}
+function isPathWithinWorkspace(targetPath: string, workspacePath: string): boolean {
+  const normalizedWorkspace = resolvePath(workspacePath);
+  const normalizedTarget = resolvePath(targetPath);
 
-export async function getToolPolicy(workspacePath: string): Promise<ToolPolicy> {
-  const cfg = await loadWorkspaceConfig(workspacePath);
-  return normalizePolicy({
-    mode: cfg["tooling.mode"] as ToolPolicy["mode"] | undefined,
-    allow: cfg["tooling.allow"] as ToolName[] | undefined,
-    requireConfirm: cfg["tooling.require_confirm"] as ToolName[] | undefined,
-  });
+  if (normalizedTarget === normalizedWorkspace) {
+    return true;
+  }
+
+  const workspacePrefix = normalizedWorkspace.endsWith(pathSep)
+    ? normalizedWorkspace
+    : `${normalizedWorkspace}${pathSep}`;
+
+  return normalizedTarget.startsWith(workspacePrefix);
 }
 
 export function canExecuteTool(
@@ -64,8 +73,12 @@ export function canExecuteTool(
   tool: ToolName,
   source: ToolSource
 ): { ok: boolean; code?: NonNullable<ToolResult["error"]>["code"]; message?: string } {
+  const effectiveAllow = source === "llm-tool-call"
+    ? filterDefaultLlmTools(policy.allow)
+    : policy.allow;
+
   // 检查工具是否在允许列表中
-  if (!policy.allow.includes(tool)) {
+  if (!effectiveAllow.includes(tool)) {
     return { ok: false, code: "TOOL_NOT_ALLOWED", message: `tool not allowed: ${tool}` };
   }
 
@@ -109,6 +122,20 @@ interface ValidationError {
   message: string;
 }
 
+function normalizeEditFileEdits(
+  args: Record<string, unknown>
+): Array<{ oldText: string; newText: string }> | null {
+  if (Array.isArray(args.edits) && args.edits.length > 0) {
+    return args.edits as Array<{ oldText: string; newText: string }>;
+  }
+
+  if (typeof args.oldText === "string" && typeof args.newText === "string") {
+    return [{ oldText: args.oldText, newText: args.newText }];
+  }
+
+  return null;
+}
+
 /**
  * 校验四核心工具参数
  * 校验失败返回结构化错误，不进入工具执行体
@@ -137,11 +164,16 @@ function validateToolArgs(
       if (!args.path || typeof args.path !== "string" || !args.path.trim()) {
         return { code: "TOOL_BAD_ARGS", message: "edit_file: 'path' must be a non-empty string" };
       }
-      if (!Array.isArray(args.edits) || args.edits.length === 0) {
-        return { code: "TOOL_BAD_ARGS", message: "edit_file: 'edits' must be a non-empty array" };
+      const edits = normalizeEditFileEdits(args);
+      if (!edits || edits.length === 0) {
+        return {
+          code: "TOOL_BAD_ARGS",
+          message: "edit_file: provide either 'edits' or the shorthand pair 'oldText' + 'newText'",
+        };
       }
-      for (let i = 0; i < args.edits.length; i++) {
-        const edit = args.edits[i] as Record<string, unknown>;
+      args.edits = edits;
+      for (let i = 0; i < edits.length; i++) {
+        const edit = edits[i] as Record<string, unknown>;
         if (typeof edit.oldText !== "string") {
           return { code: "TOOL_BAD_ARGS", message: `edit_file: edits[${i}].oldText must be a string` };
         }
@@ -157,8 +189,104 @@ function validateToolArgs(
       }
       break;
     }
+    case "browser": {
+      if (!args.operation || typeof args.operation !== "string" || !args.operation.trim()) {
+        return { code: "TOOL_BAD_ARGS", message: "browser: 'operation' must be a non-empty string" };
+      }
+
+      const operation = String(args.operation).trim();
+      switch (operation) {
+        case "instances.launch": {
+          const mode = typeof args.mode === "string" ? args.mode.trim() : "headless";
+          if (mode !== "headed" && mode !== "headless") {
+            return { code: "TOOL_BAD_ARGS", message: "browser: 'mode' must be headed or headless" };
+          }
+          break;
+        }
+        case "instances.stop":
+        case "tabs.list": {
+          if (!args.instanceId || typeof args.instanceId !== "string" || !args.instanceId.trim()) {
+            return { code: "TOOL_BAD_ARGS", message: `browser: '${operation}' requires 'instanceId'` };
+          }
+          break;
+        }
+        case "tabs.open": {
+          if (!args.url || typeof args.url !== "string" || !args.url.trim()) {
+            return { code: "TOOL_BAD_ARGS", message: "browser: 'tabs.open' requires 'url'" };
+          }
+          break;
+        }
+        case "tabs.snapshot":
+        case "tabs.text":
+        case "tabs.action":
+        case "tabs.eval": {
+          if (!args.tabId || typeof args.tabId !== "string" || !args.tabId.trim()) {
+            return { code: "TOOL_BAD_ARGS", message: `browser: '${operation}' requires 'tabId'` };
+          }
+          if (operation === "tabs.action" && (!args.kind || typeof args.kind !== "string" || !args.kind.trim())) {
+            return { code: "TOOL_BAD_ARGS", message: "browser: 'tabs.action' requires 'kind'" };
+          }
+          if (operation === "tabs.eval" && (!args.expression || typeof args.expression !== "string" || !args.expression.trim())) {
+            return { code: "TOOL_BAD_ARGS", message: "browser: 'tabs.eval' requires 'expression'" };
+          }
+          break;
+        }
+      }
+      break;
+    }
+    case "feishu_send_file": {
+      if (!args.filePath || typeof args.filePath !== "string" || !args.filePath.trim()) {
+        return { code: "TOOL_BAD_ARGS", message: "feishu_send_file: 'filePath' must be a non-empty string" };
+      }
+      break;
+    }
+    case "feishu_reply_message": {
+      if (!args.text || typeof args.text !== "string" || !args.text.trim()) {
+        return { code: "TOOL_BAD_ARGS", message: "feishu_reply_message: 'text' must be a non-empty string" };
+      }
+      if (
+        args.messageId !== undefined
+        && (typeof args.messageId !== "string" || !args.messageId.trim())
+      ) {
+        return { code: "TOOL_BAD_ARGS", message: "feishu_reply_message: 'messageId' must be a non-empty string when provided" };
+      }
+      break;
+    }
+    case "feishu_react_message": {
+      if (
+        args.messageId !== undefined
+        && (typeof args.messageId !== "string" || !args.messageId.trim())
+      ) {
+        return { code: "TOOL_BAD_ARGS", message: "feishu_react_message: 'messageId' must be a non-empty string when provided" };
+      }
+      if (args.emoji !== undefined && typeof args.emoji !== "string") {
+        return { code: "TOOL_BAD_ARGS", message: "feishu_react_message: 'emoji' must be a string when provided" };
+      }
+      break;
+    }
   }
   return null;
+}
+
+function isSoulAliasPath(inputPath: string): boolean {
+  const normalized = inputPath.trim().replace(/\\/g, "/").toLowerCase();
+  if (!normalized) return false;
+  return (
+    normalized === "soul" ||
+    normalized === "soul.md" ||
+    normalized.endsWith("/soul") ||
+    normalized.endsWith("/soul.md")
+  );
+}
+
+async function pathExists(filePath: string): Promise<boolean> {
+  try {
+    const fsPromises = await import("node:fs/promises");
+    await fsPromises.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function withTimeout<T>(p: Promise<T>, ms = 120000): Promise<T> {
@@ -272,7 +400,8 @@ export async function executeTool(
         break;
       }
       case "asr": {
-        const inputPath = String(args.inputPath ?? "");
+        // 兼容旧入参 inputPath，并对齐当前 manifest 的 audioPath。
+        const inputPath = String(args.audioPath ?? args.inputPath ?? "");
         const out = await withTimeout(
           runAsr({ workspacePath: ctx.workspacePath, inputPath }),
           ctx.timeoutMs ?? 300000
@@ -291,7 +420,7 @@ export async function executeTool(
         const imagePath = String(args.imagePath ?? "");
         const userQuery = typeof args.userQuery === "string" ? args.userQuery : undefined;
         const out = await withTimeout(
-          runVisionOcr({ workspacePath: ctx.workspacePath, imagePath, userQuery }),
+          runVision({ workspacePath: ctx.workspacePath, imagePath, userQuery }),
           ctx.timeoutMs ?? 120000
         );
         if (!out.success || !out.textPath) throw new Error(out.error || "vision failed");
@@ -308,39 +437,92 @@ export async function executeTool(
         const command = String(args.command ?? "").trim();
         if (!command) throw new Error("empty command");
 
-        // 使用 spawn 执行 shell 命令（shell: true = 完整 shell 解释，支持管道/重定向）
-        const { spawn } = await import("node:child_process");
+        // P5.7-R3f: 改接 bash-runner，支持 timeout/abort/输出截断
         const out = await withTimeout(
-          new Promise<{ exitCode: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-            const proc = spawn(command, {
-              cwd: ctx.workspacePath,
-              shell: true,
-              env: { ...process.env, PWD: ctx.workspacePath },
-            });
-            let stdout = "";
-            let stderr = "";
-
-            proc.stdout?.on("data", (data) => { stdout += data; });
-            proc.stderr?.on("data", (data) => { stderr += data; });
-
-            proc.on("close", (code) => {
-              resolve({ exitCode: code, stdout, stderr });
-            });
-
-            proc.on("error", (err) => {
-              reject(err);
-            });
+          runBashCommand({
+            command,
+            cwd: ctx.workspacePath,
+            timeoutMs: ctx.timeoutMs ?? 120000,
           }),
           ctx.timeoutMs ?? 120000
         );
 
+        // P5.7-R3f: 结构化日志（exitCode/stdoutTail/stderrTail/fullOutputPath）
+        // P5.7-R3h: 诊断字段透传到 ToolResult 顶层
         result = {
-          ok: out.exitCode === 0,
+          ok: out.ok,
           tool,
-          data: { exitCode: out.exitCode ?? -1, stdout: out.stdout, stderr: out.stderr },
+          data: {
+            exitCode: out.exitCode,
+            stdout: out.stdoutTail,
+            stderr: out.stderrTail,
+            fullOutputPath: out.fullOutputPath,
+          },
+          // P5.7-R3h: 诊断字段透传
+          exitCode: out.exitCode,
+          stdoutTail: out.stdoutTail,
+          stderrTail: out.stderrTail,
+          fullOutputPath: out.fullOutputPath,
           durationMs: Date.now() - started,
         };
         break;
+      }
+      case "browser": {
+        try {
+          const browser = await withTimeout(
+            executeBrowserOperation({
+              operation: String(args.operation) as BrowserOperation,
+              mode: typeof args.mode === "string" ? args.mode as "headed" | "headless" : undefined,
+              rootName: typeof args.rootName === "string" ? args.rootName : undefined,
+              profileId: typeof args.profileId === "string" ? args.profileId : undefined,
+              instanceId: typeof args.instanceId === "string" ? args.instanceId : undefined,
+              tabId: typeof args.tabId === "string" ? args.tabId : undefined,
+              url: typeof args.url === "string" ? args.url : undefined,
+              kind: typeof args.kind === "string" ? args.kind : undefined,
+              ref: typeof args.ref === "string" ? args.ref : undefined,
+              text: typeof args.text === "string" ? args.text : undefined,
+              key: typeof args.key === "string" ? args.key : undefined,
+              expression: typeof args.expression === "string" ? args.expression : undefined,
+              interactive: args.interactive === true,
+              compact: args.compact === true,
+              port: typeof args.port === "string" || typeof args.port === "number" ? args.port : undefined,
+              timeoutMs: ctx.timeoutMs,
+            }),
+            ctx.timeoutMs ?? 120000
+          );
+
+          result = {
+            ok: true,
+            tool,
+            data: {
+              operation: browser.operation,
+              result: browser.data,
+            },
+            durationMs: Date.now() - started,
+          };
+          break;
+        } catch (error) {
+          const message = error instanceof BrowserCommandError
+            ? `${error.code}: ${error.message}`
+            : (error instanceof Error ? error.message : String(error));
+          const code = (
+            (error instanceof BrowserCommandError && error.code === BROWSER_ERROR_CODES.TIMEOUT)
+            || message === "TOOL_TIMEOUT"
+          )
+            ? "TOOL_TIMEOUT"
+            : "TOOL_EXEC_FAILED";
+
+          result = {
+            ok: false,
+            tool,
+            error: {
+              code,
+              message,
+            },
+            durationMs: Date.now() - started,
+          };
+          break;
+        }
       }
       case "desktop": {
         // T8.4: 优先使用 rpc 透传，兼容旧 subcommand
@@ -569,9 +751,66 @@ export async function executeTool(
       }
       // P5.6.13-R1A-EXEC: run_skill 已退役
       case "read_file": {
-        // P5.7: 读取文件内容（允许绝对路径与跨 workspace 路径）
-        const { resolve } = await import("node:path");
-        const filePath = resolve(ctx.workspacePath, String(args.path || ""));
+        // P5.6.8-R3: 读取文件内容
+        // P5.7-R3i: 应用 fs_scope 策略
+        const { resolve, isAbsolute } = await import("node:path");
+        const inputPath = String(args.path || "");
+
+        // 获取 fs_scope 策略
+        const fsScope = await getFsScope(ctx.workspacePath);
+
+        let filePath: string;
+        if (fsScope === "unrestricted" && isAbsolute(inputPath)) {
+          // unrestricted 模式：允许绝对路径
+          filePath = inputPath;
+        } else {
+          // workspace 模式（默认）：解析为 workspace 内路径
+          filePath = resolve(ctx.workspacePath, inputPath);
+        }
+
+        // P5.7-R3i: workspace 模式下的边界校验
+        if (fsScope === "workspace" && !isPathWithinWorkspace(filePath, ctx.workspacePath)) {
+          // P5.7-R3i: 日志包含 fsScope/path
+          logger.warn("File tool path denied by fs_scope policy", {
+            module: "tools-bus",
+            tool,
+            fsScope,
+            inputPath,
+            resolvedPath: filePath,
+            workspacePath: ctx.workspacePath,
+          });
+          result = {
+            ok: false,
+            tool,
+            error: {
+              code: "TOOL_NOT_ALLOWED",
+              message: `path must be under workspace (fsScope: ${fsScope}, path: ${inputPath})`,
+            },
+            durationMs: Date.now() - started,
+          };
+          break;
+        }
+
+        // P5.7-R6e: soul 路径别名兜底
+        // 仅在模型传入相对别名且主路径不存在时回退到工作区 SOUL 文件，避免误参导致 ENOENT
+        if (!isAbsolute(inputPath) && isSoulAliasPath(inputPath)) {
+          const canonicalSoulPath = resolve(ctx.workspacePath, ".msgcode", "SOUL.md");
+          const [primaryExists, canonicalExists] = await Promise.all([
+            pathExists(filePath),
+            pathExists(canonicalSoulPath),
+          ]);
+
+          if (!primaryExists && canonicalExists) {
+            logger.info("read_file remapped soul alias to workspace SOUL", {
+              module: "tools-bus",
+              tool,
+              inputPath,
+              resolvedPath: filePath,
+              remappedPath: canonicalSoulPath,
+            });
+            filePath = canonicalSoulPath;
+          }
+        }
 
         const content = await withTimeout(
           (await import("node:fs/promises")).readFile(filePath, "utf-8"),
@@ -587,10 +826,46 @@ export async function executeTool(
         break;
       }
       case "write_file": {
-        // P5.7: 整文件写入（允许绝对路径与跨 workspace 路径）
-        const { resolve, dirname } = await import("node:path");
-        const filePath = resolve(ctx.workspacePath, String(args.path || ""));
+        // P5.6.8-R3: 整文件写入
+        // P5.7-R3i: 应用 fs_scope 策略
+        const { resolve, dirname, isAbsolute } = await import("node:path");
+        const inputPath = String(args.path || "");
         const content = String(args.content ?? "");
+
+        // 获取 fs_scope 策略
+        const fsScope = await getFsScope(ctx.workspacePath);
+
+        let filePath: string;
+        if (fsScope === "unrestricted" && isAbsolute(inputPath)) {
+          // unrestricted 模式：允许绝对路径
+          filePath = inputPath;
+        } else {
+          // workspace 模式（默认）：解析为 workspace 内路径
+          filePath = resolve(ctx.workspacePath, inputPath);
+        }
+
+        // P5.7-R3i: workspace 模式下的边界校验
+        if (fsScope === "workspace" && !isPathWithinWorkspace(filePath, ctx.workspacePath)) {
+          // P5.7-R3i: 日志包含 fsScope/path
+          logger.warn("File tool path denied by fs_scope policy", {
+            module: "tools-bus",
+            tool,
+            fsScope,
+            inputPath,
+            resolvedPath: filePath,
+            workspacePath: ctx.workspacePath,
+          });
+          result = {
+            ok: false,
+            tool,
+            error: {
+              code: "TOOL_NOT_ALLOWED",
+              message: `path must be under workspace (fsScope: ${fsScope}, path: ${inputPath})`,
+            },
+            durationMs: Date.now() - started,
+          };
+          break;
+        }
 
         // 确保目录存在
         const { mkdir } = await import("node:fs/promises");
@@ -610,10 +885,46 @@ export async function executeTool(
         break;
       }
       case "edit_file": {
-        // P5.7: 补丁式编辑（允许绝对路径与跨 workspace 路径）
-        const { resolve } = await import("node:path");
-        const filePath = resolve(ctx.workspacePath, String(args.path || ""));
-        const edits = args.edits as Array<{ oldText: string; newText: string }> | undefined;
+        // P5.6.8-R3: 补丁式编辑（禁止整文件覆盖）
+        // P5.7-R3i: 应用 fs_scope 策略
+        const { resolve, isAbsolute } = await import("node:path");
+        const inputPath = String(args.path || "");
+        const edits = normalizeEditFileEdits(args) ?? undefined;
+
+        // 获取 fs_scope 策略
+        const fsScope = await getFsScope(ctx.workspacePath);
+
+        let filePath: string;
+        if (fsScope === "unrestricted" && isAbsolute(inputPath)) {
+          // unrestricted 模式：允许绝对路径
+          filePath = inputPath;
+        } else {
+          // workspace 模式（默认）：解析为 workspace 内路径
+          filePath = resolve(ctx.workspacePath, inputPath);
+        }
+
+        // P5.7-R3i: workspace 模式下的边界校验
+        if (fsScope === "workspace" && !isPathWithinWorkspace(filePath, ctx.workspacePath)) {
+          // P5.7-R3i: 日志包含 fsScope/path
+          logger.warn("File tool path denied by fs_scope policy", {
+            module: "tools-bus",
+            tool,
+            fsScope,
+            inputPath,
+            resolvedPath: filePath,
+            workspacePath: ctx.workspacePath,
+          });
+          result = {
+            ok: false,
+            tool,
+            error: {
+              code: "TOOL_NOT_ALLOWED",
+              message: `path must be under workspace (fsScope: ${fsScope}, path: ${inputPath})`,
+            },
+            durationMs: Date.now() - started,
+          };
+          break;
+        }
 
         if (!edits || !Array.isArray(edits) || edits.length === 0) {
           throw new Error("edits must be a non-empty array of { oldText, newText }");
@@ -653,6 +964,276 @@ export async function executeTool(
           ok: true,
           tool,
           data: { path: args.path as string, editsApplied },
+          durationMs: Date.now() - started,
+        };
+        break;
+      }
+      case "feishu_send_file": {
+        // 飞书文件发送工具
+        const filePath = String(args.filePath ?? "").trim();
+        let chatId = args.chatId ? String(args.chatId).trim() : undefined;
+        const { loadWorkspaceConfig } = await import("../config/workspace.js");
+        const workspaceConfig = await loadWorkspaceConfig(ctx.workspacePath);
+
+        // 如果没提供 chatId，优先使用当前对话的群 ID
+        // ctx.chatId 格式是 feishu:oc_xxx，需要转换成 oc_xxx
+        if (!chatId && ctx.chatId) {
+          chatId = ctx.chatId.replace(/^feishu:/, "");
+        }
+
+        // 再 fallback 到 workspace 当前会话上下文（单一真相源）
+        if (!chatId) {
+          chatId = (workspaceConfig["runtime.current_chat_id"] as string | undefined)?.trim();
+        }
+        chatId = chatId || "";
+        const message = args.message ? String(args.message).trim() : undefined;
+
+        // 读取飞书配置（优先环境变量，然后 workspace config）
+        let appId = process.env.FEISHU_APP_ID?.trim();
+        let appSecret = process.env.FEISHU_APP_SECRET?.trim();
+
+        if (!appId || !appSecret) {
+          appId = (workspaceConfig["feishu.appId"] as string | undefined)?.trim();
+          appSecret = (workspaceConfig["feishu.appSecret"] as string | undefined)?.trim();
+        }
+
+        if (!appId || !appSecret) {
+          throw new Error("飞书配置未找到：请设置环境变量 FEISHU_APP_ID/FEISHU_APP_SECRET 或 workspace config 中的 feishu.appId/feishu.appSecret");
+        }
+        if (!chatId) {
+          throw new Error("飞书 chatId 未找到：请传入 chatId，或先让当前请求把 runtime.current_chat_id 写入 .msgcode/config.json");
+        }
+
+        // 调用飞书发送文件函数
+        const { feishuSendFile } = await import("../tools/feishu-send.js");
+        const out = await withTimeout(
+          feishuSendFile(
+            { filePath, chatId, message },
+            { appId, appSecret }
+          ),
+          ctx.timeoutMs ?? 60000
+        );
+
+        result = {
+          ok: out.ok,
+          tool,
+          data: out.ok ? {
+            chatId: out.chatId,
+            ...(out.attachmentType ? { attachmentType: out.attachmentType } : {}),
+            ...(out.attachmentKey ? { attachmentKey: out.attachmentKey } : {}),
+          } : undefined,
+          error: out.ok ? undefined : { code: "TOOL_EXEC_FAILED", message: out.error || "发送失败" },
+          durationMs: Date.now() - started,
+        };
+        break;
+      }
+      case "feishu_list_members": {
+        let chatId = args.chatId ? String(args.chatId).trim() : undefined;
+        const memberIdTypeRaw = String(args.memberIdType ?? "open_id").trim();
+        const memberIdType = memberIdTypeRaw === "user_id" || memberIdTypeRaw === "union_id"
+          ? memberIdTypeRaw
+          : "open_id";
+        const { loadWorkspaceConfig } = await import("../config/workspace.js");
+        const workspaceConfig = await loadWorkspaceConfig(ctx.workspacePath);
+
+        if (!chatId && ctx.chatId) {
+          chatId = ctx.chatId.replace(/^feishu:/, "");
+        }
+        if (!chatId) {
+          chatId = (workspaceConfig["runtime.current_chat_id"] as string | undefined)?.trim();
+        }
+        chatId = chatId || "";
+
+        let appId = process.env.FEISHU_APP_ID?.trim();
+        let appSecret = process.env.FEISHU_APP_SECRET?.trim();
+
+        if (!appId || !appSecret) {
+          appId = (workspaceConfig["feishu.appId"] as string | undefined)?.trim();
+          appSecret = (workspaceConfig["feishu.appSecret"] as string | undefined)?.trim();
+        }
+
+        if (!appId || !appSecret) {
+          throw new Error("飞书配置未找到：请设置环境变量 FEISHU_APP_ID/FEISHU_APP_SECRET 或 workspace config 中的 feishu.appId/feishu.appSecret");
+        }
+        if (!chatId) {
+          throw new Error("飞书 chatId 未找到：请传入 chatId，或先让当前请求把 runtime.current_chat_id 写入 .msgcode/config.json");
+        }
+
+        const { feishuListMembers } = await import("../tools/feishu-list-members.js");
+        const out = await withTimeout(
+          feishuListMembers(
+            { chatId, memberIdType },
+            { appId, appSecret }
+          ),
+          ctx.timeoutMs ?? 30000
+        );
+
+        result = {
+          ok: out.ok,
+          tool,
+          data: out.ok
+            ? {
+                chatId: out.chatId,
+                memberIdType: out.memberIdType,
+                memberTotal: out.memberTotal ?? out.members?.length ?? 0,
+                members: out.members ?? [],
+              }
+            : undefined,
+          error: out.ok ? undefined : { code: "TOOL_EXEC_FAILED", message: out.error || "获取群成员失败" },
+          durationMs: Date.now() - started,
+        };
+        break;
+      }
+      case "feishu_list_recent_messages": {
+        let chatId = args.chatId ? String(args.chatId).trim() : undefined;
+        const limitRaw = Number(args.limit ?? 40);
+        const limit = Number.isFinite(limitRaw) ? Math.max(1, Math.min(Math.trunc(limitRaw), 40)) : 40;
+        const { loadWorkspaceConfig } = await import("../config/workspace.js");
+        const workspaceConfig = await loadWorkspaceConfig(ctx.workspacePath);
+
+        if (!chatId && ctx.chatId) {
+          chatId = ctx.chatId.replace(/^feishu:/, "");
+        }
+        if (!chatId) {
+          chatId = (workspaceConfig["runtime.current_chat_id"] as string | undefined)?.trim();
+        }
+        chatId = chatId || "";
+
+        let appId = process.env.FEISHU_APP_ID?.trim();
+        let appSecret = process.env.FEISHU_APP_SECRET?.trim();
+
+        if (!appId || !appSecret) {
+          appId = (workspaceConfig["feishu.appId"] as string | undefined)?.trim();
+          appSecret = (workspaceConfig["feishu.appSecret"] as string | undefined)?.trim();
+        }
+
+        if (!appId || !appSecret) {
+          throw new Error("飞书配置未找到：请设置环境变量 FEISHU_APP_ID/FEISHU_APP_SECRET 或 workspace config 中的 feishu.appId/feishu.appSecret");
+        }
+        if (!chatId) {
+          throw new Error("飞书 chatId 未找到：请传入 chatId，或先让当前请求把 runtime.current_chat_id 写入 .msgcode/config.json");
+        }
+
+        const { feishuListRecentMessages } = await import("../tools/feishu-list-recent-messages.js");
+        const out = await withTimeout(
+          feishuListRecentMessages(
+            { chatId, limit },
+            { appId, appSecret }
+          ),
+          ctx.timeoutMs ?? 30000
+        );
+
+        result = {
+          ok: out.ok,
+          tool,
+          data: out.ok
+            ? {
+                chatId: out.chatId,
+                count: out.count ?? out.messages?.length ?? 0,
+                messages: out.messages ?? [],
+              }
+            : undefined,
+          error: out.ok ? undefined : { code: "TOOL_EXEC_FAILED", message: out.error || "获取最近消息失败" },
+          durationMs: Date.now() - started,
+        };
+        break;
+      }
+      case "feishu_reply_message": {
+        let messageId = args.messageId ? String(args.messageId).trim() : undefined;
+        const text = String(args.text ?? "").trim();
+        const replyInThread = Boolean(args.replyInThread);
+        const { loadWorkspaceConfig } = await import("../config/workspace.js");
+        const workspaceConfig = await loadWorkspaceConfig(ctx.workspacePath);
+
+        if (!messageId) {
+          messageId = ctx.defaultActionTargetMessageId?.trim() || ctx.currentMessageId?.trim();
+        }
+
+        let appId = process.env.FEISHU_APP_ID?.trim();
+        let appSecret = process.env.FEISHU_APP_SECRET?.trim();
+
+        if (!appId || !appSecret) {
+          appId = (workspaceConfig["feishu.appId"] as string | undefined)?.trim();
+          appSecret = (workspaceConfig["feishu.appSecret"] as string | undefined)?.trim();
+        }
+
+        if (!appId || !appSecret) {
+          throw new Error("飞书配置未找到：请设置环境变量 FEISHU_APP_ID/FEISHU_APP_SECRET 或 workspace config 中的 feishu.appId/feishu.appSecret");
+        }
+        if (!messageId) {
+          throw new Error("飞书目标消息 ID 未找到：请显式传入 messageId，或仅对当前消息执行回复动作");
+        }
+
+        const { feishuReplyMessage } = await import("../tools/feishu-reply-message.js");
+        const out = await withTimeout(
+          feishuReplyMessage(
+            { messageId, text, replyInThread },
+            { appId, appSecret }
+          ),
+          ctx.timeoutMs ?? 30000
+        );
+
+        result = {
+          ok: out.ok,
+          tool,
+          data: out.ok
+            ? {
+                chatId: out.chatId,
+                repliedToMessageId: out.repliedToMessageId,
+                messageId: out.messageId ?? "",
+                replyInThread: out.replyInThread ?? replyInThread,
+              }
+            : undefined,
+          error: out.ok ? undefined : { code: "TOOL_EXEC_FAILED", message: out.error || "回复消息失败" },
+          durationMs: Date.now() - started,
+        };
+        break;
+      }
+      case "feishu_react_message": {
+        let messageId = args.messageId ? String(args.messageId).trim() : undefined;
+        const emoji = args.emoji ? String(args.emoji).trim() : undefined;
+        const { loadWorkspaceConfig } = await import("../config/workspace.js");
+        const workspaceConfig = await loadWorkspaceConfig(ctx.workspacePath);
+
+        if (!messageId) {
+          messageId = ctx.defaultActionTargetMessageId?.trim() || ctx.currentMessageId?.trim();
+        }
+
+        let appId = process.env.FEISHU_APP_ID?.trim();
+        let appSecret = process.env.FEISHU_APP_SECRET?.trim();
+
+        if (!appId || !appSecret) {
+          appId = (workspaceConfig["feishu.appId"] as string | undefined)?.trim();
+          appSecret = (workspaceConfig["feishu.appSecret"] as string | undefined)?.trim();
+        }
+
+        if (!appId || !appSecret) {
+          throw new Error("飞书配置未找到：请设置环境变量 FEISHU_APP_ID/FEISHU_APP_SECRET 或 workspace config 中的 feishu.appId/feishu.appSecret");
+        }
+        if (!messageId) {
+          throw new Error("飞书目标消息 ID 未找到：请显式传入 messageId，或仅对当前消息执行表情回复动作");
+        }
+
+        const { feishuReactMessage } = await import("../tools/feishu-react-message.js");
+        const out = await withTimeout(
+          feishuReactMessage(
+            { messageId, emoji },
+            { appId, appSecret }
+          ),
+          ctx.timeoutMs ?? 30000
+        );
+
+        result = {
+          ok: out.ok,
+          tool,
+          data: out.ok
+            ? {
+                messageId: out.messageId,
+                reactionId: out.reactionId,
+                emojiType: out.emojiType ?? "THUMBSUP",
+              }
+            : undefined,
+          error: out.ok ? undefined : { code: "TOOL_EXEC_FAILED", message: out.error || "消息表情回复失败" },
           durationMs: Date.now() - started,
         };
         break;

@@ -39,18 +39,27 @@ export async function probeEnvironment(options?: ProbeOptions): Promise<ProbeRes
     // 3. imsg 二进制
     const imsgPath = config.imsgPath;
     details.imsg_path = imsgPath;
-    const imsgExists = existsSync(imsgPath);
-    details.imsg_executable = imsgExists;
-    if (!imsgExists) {
-        issues.push(`imsg 二进制不存在: ${imsgPath}`);
-    } else {
-        // 尝试获取 imsg 版本
-        try {
-            const { stdout } = await execAsync(`"${imsgPath}" --version`, { timeout: 2000 });
-            details.imsg_version = stdout.trim();
-        } catch {
-            // 版本获取失败，但二进制存在
+    if (config.transports.includes("imsg")) {
+        if (!imsgPath) {
+            details.imsg_executable = false;
+            issues.push("IMSG_PATH 未设置");
+        } else {
+            const imsgExists = existsSync(imsgPath);
+            details.imsg_executable = imsgExists;
+            if (!imsgExists) {
+                issues.push(`imsg 二进制不存在: ${imsgPath}`);
+            } else {
+                // 尝试获取 imsg 版本
+                try {
+                    const { stdout } = await execAsync(`"${imsgPath}" --version`, { timeout: 2000 });
+                    details.imsg_version = stdout.trim();
+                } catch {
+                    // 版本获取失败，但二进制存在
+                }
+            }
         }
+    } else {
+        details.imsg_executable = null;
     }
 
     // 4. Claude CLI
@@ -75,7 +84,7 @@ export async function probeEnvironment(options?: ProbeOptions): Promise<ProbeRes
 
     // 判断状态
     let status: ProbeResult["status"] = "pass";
-    if (majorNodeVersion < 18 || !imsgExists) {
+    if (majorNodeVersion < 18 || (config.transports.includes("imsg") && details.imsg_executable === false)) {
         status = "error";
     } else if (issues.length > 0) {
         status = "warning";

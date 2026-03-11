@@ -15,7 +15,8 @@ process.env.ROUTES_FILE_PATH = path.join(os.tmpdir(), ".config/msgcode/routes.js
 process.env.STATE_FILE_PATH = path.join(os.tmpdir(), ".config/msgcode/state.json");
 
 // 导入被测模块
-import { BaseHandler, type HandlerContext, type HandleResult } from "../src/handlers.js";
+import { BaseHandler, DefaultHandler, type HandlerContext, type HandleResult } from "../src/handlers.js";
+import { renderUnknownCommandHint } from "../src/routes/cmd-info.js";
 
 // 测试工具函数
 function createMockContext(overrides?: Partial<HandlerContext>): HandlerContext {
@@ -99,6 +100,18 @@ describe("handlers 运行时内核契约", () => {
     });
 
     describe("编排契约验证", () => {
+        it("未知 slash 命令提示应复用 routes help 真相源", async () => {
+            const context = createMockContext();
+            const handler = new DefaultHandler();
+
+            const result = await handler.handle("/foobar", context);
+
+            expect(result.success).toBe(true);
+            expect(result.response).toContain("未知命令: /foobar");
+            expect(result.response).toContain(renderUnknownCommandHint());
+            expect(result.response).not.toContain("📝 命令列表");
+        });
+
         it("handlers.ts 不直接导入业务实现（tmux/session 除外）", () => {
             // 读取 handlers.ts 源码，检查 import 语句
             const handlersCode = fs.readFileSync(

@@ -30,7 +30,7 @@
 
 1. **禁止静默副作用**：关键操作必须显式参数触发（如 `--to` 必填）
 2. **禁止"伪成功"**：失败必须返回非 0 退出码 + 结构化错误
-3. **禁止隐式破坏**：破坏性操作必须显式子命令 + 明确路径参数，不允许隐式目标
+3. **禁止隐式破坏**：破坏性操作必须 `--force` 显式确认
 
 ### 观测字段（统一日志口径）
 
@@ -55,7 +55,7 @@
 7. 每个能力必须提供至少 1 条真实执行成功证据（非 mock、非静态断言）。
 8. 每个能力必须提供至少 1 条真实失败证据（真实错误码与错误消息）。
 
-## 系列拆分（P5.7-R1 ~ R8b）
+## 系列拆分（P5.7-R1 ~ R8）
 
 ### R1（P0）：文件发送先跑通
 
@@ -92,18 +92,17 @@
 
 - 建议能力：
   1. `msgcode file find --dir --name`
-  2. `msgcode file read --path [--lines]`
-  3. `msgcode file write --path --content [--append]`
+  2. `msgcode file read --path [--lines] [--force]`
+  3. `msgcode file write --path --content [--append] [--force]`
   4. `msgcode file move|rename|delete|copy|zip ...`
   5. `msgcode system env [--key]`
 - 参考样例映射（Alma）：`file-manager`
 
-### R3a（P0，技术债插单）：runSkill 残留硬清理
+### R3d（P0，稳定性插单）：LM Studio GLM ToolCall 温度锁定
 
-- 任务单：`p5-7-r3a-runskill-residue-hard-cut.md`
-- 目标：清理 `runSkill/runAutoSkill/skill-orchestrator` 运行时残留，锁死单一 CLI 主链。
-- 说明：R4 前必须完成，防止历史执行链回流。
-
+- 任务单：`p5-7-r3d-lmstudio-glm-toolcall-temperature-lock.md`
+- 目标：基于 R3c 调研结论，固化工具调用默认参数 `temperature=0`，并用回归锁防止回退。
+- 说明：该插单只做稳定性口径收敛，不改变能力面。
 ### R4（P1）：记忆与线程检索
 
 - 建议能力：
@@ -138,24 +137,17 @@
   2. `msgcode agent status --id`
 - 参考样例映射（Alma）：`coding-agent`
 
-### R8b（P1，收尾）：SKILL.md 与真实能力合同对齐
-
-- 任务单：`p5-7-r8b-skill-doc-contract-alignment.md`
-- 目标：清理过期命令示例，建立 `SKILL.md -> help-docs --json` 一致性检查。
-- 说明：R8 后执行，作为 P5.7 文档与合同最终收口。
-
 ## 派单顺序与依赖关系（冻结）
 
 ```text
 P5.7-R3（file 域）
 ├── file find（最简单，纯读）
-├── file read（开放路径读取）
-├── file write（加 --append）
+├── file read（加 --force 边界检查）
+├── file write（加 --force + --append）
 └── file move/rename/delete/copy/zip（状态变更，需要回归锁）
 
-P5.7-R3a（技术债插单）
-└── runSkill/runAutoSkill/skill-orchestrator 残留硬清理
-
+P5.7-R3d（稳定性插单）
+└── LM Studio GLM ToolCall 温度锁定（temperature=0 + 回归锁）
 P5.7-R4（memory/thread 域）
 ├── memory search/add/stats（依赖现有记忆系统）
 └── thread list/messages/switch/active（依赖 thread 管理）
@@ -174,21 +166,24 @@ P5.7-R7（browser 域）
 
 P5.7-R8（agent 域）
 └── agent run/status（最重，依赖其他域成熟后收尾）
-
-P5.7-R8b（收尾单）
-└── SKILL.md 示例命令与真实 CLI 合同一致性对齐
 ```
 
 ## 任务单文件映射（可直接派发）
 
-1. `p5-7-r3a-runskill-residue-hard-cut.md`（技术债插单，R4 前执行）
+1. `p5-7-r3d-lmstudio-glm-toolcall-temperature-lock.md`（稳定性插单，尽快执行）
 2. `p5-7-r3-file-system-domain.md`
 3. `p5-7-r4-memory-thread-domain.md`
 4. `p5-7-r5-todo-schedule-domain.md`
 5. `p5-7-r6-media-gen-domain.md`
 6. `p5-7-r7-browser-domain.md`
 7. `p5-7-r8-agent-domain.md`
-8. `p5-7-r8b-skill-doc-contract-alignment.md`（收尾单，R8 后执行）
+8. `p5-7-r3f-r3k-tool-loop-best-practice-pack.md`（Tool Loop 最佳实践改造总包）
+9. `p5-7-r3f-bash-runner-engineering.md`
+10. `p5-7-r3g-tool-loop-multi-call-closure.md`
+11. `p5-7-r3h-tool-failure-contract-diagnostics.md`
+12. `p5-7-r3i-fs-scope-policy-layering.md`
+13. `p5-7-r3j-dual-model-routing-stabilization.md`
+14. `p5-7-r3k-tool-loop-slo-gate.md`
 
 ## 每个子任务统一验收（硬门）
 

@@ -8,7 +8,7 @@ src/routes/
 ├── cmd-types.ts      # 共享类型：CommandResult / CommandHandlerOptions
 ├── cmd-bind.ts       # /bind /where /unbind
 ├── cmd-info.ts       # /help /info /chatlist
-├── cmd-model.ts      # /model /policy /pi
+├── cmd-model.ts      # /model /policy
 ├── cmd-owner.ts      # /owner /owner-only
 ├── cmd-memory.ts     # /cursor /reset-cursor /mem
 ├── cmd-soul.ts       # /soul list/use/current

@@ -17,11 +17,19 @@ import {
   handleInfoCommand as handleInfoCommandImpl,
   handleChatlistCommand as handleChatlistCommandImpl,
   handleHelpCommand as handleHelpCommandImpl,
+  renderUnknownCommandHint,
 } from "./cmd-info.js";
 import {
+  handleBackendCommand as handleBackendCommandImpl,
+  handleLocalCommand as handleLocalCommandImpl,
+  handleApiCommand as handleApiCommandImpl,
+  handleTmuxCommand as handleTmuxCommandImpl,
   handleModelCommand as handleModelCommandImpl,
+  handleTextModelCommand as handleTextModelCommandImpl,
+  handleVisionModelCommand as handleVisionModelCommandImpl,
+  handleTtsModelCommand as handleTtsModelCommandImpl,
+  handleEmbeddingModelCommand as handleEmbeddingModelCommandImpl,
   handlePolicyCommand as handlePolicyCommandImpl,
-  handlePiCommand as handlePiCommandImpl,
 } from "./cmd-model.js";
 import {
   handleOwnerCommand as handleOwnerCommandImpl,
@@ -42,6 +50,8 @@ import {
   handleScheduleValidateCommand as handleScheduleValidateCommandImpl,
   handleScheduleEnableCommand as handleScheduleEnableCommandImpl,
   handleScheduleDisableCommand as handleScheduleDisableCommandImpl,
+  handleScheduleAddCommand as handleScheduleAddCommandImpl,
+  handleScheduleRemoveCommand as handleScheduleRemoveCommandImpl,
   handleReloadCommand as handleReloadCommandImpl,
 } from "./cmd-schedule.js";
 import {
@@ -55,6 +65,7 @@ import {
   handleSteerCommand as handleSteerCommandImpl,
   handleNextCommand as handleNextCommandImpl,
 } from "./cmd-steer.js";
+import { handleTaskCommand as handleTaskCommandImpl } from "./cmd-task.js";
 
 export type { CommandHandlerOptions, CommandResult } from "./cmd-types.js";
 
@@ -62,14 +73,21 @@ export const handleBindCommand = handleBindCommandImpl;
 export const handleWhereCommand = handleWhereCommandImpl;
 export const handleUnbindCommand = handleUnbindCommandImpl;
 export const handleInfoCommand = handleInfoCommandImpl;
+export const handleBackendCommand = handleBackendCommandImpl;
+export const handleLocalCommand = handleLocalCommandImpl;
+export const handleApiCommand = handleApiCommandImpl;
+export const handleTmuxCommand = handleTmuxCommandImpl;
 export const handleModelCommand = handleModelCommandImpl;
+export const handleTextModelCommand = handleTextModelCommandImpl;
+export const handleVisionModelCommand = handleVisionModelCommandImpl;
+export const handleTtsModelCommand = handleTtsModelCommandImpl;
+export const handleEmbeddingModelCommand = handleEmbeddingModelCommandImpl;
 export const handleChatlistCommand = handleChatlistCommandImpl;
 export const handleCursorCommand = handleCursorCommandImpl;
 export const handleResetCursorCommand = handleResetCursorCommandImpl;
 export const handleHelpCommand = handleHelpCommandImpl;
 export const handleMemCommand = handleMemCommandImpl;
 export const handlePolicyCommand = handlePolicyCommandImpl;
-export const handlePiCommand = handlePiCommandImpl;
 export const handleOwnerCommand = handleOwnerCommandImpl;
 export const handleOwnerOnlyCommand = handleOwnerOnlyCommandImpl;
 export const handleSoulListCommand = handleSoulListCommandImpl;
@@ -87,6 +105,7 @@ export const handleToolAllowRemoveCommand = handleToolAllowRemoveCommandImpl;
 export const handleDesktopCommand = handleDesktopCommandImpl;
 export const handleSteerCommand = handleSteerCommandImpl;
 export const handleNextCommand = handleNextCommandImpl;
+export const handleTaskCommand = handleTaskCommandImpl;
 
 export async function handleRouteCommand(
   command: string,
@@ -101,8 +120,24 @@ export async function handleRouteCommand(
       return handleUnbindCommand(options);
     case "info":
       return handleInfoCommand(options);
+    case "backend":
+      return handleBackendCommand(options);
+    case "local":
+      return handleLocalCommand(options);
+    case "api":
+      return handleApiCommand(options);
+    case "tmux":
+      return handleTmuxCommand(options);
     case "model":
       return handleModelCommand(options);
+    case "textModel":
+      return handleTextModelCommand(options);
+    case "visionModel":
+      return handleVisionModelCommand(options);
+    case "ttsModel":
+      return handleTtsModelCommand(options);
+    case "embeddingModel":
+      return handleEmbeddingModelCommand(options);
     case "chatlist":
       return handleChatlistCommand(options);
     case "cursor":
@@ -115,8 +150,6 @@ export async function handleRouteCommand(
       return handleMemCommand(options);
     case "policy":
       return handlePolicyCommand(options);
-    case "pi":
-      return handlePiCommand(options);
     case "owner":
       return handleOwnerCommand(options);
     case "ownerOnly":
@@ -128,15 +161,19 @@ export async function handleRouteCommand(
     case "soulCurrent":
       return handleSoulCurrentCommand(options);
     case "scheduleList":
-      return handleScheduleListCommand(options);
+      return handleScheduleListCommandImpl(options);
     case "scheduleValidate":
-      return handleScheduleValidateCommand(options);
+      return handleScheduleValidateCommandImpl(options);
     case "scheduleEnable":
-      return handleScheduleEnableCommand(options);
+      return handleScheduleEnableCommandImpl(options);
     case "scheduleDisable":
-      return handleScheduleDisableCommand(options);
+      return handleScheduleDisableCommandImpl(options);
+    case "scheduleAdd":
+      return handleScheduleAddCommandImpl(options);
+    case "scheduleRemove":
+      return handleScheduleRemoveCommandImpl(options);
     case "reload":
-      return handleReloadCommand(options);
+      return handleReloadCommandImpl(options);
     case "toolstats":
       return handleToolstatsCommand(options);
     case "toolAllowList":
@@ -151,12 +188,14 @@ export async function handleRouteCommand(
       return handleSteerCommand(options);
     case "next":
       return handleNextCommand(options);
+    case "task":
+      return handleTaskCommand(options);
     default:
       return {
         success: false,
         message: `未知命令: /${command}\n` +
           `\n` +
-          `可用命令: /bind, /where, /unbind, /info, /model, /policy, /owner, /owner-only, /chatlist, /mem, /cursor, /reset-cursor, /help, /soul, /schedule, /reload, /steer, /next`,
+          renderUnknownCommandHint(),
       };
   }
 }
@@ -169,8 +208,24 @@ export function isRouteCommand(text: string): boolean {
     trimmed === "/where" ||
     trimmed === "/unbind" ||
     trimmed === "/info" ||
+    trimmed === "/backend" ||
+    trimmed.startsWith("/backend ") ||
+    trimmed === "/local" ||
+    trimmed.startsWith("/local ") ||
+    trimmed === "/api" ||
+    trimmed.startsWith("/api ") ||
+    trimmed === "/tmux" ||
+    trimmed.startsWith("/tmux ") ||
     trimmed.startsWith("/model ") ||
     trimmed === "/model" ||
+    trimmed === "/text-model" ||
+    trimmed.startsWith("/text-model ") ||
+    trimmed === "/vision-model" ||
+    trimmed.startsWith("/vision-model ") ||
+    trimmed === "/tts-model" ||
+    trimmed.startsWith("/tts-model ") ||
+    trimmed === "/embedding-model" ||
+    trimmed.startsWith("/embedding-model ") ||
     trimmed === "/chatlist" ||
     trimmed === "/cursor" ||
     trimmed === "/reset-cursor" ||
@@ -179,8 +234,6 @@ export function isRouteCommand(text: string): boolean {
     trimmed === "/mem" ||
     trimmed.startsWith("/policy ") ||
     trimmed === "/policy" ||
-    trimmed.startsWith("/pi ") ||
-    trimmed === "/pi" ||
     trimmed.startsWith("/owner ") ||
     trimmed === "/owner" ||
     trimmed.startsWith("/owner-only ") ||
@@ -203,7 +256,9 @@ export function isRouteCommand(text: string): boolean {
     trimmed.startsWith("/steer ") ||
     trimmed === "/steer" ||
     trimmed.startsWith("/next ") ||
-    trimmed === "/next"
+    trimmed === "/next" ||
+    trimmed.startsWith("/task ") ||
+    trimmed === "/task"
   );
 }
 
@@ -226,12 +281,68 @@ export function parseRouteCommand(text: string): { command: string; args: string
   if (trimmed === "/info") {
     return { command: "info", args: [] };
   }
+  if (trimmed.startsWith("/backend ")) {
+    const parts = trimmed.split(/\s+/);
+    return { command: "backend", args: parts.slice(1) };
+  }
+  if (trimmed === "/backend") {
+    return { command: "backend", args: [] };
+  }
+  if (trimmed.startsWith("/local ")) {
+    const parts = trimmed.split(/\s+/);
+    return { command: "local", args: parts.slice(1) };
+  }
+  if (trimmed === "/local") {
+    return { command: "local", args: [] };
+  }
+  if (trimmed.startsWith("/api ")) {
+    const parts = trimmed.split(/\s+/);
+    return { command: "api", args: parts.slice(1) };
+  }
+  if (trimmed === "/api") {
+    return { command: "api", args: [] };
+  }
+  if (trimmed.startsWith("/tmux ")) {
+    const parts = trimmed.split(/\s+/);
+    return { command: "tmux", args: parts.slice(1) };
+  }
+  if (trimmed === "/tmux") {
+    return { command: "tmux", args: [] };
+  }
   if (trimmed.startsWith("/model ")) {
     const parts = trimmed.split(/\s+/);
     return { command: "model", args: parts.slice(1) };
   }
   if (trimmed === "/model") {
     return { command: "model", args: [] };
+  }
+  if (trimmed.startsWith("/text-model ")) {
+    const parts = trimmed.split(/\s+/);
+    return { command: "textModel", args: parts.slice(1) };
+  }
+  if (trimmed === "/text-model") {
+    return { command: "textModel", args: [] };
+  }
+  if (trimmed.startsWith("/vision-model ")) {
+    const parts = trimmed.split(/\s+/);
+    return { command: "visionModel", args: parts.slice(1) };
+  }
+  if (trimmed === "/vision-model") {
+    return { command: "visionModel", args: [] };
+  }
+  if (trimmed.startsWith("/tts-model ")) {
+    const parts = trimmed.split(/\s+/);
+    return { command: "ttsModel", args: parts.slice(1) };
+  }
+  if (trimmed === "/tts-model") {
+    return { command: "ttsModel", args: [] };
+  }
+  if (trimmed.startsWith("/embedding-model ")) {
+    const parts = trimmed.split(/\s+/);
+    return { command: "embeddingModel", args: parts.slice(1) };
+  }
+  if (trimmed === "/embedding-model") {
+    return { command: "embeddingModel", args: [] };
   }
   if (trimmed === "/chatlist") {
     return { command: "chatlist", args: [] };
@@ -258,13 +369,6 @@ export function parseRouteCommand(text: string): { command: string; args: string
   }
   if (trimmed === "/policy") {
     return { command: "policy", args: [] };
-  }
-  if (trimmed.startsWith("/pi ")) {
-    const parts = trimmed.split(/\s+/);
-    return { command: "pi", args: parts.slice(1) };
-  }
-  if (trimmed === "/pi") {
-    return { command: "pi", args: [] };
   }
   if (trimmed === "/owner") {
     return { command: "owner", args: [] };
@@ -309,6 +413,10 @@ export function parseRouteCommand(text: string): { command: string; args: string
       return { command: "scheduleEnable", args: parts.slice(2) };
     } else if (subCommand === "disable") {
       return { command: "scheduleDisable", args: parts.slice(2) };
+    } else if (subCommand === "add") {
+      return { command: "scheduleAdd", args: parts.slice(2) };
+    } else if (subCommand === "remove") {
+      return { command: "scheduleRemove", args: parts.slice(2) };
     }
     return { command: "scheduleList", args: [] };
   }
@@ -383,6 +491,13 @@ export function parseRouteCommand(text: string): { command: string; args: string
   }
   if (trimmed === "/next") {
     return { command: "next", args: [] };
+  }
+  if (trimmed.startsWith("/task ")) {
+    const parts = trimmed.split(/\s+/);
+    return { command: "task", args: parts.slice(1) };
+  }
+  if (trimmed === "/task") {
+    return { command: "task", args: [] };
   }
 
   return null;

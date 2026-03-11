@@ -12,6 +12,14 @@ import type { Envelope, Diagnostic } from "../memory/types.js";
 import { getFileSendContract, getFileFindContract, getFileReadContract, getFileWriteContract, getFileDeleteContract, getFileMoveContract, getFileCopyContract } from "./file.js";
 import { getWebCommandContract } from "./web.js";
 import { getSystemCommandContract } from "./system.js";
+import { getMemoryAddContract, getMemorySearchContract, getMemoryStatsContract } from "./memory.js";
+import { getThreadListContract, getThreadMessagesContract, getThreadActiveContract, getThreadSwitchContract } from "./thread.js";
+import { getTodoAddContract, getTodoListContract, getTodoDoneContract } from "./todo.js";
+import { getScheduleAddContract, getScheduleListContract, getScheduleRemoveContract, getScheduleEnableContract, getScheduleDisableContract } from "./schedule.js";
+import { getMediaScreenContract } from "./media.js";
+import { getGenImageContract, getGenSelfieContract } from "./gen-image.js";
+import { getGenTtsContract, getGenMusicContract } from "./gen-audio.js";
+import { getBrowserCommandContracts } from "./browser.js";
 
 // ============================================
 // 类型定义
@@ -107,6 +115,35 @@ export function createHelpDocsCommand(): Command {
           ...(getWebCommandContract() as Record<string, unknown>[]),
           // System 命令组（P5.7-R2 + R3-4）
           ...(getSystemCommandContract() as Record<string, unknown>[]),
+          // Memory 命令组（P5.7-R4-1）
+          getMemoryAddContract() as Record<string, unknown>,
+          getMemorySearchContract() as Record<string, unknown>,
+          getMemoryStatsContract() as Record<string, unknown>,
+          // Thread 命令组（P5.7-R4-2）
+          getThreadListContract() as Record<string, unknown>,
+          getThreadMessagesContract() as Record<string, unknown>,
+          getThreadActiveContract() as Record<string, unknown>,
+          getThreadSwitchContract() as Record<string, unknown>,
+          // Todo 命令组（P5.7-R5-1）
+          getTodoAddContract() as Record<string, unknown>,
+          getTodoListContract() as Record<string, unknown>,
+          getTodoDoneContract() as Record<string, unknown>,
+          // Schedule 命令组（P5.7-R5-2）
+          getScheduleAddContract() as Record<string, unknown>,
+          getScheduleListContract() as Record<string, unknown>,
+          getScheduleRemoveContract() as Record<string, unknown>,
+          getScheduleEnableContract() as Record<string, unknown>,
+          getScheduleDisableContract() as Record<string, unknown>,
+          // Media 命令组（P5.7-R6-1）
+          getMediaScreenContract() as Record<string, unknown>,
+          // Gen Image 命令组（P5.7-R6-2）
+          getGenImageContract() as Record<string, unknown>,
+          getGenSelfieContract() as Record<string, unknown>,
+          // Gen Audio 命令组（P5.7-R6-3）
+          getGenTtsContract() as Record<string, unknown>,
+          getGenMusicContract() as Record<string, unknown>,
+          // Browser 命令组（P5.7-R7A）
+          ...(getBrowserCommandContracts() as Record<string, unknown>[]),
         ];
 
         const data: HelpData = {

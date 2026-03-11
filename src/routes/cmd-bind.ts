@@ -2,7 +2,10 @@
  * msgcode: 管理域命令（bind/where/unbind）
  */
 
+import path from "node:path";
+import fs from "node:fs";
 import type { BotType, ModelClient } from "../router.js";
+import { config } from "../config.js";
 import {
   createRoute,
   getRouteByChatId,
@@ -10,9 +13,10 @@ import {
   updateRouteStatus,
 } from "./store.js";
 import type { CommandHandlerOptions, CommandResult } from "./cmd-types.js";
+import { getBackendLane, getTmuxClient } from "../config/workspace.js";
 
 const VALID_MODEL_CLIENTS: ModelClient[] = ["claude", "codex", "opencode"];
-const DEFAULT_BOT_TYPE: BotType = "lmstudio";
+const DEFAULT_BOT_TYPE: BotType = "agent-backend";
 
 function isValidModelClient(type: string): type is ModelClient {
   return VALID_MODEL_CLIENTS.includes(type as ModelClient);
@@ -34,6 +38,73 @@ function isValidRelativePath(path: string): boolean {
     return false;
   }
   return true;
+}
+
+function normalizeGlobalAgentBackend(raw: string): string {
+  const value = raw.trim().toLowerCase();
+  if (
+    !value ||
+    value === "agent" ||
+    value === "agent-backend" ||
+    value === "lmstudio" ||
+    value === "local-openai" ||
+    value === "omlx"
+  ) {
+    return "agent-backend";
+  }
+  return value;
+}
+
+function getConfiguredLocalApp(): string {
+  const value = (process.env.LOCAL_AGENT_BACKEND || "").trim().toLowerCase();
+  return value === "lmstudio" || value === "omlx" ? value : "omlx";
+}
+
+function getConfiguredApiProvider(): string {
+  const preset = (process.env.MSGCODE_API_PROVIDER || "").trim().toLowerCase();
+  if (preset === "minimax" || preset === "deepseek" || preset === "openai") {
+    return preset;
+  }
+  const active = normalizeGlobalAgentBackend(process.env.AGENT_BACKEND || "");
+  if (active === "minimax" || active === "deepseek" || active === "openai") {
+    return active;
+  }
+  return "minimax";
+}
+
+async function resolveRuntimeDisplay(workspacePath: string): Promise<{
+  runtimeLine: string;
+  targetLine: string;
+}> {
+  try {
+    const backendLane = await getBackendLane(workspacePath);
+    if (backendLane === "tmux") {
+      const client = await getTmuxClient(workspacePath);
+      return {
+        runtimeLine: "backend: tmux",
+        targetLine: `tmux-client: ${client === "none" ? "codex" : client}`,
+      };
+    }
+
+    if (backendLane === "local") {
+      return {
+        runtimeLine: "backend: local",
+        targetLine: `local-app: ${getConfiguredLocalApp()}`,
+      };
+    }
+
+    return {
+      runtimeLine: "backend: api",
+      targetLine: `api-provider: ${getConfiguredApiProvider()}`,
+    };
+  } catch {
+    // ignore and fall through to agent default
+  }
+
+  return {
+    runtimeLine: "backend: local",
+    targetLine: `local-app: ${getConfiguredLocalApp()}`,
+  };
 }
 
 export async function handleBindCommand(options: CommandHandlerOptions): Promise<CommandResult> {
@@ -94,14 +165,7 @@ export async function handleBindCommand(options: CommandHandlerOptions): Promise
       botType: DEFAULT_BOT_TYPE,
       modelClient,
     });
-
-    let displayModelClient = modelClient || "claude";
-    try {
-      const { getDefaultRunner } = await import("../config/workspace.js");
-      const actualRunner = await getDefaultRunner(entry.workspacePath);
-      displayModelClient = actualRunner;
-    } catch {
-    }
+    const runtimeDisplay = await resolveRuntimeDisplay(entry.workspacePath);
 
     return {
       success: true,
@@ -109,7 +173,8 @@ export async function handleBindCommand(options: CommandHandlerOptions): Promise
         `\n` +
         `工作目录: ${entry.workspacePath}\n` +
         `标签: ${entry.label}\n` +
-        `模型客户端: ${displayModelClient}\n` +
+        `${runtimeDisplay.runtimeLine}\n` +
+        `${runtimeDisplay.targetLine}\n` +
         `\n` +
         `现在可以发送消息开始使用`,
     };
@@ -126,11 +191,23 @@ export async function handleWhereCommand(options: CommandHandlerOptions): Promis
   const entry = getRouteByChatId(chatId);
 
   if (!entry) {
+    const workspaceRoot = getWorkspaceRootForDisplay();
+    const defaultDir = (process.env.MSGCODE_DEFAULT_WORKSPACE_DIR || "").trim() || config.defaultWorkspaceDir || "default";
+    const defaultPath = path.resolve(workspaceRoot, defaultDir);
+    try {
+      if (!fs.existsSync(defaultPath)) {
+        fs.mkdirSync(defaultPath, { recursive: true });
+      }
+    } catch {
+      // ignore
+    }
     return {
       success: true,
-      message: `本群未绑定任何工作目录\n` +
+      message: `本群未绑定任何工作目录（将使用默认工作目录）\n` +
         `\n` +
-        `使用 /bind <dir> [client] 绑定工作空间\n` +
+        `默认工作目录: ${defaultPath}\n` +
+        `\n` +
+        `使用 /bind <dir> [client] 绑定工作空间（覆盖默认）\n` +
         `例如: /bind acme/ops claude`,
     };
   }
@@ -154,13 +231,7 @@ export async function handleWhereCommand(options: CommandHandlerOptions): Promis
     return new Date(ts).toLocaleString("zh-CN");
   };
 
-  let displayModelClient = entry.modelClient || "claude";
-  try {
-    const { getDefaultRunner } = await import("../config/workspace.js");
-    const actualRunner = await getDefaultRunner(entry.workspacePath);
-    displayModelClient = actualRunner;
-  } catch {
-  }
+  const runtimeDisplay = await resolveRuntimeDisplay(entry.workspacePath);
 
   return {
     success: true,
@@ -168,7 +239,8 @@ export async function handleWhereCommand(options: CommandHandlerOptions): Promis
       `\n` +
       `工作目录: ${entry.workspacePath}\n` +
       `标签: ${entry.label}\n` +
-      `模型客户端: ${displayModelClient}\n` +
+      `${runtimeDisplay.runtimeLine}\n` +
+      `${runtimeDisplay.targetLine}\n` +
       `状态: ${entry.status}\n` +
       `绑定时间: ${formatTime(entry.createdAt)}\n` +
       `更新时间: ${formatTime(entry.updatedAt)}`,

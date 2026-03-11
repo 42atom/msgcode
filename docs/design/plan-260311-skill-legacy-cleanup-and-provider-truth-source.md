@@ -1,0 +1,94 @@
+# plan-260311-skill-legacy-cleanup-and-provider-truth-source
+
+## Problem
+
+仓库里还留着几条已经退出主链但仍会误导维护者的旁路：`skills` 的历史占位接口、`getToolPolicy()` 的重复实现，以及 `AgentProvider` 对旧 provider 名称的继续公开暴露。它们共同的问题不是“功能缺失”，而是“看起来还有另一套真相源”。
+
+## Occam Check
+
+1. 不加这次清理，系统具体坏在哪？
+   - 后续维护者仍会看到 `registry.ts / skill-orchestrator.ts / tools/bus#getToolPolicy / agent.provider=lmstudio` 这些旧口径，继续沿着假接口改代码，合并到 `main` 后风险会持续放大。
+2. 用更少的层能不能解决？
+   - 能。直接删除退役壳、让 `tools/bus.ts` 复用 `workspace.ts#getToolPolicy()`、让 provider 读取口径归一化，不加任何新层。
+3. 这个改动让主链数量变多了还是变少了？
+   - 变少了。`skills` 只剩 runtime skills + `auto.ts` 最小兼容层；工具策略只剩 `workspace.ts` 一份；provider 只剩真实公开值。
+
+## Decision
+
+采用最小可删方案：
+
+1. 退役 `src/skills/registry.ts` 与 `src/runtime/skill-orchestrator.ts`，移动到 `.trash` 归档
+2. `src/skills/index.ts` 与 `src/skills/types.ts` 收口成当前最小 repo 侧兼容接口，`auto.ts` 改为复用 `types.ts`
+3. `src/tools/bus.ts` 不再维护自己的 `getToolPolicy()`，直接复用 `src/config/workspace.ts`
+4. `AgentProvider` 收窄为真实 provider；读取历史配置时在 `workspace.ts` 内部归一化
+5. 不做大面积命名 rename；`LmStudio` 命名债本轮只评估、不阻塞合并
+
+## Alternatives
+
+### 方案 A：保留历史文件，只继续加“已退役”注释
+
+- 优点：变更面更小
+- 缺点：假接口还活着，审查结论不会真正关闭
+
+### 方案 B：新增兼容层包装旧接口
+
+- 优点：理论上外部 import 更平滑
+- 缺点：又新增一层历史包装，违背当前“删层”目标
+
+### 方案 C：直接删历史空壳，保留最小兼容读取（推荐）
+
+- 优点：主链最短、语义最清楚
+- 缺点：需要同步更新一批静态测试和 README
+
+## Plan
+
+1. 清理 `skills` 历史层
+   - `src/skills/registry.ts`
+   - `src/runtime/skill-orchestrator.ts`
+   - `src/skills/index.ts`
+   - `src/skills/types.ts`
+   - `src/skills/auto.ts`
+   - `src/skills/README.md`
+   - `test/p5-6-8-r3e-hard-cut.test.ts`
+   - `test/skills.auto.test.ts`
+2. 收口 tool policy 真相源
+   - `src/tools/bus.ts`
+   - `src/config/workspace.ts`
+   - `test/tools.bus.test.ts`
+3. 归一化 provider 公开语义
+   - `src/config/workspace.ts`
+   - `src/runtime/session-orchestrator.ts`
+   - `test/p5-6-14-r1-config-mapping.test.ts`
+   - `test/p5-6-14-r2-routing.test.ts`
+   - `test/p5-7-r9-t6-lmstudio-hardcode-purge.test.ts`
+4. 文档与变更日志
+   - `issues/0087-skill-legacy-cleanup-and-provider-truth-source.md`
+   - `docs/CHANGELOG.md`
+
+## Risks
+
+1. 直接删除历史空壳可能让少量静态测试或仓库外部 import 失效。
+   - 回滚/降级：文件先移动到 `.trash` 归档；如果发现仓库内仍有活调用，再从 `.trash` 恢复并改为单纯转发。
+2. `AgentProvider` 归一化会改变部分旧测试和状态展示文案。
+   - 回滚/降级：保留 `runner.default` 兼容读取，只收紧 `getAgentProvider()` 的公开结果。
+3. `getToolPolicy()` 合并后，如果 `tools/bus.ts` 曾偷偷依赖自己那份默认逻辑，测试会立刻暴露。
+   - 回滚/降级：以 `workspace.ts` 为单一真相源修测试，不再复制逻辑。
+
+## Test Plan
+
+至少覆盖：
+
+1. `skills` 历史文件已退出主链，handlers 不再引用
+2. `skills/auto.ts` 仍能正确检测并执行 `system-info`
+3. `tools/bus.ts#getToolPolicy` 与 `workspace.ts#getToolPolicy` 一致
+4. `runner.default=lmstudio|llama|claude` 与旧 `agent.provider` 能兼容读取，但 `getAgentProvider()` 只返回归一化结果
+5. 现有 backend lanes / tool loop / tooling 测试不回归
+
+## Observability
+
+- `docs/CHANGELOG.md` 记录：
+  - `skills` 历史空壳退出主链
+  - tool policy 真相源收口
+  - `agent.provider` 公开语义归一化
+
+（章节级）评审意见：[留空,用户将给出反馈]

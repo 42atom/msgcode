@@ -153,6 +153,36 @@ describe("File Transport Logger", () => {
             expect(logContent).toContain("reason=mlx_404_fallback");
             expect(logContent).toContain("retry=1");
         });
+
+        test("应该输出 runId 和 sessionKey 到文件日志", async () => {
+            const { FileTransport } = await import("../src/logger/file-transport.js");
+
+            const transport = new FileTransport({
+                filename: logFilePath,
+                maxSize: 1024 * 1024,
+            });
+
+            transport.write({
+                timestamp: "2025-02-06 12:00:00",
+                level: "info",
+                message: "run lifecycle",
+                module: "runtime/run-store",
+                meta: {
+                    runId: "run-123",
+                    sessionKey: "session:v1:imessage:chat-123:ws-main-456",
+                    source: "message",
+                    status: "running",
+                },
+            });
+
+            await new Promise(resolve => setTimeout(resolve, 100));
+            transport.close();
+
+            const logContent = readFileSync(logFilePath, "utf-8");
+            expect(logContent).toContain("runId=run-123");
+            expect(logContent).toContain("sessionKey=session:v1:imessage:chat-123:ws-main-456");
+            expect(logContent).toContain("source=message");
+        });
     });
 
     describe("Scenario B: 其他错误字段输出", () => {

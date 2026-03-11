@@ -19,12 +19,13 @@ import {
 } from "./routes/commands.js";
 import { logger } from "./logger/index.js";
 import { updateLastSeen } from "./state/store.js";
-import { getMemoryInjectConfig } from "./config/workspace.js";
+import { getMemoryInjectConfig, saveCurrentSessionContext } from "./config/workspace.js";
 import { AutoTtsLane } from "./runners/tts/auto-lane.js";
 import crypto from "node:crypto";
 
 export interface ListenerConfig {
-  imsgClient: ImsgRpcClient;
+  // 统一发送口径：按 chatId 前缀路由到具体 transport（imsg/feishu）
+  sendClient: Pick<ImsgRpcClient, "send">;
   debug?: boolean;
   signal?: AbortSignal;
 }
@@ -35,7 +36,9 @@ export interface ListenerConfig {
 
 let autoTtsLane: AutoTtsLane | null = null;
 
-function getAutoTtsLane(imsgClient: ImsgRpcClient): AutoTtsLane {
+type SendClient = Pick<ImsgRpcClient, "send">;
+
+function getAutoTtsLane(sendClient: SendClient): AutoTtsLane {
   if (autoTtsLane) return autoTtsLane;
 
   autoTtsLane = new AutoTtsLane({
@@ -44,10 +47,10 @@ function getAutoTtsLane(imsgClient: ImsgRpcClient): AutoTtsLane {
       return await runTts(opts);
     },
     sendText: async (chatId, text) => {
-      await sendText(imsgClient, chatId, text);
+      await sendText(sendClient, chatId, text);
     },
     sendFile: async (chatId, filePath) => {
-      await imsgClient.send({ chat_guid: chatId, text: "", file: filePath });
+      await sendClient.send({ chat_guid: chatId, text: "", file: filePath });
     },
   });
 
@@ -73,7 +76,7 @@ function pruneByTtl(map: Map<string, number>, now: number, ttlMs: number): void 
 }
 
 async function sendText(
-  imsgClient: ImsgRpcClient,
+  sendClient: SendClient,
   chatGuid: string,
   text: string
 ): Promise<void> {
@@ -86,7 +89,7 @@ async function sendText(
       textDigest: digest,
       ...(process.env.DEBUG_TRACE_TEXT === "1" ? { textPreview: text.slice(0, 80) } : {}),
     });
-    const result = await imsgClient.send({ chat_guid: chatGuid, text });
+    const result = await sendClient.send({ chat_guid: chatGuid, text });
     logger.debug("回复已发送", {
       module: "listener",
       chatId: chatGuid,
@@ -100,6 +103,42 @@ async function sendText(
     });
     throw error;
   }
+}
+
+function extractAttachmentEvidence(attachmentText: string): string[] {
+  const blocks = attachmentText
+    .split("[attachment]")
+    .map((block) => block.trim())
+    .filter(Boolean);
+
+  const evidence: string[] = [];
+  for (const block of blocks) {
+    const fields = new Map<string, string>();
+    for (const line of block.split("\n").map((line) => line.trim()).filter(Boolean)) {
+      const idx = line.indexOf("=");
+      if (idx <= 0) continue;
+      const key = line.slice(0, idx).trim();
+      const value = line.slice(idx + 1).trim();
+      if (key && value) {
+        fields.set(key, value);
+      }
+    }
+
+    const path = fields.get("path");
+    if (!path) continue;
+
+    const parts = ["附件"];
+    const type = fields.get("type");
+    const mime = fields.get("mime");
+    const digest = fields.get("digest");
+    if (type) parts.push(`type=${type}`);
+    if (mime) parts.push(`mime=${mime}`);
+    parts.push(`path=${path}`);
+    if (digest) parts.push(`digest=${digest}`);
+    evidence.push(parts.join(" "));
+  }
+
+  return evidence;
 }
 
 /**
@@ -169,7 +208,7 @@ function shouldSendAcknowledgement(content: string): boolean {
  * @returns handler 结果
  */
 async function withAcknowledgement<T>(
-  imsgClient: ImsgRpcClient,
+  sendClient: SendClient,
   chatGuid: string,
   content: string,
   handlerFn: () => Promise<T>
@@ -190,7 +229,7 @@ async function withAcknowledgement<T>(
     if (!ackSent) {
       ackSent = true;
       try {
-        await sendText(imsgClient, chatGuid, ACKNOWLEDGEMENT_TEXT);
+        await sendText(sendClient, chatGuid, ACKNOWLEDGEMENT_TEXT);
         logger.debug("已发送长任务回执", {
           module: "listener",
           chatId: chatGuid,
@@ -590,7 +629,7 @@ export async function handleMessage(
       chatId: message.chatId,
       args: parsed.args,
     });
-    await sendText(ctx.imsgClient, message.chatId, result.message);
+    await sendText(ctx.sendClient, message.chatId, result.message);
     shouldAdvanceCursor = true;
     return;
   }
@@ -615,7 +654,7 @@ export async function handleMessage(
       if (now - last > UNBOUND_HINT_COOLDOWN_MS) {
         unboundHintAt.set(message.chatId, now);
         await sendText(
-          ctx.imsgClient,
+          ctx.sendClient,
           message.chatId,
           "本群尚未绑定工作目录。\n先发送: /bind <dir>\n例如: /bind acme/ops"
         );
@@ -623,6 +662,24 @@ export async function handleMessage(
     }
     shouldAdvanceCursor = true;
     return;
+  }
+
+  if (route.projectDir) {
+    try {
+      const isFeishu = message.chatId.startsWith("feishu:");
+      await saveCurrentSessionContext(route.projectDir, {
+        transport: isFeishu ? "feishu" : "imsg",
+        chatId: isFeishu ? message.chatId.replace(/^feishu:/, "") : message.chatId,
+        chatGuid: message.chatId,
+      });
+    } catch (error) {
+      logger.warn("当前会话上下文写入 workspace config 失败", {
+        module: "listener",
+        chatId: message.chatId,
+        projectDir: route.projectDir,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   // 命令/转发交给对应 bot handler（默认 bot 直接走 tmux）
@@ -649,19 +706,10 @@ export async function handleMessage(
   });
 
   if (hasAttachments && message.attachments) {
-    const { copyToVault, isAudioAttachment, isImageAttachment, formatAttachmentForTmux } = await import("./attachments/vault.js");
+    const { copyToVault, formatAttachmentForTmux } = await import("./attachments/vault.js");
     const { processAttachment, formatDerivedForTmux } = await import("./media/pipeline.js");
 
     for (const attachment of message.attachments) {
-      // B2: 只处理允许的附件类型（使用 vault.ts 的类型检查，支持 mime/UTI/扩展名兜底）
-      const isAudio = isAudioAttachment(attachment);
-      const isImage = isImageAttachment(attachment);
-      const isAllowed = isAudio || isImage || attachment.mime === "application/pdf";
-
-      if (!isAllowed) {
-        continue;
-      }
-
       // 复制到 vault
       const msgId = message.id ?? "unknown";
       const workspacePath = route.projectDir;
@@ -688,9 +736,9 @@ export async function handleMessage(
       const thisAttachmentText = formatAttachmentForTmux(attachment, copyResult.localPath, copyResult.digest) + "\n";
       attachmentText += thisAttachmentText;
 
-      // MediaPipeline: 自动处理附件（ASR/读图/提取）
+      // MediaPipeline: 仅自动生成图片摘要；其他视觉后处理交给主模型自行决策
       try {
-        const pipelineResult = await processAttachment(copyResult.localPath, attachment, workspacePath, text);
+        const pipelineResult = await processAttachment(copyResult.localPath, attachment, workspacePath);
 
         if (pipelineResult.derived) {
           // B3: 追加派生文本到 tmux（读取全文，带截断控制）
@@ -757,8 +805,8 @@ export async function handleMessage(
     // 声明 result 变量（在 if/else 外部，以便后续代码访问）
     let result: Awaited<ReturnType<typeof handler.handle>>;
 
-    // botType=lmstudio（喂 4.7）：只进核心内容，禁止 [attachment] 元信息
-    if (botType === "lmstudio") {
+    // botType=agent-backend/lmstudio（本地模型）：只进核心内容，禁止 [attachment] 元信息
+    if (botType === "lmstudio" || botType === "agent-backend") {
       // M5-3: 使用记忆注入后的内容（baseContent 已包含可能的记忆证据块）
       let contentToHandle = (baseContent || "").trim();
 
@@ -772,23 +820,24 @@ export async function handleMessage(
 
       if (hasOcrError) {
         // P0: OCR 失败直接固定文案回复，不喂给 4.7（避免元叙事）
-        await sendText(ctx.imsgClient, message.chatId, "图片识别失败。若要纯抽字请发：ocr");
+        await sendText(ctx.sendClient, message.chatId, "图片识别失败。");
         shouldAdvanceCursor = true;
         return;
       }
 
-      // 只追加派生文本（[图片文字]/[语音转写]），去掉标签本体，避免模型复述方括号块
+      // 只追加派生文本（[图片摘要]/[语音转写]），去掉标签本体，避免模型复述方括号块
       const derivedEvidence = attachmentText
         .split("\n")
         .map(l => l.trim())
         .filter(Boolean)
-        .filter(line => line.startsWith("[图片文字]") || line.startsWith("[语音转写]"))
+        .filter(line => line.startsWith("[图片摘要]") || line.startsWith("[语音转写]"))
         .map(line => line.replace(/^\[[^\]]+\]\s*/g, "").trim())
         .filter(Boolean);
+      const attachmentEvidence = extractAttachmentEvidence(attachmentText);
 
-      // 若用户未附带问题但有证据（只发图/语音），给一个默认问题，避免模型进入"分析输入"模式
-      if (!contentToHandle && derivedEvidence.length > 0) {
-        contentToHandle = "请用一句话概括主要内容。";
+      // 非图片附件默认不做系统自动处理，改为把附件信息交给模型自行决策
+      if (!contentToHandle && attachmentEvidence.length > 0) {
+        contentToHandle = "你收到了一些附件。请先基于附件信息判断是否需要调用工具读取或处理，再回复用户。";
       }
 
       if (derivedEvidence.length > 0) {
@@ -799,6 +848,14 @@ export async function handleMessage(
           derivedEvidence.join("\n");
       }
 
+      if (attachmentEvidence.length > 0) {
+        contentToHandle +=
+          (contentToHandle ? "\n\n" : "") +
+          "附件信息：" +
+          "\n" +
+          attachmentEvidence.join("\n");
+      }
+
       // 如果既没有文本也没有可处理的附件，跳过
       if (!contentToHandle.trim()) {
         shouldAdvanceCursor = true;
@@ -806,7 +863,7 @@ export async function handleMessage(
       }
 
       result = await withAcknowledgement(
-        ctx.imsgClient,
+        ctx.sendClient,
         message.chatId,
         contentToHandle,
         () => handler.handle(contentToHandle, {
@@ -829,7 +886,7 @@ export async function handleMessage(
       }
 
       result = await withAcknowledgement(
-        ctx.imsgClient,
+        ctx.sendClient,
         message.chatId,
         contentToHandle,
         () => handler.handle(contentToHandle, {
@@ -877,7 +934,7 @@ export async function handleMessage(
         error: result.error || "unknown",
       });
       await sendText(
-        ctx.imsgClient,
+        ctx.sendClient,
         message.chatId,
         result.error ? `错误: ${result.error}` : "错误: 处理失败"
       );
@@ -889,10 +946,10 @@ export async function handleMessage(
     let didSend = false;
     if (result.file?.path) {
       const text = result.response ? result.response : "";
-      await ctx.imsgClient.send({ chat_guid: message.chatId, text, file: result.file.path });
+      await ctx.sendClient.send({ chat_guid: message.chatId, text, file: result.file.path });
       didSend = true;
     } else if (result.response) {
-      await sendText(ctx.imsgClient, message.chatId, result.response);
+      await sendText(ctx.sendClient, message.chatId, result.response);
       didSend = true;
     }
 
@@ -924,7 +981,7 @@ export async function handleMessage(
         // 不阻塞主流程：先让用户拿到即时回复，再后台生成语音附件。
         //
         // P0：自动语音回复必须“串行 + 最新覆盖”，否则会出现：
-        // - 多条 TTS 并发 → IndexTTS worker 内存暴涨 / SIGKILL
+        // - 多条 TTS 并发 → 本地 TTS 统一内存抖动 / SIGKILL
         // - 音频乱序/重复发送（用户感知为“先发合并音频，再发分段音频”）
         const autoTimeoutMs = (() => {
           const raw = (process.env.TTS_AUTO_TIMEOUT_MS || "").trim();
@@ -934,15 +991,14 @@ export async function handleMessage(
           return Math.floor(n);
         })();
 
-        getAutoTtsLane(ctx.imsgClient).enqueue({
+        getAutoTtsLane(ctx.sendClient).enqueue({
           chatId: message.chatId,
           workspacePath: projectDir,
           text: deferText,
           createdAtMs: Date.now(),
           options: {
             timeoutMs: autoTimeoutMs,
-            // P0: 不默认走 IndexTTS 内置 emo_text（慢且易抖）
-            // 将风格作为情绪分析提示（emoAuto 由后端默认策略决定）
+            // P0: 风格提示只作为 Qwen TTS 的语气输入
             instruct: result.defer?.options?.instruct,
             speed: result.defer?.options?.speed,
             temperature: result.defer?.options?.temperature,
@@ -964,7 +1020,7 @@ export async function handleMessage(
     }
 
     await sendText(
-      ctx.imsgClient,
+      ctx.sendClient,
       message.chatId,
       `Handler 异常: ${handlerError instanceof Error ? handlerError.message : String(handlerError)}`
     );

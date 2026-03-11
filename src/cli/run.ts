@@ -181,7 +181,7 @@ function createTtsCommand(): Command {
   const cmd = new Command("tts");
 
   cmd
-    .description("本地文本转语音（IndexTTS）")
+    .description("本地文本转语音（Qwen TTS）")
     .requiredOption("--workspace <labelOrPath>", "工作区标签或绝对路径（如 mylife 或 /Users/.../mylife）")
     .requiredOption("--text <text>", "要朗读的文本")
     .option("--format <format>", "输出格式（wav|m4a，默认 m4a）", "m4a")

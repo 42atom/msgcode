@@ -4,7 +4,7 @@
  * Shared types for all TTS backend implementations
  */
 
-export type TtsBackend = "qwen" | "indextts";
+export type TtsBackend = "qwen";
 
 export type TtsResult = {
   success: boolean;
@@ -28,12 +28,6 @@ export type TtsOptions = {
   maxTokens?: number;
   format?: "wav" | "m4a";
   timeoutMs?: number;
-
-  // Emotion vector support (IndexTTS)
-  emoAuto?: boolean;          // Enable auto-emotion analysis via LM Studio
-  emotionText?: string;
-  emotionVector?: number[];  // 8 floats for IndexTTS
-  emotionAlpha?: number;      // default 0.6
 };
 
 export type TtsBackendContext = {

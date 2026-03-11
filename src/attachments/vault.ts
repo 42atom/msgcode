@@ -2,8 +2,8 @@
  * msgcode: Attachment Vault（M4-A2）
  *
  * 职责：
- * - 将 iMessage 附件复制到 workspace 的 attachments/inbox/
- * - 按日期分区：YYYY-MM-DD/<msgId>_<name>.<ext>
+ * - 将原始附件复制到 workspace 的 downloads/
+ * - 按类型 + 日期分区：<kind>/YYYY-MM-DD/<msgId>_<name>.<ext>
  * - 支持去重（跳过相同 hash）
  * - 处理 missing=true 的附件
  */
@@ -61,11 +61,15 @@ function expandPath(path: string): string {
 }
 
 /**
- * 获取 inbox 目录路径（按日期分区）
+ * 获取下载目录路径（按类型 + 日期分区）
  */
-function getInboxDir(workspacePath: string, date: Date = new Date()): string {
+function getDownloadDir(
+  workspacePath: string,
+  attachment: ImsgAttachment,
+  date: Date = new Date()
+): string {
   const dateStr = date.toISOString().split("T")[0]; // YYYY-MM-DD
-  return join(workspacePath, "attachments", "inbox", dateStr);
+  return join(workspacePath, "downloads", resolveDownloadCategory(attachment), dateStr);
 }
 
 /**
@@ -127,6 +131,35 @@ async function calculateShortDigest(filePath: string): Promise<string> {
   return fullHash.slice(0, 12);
 }
 
+export function isVideoAttachment(attachment: ImsgAttachment): boolean {
+  if (attachment.mime?.startsWith("video/")) {
+    return true;
+  }
+
+  if (attachment.filename) {
+    const ext = attachment.filename.toLowerCase().split(".").pop();
+    const videoExts = ["mp4", "mov", "avi", "mkv", "webm", "m4v"];
+    if (ext && videoExts.includes(ext)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+export function resolveDownloadCategory(attachment: ImsgAttachment): "audio" | "image" | "video" | "files" {
+  if (isAudioAttachment(attachment)) {
+    return "audio";
+  }
+  if (isImageAttachment(attachment)) {
+    return "image";
+  }
+  if (isVideoAttachment(attachment)) {
+    return "video";
+  }
+  return "files";
+}
+
 // ============================================
 // Vault 操作
 // ============================================
@@ -166,12 +199,12 @@ export async function copyToVault(
     }
 
     // 创建目标目录
-    const inboxDir = getInboxDir(workspacePath);
-    await mkdir(inboxDir, { recursive: true });
+    const downloadDir = getDownloadDir(workspacePath, attachment);
+    await mkdir(downloadDir, { recursive: true });
 
     // 生成目标文件名
     const filename = generateFilename(msgId, attachment);
-    const targetPath = join(inboxDir, filename);
+    const targetPath = join(downloadDir, filename);
 
     // 检查目标文件是否已存在（去重）
     if (existsSync(targetPath)) {
@@ -193,7 +226,7 @@ export async function copyToVault(
       do {
         const ext = filename.includes(".") ? filename.slice(filename.lastIndexOf(".")) : "";
         const baseName = ext ? filename.slice(0, filename.lastIndexOf(".")) : filename;
-        versionedPath = join(inboxDir, `${baseName}.v${version}${ext}`);
+        versionedPath = join(downloadDir, `${baseName}.v${version}${ext}`);
         version++;
       } while (existsSync(versionedPath));
 
@@ -221,7 +254,7 @@ export async function copyToVault(
  * 检查附件是否为音频
  */
 export function isAudioAttachment(attachment: ImsgAttachment): boolean {
-  if (!attachment.mime && !attachment.uti) {
+  if (!attachment.mime && !attachment.uti && !attachment.filename && !attachment.transfer_name && !attachment.path) {
     return false;
   }
 
@@ -242,6 +275,16 @@ export function isAudioAttachment(attachment: ImsgAttachment): boolean {
   ];
   if (attachment.uti && audioUtis.includes(attachment.uti)) {
     return true;
+  }
+
+  // 扩展名兜底（历史 iMessage 语音常见 .caf）
+  const nameForExt = attachment.transfer_name || attachment.filename || attachment.path || "";
+  if (nameForExt) {
+    const ext = nameForExt.toLowerCase().split(".").pop();
+    const audioExts = ["caf", "opus", "mp3", "m4a", "wav", "aac", "amr", "flac", "ogg"];
+    if (ext && audioExts.includes(ext)) {
+      return true;
+    }
   }
 
   return false;
@@ -296,17 +339,13 @@ export function formatAttachmentForTmux(
   localPath: string,
   digest: string
 ): string {
-  const isAudio = isAudioAttachment(attachment);
-
-  // 音频附件：只输出类型标记（不输出路径，后续会输出 ASR 转写）
-  if (isAudio) {
-    return `[attachment]\ntype=audio\naudio_transcript_follows=true\n`;
-  }
+  const category = resolveDownloadCategory(attachment);
+  const type = category === "files" ? "file" : category;
 
   // 其他附件：保留完整信息
   const parts = [
     "[attachment]",
-    `type=file`,
+    `type=${type}`,
   ];
 
   if (attachment.mime) {

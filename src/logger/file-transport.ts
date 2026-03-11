@@ -134,7 +134,7 @@ export class FileTransport implements Transport {
      * 格式化日志消息
      */
     private format(entry: LogEntry): string {
-        const { timestamp, level, message, module, meta } = entry;
+        const { timestamp, level, message, module, meta, traceId } = entry;
         const levelStr = level.toUpperCase().padEnd(5);
         const moduleStr = module ? `[${module}] ` : "";
 
@@ -142,8 +142,12 @@ export class FileTransport implements Transport {
         let metaStr = "";
         if (meta) {
             const parts: string[] = [];
+            if (traceId) parts.push(`traceId=${traceId}`);
+            if (meta.runId) parts.push(`runId=${meta.runId}`);
+            if (meta.sessionKey) parts.push(`sessionKey=${meta.sessionKey}`);
             if (meta.chatId) parts.push(`chatId=${String(meta.chatId).slice(-6)}`);
             if (meta.sender) parts.push(`sender=${meta.sender}`);
+            if (meta.source !== undefined) parts.push(`source=${meta.source}`);
             // 注意：默认不把用户/模型的原始文本写入文件日志，避免敏感内容落盘。
             // 如需排障，请在调用侧显式提供 textDigest/textLength，并使用 DEBUG_TRACE_TEXT=1 控制 textPreview。
             if (meta.textLength !== undefined) parts.push(`textLen=${meta.textLength}`);
@@ -160,6 +164,13 @@ export class FileTransport implements Transport {
             }
             if (meta.toolCallCount !== undefined) parts.push(`toolCallCount=${meta.toolCallCount}`);
             if (meta.toolName !== undefined) parts.push(`toolName=${meta.toolName}`);
+            if (meta.toolSequence !== undefined && meta.toolSequence !== "") parts.push(`toolSequence=${meta.toolSequence}`);
+            if (meta.agentBackend !== undefined) parts.push(`agentBackend=${meta.agentBackend}`);
+            if (meta.route !== undefined) parts.push(`route=${meta.route}`);
+            if (meta.phase !== undefined) parts.push(`phase=${meta.phase}`);
+            if (meta.kernel !== undefined) parts.push(`kernel=${meta.kernel}`);
+            if (meta.model !== undefined) parts.push(`model=${meta.model}`);
+            if (meta.temperature !== undefined) parts.push(`temperature=${meta.temperature}`);
             if (meta.soulInjected !== undefined) parts.push(`soulInjected=${meta.soulInjected}`);
             if (meta.soulSource !== undefined) parts.push(`soulSource=${meta.soulSource}`);
             if (meta.soulPath !== undefined && meta.soulPath !== "") parts.push(`soulPath=${meta.soulPath}`);
@@ -169,6 +180,16 @@ export class FileTransport implements Transport {
             // Phase 6: 添加常用错误字段输出（P1 日志可观测性）
             if (meta.error) parts.push(`error=${String(meta.error).slice(0, 200)}`);
             if (meta.reason) parts.push(`reason=${String(meta.reason)}`);
+            if (meta.jobCount !== undefined) parts.push(`jobCount=${meta.jobCount}`);
+            if (meta.running !== undefined) parts.push(`running=${meta.running}`);
+            if (meta.rearmed !== undefined) parts.push(`rearmed=${meta.rearmed}`);
+            if (meta.jobsPath !== undefined) parts.push(`jobsPath=${meta.jobsPath}`);
+            if (meta.taskId !== undefined) parts.push(`taskId=${meta.taskId}`);
+            if (meta.triggerId !== undefined) parts.push(`triggerId=${meta.triggerId}`);
+            if (meta.nextWakeAt !== undefined) parts.push(`nextWakeAt=${meta.nextWakeAt}`);
+            if (meta.nextWakeAtMs !== undefined) parts.push(`nextWakeAtMs=${meta.nextWakeAtMs}`);
+            if (meta.dueJobsCount !== undefined) parts.push(`dueJobsCount=${meta.dueJobsCount}`);
+            if (meta.idlePoll !== undefined) parts.push(`idlePoll=${meta.idlePoll}`);
             if (meta.retry !== undefined) parts.push(`retry=${meta.retry}`);
             if (meta.status !== undefined) parts.push(`status=${meta.status}`);
 

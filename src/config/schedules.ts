@@ -13,6 +13,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import type { CronJob, Schedule, Delivery } from "../jobs/types.js";
+import { computeNextRunAtMs } from "../jobs/cron.js";
 
 // ============================================
 // Schema（v1）
@@ -177,6 +178,11 @@ export function scheduleToJob(
   const workspaceHash = createHash("sha256").update(projectDir).digest("hex").slice(0, 12);
   const stableJobId = `schedule:${workspaceHash}:${schedule.id}`;
 
+  // P5.7-R17: 根据 delivery.mode 决定 payload 类型
+  // reply-to-same-chat: 直接走聊天通道，不依赖 tmux
+  // 其他: 走 tmuxMessage
+  const isChatDelivery = schedule.delivery.mode === "reply-to-same-chat";
+
   const job: CronJob = {
     id: stableJobId,
     enabled: schedule.enabled,
@@ -191,10 +197,16 @@ export function scheduleToJob(
       tz: schedule.tz,
     } as Schedule,
     sessionTarget: "main",
-    payload: {
-      kind: "tmuxMessage",
-      text: schedule.message,
-    },
+    payload: isChatDelivery
+      ? {
+          kind: "chatMessage",
+          text: schedule.message,
+          chatGuid,
+        }
+      : {
+          kind: "tmuxMessage",
+          text: schedule.message,
+        },
     delivery: {
       mode: schedule.delivery.mode,
       bestEffort: true,
@@ -202,7 +214,7 @@ export function scheduleToJob(
     } as Delivery,
     state: {
       routeStatus: "valid",
-      nextRunAtMs: null, // 由 scheduler 计算
+      nextRunAtMs: null,
       runningAtMs: null,
       lastRunAtMs: null,
       lastStatus: "pending",
@@ -213,6 +225,8 @@ export function scheduleToJob(
     createdAtMs: now,
     updatedAtMs: now,
   };
+
+  job.state.nextRunAtMs = computeNextRunAtMs(job, now);
 
   return job;
 }
@@ -237,13 +251,8 @@ export async function mapSchedulesToJobs(
       continue;
     }
 
-    try {
-      const job = scheduleToJob(schedule, chatGuid, projectDir);
-      jobs.push(job);
-    } catch {
-      // 映射失败，跳过
-      continue;
-    }
+    const job = scheduleToJob(schedule, chatGuid, projectDir);
+    jobs.push(job);
   }
 
   return jobs;

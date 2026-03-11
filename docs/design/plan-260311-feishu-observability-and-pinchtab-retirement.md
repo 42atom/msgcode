@@ -1,0 +1,56 @@
+# plan-260311-feishu-observability-and-pinchtab-retirement
+
+## Problem
+
+飞书 transport 已能判断群聊/私聊，但当前日志未输出对应字段，导致消息级问题排障仍要靠猜；同时 `pinchtab-browser` 已退役却仍留在 repo runtime 目录，继续制造“目录存在 ≠ 当前生效”的第二真相源。
+
+## Occam Check
+
+1. 不加它，系统具体坏在哪？
+   - 群聊/私聊相关问题继续难排；退役 skill 目录会继续误导维护者。
+2. 用更少的层能不能解决？
+   - 能。只补一个纯函数和一条日志字段；retired skill 直接退出 runtime 目录。
+3. 这个改动让主链数量变多了还是变少了？
+   - 变少了。观测回到单一日志面，runtime skill 真相源也更单一。
+
+## Decision
+
+采用最小收口方案：
+
+1. 在 `src/feishu/transport.ts` 内部增加 `chat_type` 标准化与 `isGroup` 纯函数。
+2. 入站日志统一输出 `chatType` 和 `isGroup`。
+3. 将 `pinchtab-browser` 从 `src/skills/runtime/` 移走，不再让 repo 目录暗示它仍是正式 runtime skill。
+
+## Plan
+
+1. 修改 `src/feishu/transport.ts`
+   - 新增 `normalizeFeishuChatType()`
+   - 新增 `resolveFeishuIsGroup()`
+   - 入站日志 meta 加 `chatType/isGroup`
+2. 修改测试
+   - `test/p5-7-r13-feishu-inbound-observability.test.ts`
+3. 清退 repo 目录
+   - 将 `src/skills/runtime/pinchtab-browser/` 移至本地 `.trash/`
+4. 更新文档
+   - `docs/CHANGELOG.md`
+   - `issues/0075-*`
+
+## Risks
+
+1. 清退 repo 目录可能影响历史引用。
+   - 回滚：本地 `.trash` 中仍保留原目录，可恢复。
+2. 只加日志字段，不能替代更完整的消息事件观测。
+   - 回滚/降级：本轮不扩 scope，只保留 `chatType/isGroup`。
+
+## Test Plan
+
+- `bun test test/p5-7-r13-feishu-inbound-observability.test.ts`
+- `bun test test/p5-7-r13-runtime-skill-sync.test.ts`
+
+## Observability
+
+本轮唯一新增观测：
+- Feishu 入站日志：`chatType`
+- Feishu 入站日志：`isGroup`
+
+（章节级）评审意见：[留空,用户将给出反馈]

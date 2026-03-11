@@ -73,7 +73,7 @@ export async function probeCodex(options?: ProbeOptions): Promise<ProbeResult> {
 
   // 2. 检查当前 workspace 配置
   let currentMode: "local-only" | "egress-allowed" = "local-only";
-  let currentRunner: NonNullable<WorkspaceConfig["runner.default"]> = "lmstudio";
+  let currentRunner: NonNullable<WorkspaceConfig["runner.default"]> = "agent-backend";
   let hasWorkspaceConfig = false;
 
   // 尝试从第一个活跃路由获取 workspace

@@ -10,11 +10,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { BotType } from "./router.js";
-import { runLmStudioChat, runLmStudioToolLoop } from "./lmstudio.js";
+import { executeAgentTurn, runAgentChat } from "./agent-backend.js";
 import type { InboundMessage } from "./imsg/types.js";
 import { clearTtsPrefs, getTtsPrefs, getVoiceReplyMode, setTtsPrefs, setVoiceReplyMode } from "./state/store.js";
 import { logger } from "./logger/index.js";
-import { loadWorkspaceConfig, getRuntimeKind, getAgentProvider, getTmuxClient, getPolicyMode } from "./config/workspace.js";
+import { getPrimaryOwnerIdsForChannel } from "./config.js";
+import { loadWorkspaceConfig, getRuntimeKind, getTmuxClient, getPolicyMode, getCurrentLaneModel } from "./config/workspace.js";
 // P5.5: 关键词主触发已禁用，不再 import detectAutoSkill/runAutoSkill
 // import { detectAutoSkill, normalizeSkillId, runAutoSkill, runSkill } from "./skills/auto.js";
 
@@ -26,13 +27,39 @@ import { handleTmuxSend } from "./tmux/responder.js";
 import * as session from "./runtime/session-orchestrator.js";
 
 // P5.6.2-R1: 导入会话窗口
-import { loadWindow, appendWindow, type WindowMessage } from "./session-window.js";
-import { loadSummary, formatSummaryAsContext } from "./summary.js";
-import { resolveSoulContext } from "./config/souls.js";
+import { appendWindow } from "./session-window.js";
 // P5.6.13-R2: 导入线程存储
 import { ensureThread, appendTurn, getThreadInfo } from "./runtime/thread-store.js";
+import { renderUnknownCommandHint } from "./routes/cmd-info.js";
+import { assembleAgentContext } from "./runtime/context-policy.js";
+import { resolveSessionChannel } from "./runtime/session-key.js";
+import { beginRun } from "./runtime/run-store.js";
 
 const TMUX_STYLE_MAX_CHARS = 800;
+const TMUX_LOCAL_ONLY_BLOCK_MESSAGE = "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）";
+
+/* =========================
+ * tmux 策略守卫（单一真相源）
+ * ========================= */
+export function resolveTmuxPolicyBlockResult(
+    kind: "agent" | "tmux",
+    mode: "local-only" | "egress-allowed"
+): HandleResult | null {
+    if (kind === "tmux" && mode === "local-only") {
+        return {
+            success: false,
+            error: TMUX_LOCAL_ONLY_BLOCK_MESSAGE,
+        };
+    }
+    return null;
+}
+
+function resolveGlobalAgentProvider(): string {
+    const raw = (process.env.AGENT_BACKEND || "").trim();
+    // P5.7-R9-T6: 默认回退到 agent-backend（中性语义）
+    if (!raw) return "agent-backend";
+    return raw;
+}
 
 function normalizeWhitespace(input: string): string {
     return input.replace(/\s+/g, " ").trim();
@@ -204,7 +231,7 @@ export abstract class BaseHandler implements CommandHandler {
      */
     protected getHelp(extraCommands?: string[]): string {
         const commands = [
-            "• /start - 启动 tmux 会话（按 /model 选择执行臂）",
+            "• /start - 启动 tmux 会话（先用 /tmux + /backend tmux 选择执行臂）",
             "• /stop - 关闭 tmux 会话",
             "• /status - 查看会话状态",
             "• /snapshot - 获取终端输出",
@@ -226,7 +253,7 @@ export class DefaultHandler extends BaseHandler {
         // 处理未知命令
         return {
             success: true,
-            response: `未知命令: ${message}\n${this.getHelp()}`,
+            response: `未知命令: ${message}\n\n${renderUnknownCommandHint()}`,
         };
     }
 }
@@ -284,9 +311,9 @@ export class FileHandler extends BaseHandler {
  * 运行时路由处理器
  *
  * 根据 runner 配置动态路由消息：
- * - lmstudio/llama/claude/openai → 直接调用 provider
+ * - agent-backend/local-openai/openai/minimax → 直接调用 provider
  * - codex/claude-code → 通过 tmux session 调用
- * 仍可走 LM Studio（兼容原有行为）
+ * 支持多后端切换（配置驱动）
  */
 
 /**
@@ -323,21 +350,21 @@ export class RuntimeRouterHandler implements CommandHandler {
 
             // /mode - 查看语音模式
             if (trimmed === "/mode" || trimmed === "mode") {
-                const backendEnv = (process.env.TTS_BACKEND || "").trim().toLowerCase();
+                const configuredTtsModel = context.projectDir
+                  ? await getCurrentLaneModel(context.projectDir, "tts")
+                  : undefined;
+                const backendEnv = (configuredTtsModel || process.env.TTS_BACKEND || "").trim().toLowerCase();
                 const ttsMode =
                     backendEnv === "qwen"
                         ? "strict:qwen"
-                        : backendEnv === "indextts"
-                            ? "strict:indextts"
-                            : "fallback:qwen->indextts";
-                const refAudio = (backendEnv === "qwen" || !backendEnv)
-                  ? (process.env.QWEN_TTS_REF_AUDIO || "").trim()
-                  : (process.env.INDEXTTS_REF_AUDIO || "").trim();
+                        : "auto:qwen";
+                const refAudio = (process.env.QWEN_TTS_REF_AUDIO || "").trim();
                 return {
                     success: true,
                     response: [
                         `语音回复模式: ${voiceMode}`,
                         `TTS: mode=${ttsMode} normalize=${process.env.TTS_NORMALIZE_TEXT || "1"}`,
+                        `tts-model=${configuredTtsModel || "auto"}`,
                         refAudio ? `refAudio=${refAudio}` : "",
                         ttsPrefs.instruct ? `style=${ttsPrefs.instruct}` : "",
                     ].filter(Boolean).join("\n"),
@@ -431,16 +458,16 @@ export class RuntimeRouterHandler implements CommandHandler {
                     return { success: false, error: "缺少工作区路径（projectDir），无法写入 TTS 产物" };
                 }
                 try {
-                    const useMcp = process.env.LMSTUDIO_ENABLE_MCP === "1";
+                    const useMcp = process.env.AGENT_ENABLE_MCP === "1";
                     const personaContent = undefined;
-                    const answer = await runLmStudioChat({
+                    const answer = await runAgentChat({
                         prompt: question,
                         system: personaContent,
                         ...(useMcp && context.projectDir ? { workspace: context.projectDir } : {}),
                     });
                     const cleanAnswer = (answer || "").trim();
                     if (!cleanAnswer) {
-                        return { success: false, error: "LM Studio 未返回可展示的文本" };
+                        return { success: false, error: "Agent Backend 未返回可展示的文本" };
                     }
                     const { executeTool } = await import("./tools/bus.js");
                     const { randomUUID } = await import("node:crypto");
@@ -480,12 +507,9 @@ export class RuntimeRouterHandler implements CommandHandler {
                 // tmux 透传链路
                 // P5.6.14-R3: tmux 永远不做注入
                 if (kind === "tmux") {
-                    // local-only 时拒绝 tmux（需要外网访问）
-                    if (mode === "local-only") {
-                        return {
-                            success: false,
-                            error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
-                        };
+                    const blocked = resolveTmuxPolicyBlockResult(kind, mode);
+                    if (blocked) {
+                        return blocked;
                     }
 
                     const styled = await buildTmuxStylePreamble(context.projectDir, trimmed);
@@ -539,74 +563,112 @@ export class RuntimeRouterHandler implements CommandHandler {
         const voiceMode = getVoiceReplyMode(context.chatId);
         const ttsPrefs = getTtsPrefs(context.chatId);
 
-        // 获取 provider 信息（用于日志）
-        const provider = context.projectDir ? await getAgentProvider(context.projectDir) : "none";
+        // 单源化：Agent Backend 仅从全局 AGENT_BACKEND 读取
+        const provider = resolveGlobalAgentProvider();
+        const providerSource = process.env.AGENT_BACKEND ? "env" : "default";
+        const run = beginRun({
+            source: "message",
+            kind: "light",
+            chatId: context.chatId,
+            workspacePath: context.projectDir,
+        });
 
         try {
-            const { randomUUID } = await import("node:crypto");
-            const traceId = randomUUID();  // 生成链路追踪 ID
-
-            // P5.6.2-R2: 读取短期会话窗口
-            let windowMessages: WindowMessage[] = [];
-            let summaryContext: string | undefined;
-            let soulContext: { content: string; source: string; path: string; chars: number } | undefined;
-
-            if (context.projectDir) {
-                windowMessages = await loadWindow(context.projectDir, context.chatId);
-
-                // P5.6.8-R4b: 读取 summary 并格式化为上下文
-                const summary = await loadSummary(context.projectDir, context.chatId);
-                if (summary) {
-                    summaryContext = formatSummaryAsContext(summary);
-                }
-
-                // P5.6.8-R4e: 读取 SOUL 上下文
-                soulContext = await resolveSoulContext(context.projectDir);
-            }
+            const traceId = run.runId;
+            const sessionChannel = resolveSessionChannel(context.chatId);
+            const assembledContext = await assembleAgentContext({
+                source: "message",
+                chatId: context.chatId,
+                prompt: trimmed,
+                workspacePath: context.projectDir,
+                agentProvider: provider,
+                includeSoulContext: true,
+                runId: run.runId,
+                sessionKey: run.sessionKey,
+                currentChannel: sessionChannel,
+                currentMessageId: context.originalMessage.id,
+                currentSpeakerId: context.originalMessage.sender || context.originalMessage.handle,
+                currentSpeakerName: context.originalMessage.senderName,
+                currentIsGroup: context.originalMessage.isGroup,
+                currentMessageType: context.originalMessage.messageType,
+                primaryOwnerIds: getPrimaryOwnerIdsForChannel(sessionChannel),
+            });
 
             // P5.6.14-R3: 注入观测字段
-            const injectionEnabled = !!(windowMessages.length > 0 || summaryContext || soulContext?.content);
+            const injectionEnabled = !!(
+                assembledContext.windowMessages.length > 0 ||
+                assembledContext.summaryContext ||
+                assembledContext.soulContext?.content
+            );
 
             logger.info("agent request started", {
                 module: "handlers",
+                runId: run.runId,
+                sessionKey: run.sessionKey,
+                source: "message",
                 chatId: context.chatId,
                 traceId,
                 // P5.6.14-R3: 日志字段锁
                 runtimeKind: "agent",
                 agentProvider: provider,
+                agentProviderSource: providerSource,
                 injectionEnabled,
                 // 注入详情
-                memoryInjected: windowMessages.length > 0 || !!summaryContext,
-                memoryTurns: windowMessages.length,
-                soulInjected: !!soulContext?.content,
-                soulSource: soulContext?.source || "none",
-                soulPath: soulContext?.path || "",
-                soulChars: soulContext?.chars || 0,
+                memoryInjected: assembledContext.windowMessages.length > 0 || !!assembledContext.summaryContext,
+                memoryTurns: assembledContext.windowMessages.length,
+                soulInjected: !!assembledContext.soulContext?.content,
+                soulSource: assembledContext.soulContext?.source || "none",
+                soulPath: assembledContext.soulContext?.path || "",
+                soulChars: assembledContext.soulContext?.chars || 0,
+                // P5.7-R9-T2: 上下文预算与 compact 观测字段（冻结）
+                contextWindowTokens: assembledContext.contextWindowTokens,
+                contextUsedTokens: assembledContext.contextUsedTokens,
+                contextUsagePct: assembledContext.contextUsagePct,
+                compactionTriggered: assembledContext.compactionTriggered,
+                compactionReason: assembledContext.compactionReason,
+                postCompactUsagePct: assembledContext.postCompactUsagePct,
             });
 
             // P5.6.1-R2: Persona 全量退役，不再注入 personaContent
             const personaContent = undefined;
-            // P5.6.2-R1: 主链统一走 ToolLoop
-            const toolLoopResult = await runLmStudioToolLoop({
-                prompt: trimmed,
+            // P5.7-R3e: 主链走路由分发（no-tool / tool / complex-tool）
+            const routedResult = await executeAgentTurn({
+                prompt: assembledContext.prompt,
                 system: personaContent,
                 ...(context.projectDir ? { workspacePath: context.projectDir } : {}),
+                agentProvider: provider,
+                traceId,
+                runContext: {
+                    runId: run.runId,
+                    sessionKey: run.sessionKey,
+                    source: "message",
+                },
                 // P5.6.8-R4b: 注入短期记忆上下文
-                windowMessages,
-                summaryContext,
+                windowMessages: assembledContext.windowMessages,
+                summaryContext: assembledContext.summaryContext,
                 // P5.6.8-R4e: 注入 SOUL 上下文（direct only）
-                soulContext,
+                soulContext: assembledContext.soulContext,
+                currentMessageId: context.originalMessage.id,
+                defaultActionTargetMessageId: assembledContext.defaultActionTargetMessageId,
             });
-            const clean = (toolLoopResult.answer || "").trim();
+            const clean = (routedResult.answer || "").trim();
             if (!clean) {
+                const errorMessage = "Agent Backend 未返回可展示的文本（可能模型只输出了 reasoning、发生截断，或模型已崩溃）";
+                run.finish({
+                    status: "failed",
+                    error: errorMessage,
+                });
                 return {
                     success: false,
-                    error: "LM Studio 未返回可展示的文本（可能模型只输出了 reasoning、发生截断，或模型已崩溃）",
+                    error: errorMessage,
                 };
             }
 
             logger.info("agent request completed", {
                 module: "handlers",
+                runId: run.runId,
+                sessionKey: run.sessionKey,
+                source: "message",
                 chatId: context.chatId,
                 traceId,
                 responseLength: clean.length,
@@ -614,15 +676,23 @@ export class RuntimeRouterHandler implements CommandHandler {
                 // P5.6.14-R3: 日志字段锁
                 runtimeKind: "agent",
                 agentProvider: provider,
+                agentProviderSource: providerSource,
                 injectionEnabled,
+                // P5.7-R3e: 路由观测字段
+                route: routedResult.route,
+                temperature: routedResult.temperature,
                 // P5.6.2-R1: ToolLoop 观测字段
-                toolCallCount: toolLoopResult.toolCall ? 1 : 0,
-                toolName: toolLoopResult.toolCall?.name,
+                toolCallCount: routedResult.toolCall ? 1 : 0,
+                toolName: routedResult.toolCall?.name,
+                toolSequence: routedResult.actionJournal
+                    .filter((entry) => entry.phase === "act")
+                    .map((entry) => `${entry.ok ? "ok" : "fail"}:${entry.tool}`)
+                    .join(" -> "),
                 // P5.6.8-R4e: SOUL 注入观测字段
-                soulInjected: !!soulContext?.content,
-                soulSource: soulContext?.source || "none",
-                soulPath: soulContext?.path || "",
-                soulChars: soulContext?.chars || 0,
+                soulInjected: !!assembledContext.soulContext?.content,
+                soulSource: assembledContext.soulContext?.source || "none",
+                soulPath: assembledContext.soulContext?.path || "",
+                soulChars: assembledContext.soulContext?.chars || 0,
             });
 
             // 自动语音回复：不在 handler 内阻塞生成（避免"很久不回复"）
@@ -630,13 +700,55 @@ export class RuntimeRouterHandler implements CommandHandler {
                 const maxChars = parseInt(process.env.TTS_AUTO_MAX_CHARS || "240", 10);
                 const speakText = clean.length > maxChars ? clean.slice(0, maxChars) : clean;
 
-                logger.info("LM Studio 返回 TTS defer", {
+                logger.info("Agent Backend 返回 TTS defer", {
                     module: "handlers",
+                    runId: run.runId,
+                    source: "message",
                     chatId: context.chatId,
                     traceId,
                     textLength: speakText.length,
                 });
 
+                // P5.7-R9-T3 Step 1: TTS 模式也必须写回会话窗口（禁止漏写回）
+                if (context.projectDir && clean) {
+                    try {
+                        await appendWindow(context.projectDir, context.chatId, {
+                            role: "user",
+                            content: trimmed,
+                            messageId: context.originalMessage.id,
+                            senderId: context.originalMessage.sender || context.originalMessage.handle,
+                            senderName: context.originalMessage.senderName,
+                            messageType: context.originalMessage.messageType,
+                            isGroup: context.originalMessage.isGroup,
+                        });
+                        await appendWindow(context.projectDir, context.chatId, { role: "assistant", content: clean });
+                    } catch {
+                        // 窗口写回失败不影响主流程
+                    }
+                }
+
+                // P5.7-R9-T3 Step 1: TTS 模式也必须写回线程
+                if (context.projectDir && clean) {
+                    try {
+                        let threadInfo = getThreadInfo(context.chatId);
+                        if (!threadInfo) {
+                            const runtimeMeta = {
+                                kind: "agent" as const,
+                                // P5.7-R9-T6: 使用中性语义 agent-backend
+                                provider: provider === "none" ? "agent-backend" : provider,
+                                tmuxClient: undefined,
+                            };
+                            await ensureThread(context.chatId, context.projectDir, trimmed, runtimeMeta);
+                        }
+                        await appendTurn(context.chatId, trimmed, clean);
+                    } catch {
+                        // 线程写回失败不影响主流程
+                    }
+                }
+
+                run.finish({
+                    status: "completed",
+                });
                 return {
                     success: true,
                     response: voiceMode === "audio" ? "正在生成语音..." : clean,
@@ -655,7 +767,15 @@ export class RuntimeRouterHandler implements CommandHandler {
             // P5.6.2-R2: 写回短期会话窗口（user + assistant 双向写回）
             if (context.projectDir && clean) {
                 try {
-                    await appendWindow(context.projectDir, context.chatId, { role: "user", content: trimmed });
+                    await appendWindow(context.projectDir, context.chatId, {
+                        role: "user",
+                        content: trimmed,
+                        messageId: context.originalMessage.id,
+                        senderId: context.originalMessage.sender || context.originalMessage.handle,
+                        senderName: context.originalMessage.senderName,
+                        messageType: context.originalMessage.messageType,
+                        isGroup: context.originalMessage.isGroup,
+                    });
                     await appendWindow(context.projectDir, context.chatId, { role: "assistant", content: clean });
                 } catch {
                     // 窗口写回失败不影响主流程
@@ -671,7 +791,8 @@ export class RuntimeRouterHandler implements CommandHandler {
                         // 首次消息，创建新线程
                         const runtimeMeta = {
                             kind: "agent" as const,
-                            provider: "lmstudio",
+                            // P5.7-R9-T6: 使用中性语义 agent-backend
+                            provider: provider === "none" ? "agent-backend" : provider,
                             tmuxClient: undefined,
                         };
                         await ensureThread(context.chatId, context.projectDir, trimmed, runtimeMeta);
@@ -683,11 +804,19 @@ export class RuntimeRouterHandler implements CommandHandler {
                 }
             }
 
+            run.finish({
+                status: "completed",
+            });
             return { success: true, response: clean, defer: null };
         } catch (error: unknown) {
+            const errorMessage = error instanceof Error ? error.message : "调用失败";
+            run.finish({
+                status: "failed",
+                error: errorMessage,
+            });
             return {
                 success: false,
-                error: error instanceof Error ? error.message : "调用失败",
+                error: errorMessage,
             };
         }
     }
@@ -703,231 +832,16 @@ export class CodexHandler implements CommandHandler {
     async handle(message: string, context: HandlerContext): Promise<HandleResult> {
         const trimmed = message.trim();
 
-        // M5-4: 检查策略模式
-        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
+        // P5.6.14-R2: 改用 runtime.kind 检查
         if (context.projectDir) {
-            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
+            const { getPolicyMode, getRuntimeKind } = await import("./config/workspace.js");
             const currentMode = await getPolicyMode(context.projectDir);
             const kind = await getRuntimeKind(context.projectDir);
-            const client = await getTmuxClient(context.projectDir);
-
-            // local-only 时拒绝 tmux 执行（需要外网访问）
-            if (currentMode === "local-only" && kind === "tmux") {
-                return {
-                    success: false,
-                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
-                };
+            const blocked = resolveTmuxPolicyBlockResult(kind, currentMode);
+            if (blocked) {
+                return blocked;
             }
         }
-        // M5-4: 检查策略模式
-        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
-        if (context.projectDir) {
-            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
-            const currentMode = await getPolicyMode(context.projectDir);
-            const kind = await getRuntimeKind(context.projectDir);
-            const client = await getTmuxClient(context.projectDir);
-
-            // local-only 时拒绝 tmux 执行（需要外网访问）
-            if (currentMode === "local-only" && kind === "tmux") {
-                return {
-                    success: false,
-                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
-                };
-            }
-        }
-        // M5-4: 检查策略模式
-        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
-        if (context.projectDir) {
-            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
-            const currentMode = await getPolicyMode(context.projectDir);
-            const kind = await getRuntimeKind(context.projectDir);
-            const client = await getTmuxClient(context.projectDir);
-
-            // local-only 时拒绝 tmux 执行（需要外网访问）
-            if (currentMode === "local-only" && kind === "tmux") {
-                return {
-                    success: false,
-                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
-                };
-            }
-        }
-        // M5-4: 检查策略模式
-        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
-        if (context.projectDir) {
-            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
-            const currentMode = await getPolicyMode(context.projectDir);
-            const kind = await getRuntimeKind(context.projectDir);
-            const client = await getTmuxClient(context.projectDir);
-
-            // local-only 时拒绝 tmux 执行（需要外网访问）
-            if (currentMode === "local-only" && kind === "tmux") {
-                return {
-                    success: false,
-                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
-                };
-            }
-        }
-        // M5-4: 检查策略模式
-        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
-        if (context.projectDir) {
-            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
-            const currentMode = await getPolicyMode(context.projectDir);
-            const kind = await getRuntimeKind(context.projectDir);
-            const client = await getTmuxClient(context.projectDir);
-
-            // local-only 时拒绝 tmux 执行（需要外网访问）
-            if (currentMode === "local-only" && kind === "tmux") {
-                return {
-                    success: false,
-                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
-                };
-            }
-        }
-        // M5-4: 检查策略模式
-        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
-        if (context.projectDir) {
-            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
-            const currentMode = await getPolicyMode(context.projectDir);
-            const kind = await getRuntimeKind(context.projectDir);
-            const client = await getTmuxClient(context.projectDir);
-
-            // local-only 时拒绝 tmux 执行（需要外网访问）
-            if (currentMode === "local-only" && kind === "tmux") {
-                return {
-                    success: false,
-                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
-                };
-            }
-        }
-        // M5-4: 检查策略模式
-        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
-        if (context.projectDir) {
-            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
-            const currentMode = await getPolicyMode(context.projectDir);
-            const kind = await getRuntimeKind(context.projectDir);
-            const client = await getTmuxClient(context.projectDir);
-
-            // local-only 时拒绝 tmux 执行（需要外网访问）
-            if (currentMode === "local-only" && kind === "tmux") {
-                return {
-                    success: false,
-                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
-                };
-            }
-        }
-        // M5-4: 检查策略模式
-        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
-        if (context.projectDir) {
-            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
-            const currentMode = await getPolicyMode(context.projectDir);
-            const kind = await getRuntimeKind(context.projectDir);
-            const client = await getTmuxClient(context.projectDir);
-
-            // local-only 时拒绝 tmux 执行（需要外网访问）
-            if (currentMode === "local-only" && kind === "tmux") {
-                return {
-                    success: false,
-                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
-                };
-            }
-        }
-        // M5-4: 检查策略模式
-        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
-        if (context.projectDir) {
-            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
-            const currentMode = await getPolicyMode(context.projectDir);
-            const kind = await getRuntimeKind(context.projectDir);
-            const client = await getTmuxClient(context.projectDir);
-
-            // local-only 时拒绝 tmux 执行（需要外网访问）
-            if (currentMode === "local-only" && kind === "tmux") {
-                return {
-                    success: false,
-                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
-                };
-            }
-        }
-        // M5-4: 检查策略模式
-        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
-        if (context.projectDir) {
-            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
-            const currentMode = await getPolicyMode(context.projectDir);
-            const kind = await getRuntimeKind(context.projectDir);
-            const client = await getTmuxClient(context.projectDir);
-
-            // local-only 时拒绝 tmux 执行（需要外网访问）
-            if (currentMode === "local-only" && kind === "tmux") {
-                return {
-                    success: false,
-                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
-                };
-            }
-        }
-        // M5-4: 检查策略模式
-        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
-        if (context.projectDir) {
-            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
-            const currentMode = await getPolicyMode(context.projectDir);
-            const kind = await getRuntimeKind(context.projectDir);
-            const client = await getTmuxClient(context.projectDir);
-
-            // local-only 时拒绝 tmux 执行（需要外网访问）
-            if (currentMode === "local-only" && kind === "tmux") {
-                return {
-                    success: false,
-                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
-                };
-            }
-        }
-        // M5-4: 检查策略模式
-        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
-        if (context.projectDir) {
-            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
-            const currentMode = await getPolicyMode(context.projectDir);
-            const kind = await getRuntimeKind(context.projectDir);
-            const client = await getTmuxClient(context.projectDir);
-
-            // local-only 时拒绝 tmux 执行（需要外网访问）
-            if (currentMode === "local-only" && kind === "tmux") {
-                return {
-                    success: false,
-                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
-                };
-            }
-        }
-        // M5-4: 检查策略模式
-        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
-        if (context.projectDir) {
-            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
-            const currentMode = await getPolicyMode(context.projectDir);
-            const kind = await getRuntimeKind(context.projectDir);
-            const client = await getTmuxClient(context.projectDir);
-
-            // local-only 时拒绝 tmux 执行（需要外网访问）
-            if (currentMode === "local-only" && kind === "tmux") {
-                return {
-                    success: false,
-                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
-                };
-            }
-        }
-        // M5-4: 检查策略模式
-        // P5.6.14-R2: 改用 runtime.kind 和 tmux.client 检查
-        if (context.projectDir) {
-            const { getPolicyMode, getRuntimeKind, getTmuxClient } = await import("./config/workspace.js");
-            const currentMode = await getPolicyMode(context.projectDir);
-            const kind = await getRuntimeKind(context.projectDir);
-            const client = await getTmuxClient(context.projectDir);
-
-            // local-only 时拒绝 tmux 执行（需要外网访问）
-            if (currentMode === "local-only" && kind === "tmux") {
-                return {
-                    success: false,
-                    error: "当前策略模式为 local-only（禁止外网访问），无法使用 Codex/Claude Code 执行臂。\n\n请执行：/policy on（或 /policy egress-allowed）",
-                };
-            }
-        }
-
         // help 命令
         if (trimmed === "help" || trimmed === "帮助" || trimmed === "/help" || trimmed === "/?") {
             return {
@@ -1003,6 +917,7 @@ export function getHandler(botType: BotType): CommandHandler {
         case "file":
             return new FileHandler();
         case "lmstudio":
+        case "agent-backend":
             return new RuntimeRouterHandler();
         default:
             return new DefaultHandler();

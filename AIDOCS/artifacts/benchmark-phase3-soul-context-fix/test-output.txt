@@ -1,0 +1,46 @@
+Benchmark Task Card:
+/Users/admin/GitProjects/msgcode/aidocs/notes/benchmark-task-phase3-soul-context-fix-260310.md
+
+Artifact Directory:
+/Users/admin/GitProjects/msgcode/aidocs/artifacts/benchmark-phase3-soul-context-fix
+
+Command:
+PATH="$HOME/.bun/bin:$PATH" bun test test/p6-agent-run-core-phase3-context-policy.test.ts test/p6-agent-run-core-phase1.test.ts test/p5-7-r12-agent-relentless-task-closure.test.ts test/p5-7-r12-t9-mainline-quota-continuation-smoke.test.ts
+
+Key Output:
+- Phase 3: Context Policy > 普通消息链和 task 续跑链应共用同一个 assembleAgentContext 入口
+- Phase 3: Context Policy > task 续跑应通过统一 assembler 拼入 checkpoint 和 summary/window
+- Phase 3: Context Policy > task 续跑的统一 assembler 应支持注入 SOUL 上下文
+- Phase 1: Run Core > heartbeat 续跑任务时应创建 source=heartbeat 的 run，并把 runId 透传给执行器
+- P5.7-R12-T9: mainline quota continuation smoke > /task run -> continuable -> heartbeat 下一轮 -> completed
+- P5.7-R12-T9: mainline quota continuation smoke > /task run -> continuable -> heartbeat 下一轮 -> BUDGET_EXHAUSTED -> failed
+
+Summary:
+- 34 pass
+- 0 fail
+- 156 expect() calls
+- Ran 34 tests across 4 files. [941.00ms]
+
+Command:
+npx tsc --noEmit
+
+Key Output:
+- exit code: 2
+- existing errors only:
+  - src/feishu/transport.ts
+  - src/routes/cmd-model.ts
+  - src/routes/cmd-schedule.ts
+  - src/routes/cmd-tooling.ts
+
+Detailed tsc Output:
+src/feishu/transport.ts(649,53): error TS2339: Property 'image_key' does not exist on type '{ ok: boolean; file_key?: string | undefined; error?: string | undefined; } | { ok: boolean; image_key?: string | undefined; error?: string | undefined; }'.
+src/feishu/transport.ts(649,78): error TS2339: Property 'file_key' does not exist on type '{ ok: boolean; file_key?: string | undefined; error?: string | undefined; } | { ok: boolean; image_key?: string | undefined; error?: string | undefined; }'.
+src/feishu/transport.ts(660,47): error TS2339: Property 'image_key' does not exist on type '{ ok: boolean; file_key?: string | undefined; error?: string | undefined; } | { ok: boolean; image_key?: string | undefined; error?: string | undefined; }'.
+src/feishu/transport.ts(661,46): error TS2339: Property 'file_key' does not exist on type '{ ok: boolean; file_key?: string | undefined; error?: string | undefined; } | { ok: boolean; image_key?: string | undefined; error?: string | undefined; }'.
+src/feishu/transport.ts(684,57): error TS2339: Property 'image_key' does not exist on type '{ ok: boolean; file_key?: string | undefined; error?: string | undefined; } | { ok: boolean; image_key?: string | undefined; error?: string | undefined; }'.
+src/feishu/transport.ts(684,95): error TS2339: Property 'file_key' does not exist on type '{ ok: boolean; file_key?: string | undefined; error?: string | undefined; } | { ok: boolean; image_key?: string | undefined; error?: string | undefined; }'.
+src/feishu/transport.ts(698,57): error TS2339: Property 'image_key' does not exist on type '{ ok: boolean; file_key?: string | undefined; error?: string | undefined; } | { ok: boolean; image_key?: string | undefined; error?: string | undefined; }'.
+src/feishu/transport.ts(698,95): error TS2339: Property 'file_key' does not exist on type '{ ok: boolean; file_key?: string | undefined; error?: string | undefined; } | { ok: boolean; image_key?: string | undefined; error?: string | undefined; }'.
+src/routes/cmd-model.ts(10,30): error TS2459: Module '"../config/workspace.js"' declares 'ToolName' locally, but it is not exported.
+src/routes/cmd-schedule.ts(94,32): error TS2339: Property 'getWorkspaceRootForDisplay' does not exist on type 'typeof import("/Users/admin/GitProjects/msgcode/src/memory/types")'.
+src/routes/cmd-tooling.ts(108,28): error TS2345: Argument of type 'string' is not assignable to parameter of type '"bash" | "read_file" | "tts" | "asr" | "browser" | "desktop" | "feishu_send_file"'.

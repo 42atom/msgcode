@@ -1,0 +1,195 @@
+# Plan: PinchTab 单一浏览器底座预启动与路径注入
+
+> 状态：已被 `docs/design/plan-260307-patchright-browser-cutover.md` 与 `issues/0016-patchright-browser-cutover.md` 取代。
+> 保留仅作历史决策与回滚记录，不再作为正式执行真相源。
+
+Issue: 0013
+
+## Problem
+
+当前 browser 主链的合同已经收口到 PinchTab，但运行时地基还没坐稳：`startBot()` 不会把 PinchTab 预启动起来，执行核也没拿到明确的 PinchTab/baseUrl/Chrome 根路径，于是模型仍然可能猜环境或走偏路。  
+继续只在失败后补错误提示，不会让浏览器底座更稳；先把 PinchTab 启动和路径真相源接上线，才有资格继续谈后面的 Gmail、内容农场和 bot 风险。
+
+## Occam Check
+
+- 不加它，系统具体坏在哪？
+  当前 `browser` 工具依赖一个“已经存在且地址已知”的 PinchTab orchestrator。实际没预启动、也没注入路径时，模型和运行时都只能碰运气：要么 HTTP 直连失败，要么继续猜浏览器路径和执行入口。
+- 用更少的层能不能解决？
+  能。只补一个 PinchTab runtime 入口负责“解析路径 + 预启动 + 验活”，然后把结果直接注入现有 `startBot()` 和执行核 prompt，不需要再加新的控制面。
+- 这个改动让主链数量变多了还是变少了？
+  变少了。浏览器正式路径从“PinchTab + 可能残留的 agent-browser 心智”收口成一条：PinchTab。
+
+## Decision
+
+采用“单一 PinchTab runtime + 单一 prompt 注入口径”的最小方案：
+
+1. 新增一个 PinchTab runtime 模块，负责：
+   - 解析 PinchTab baseUrl
+   - 解析本地 PinchTab binary path
+   - 本地 orchestrator 健康检查
+   - 未启动时本地拉起并轮询验活
+2. `startBot()` 在 transports 和 listener 启动前，先执行 PinchTab 预启动。
+3. `browser` runner 与执行核 prompt 共用同一份 PinchTab runtime 信息，避免双份环境推导。
+4. 在 prompt 中明确：
+   - PinchTab 是唯一正式浏览器通道
+   - `agent-browser` 不进入正式主链
+5. 增加本地 `pinchtab-browser` skill，作为 PinchTab CLI 合同与说明入口，但正式浏览器执行仍以 `browser` 工具为主。
+
+关键理由：
+
+1. 不新增编排层，只补浏览器主链的硬前提。
+2. 让“启动”和“路径”都回到系统真相源，而不是让模型猜。
+3. skill 只是说明和 CLI 壳，不再和正式执行通道竞争。
+
+## Alternatives
+
+### 方案 A：只改 prompt，不改启动链
+
+- 优点：改动最小。
+- 缺点：模型知道路径也没用，PinchTab 进程还是可能不存在。
+
+### 方案 B：每次 browser 调用前临时尝试拉起 PinchTab，不接入 `startBot()`
+
+- 优点：表面上更懒加载。
+- 缺点：问题发现太晚，而且会把“浏览器底座是否 ready”变成每次工具调用时的分支判断。
+
+### 方案 C：`startBot()` 预启动 + runner/prompt 共享同一运行时信息（推荐）
+
+- 优点：最小、稳定、单一真相源。
+- 缺点：需要一次跨 `commands/browser/prompt` 的小范围收口。
+
+推荐：方案 C。
+
+## 方法解释
+
+新的浏览器底座只保留一条真相源：
+
+```ts
+type PinchtabRuntimeInfo = {
+  baseUrl: string;
+  binaryPath: string;
+  host: string;
+  port: number;
+  isLocal: boolean;
+};
+```
+
+启动流程：
+
+```ts
+await ensurePinchtabReady();
+await startTransports();
+await startListener();
+```
+
+执行核提示词注入示意：
+
+```text
+[当前浏览器底座]
+唯一正式浏览器通道：browser 工具（PinchTab）
+PinchTab orchestrator：http://127.0.0.1:9867
+PinchTab binary：/Users/admin/.pinchtab/bin/0.7.7/pinchtab-darwin-arm64
+Chrome profilesRoot：/Users/admin/msgcode-workspaces/.msgcode/chrome-profiles
+当前工作 Chrome root：/Users/admin/msgcode-workspaces/.msgcode/chrome-profiles/work-default
+如需人工启动 Chrome，请使用系统提供的 launchCommand，不要猜路径，不要使用 agent-browser。
+```
+
+本地 skill 只是 CLI 合同壳：
+
+```bash
+bash ~/.config/msgcode/skills/pinchtab-browser/main.sh profiles list --json
+```
+
+不把它当正式浏览器执行通道，只作为“如何使用 PinchTab CLI/合同”的说明入口。
+
+## Plan
+
+1. PinchTab runtime 收口
+- 修改文件：
+  - 新增 `src/browser/pinchtab-runtime.ts`
+  - 调整 `src/runners/browser-pinchtab.ts`
+- 改动：
+  - 解析 baseUrl / binary path
+  - 本地健康检查
+  - 本地 PinchTab 拉起与轮询验活
+- 验收点：
+  - 无 PinchTab 进程时能自动拉起本地 orchestrator
+
+2. 接入 `startBot()`
+- 修改文件：
+  - `src/commands.ts`
+- 改动：
+  - 在 transports 启动前接入 PinchTab 预启动
+  - 启动成功/失败打最小证据日志
+- 验收点：
+  - `msgcode start` 后 PinchTab ready
+
+3. 浏览器路径注入执行核
+- 修改文件：
+  - `src/agent-backend/tool-loop.ts`
+  - `prompts/agents-prompt.md`
+- 改动：
+  - 注入 baseUrl / binaryPath / chromeRoot / profilesRoot / launchCommand
+  - 明确禁止使用 `agent-browser`
+- 验收点：
+  - system prompt 包含浏览器真相源，不再要求模型猜路径
+
+4. 本地 skill 与索引
+- 修改文件：
+  - `~/.config/msgcode/skills/pinchtab-browser/SKILL.md`
+  - `~/.config/msgcode/skills/pinchtab-browser/main.sh`
+  - `~/.config/msgcode/skills/index.json`
+- 改动：
+  - 新增 PinchTab skill 壳
+  - 更新全局 skill 索引
+- 验收点：
+  - 模型可看到 `pinchtab-browser`，且 entry 可执行
+
+5. 定向测试与变更日志
+- 修改文件：
+  - `test/p5-7-r13-pinchtab-bootstrap.test.ts`
+  - `test/p5-7-r9-t2-skill-global-single-source.test.ts`
+  - `docs/CHANGELOG.md`
+- 改动：
+  - 锁住预启动逻辑与 prompt 注入
+  - 记录外部可见运行时变化
+- 验收点：
+  - 测试通过
+  - changelog 有对应条目
+
+## Risks
+
+1. 若 `PINCHTAB_BASE_URL` 指向远端服务，强行本地拉起会抢错责任。
+回滚/降级：仅对 `127.0.0.1/localhost` 这类本地地址执行预启动；远端地址只做健康检查。
+
+2. 若 PinchTab binary 不存在，直接吞掉错误会让浏览器主链继续不确定。
+回滚/降级：显式记录 binary path 和失败原因；browser 调用继续 fail-closed，不猜路径。
+
+3. 本地 skill 改动在用户配置目录，不属于仓库提交的一部分。
+回滚/降级：仓库只冻结文档和主链代码；本地 skill 作为运行时附加配置单独说明。
+
+## Rollback
+
+- 回退 `src/browser/pinchtab-runtime.ts`、`src/commands.ts`、`src/agent-backend/tool-loop.ts`、`prompts/agents-prompt.md` 本轮改动。
+- 若 PinchTab 预启动引入问题，可暂时保留 prompt 注入，只移除 `startBot()` 中的自动拉起逻辑。
+
+## Test Plan
+
+- `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r13-pinchtab-bootstrap.test.ts`
+- `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r9-t2-skill-global-single-source.test.ts`
+- 必要时补跑：
+  - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r7a-browser-runner.test.ts`
+  - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r7a-browser-tool-bus.test.ts`
+
+## Observability
+
+- `startBot()` 最少记录：
+  - baseUrl
+  - binaryPath
+  - isLocal
+  - startedByMsgcode
+- PinchTab 预启动失败必须显式记录：
+  - binary missing / health timeout / remote baseUrl unhealthy
+- 不允许再出现“browser 工具存在，但运行前提靠猜”的黑盒状态。
+
+（章节级）评审意见：[留空,用户将给出反馈]

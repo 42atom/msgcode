@@ -4,6 +4,7 @@
 
 export { probeEnvironment } from "./environment.js";
 export { probePermissions } from "./permissions.js";
+export { probeDaemon } from "./daemon.js";
 export { probeConfig } from "./config.js";
 export { probeRoutes } from "./routes.js";
 export { probeConnections } from "./connections.js";

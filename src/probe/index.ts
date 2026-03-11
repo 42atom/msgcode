@@ -7,6 +7,7 @@
 import {
     probeEnvironment,
     probePermissions,
+    probeDaemon,
     probeConfig,
     probeRoutes,
     probeConnections,
@@ -28,6 +29,7 @@ import type { StatusReport, ProbeOptions, FormatOptions } from "./types.js";
 const PROBE_CATEGORIES = [
     { name: "环境", key: "environment", probe: probeEnvironment },
     { name: "权限", key: "permissions", probe: probePermissions },
+    { name: "守护", key: "daemon", probe: probeDaemon },
     { name: "配置", key: "config", probe: probeConfig },
     { name: "路由", key: "routes", probe: probeRoutes },
     { name: "连接", key: "connections", probe: probeConnections },

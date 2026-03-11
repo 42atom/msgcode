@@ -22,7 +22,8 @@ import { resetThread } from "./thread-store.js";
 
 export interface RunnerInfo {
   runner: RunnerType;
-  runnerConfig?: "lmstudio" | "llama" | "claude" | "openai" | "codex" | "claude-code";
+  // P5.7-R9-T6: 新增 agent-backend 中性语义
+  runnerConfig?: "agent-backend" | "lmstudio" | "minimax" | "deepseek" | "llama" | "claude" | "openai" | "codex" | "claude-code";
   blockedReason?: string;
 }
 
@@ -97,7 +98,7 @@ export async function startSession(ctx: SessionContext): Promise<SessionResult> 
     return {
       success: true,
       response: `当前为 direct 执行臂 (${r.runnerConfig})，无需 /start。\n\n直接发送消息即可开始对话。\n\n` +
-        `提示：如需切换到 tmux 执行臂，请使用 /model codex 或 /model claude-code`
+        `提示：如需切换到 tmux 执行臂，请先 /tmux codex（或 /tmux claude-code），再执行 /backend tmux`
     };
   }
 
@@ -212,10 +213,15 @@ export async function clearSession(ctx: SessionContext): Promise<SessionResult> 
     return { success: false, error: artifactsResult.error };
   }
 
+  // P5.7-R9-T3 Step 2: 显式日志字段 - clearScope=short-term
+  // 明确只清短期会话（window + summary），不清长期 memory
   logger.info("Session artifacts cleared", {
     module: "session-orchestrator",
     chatId: ctx.chatId,
     runner: r.runner,
+    clearScope: "short-term",
+    clearedItems: ["window", "summary"],
+    preservedItems: ["memory"],  // 长期记忆不清
   });
 
   // P5.6.13-R2: 重置线程（/clear 后创建新线程）

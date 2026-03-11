@@ -1,0 +1,132 @@
+# Unix 主链架构收口计划
+
+Issue: 0009
+
+## Problem
+
+当前主链已经完成一半 agent-first 改造，但 `routed-chat.ts` 仍残留前置 classifier 与 fake-tool recover 的代码壳，`task-supervisor` 仍可直接驱动主执行，`steering-queue` 仍把恢复副作用藏在读路径里，`commands.ts` 仍承担过厚的启动与运行时控制职责。系统离“单一主链”只差几刀减法，但如果顺序不对，会一边删旧层一边补新层，复杂度继续上升。
+
+## Decision
+
+采用“删 → 降 → 拆”的四刀顺序：
+
+1. 先删 `routed-chat.ts` 中已失效的 classifier/recover 残骸，直接巩固 agent-first 主链。
+2. 再降级 `task-supervisor`，只保留状态机、调度、预算，不再形成平行执行入口。
+3. 再拆 `steering-queue`，把恢复动作显式化，收回隐式副作用。
+4. 最后拆 `commands.ts`，把启动逻辑压回装配层。
+
+核心理由：
+
+1. 第一刀是纯减法，影响面最小，先把主链定义清楚。
+2. 第二、三刀都依赖第一刀后的“唯一执行入口”语义，否则会继续围着旧路由打补丁。
+3. `commands.ts` 只有在前面三刀收口后才会自然变薄，先拆只会搬运复杂度。
+
+## Plan
+
+1. 冻结 issue 与验证口径
+   - 文件：
+     - `issues/0009-unix-mainline-refactor.md`
+     - `docs/design/plan-260306-unix-mainline-refactor.md`
+   - 验收：
+     - 四刀顺序、隐藏耦合、非目标写清楚。
+
+2. 第一刀：清理 `src/agent-backend/routed-chat.ts`
+   - 删除内容：
+     - `ROUTE_CLASSIFIER_SYSTEM_PROMPT`
+     - `looksLikeShellCommand()`
+     - `classifyRouteModelFirst()`
+     - 本文件内未使用的 `isLikelyFakeToolExecutionText()`
+     - 已无意义的 classifier 相关 import
+   - 保留内容：
+     - degrade 强制 no-tool
+     - `forceComplexTool` 显式 plan/act/report
+     - 默认 `runAgentToolLoop({ allowNoTool: true })`
+   - 验收：
+     - `routed-chat.ts` 不再持有前置路由决策代码。
+   - 当前结果：
+     - 已完成。
+
+3. 最小验收
+   - 命令：
+     - 定向 smoke：`test/p5-7-r12-t10-agent-first-router-second.test.ts`
+     - 编译：`npx tsc --noEmit`
+   - 验收：
+     - agent-first 结构锁仍通过。
+   - 当前结果：
+     - 已完成。
+
+4. 第二刀设计：降级 `task-supervisor`
+   - 目标文件：
+     - `src/runtime/task-supervisor.ts`
+     - 可能的唯一入口文件（若需要新增）
+   - 方向：
+     - 只保留状态机、调度、预算；
+     - 执行回到唯一 agent 主入口。
+   - 验收：
+     - 不再直接 `import("../agent-backend/routed-chat.js")` 执行主链。
+   - 当前结果：
+     - 已完成：新增 `src/agent-backend/execute-turn.ts`，并将 `task-supervisor` 降为“外部注入执行器 + 本地状态机/预算检查”。
+     - 仍未完成的是更彻底的消息主链归并，这留到后续阶段处理。
+
+5. 第三刀设计：拆薄 `steering-queue`
+   - 目标文件：
+     - `src/steering-queue.ts`
+     - `src/runtime/event-queue-store.ts`
+   - 方向：
+     - `getQueues()` 退化为纯内存读；
+     - 恢复改为显式调用。
+   - 验收：
+     - 读路径不再带恢复副作用。
+   - 当前结果：
+     - 已完成。
+
+6. 第四刀设计：拆薄 `commands.ts`
+   - 目标文件：
+     - `src/commands.ts`
+   - 方向：
+     - 拆成 runtime/bootstrap/transports/services 级别装配函数。
+   - 验收：
+     - `startBot()` 只保留装配主线。
+
+## Risks
+
+1. 风险：第一刀只删表层，实际仍有下游依赖旧分类语义。
+   - 回滚/降级：只删 `routed-chat.ts` 内的残骸；若发现真实依赖，先补 issue 证据，不扩散修改。
+
+2. 风险：第二刀若直接改成“新控制层”，会把平行主链换个名字继续存在。
+   - 回滚/降级：坚持“状态机/调度器”边界，不新增中间裁判层。
+
+3. 风险：第三刀把恢复逻辑拆坏，导致重启后事件丢失。
+   - 回滚/降级：保留 `event-queue-store` 作为真相源，先显式调用恢复，再删隐式路径。
+
+4. 风险：`commands.ts` 的复杂度转移到 `handlers.ts`。
+   - 回滚/降级：拆装配时同步记录 `handlers.ts` 的职责边界，不把启动逻辑倒进去。
+
+## Test Plan
+
+1. 第一刀后
+   - `PATH="$HOME/.bun/bin:$PATH" npm test -- test/p5-7-r12-t10-agent-first-router-second.test.ts`
+   - `npx tsc --noEmit`
+
+2. 第二刀后
+   - `/task run <goal>` 的最小 smoke
+   - `test/p5-7-r12-t9-mainline-quota-continuation-smoke.test.ts`
+
+3. 第三刀后
+   - 重启恢复 smoke：事件恢复与消费链验证
+
+4. 第四刀后
+   - 启动与停止主流程 smoke
+
+## Observability
+
+第一阶段继续保留以下字段，避免删结构时失去证据：
+
+1. `traceId`
+2. `route`
+3. `phase`
+4. `decisionSource`
+5. `taskId`（第二刀开始）
+6. `chatId`
+
+（章节级）评审意见：[留空,用户将给出反馈]

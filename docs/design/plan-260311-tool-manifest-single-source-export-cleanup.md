@@ -1,0 +1,119 @@
+# plan-260311-tool-manifest-single-source-export-cleanup
+
+## Problem
+
+当前工具暴露层虽然已经有 `TOOL_MANIFESTS` 和 `agent-backend/tool-loop.ts#getToolsForLlm()` 作为主链，但仓库里仍保留 `PI_ON_TOOLS`、`AGENT_TOOLS` 和 `lmstudio.ts` 的影子 `getToolsForLlm()`。这些旧旁路让“工具暴露真相源”重新分叉，形成幽灵工具名、公开过时导出和双实现漂移。
+
+## Occam Check
+
+1. 不加这次清理，系统具体坏在哪？
+   - 工具暴露继续有三条旁路，`TOOL_MANIFESTS` 不再是单一真相源；外部 import `AGENT_TOOLS` 或兼容层 `getToolsForLlm()` 都可能拿到与主执行核不一致的结果。
+2. 用更少的层能不能解决？
+   - 能。直接删除旧旁路，把兼容导出改成转发主实现，不需要新增适配层。
+3. 这个改动让主链数量变多了还是变少了？
+   - 变少了。工具暴露重新收口为 `TOOL_MANIFESTS + tool-loop.getToolsForLlm()` 一条主链。
+
+## Decision
+
+采用最小可删方案：
+
+1. 删除 `PI_ON_TOOLS`
+2. 删除 `AGENT_TOOLS`
+3. 删除 `lmstudio.ts` 中影子 `getToolsForLlm()` 实现
+4. `getToolsForAgent` 统一转发 `agent-backend/tool-loop.ts#getToolsForLlm()`
+5. 回归锁改成验证“旧旁路不存在、兼容导出复用主实现”
+
+## Alternatives
+
+### 方案 A：保留旧常量，只加类型约束
+
+优点：
+
+- 对旧测试改动少
+
+缺点：
+
+- `PI_ON_TOOLS` 和 `AGENT_TOOLS` 仍是第二真相源
+- 只是把漂移包了一层类型，不是真收口
+
+不推荐。
+
+### 方案 B：保留 `lmstudio.ts` 影子实现，但改成从主实现映射 `AidocsToolDef[]`
+
+优点：
+
+- 兼容层改动小
+
+缺点：
+
+- 仍然保留第二套接口语义
+- `getToolsForLlm` 名字相同但签名不同，继续误导
+
+不推荐。
+
+### 方案 C：删掉旁路，兼容导出直接转发主实现（推荐）
+
+优点：
+
+- 主链最短
+- 真相源唯一
+- 回归锁更明确
+
+## Plan
+
+1. 删除旧常量与导出
+   - `src/agent-backend/types.ts`
+   - `src/agent-backend/index.ts`
+   - `src/agent-backend/tool-loop.ts`
+   - `src/agent-backend.ts`
+2. 收口兼容导出
+   - `src/lmstudio.ts`
+   - `src/agent-backend.ts`
+3. 更新测试
+   - `test/p5-7-r9-t7-step4-compatibility-lock.test.ts`
+   - `test/p5-7-r8c-llm-tool-manifest-single-source.test.ts`
+   - `test/p5-6-8-r3b-edit-file-patch.test.ts`
+   - `test/p5-6-8-r3d-decoupling-regression.test.ts`
+   - `test/p5-6-8-r3e-hard-cut.test.ts`
+   - `test/p5-7-r6-hotfix-gen-entry-tools-default.test.ts`
+4. 更新 issue / changelog
+   - `issues/0084-tool-manifest-single-source-export-cleanup.md`
+   - `docs/CHANGELOG.md`
+
+## Risks
+
+1. 旧测试仍假设 `lmstudio.getToolsForLlm()` 返回 `{name, description}` 结构。
+   - 回滚/降级：统一改测试到 `ToolName[]`，不再维持双签名。
+2. 外部代码如果 import `AGENT_TOOLS`，会在升级后失效。
+   - 回滚/降级：若出现真实消费者，再显式评估；本轮先按仓库内零消费者处理。
+3. `PI_ON_TOOLS` 删除后，旧源码字符串锁会失败。
+   - 回滚/降级：把行为锁改成“不存在旧旁路”与“兼容导出复用主实现”。
+
+## Test Plan
+
+至少覆盖：
+
+1. `agent-backend.ts` 继续导出 `getToolsForAgent`
+2. `agent-backend.ts` 不再导出 `AGENT_TOOLS`
+3. `agent-backend/types.ts` 不再导出 `PI_ON_TOOLS`
+4. `lmstudio.ts#getToolsForLlm` 与 `agent-backend/tool-loop.ts#getToolsForLlm` 指向同一实现
+5. `getToolsForLlm()` 在现有 workspace/tooling.allow 场景下行为不变
+
+## Observability
+
+- `docs/CHANGELOG.md` 记录工具暴露真相源清理
+
+## Result
+
+已按最小可删方案落地：
+
+1. `PI_ON_TOOLS` 已从 `src/agent-backend/types.ts` 和相关导出链删除
+2. `AGENT_TOOLS` 已从 `src/agent-backend.ts` 删除
+3. `src/lmstudio.ts#getToolsForLlm` 不再维护影子实现，已直接复用执行核主实现
+4. 行为锁已改为：
+   - 旧旁路不存在
+   - `getToolsForAgent` / `lmstudio.getToolsForLlm` 直接复用执行核
+5. 兼容行为未变：
+   - 现有 workspace / tooling.allow 场景下，工具暴露结果继续由 `TOOL_MANIFESTS + tool-loop.getToolsForLlm()` 决定
+
+（章节级）评审意见：[留空,用户将给出反馈]

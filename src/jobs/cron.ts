@@ -46,6 +46,16 @@ export function computeNextRunAtMs(
   job: CronJob,
   nowMs: number = Date.now()
 ): number | null {
+  // 支持 kind: "at" 类型（一次性任务）
+  if (job.schedule.kind === "at") {
+    // 一次性任务：如果已经执行过（lastRunAtMs !== null），返回 null（不再执行）
+    // 如果 atMs 已过期但尚未执行，仍返回 atMs 以便补执行一次
+    if (job.state.lastRunAtMs !== null) {
+      return null;
+    }
+    return job.schedule.atMs;
+  }
+
   // 只支持 cron schedule
   if (job.schedule.kind !== "cron") {
     return null;
@@ -114,8 +124,15 @@ export function computeNextRunAtMsForJobs(
   const results = new Map<string, number>();
 
   for (const job of jobs) {
+    // 跳过已有未来执行时间的 job（避免覆盖测试/手动设置的值）
+    if (job.state.nextRunAtMs !== null && job.state.nextRunAtMs > nowMs) {
+      results.set(job.id, job.state.nextRunAtMs);
+      continue;
+    }
+
     try {
-      const nextRunAtMs = computeNextRunAtMs(job, nowMs);
+      // 优先使用已计算的 nextRunAtMs（避免重复计算和保持测试设置）
+      const nextRunAtMs = job.state.nextRunAtMs ?? computeNextRunAtMs(job, nowMs);
       if (nextRunAtMs !== null) {
         results.set(job.id, nextRunAtMs);
         // 更新 job 的 nextRunAtMs（用于持久化）
@@ -153,13 +170,41 @@ export function computeNextWakeAtMs(
       continue;
     }
 
+    // 支持 kind: "at" 类型（一次性任务）
+    if (job.schedule.kind === "at") {
+      // 已执行过的 at 任务不参与调度
+      if (job.state.lastRunAtMs !== null) {
+        continue;
+      }
+      // 优先使用 job.state.nextRunAtMs（保持与 computeNextRunAtMs 一致）
+      const nextRunAtMs = job.state.nextRunAtMs ?? job.schedule.atMs;
+      if (nextWakeAtMs === null || nextRunAtMs < nextWakeAtMs) {
+        nextWakeAtMs = nextRunAtMs;
+      }
+      continue;
+    }
+
+    // 支持 kind: "every" 类型
+    if (job.schedule.kind === "every") {
+      // 计算下次运行时间（基于 anchor 和 interval）
+      const { everyMs, anchorMs } = job.schedule;
+      const elapsed = nowMs - anchorMs;
+      const intervals = Math.floor(elapsed / everyMs);
+      const nextMs = anchorMs + (intervals + 1) * everyMs;
+      if (nextWakeAtMs === null || nextMs < nextWakeAtMs) {
+        nextWakeAtMs = nextMs;
+      }
+      continue;
+    }
+
     // 只处理 cron schedule
     if (job.schedule.kind !== "cron") {
       continue;
     }
 
     try {
-      const nextRunAtMs = computeNextRunAtMs(job, nowMs);
+      // 优先使用已计算的 nextRunAtMs（避免重复计算和保持测试设置）
+      const nextRunAtMs = job.state.nextRunAtMs ?? computeNextRunAtMs(job, nowMs);
       if (nextRunAtMs !== null) {
         if (nextWakeAtMs === null || nextRunAtMs < nextWakeAtMs) {
           nextWakeAtMs = nextRunAtMs;

@@ -20,6 +20,7 @@ import type { ToolContext, ToolSource } from "../src/tools/types.js";
 import { executeTool, canExecuteTool, getToolPolicy } from "../src/tools/bus.js";
 import { recordToolEvent, getToolStats, clearToolEvents } from "../src/tools/telemetry.js";
 import type { ToolPolicy, ToolName } from "../src/tools/types.js";
+import { getToolPolicy as getWorkspaceToolPolicy } from "../src/config/workspace.js";
 
 describe("Tool Bus", () => {
   let tempWorkspace: string;
@@ -115,6 +116,21 @@ describe("Tool Bus", () => {
   });
 
   describe("Scenario B: autonomous 模式允许 llm-tool-call", () => {
+    test("Tool Bus 与 workspace 应共享同一份工具策略读取口径", async () => {
+      const configDir = join(tempWorkspace, ".msgcode");
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, "config.json"), JSON.stringify({
+        "tooling.mode": "explicit",
+        "tooling.allow": ["bash", "read_file"],
+        "tooling.require_confirm": ["bash"],
+      }));
+
+      const fromBus = await getToolPolicy(tempWorkspace);
+      const fromWorkspace = await getWorkspaceToolPolicy(tempWorkspace);
+
+      expect(fromBus).toEqual(fromWorkspace);
+    });
+
     test("应该允许 llm-tool-call 来源的工具调用", async () => {
       const gate = canExecuteTool(
         { mode: "autonomous", allow: ["tts", "asr", "bash"], requireConfirm: [] },
@@ -145,6 +161,17 @@ describe("Tool Bus", () => {
       expect(gate.ok).toBe(true);
     });
 
+    test("旧工作区即使 allow 包含 edit_file，llm-tool-call 也不应允许执行它", async () => {
+      const gate = canExecuteTool(
+        { mode: "autonomous", allow: ["bash", "read_file", "edit_file"], requireConfirm: [] },
+        "edit_file",
+        "llm-tool-call"
+      );
+
+      expect(gate.ok).toBe(false);
+      expect(gate.code).toBe("TOOL_NOT_ALLOWED");
+    });
+
     test("应该读取默认配置为 autonomous（P5.5 测试期）", async () => {
       const policy = await getToolPolicy(tempWorkspace);
 
@@ -153,9 +180,16 @@ describe("Tool Bus", () => {
       expect(policy.allow).toContain("tts");
       expect(policy.allow).toContain("asr");
       expect(policy.allow).toContain("vision");
-      // 默认不应该包含高风险工具
-      expect(policy.allow).not.toContain("bash");
-      expect(policy.allow).not.toContain("browser");
+      // 默认工具策略与 workspace 默认配置保持一致（文件主链收口为 read_file + bash）
+      expect(policy.allow).toContain("bash");
+      expect(policy.allow).toContain("browser");
+      expect(policy.allow).toContain("read_file");
+      expect(policy.allow).toContain("feishu_list_members");
+      expect(policy.allow).toContain("feishu_list_recent_messages");
+      expect(policy.allow).toContain("feishu_reply_message");
+      expect(policy.allow).toContain("feishu_react_message");
+      expect(policy.allow).not.toContain("write_file");
+      expect(policy.allow).not.toContain("edit_file");
     });
 
     test("应该从 workspace config.json 读取配置", () => {
@@ -519,6 +553,60 @@ describe("Tool Bus", () => {
     });
   });
 
+  describe("Scenario E2: read_file soul 别名兜底", () => {
+    beforeEach(() => {
+      const configDir = join(tempWorkspace, ".msgcode");
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, "config.json"), JSON.stringify({
+        "tooling.mode": "explicit",
+        "tooling.allow": ["read_file"],
+        "tooling.require_confirm": [],
+      }));
+    });
+
+    test("path=soul 且主路径不存在时应回退到 .msgcode/SOUL.md", async () => {
+      const soulDir = join(tempWorkspace, ".msgcode");
+      mkdirSync(soulDir, { recursive: true });
+      writeFileSync(join(soulDir, "SOUL.md"), "# SOUL\nworkspace soul content");
+
+      const result = await executeTool(
+        "read_file",
+        { path: "soul" },
+        {
+          workspacePath: tempWorkspace,
+          source: "slash-command",
+          requestId: randomUUID(),
+        }
+      );
+
+      expect(result.ok).toBe(true);
+      const data = result.data as { content: string };
+      expect(data.content).toContain("workspace soul content");
+    });
+
+    test("path=soul 且主路径存在时应优先读取主路径", async () => {
+      writeFileSync(join(tempWorkspace, "soul"), "primary soul file");
+
+      const soulDir = join(tempWorkspace, ".msgcode");
+      mkdirSync(soulDir, { recursive: true });
+      writeFileSync(join(soulDir, "SOUL.md"), "fallback soul file");
+
+      const result = await executeTool(
+        "read_file",
+        { path: "soul" },
+        {
+          workspacePath: tempWorkspace,
+          source: "slash-command",
+          requestId: randomUUID(),
+        }
+      );
+
+      expect(result.ok).toBe(true);
+      const data = result.data as { content: string };
+      expect(data.content).toBe("primary soul file");
+    });
+  });
+
   describe("Scenario F: allowlist 仍生效", () => {
     test("allowlist 中没有的工具应该被拒绝", () => {
       const policy: ToolPolicy = {
@@ -585,13 +673,15 @@ describe("Tool Bus", () => {
       // P5.5: 测试期默认 autonomous（LLM 自主决策 tool_calls）
       expect(policy.mode).toBe("autonomous");
 
-      // 默认 allowlist 应该只包含基础工具
+      // 默认 allowlist 与 workspace 默认配置对齐
       expect(policy.allow).toContain("tts");
       expect(policy.allow).toContain("asr");
       expect(policy.allow).toContain("vision");
-      // 默认不应该包含高风险工具
-      expect(policy.allow).not.toContain("bash");
-      expect(policy.allow).not.toContain("browser");
+      expect(policy.allow).toContain("bash");
+      expect(policy.allow).toContain("browser");
+      expect(policy.allow).toContain("read_file");
+      expect(policy.allow).not.toContain("write_file");
+      expect(policy.allow).not.toContain("edit_file");
     });
 
     test("autonomous 模式下应该允许 llm-tool-call 来源", async () => {

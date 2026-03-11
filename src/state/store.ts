@@ -41,7 +41,7 @@ export interface ChatState {
    */
   tts?: {
     // 仅本地使用：用于把回答“演出化”（如语气/情绪、语速）
-    instruct?: string;     // 语气/情绪描述（IndexTTS emo_text）
+    instruct?: string;     // 语气/风格描述
     speed?: number;        // 语速
     temperature?: number;  // 采样温度
   };

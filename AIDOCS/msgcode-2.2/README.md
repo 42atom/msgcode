@@ -37,7 +37,7 @@
 |------|----------|----------|
 | **Commands** | [Control Lane](./control_lane_spec_v2.2.md) | [src/routes/](../../src/routes/) |
 | **Tool Bus** | [工具化策略](./glm47_tooling_strategy_v2.2.md) | [src/tools/bus.ts](../../src/tools/bus.ts) |
-| **TTS** | [IndexTTS 优化](./indextts_optimization_memo.md) | [src/runners/tts/](../../src/runners/tts/) |
+| **TTS** | [IndexTTS 归档备忘](../../docs/archive/indextts_optimization_memo_v2.2.md) | [src/runners/tts/](../../src/runners/tts/) |
 | **Persona** | [编排层规划](./orchestration_plan_v2.2.md) | [src/config/](../../src/config/) |
 | **Schedules** | [编排层规划](./orchestration_plan_v2.2.md) | [src/config/](../../src/config/) |
 | **BDD** | [本节 → BDD](#bdd--发布门槛-v22) | [test/](../../test/) |
@@ -55,7 +55,7 @@
 | 使用工具命令 | [`/tts`](#slash-commands-v22) • [工具化策略](./glm47_tooling_strategy_v2.2.md) |
 | 修改 schedule | [`/schedule`](#slash-commands-v22) • [Schedules → 使用](#schedules-v22) |
 | 验收发布 | [BDD → 发布检查清单](#发布检查清单) |
-| 配置 TTS | [TTS → 环境变量](#tts-v22) • [IndexTTS 优化](./indextts_optimization_memo.md) |
+| 配置 TTS | [TTS → 环境变量](#tts-v22) • [IndexTTS 归档备忘](../../docs/archive/indextts_optimization_memo_v2.2.md) |
 
 ---
 
@@ -70,7 +70,7 @@ AIDOCS/msgcode-2.2/
 ├── control_lane_spec_v2.2.md           # P0：只读命令快车道（/status /where /help /loglevel 秒回）
 ├── orchestration_plan_v2.2.md         # Persona/Skills/Schedules 编排层规划 v2.2
 ├── glm47_tooling_strategy_v2.2.md     # GLM-4.7 Flash 工具化策略（P0 显式命令 → P1 tool_calls）
-├── indextts_optimization_memo.md       # IndexTTS 优化备忘（本机模型分支 + 调用侧策略）
+├── （已归档）docs/archive/indextts_optimization_memo_v2.2.md
 ├── osaurus_integration_plan_v2.2.md   # osaurus 参考笔记（对照用，不纳入交付）
 ├── desktop_bridge_contract_v2.2.md    # Desktop Host/Bridge 的 JSON-RPC 契约（P0）
 ├── telegram_migration_plan_v2.2.md    # 从 iMessage 切换到 Telegram Bot 的迁移计划（P0/P1）
@@ -172,53 +172,20 @@ iMessage → route(chatGuid→workspace) → orchestration(.msgcode) → runner(
 
 ## TTS（v2.2）
 
-默认后端：IndexTTS（常驻 worker，避免每次冷启动）。  
-默认会做文本清洗（省略号/换行/`~` 等），减少“长静音”。
+当前正式后端：Qwen TTS。
+IndexTTS 已退出主链，历史调优记录已归档。
 
 建议环境变量（`~/.config/msgcode/.env`）：
 
 ```
 # 后端选择
-TTS_BACKEND=indextts
+TTS_BACKEND=qwen
 
-# IndexTTS 路径
-INDEX_TTS_ROOT=~/Models/index-tts
-INDEX_TTS_PYTHON=$INDEX_TTS_ROOT/.venv/bin/python
-INDEX_TTS_MODEL_DIR=$INDEX_TTS_ROOT/checkpoints
-INDEX_TTS_CONFIG=$INDEX_TTS_ROOT/checkpoints/config.yaml
-INDEX_TTS_DEVICE=mps
-
-# 常驻 worker（默认开启；关闭：0）
-INDEX_TTS_USE_WORKER=1
-INDEX_TTS_WORKER_START_TIMEOUT_MS=180000
-
-# Worker 软回收（稳定优先；默认 4500MB）
-# 说明：macOS/MPS 下 Activity Monitor 往往“越跑越大”，回收可避免最终 SIGKILL。
-# 设为 0 可关闭。
-INDEX_TTS_WORKER_RECYCLE_RSS_MB=4500
-
-# MPS 内存上限（可选）
-# 说明：macOS unified memory 下，PyTorch/MPS 往往会 cache/预留，Activity Monitor 看起来“越跑越大”。
-# 设置该值可限制单进程可用的 MPS 内存比例（0~1），更稳但可能更容易触发 OOM/降速。
-# INDEX_TTS_MPS_MEMORY_FRACTION=0.6
-
-# 清理阀门（默认开启；追求极致速度可关）
-# - gc.collect()
-# - torch.mps.empty_cache()
-INDEX_TTS_GC_COLLECT=1
-INDEX_TTS_EMPTY_CACHE=1
-
-# 语速（预留字段：当前不生效）
-# 说明：上游 IndexTTS2 `infer()` 不保证支持 speed 参数；msgcode 不会向其透传该字段。
-# 如需“语速控制”，建议后续在输出 wav 上做后处理（time-stretch/atempo）。
-# INDEX_TTS_SPEED=1
-
-# 段间静音（ms）
-INDEX_TTS_INTERVAL_SILENCE_MS=200
-
-# 长文本稳态（默认关闭）
-# 当文本长度超过阈值且非 emoAuto 时：按句切段 → 合成 → concat
-# TTS_LONG_TEXT_SEGMENT_CHARS=400
+# Qwen TTS 路径
+QWEN_TTS_ROOT=~/Models/qwen3-tts-apple-silicon
+QWEN_TTS_PYTHON=$QWEN_TTS_ROOT/.venv/bin/python
+QWEN_TTS_MODEL_CUSTOM=$QWEN_TTS_ROOT/models/Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit
+QWEN_TTS_MODEL_CLONE=$QWEN_TTS_ROOT/models/Qwen3-TTS-12Hz-0.6B-Base-8bit
 
 # TTS 超时（毫秒；长文/慢速建议调大）
 TTS_TIMEOUT_MS=300000
@@ -227,36 +194,9 @@ TTS_TIMEOUT_MS=300000
 # 说明：自动语音回复不应无限等待，否则会堆积导致体验不可用。
 # TTS_AUTO_TIMEOUT_MS=120000
 
-# IndexTTS worker 长文本策略（默认 480）
-# 说明：超过阈值时，不走常驻 worker，改用一次性 Python 子进程（避免 MPS driver 缓存一路抬升直到爆）。
-# INDEX_TTS_WORKER_MAX_TEXT_CHARS=480
-
-# Worker MPS 回收阈值（ratio）
-# 说明：RSS 不包含 MPS driver cache，msgcode 会在每次任务后 ping worker，若 driver/recommended 达到阈值则回收。
-# INDEX_TTS_WORKER_RECYCLE_MPS_RATIO=0.72
-
-# 情绪平滑（戏剧急转可 hardcut）
-TTS_EMO_HARDCUT=0
-TTS_EMO_SMOOTH_FACTOR=0.7
-
-# per-segment 合成阈值（字符数；默认 700）
-# 超过阈值：仍会做情绪分析，但改用 averageVector 单次合成（更稳更快）。
-# TTS_EMO_SEGMENT_SYNTH_MAX_CHARS=700
-
-# IndexTTS 推理旋钮（可选，谨慎调）
-# P0: 稳定优先默认值（msgcode 会在启动 worker 时自动注入，除非你显式覆盖）
-# INDEX_TTS_MAX_SEQ_LENGTH=4096
-# INDEX_TTS_DIFFUSION_STEPS=20
-# INDEX_TTS_NUM_BEAMS=2
-# 分段合成的单段超时下限（默认 120000ms）
-# 说明：默认值已提升到 180000ms（更稳，避免长句频繁超时）
-# INDEX_TTS_SEGMENT_TIMEOUT_MS_MIN=180000
-
-# 分段“硬切兜底”（可选）
-# 说明：避免没有标点时单段过长导致推理抖动/内存暴涨。
-# TTS_EMO_SEGMENT_MAX_CHARS=120
-# TTS_LONG_TEXT_CHUNK_MAX_CHARS=120
-
+# 参考音频（可选，启用 clone 模式）
+# QWEN_TTS_REF_AUDIO=/path/to/ref.wav
+# QWEN_TTS_REF_TEXT=参考音频台词
 ```
 
 ---
@@ -265,7 +205,7 @@ TTS_EMO_SMOOTH_FACTOR=0.7
 
 | 类型 | 链接 |
 |------|------|
-| 详细规格 | [IndexTTS 优化备忘](./indextts_optimization_memo.md) |
+| 历史归档 | [IndexTTS 优化备忘](../../docs/archive/indextts_optimization_memo_v2.2.md) |
 | 实现入口 | [src/runners/tts/](../../src/runners/tts/) |
 | 相关配置 | [环境变量参考](#文件系统即真相源目录约定) |
 

@@ -1,17 +1,6 @@
 {
   "version": 1,
-  "requiredForStart": [
-    {
-      "id": "imsg",
-      "kind": "bin",
-      "pathEnv": "IMSG_PATH"
-    },
-    {
-      "id": "messages_db",
-      "kind": "fs_read",
-      "path": "~/Library/Messages/chat.db"
-    }
-  ],
+  "requiredForStart": [],
   "requiredForJobs": [
     {
       "id": "tmux",
@@ -20,6 +9,18 @@
     }
   ],
   "optional": [
+    {
+      "id": "imsg",
+      "kind": "bin",
+      "pathEnv": "IMSG_PATH",
+      "description": "iMessage transport 可执行入口（仅在启用 imsg 时需要）"
+    },
+    {
+      "id": "messages_db",
+      "kind": "fs_read",
+      "path": "~/Library/Messages/chat.db",
+      "description": "macOS iMessage 本地 chat.db（仅在启用 imsg 时需要）"
+    },
     {
       "id": "lmstudio",
       "kind": "http",
@@ -69,18 +70,6 @@
       "kind": "fs_exists",
       "path": "$QWEN_TTS_ROOT/models/Qwen3-TTS-12Hz-0.6B-Base-8bit",
       "description": "Qwen TTS Clone 模型目录（默认: $QWEN_TTS_ROOT/models/Qwen3-TTS-12Hz-0.6B-Base-8bit）"
-    },
-    {
-      "id": "indexts_python",
-      "kind": "bin",
-      "pathEnv": "INDEX_TTS_PYTHON",
-      "description": "IndexTTS Python（建议: $INDEX_TTS_ROOT/.venv/bin/python）"
-    },
-    {
-      "id": "indexts_checkpoints",
-      "kind": "fs_exists",
-      "path": "$INDEX_TTS_ROOT/checkpoints",
-      "description": "IndexTTS 模型文件（默认: $INDEX_TTS_ROOT/checkpoints）"
     }
   ]
 }

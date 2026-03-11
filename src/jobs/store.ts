@@ -100,8 +100,9 @@ export class JobStore {
   private runsPath: string;
 
   constructor(config?: JobStoreConfig) {
-    this.jobsPath = config?.jobsPath || getDefaultJobsPath();
-    this.runsPath = config?.runsPath || getDefaultRunsPath();
+    // 支持环境变量覆盖（用于测试隔离）
+    this.jobsPath = config?.jobsPath || process.env.JOBS_FILE_PATH || getDefaultJobsPath();
+    this.runsPath = config?.runsPath || process.env.RUNS_FILE_PATH || getDefaultRunsPath();
   }
 
   // ============================================

@@ -1,0 +1,62 @@
+/**
+ * msgcode: P5.7-R3n 系统提示词文件引用回归锁
+ *
+ * 目标：
+ * - LM Studio 支持通过文件加载系统提示词，便于反复调试
+ * - 文件提示词可承载 SOUL 路径约束口径
+ */
+
+import { describe, it, expect } from "bun:test";
+import * as fs from "node:fs";
+import * as path from "node:path";
+
+function readText(relPath: string): string {
+    return fs.readFileSync(path.join(process.cwd(), relPath), "utf-8");
+}
+
+describe("P5.7-R3n: system prompt file reference", () => {
+    it("应存在默认系统提示词文件", () => {
+        const promptPath = path.join(process.cwd(), "prompts", "agents-prompt.md");
+        expect(fs.existsSync(promptPath)).toBe(true);
+    });
+
+    it("默认提示词文件应包含 SOUL 固定路径口径", () => {
+        const content = readText("prompts/agents-prompt.md");
+        expect(content).toContain("<workspace>/.msgcode/SOUL.md");
+        expect(content).toContain("不要猜测 soul 或 soul.md");
+        expect(content).toContain("feishu_list_members");
+        expect(content).toContain("feishu_list_recent_messages");
+        expect(content).toContain("feishu_reply_message");
+        expect(content).toContain("feishu_react_message");
+        expect(content).toContain('<at user_id="对方ID">称呼</at>');
+        expect(content).toContain("optional/index.json");
+        expect(content).toContain("twitter-media");
+        expect(content).toContain("主索引已经汇总了基础 skill 和可选 skill 的摘要");
+        expect(content).toContain("`memory` 不是工具名");
+        expect(content).toContain("判断某个 skill 能做什么、不能做什么之前，必须仔细阅读对应的 SKILL.md");
+        expect(content).toContain("如果看完仍然不确定能力边界或调用方式，先向用户说明不确定点并沟通");
+        expect(content).toContain("凡是 AI 生成的图片、音频、视频以及其他生成产物，优先在当前 workspace 的 `AIDOCS/` 目录下查找");
+    });
+
+    it("配置层应暴露 AGENT_SYSTEM_PROMPT_FILE", () => {
+        const configCode = readText("src/config.ts");
+        expect(configCode).toContain("agentSystemPromptFile?: string");
+        expect(configCode).toContain("process.env.AGENT_SYSTEM_PROMPT_FILE");
+        expect(configCode).not.toContain("process.env.LMSTUDIO_SYSTEM_PROMPT_FILE");
+    });
+
+    it("LM Studio 主链应通过 resolveBaseSystemPrompt 读取基础提示词", () => {
+        const promptCode = readText("src/agent-backend/prompt.ts");
+        expect(promptCode).toContain("async function resolveBaseSystemPrompt");
+
+        const chatCode = readText("src/agent-backend/chat.ts");
+        const matches = chatCode.match(/resolveBaseSystemPrompt\(/g) || [];
+        expect(matches.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it(".env 示例应包含 AGENT 提示词文件配置项", () => {
+        const envExample = readText(".env.example");
+        expect(envExample).toContain("AGENT_SYSTEM_PROMPT_FILE=");
+        expect(envExample).not.toContain("LMSTUDIO_SYSTEM_PROMPT_FILE=");
+    });
+});

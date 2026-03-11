@@ -2,6 +2,11 @@
 
 优先级：P2（R7 通过后执行，P5.7 收尾）
 
+## 回链
+
+- Issue: [0006](../../issues/0006-agent-relentless-task-closure.md)
+- Plan: docs/design/plan-260306-agent-relentless-task-closure.md
+
 ## 目标（冻结）
 
 1. 落地 `agent run` / `agent status`。

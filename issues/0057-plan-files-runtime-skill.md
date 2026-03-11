@@ -1,0 +1,84 @@
+---
+id: 0057
+title: 增加 file-first planning runtime skill
+status: done
+owner: agent
+labels: [feature, docs, refactor]
+risk: low
+scope: runtime skills 真相源、同步链与 planning 说明书收口
+plan_doc: docs/design/plan-260310-plan-files-runtime-skill.md
+links: []
+---
+
+# Context
+
+当前 `msgcode` 运行时没有正式接入 planning skill。已有能力只有：
+
+- `/task` 与 `TaskSupervisor`：负责长任务状态与续跑，不是规划模式
+- runtime skills：当前只有 `vision-index`、`scheduler`、`patchright-browser` 等
+
+用户明确要求采用 file-first planning 的方式，但坚持：
+
+1. 不新增 `/plan` 模式或控制层
+2. 不新增新的监督器
+3. 不与 memory 混淆
+4. 优先借鉴 `planning-with-files`，但改成 `msgcode` 自己的协议与口径
+
+# Goal / Non-Goals
+
+## Goal
+
+- 新增一个薄的 `plan-files` runtime skill
+- 把 planning 定义为“任务内文件工作记忆”，不是系统模式
+- 明确 `plan`、`memory`、`/task` 三者边界
+- 把 runtime skill 真相源、同步链和说明文档保持一致
+
+## Non-Goals
+
+- 不新增 `/plan` slash 命令
+- 不新增 `plan mode` server / API / 状态机
+- 不新增新的任务监督器
+- 不改 memory 存储或 `/task` 行为
+
+# Plan
+
+- [x] 创建最小 Plan 文档，明确只增加 file-first planning skill
+- [x] 新增 `src/skills/runtime/plan-files/SKILL.md`
+- [x] 更新 `src/skills/runtime/index.json`，暴露 `plan-files`
+- [x] 更新 `src/skills/README.md`，把 runtime skill 规则改成“`main.sh` 可选”
+- [x] 补回归测试，锁住 runtime sync 与 skill 文案边界
+- [x] 同步运行时 skills、重启 daemon、更新 CHANGELOG 与 issue Notes
+
+# Acceptance Criteria
+
+- runtime skills 索引中出现 `plan-files`
+- `plan-files` skill 明确写出：
+  - 复杂任务才用
+  - 任务内 plan 不等于 memory
+  - 任务监督仍由模型自检或既有 `/task`
+- `src/skills/README.md` 不再要求所有 runtime skill 必须带 `main.sh`
+- 至少一条测试锁住 `plan-files` 的同步与边界文案
+
+# Notes
+
+- Docs:
+  - 历史外部 `planning-with-files` skill 说明书（仅作设计参考，非运行时依赖）
+  - `/Users/admin/.config/alma/skills/plan-mode/SKILL.md`
+- Code:
+  - `src/skills/runtime/index.json`
+  - `src/skills/runtime-sync.ts`
+  - `src/skills/README.md`
+- Tests:
+  - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r13-runtime-skill-sync.test.ts`
+  - `2 pass / 0 fail`
+- Runtime:
+  - `./bin/msgcode restart`
+  - `~/.config/msgcode/skills/index.json` 已出现 `plan-files`
+  - `~/.config/msgcode/skills/plan-files/SKILL.md` 已同步
+- Decision:
+  - 采用 `planning-with-files` 思路
+  - 明确放弃 `plan-mode`
+
+# Links
+
+- [Plan](/Users/admin/GitProjects/msgcode/docs/design/plan-260310-plan-files-runtime-skill.md)
