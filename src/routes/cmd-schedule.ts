@@ -8,7 +8,7 @@ import { resolveCommandRoute } from "./workspace-resolver.js";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import { Cron } from "croner";
-import { getRouteByChatId, getActiveRoutes } from "../routes/store.js";
+import { getRouteByChatId, getActiveRoutes, getWorkspaceRootForDisplay } from "../routes/store.js";
 import {
   syncWorkspaceSchedulesToJobs,
   removeWorkspaceScheduleFromJobs,
@@ -91,7 +91,7 @@ function validateCronExpression(cron: string, tz: string): { valid: boolean; err
  * 解析 workspace 参数为绝对路径（复用 CLI 逻辑）
  */
 async function resolveWorkspacePathParam(input: string): Promise<string> {
-  const { parseWorkspaceParam, getWorkspaceRootForDisplay } = await import("../memory/types.js");
+  const { parseWorkspaceParam } = await import("../memory/types.js");
   const path = await import("node:path");
   const param = parseWorkspaceParam(input);
 

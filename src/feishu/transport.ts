@@ -658,18 +658,26 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
 
     if (params.file) {
       const treatAsImage = isImageFile(params.file);
-      const uploadResult = treatAsImage
+      const imageUploadResult = treatAsImage
         ? await uploadImage({ filePath: params.file })
+        : null;
+      const fileUploadResult = treatAsImage
+        ? null
         : await uploadFile({ filePath: params.file });
+      const uploadResult = imageUploadResult ?? fileUploadResult;
 
-      if (!uploadResult.ok) {
+      if (!uploadResult || !uploadResult.ok) {
         // 上传失败，降级为提示文本
-        const errorMsg = uploadResult.error || (treatAsImage ? "图片上传失败" : "文件上传失败");
+        const errorMsg = uploadResult?.error || (treatAsImage ? "图片上传失败" : "文件上传失败");
         fileError = errorMsg;
         finalText = text ? `${text}\n\n[${treatAsImage ? "图片" : "文件"}发送失败：${errorMsg}]` : `[${treatAsImage ? "图片" : "文件"}发送失败：${errorMsg}]`;
       } else {
         attachmentType = treatAsImage ? "image" : "file";
-        attachmentKey = treatAsImage ? uploadResult.image_key : uploadResult.file_key;
+        const resourceKey = treatAsImage
+          ? imageUploadResult?.image_key
+          : fileUploadResult?.file_key;
+        attachmentKey = resourceKey;
+
         try {
           await apiClient.im.message.create({
             params: {
@@ -680,8 +688,8 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
               msg_type: treatAsImage ? "image" : "file",
               content: JSON.stringify(
                 treatAsImage
-                  ? { image_key: uploadResult.image_key }
-                  : { file_key: uploadResult.file_key }
+                  ? { image_key: resourceKey }
+                  : { file_key: resourceKey }
               ),
             },
           } as any);
@@ -704,7 +712,7 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
             module: "feishu",
             chatGuid,
             filePath: params.file,
-            ...(treatAsImage ? { imageKey: uploadResult.image_key } : { fileKey: uploadResult.file_key }),
+            ...(treatAsImage ? { imageKey: resourceKey } : { fileKey: resourceKey }),
           });
 
           return {
@@ -718,7 +726,7 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
             module: "feishu",
             chatGuid,
             filePath: params.file,
-            ...(treatAsImage ? { imageKey: uploadResult.image_key } : { fileKey: uploadResult.file_key }),
+            ...(treatAsImage ? { imageKey: resourceKey } : { fileKey: resourceKey }),
             error: errorMessage,
           });
 

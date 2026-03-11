@@ -3,6 +3,8 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-11
+  - merge-prep/typecheck: `npx tsc --noEmit` 已恢复全绿；`feishu/transport.ts` 的文件/图片上传结果改为显式分支收窄，`cmd-schedule.ts` 也已修正 `getWorkspaceRootForDisplay` 的错误来源模块，避免 merge 前继续背着既存 TS 红 (Issue: 0088, Plan: docs/design/plan-260311-typecheck-merge-prep-existing-errors.md) [risk: low] [rollback: 回退 `src/feishu/transport.ts`、`src/routes/cmd-schedule.ts` 与本轮 typecheck/相关回归]
+- 2026-03-11
   - runtime/skills-config: repo 侧 `skills` 历史空壳已退出主链；`src/skills/registry.ts` 与 `src/runtime/skill-orchestrator.ts` 已归档，`src/skills/{types,auto,index}.ts` 只保留最小 `system-info` auto skill 兼容接口；同时 `tools/bus.ts` 不再维护影子 `getToolPolicy()`，`getAgentProvider()` 也只公开真实 provider，历史 `lmstudio/llama/claude` 配置读取时统一归一化到 `agent-backend` (Issue: 0087, Plan: docs/design/plan-260311-skill-legacy-cleanup-and-provider-truth-source.md) [risk: medium] [rollback: 从 `.trash/20260311-skill-legacy/` 恢复历史 skills 文件，并回退 `src/skills/*`、`src/tools/bus.ts`、`src/config/workspace.ts` 与本轮回归测试]
 - 2026-03-11
   - runtime/tools: `tooling.fs_scope` 已从“可写但无效”的假配置收口为真实运行时策略；默认仍保持 `unrestricted` 以避免扩大兼容面，但显式设为 `workspace` 时，`read_file / write_file / edit_file` 现在会真正限制在工作区内，并修复原先仅用字符串前缀比较导致的目录前缀碰撞误判 (Issue: 0086, Plan: docs/design/plan-260311-fs-scope-real-config-and-boundary-check.md) [risk: medium] [rollback: 回退 `src/config/workspace.ts`、`src/tools/bus.ts` 与 fs_scope 专项测试]

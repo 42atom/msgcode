@@ -1,0 +1,56 @@
+---
+id: 0088
+title: 收口 merge-prep 剩余的既存 typecheck 错误
+status: done
+owner: agent
+labels: [bug, refactor, docs]
+risk: low
+scope: feishu 发送链路类型收窄与 schedule 命令错误引用修正
+plan_doc: docs/design/plan-260311-typecheck-merge-prep-existing-errors.md
+links: []
+---
+
+## Context
+
+在 0087 完成后，`npx tsc --noEmit` 仍只剩两类既存错误：
+
+1. `src/feishu/transport.ts` 在文件/图片上传 union 结果上直接访问 `image_key / file_key`，缺少类型收窄
+2. `src/routes/cmd-schedule.ts` 从错误模块 `../memory/types.js` 读取 `getWorkspaceRootForDisplay`
+
+这两处不影响主流程测试，但会继续阻塞 typecheck 全绿，不利于 merge-prep。
+
+## Goal / Non-Goals
+
+- Goal: 让 `npx tsc --noEmit` 不再因为这两处报错
+- Goal: 不改变文件/图片发送与 schedule 命令的运行时语义
+- Non-Goals: 不重做 Feishu 发送链路
+- Non-Goals: 不重做 schedule 命令面
+
+## Plan
+
+- [x] 新建 issue / plan，冻结范围
+- [x] 修复 `feishu/transport.ts` 的上传结果类型收窄
+- [x] 修复 `cmd-schedule.ts` 的错误引用
+- [x] 跑 `tsc` 与相关回归
+
+## Acceptance Criteria
+
+1. `npx tsc --noEmit` 不再报 `src/feishu/transport.ts` 的 `image_key / file_key` 类型错误
+2. `npx tsc --noEmit` 不再报 `src/routes/cmd-schedule.ts` 的错误引用
+3. 至少一条相关命令/路由回归测试通过
+
+## Notes
+
+- 上游来源：`npx tsc --noEmit`（2026-03-11）
+- 实现结果：
+  - `src/feishu/transport.ts` 已把文件/图片上传结果拆成显式分支变量，不再让 `image_key / file_key` 走未收窄 union
+  - `src/routes/cmd-schedule.ts` 已改回从 `src/routes/store.ts` 读取 `getWorkspaceRootForDisplay`
+- 验证：
+  - `npx tsc --noEmit`
+  - 结果：通过
+  - `npm test -- test/p5-7-r13-feishu-inbound-observability.test.ts test/p5-7-r10-workspace-absolute-path-regression.test.ts`
+  - 结果：`12 pass / 0 fail`
+
+## Links
+
+- Plan: docs/design/plan-260311-typecheck-merge-prep-existing-errors.md
