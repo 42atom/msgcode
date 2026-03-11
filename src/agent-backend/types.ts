@@ -9,6 +9,8 @@
  * - 内部兼容层保留 LmStudio* 别名
  */
 
+import type { LocalAgentBackendId } from "../local-backend/registry.js";
+
 // ============================================
 // 后端运行时配置类型
 // ============================================
@@ -16,7 +18,7 @@
 /**
  * 后端 ID（支持的 agent backend）
  */
-export type AgentBackendId = "local-openai" | "openai" | "minimax";
+export type AgentBackendId = "local-openai" | "openai" | "minimax" | "deepseek";
 
 /**
  * 后端运行时配置
@@ -28,6 +30,10 @@ export interface AgentBackendRuntime {
     model?: string;
     timeoutMs: number;
     nativeApiEnabled: boolean;
+    localBackendId?: LocalAgentBackendId;
+    supportsModelLifecycle?: boolean;
+    modelsListPath?: string;
+    modelsStatusPath?: string;
 }
 
 // ============================================

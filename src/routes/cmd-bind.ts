@@ -13,7 +13,7 @@ import {
   updateRouteStatus,
 } from "./store.js";
 import type { CommandHandlerOptions, CommandResult } from "./cmd-types.js";
-import { getRuntimeKind, getTmuxClient } from "../config/workspace.js";
+import { getBackendLane, getTmuxClient } from "../config/workspace.js";
 
 const VALID_MODEL_CLIENTS: ModelClient[] = ["claude", "codex", "opencode"];
 const DEFAULT_BOT_TYPE: BotType = "agent-backend";
@@ -42,17 +42,34 @@ function isValidRelativePath(path: string): boolean {
 
 function normalizeGlobalAgentBackend(raw: string): string {
   const value = raw.trim().toLowerCase();
-  if (!value || value === "agent" || value === "agent-backend" || value === "lmstudio" || value === "local-openai") {
+  if (
+    !value ||
+    value === "agent" ||
+    value === "agent-backend" ||
+    value === "lmstudio" ||
+    value === "local-openai" ||
+    value === "omlx"
+  ) {
     return "agent-backend";
   }
   return value;
 }
 
-function formatAgentBackendLabel(provider: string): string {
-  if (provider === "agent-backend") {
-    return "agent-backend(local-openai/lmstudio)";
+function getConfiguredLocalApp(): string {
+  const value = (process.env.LOCAL_AGENT_BACKEND || "").trim().toLowerCase();
+  return value === "lmstudio" || value === "omlx" ? value : "omlx";
+}
+
+function getConfiguredApiProvider(): string {
+  const preset = (process.env.MSGCODE_API_PROVIDER || "").trim().toLowerCase();
+  if (preset === "minimax" || preset === "deepseek" || preset === "openai") {
+    return preset;
   }
-  return provider;
+  const active = normalizeGlobalAgentBackend(process.env.AGENT_BACKEND || "");
+  if (active === "minimax" || active === "deepseek" || active === "openai") {
+    return active;
+  }
+  return "minimax";
 }
 
 async function resolveRuntimeDisplay(workspacePath: string): Promise<{
@@ -60,22 +77,33 @@ async function resolveRuntimeDisplay(workspacePath: string): Promise<{
   targetLine: string;
 }> {
   try {
-    const runtimeKind = await getRuntimeKind(workspacePath);
-    if (runtimeKind === "tmux") {
+    const backendLane = await getBackendLane(workspacePath);
+    if (backendLane === "tmux") {
       const client = await getTmuxClient(workspacePath);
       return {
-        runtimeLine: "运行形态：tmux（透传执行臂）",
-        targetLine: `Tmux Client: ${client}`,
+        runtimeLine: "backend: tmux",
+        targetLine: `tmux-client: ${client === "none" ? "codex" : client}`,
       };
     }
+
+    if (backendLane === "local") {
+      return {
+        runtimeLine: "backend: local",
+        targetLine: `local-app: ${getConfiguredLocalApp()}`,
+      };
+    }
+
+    return {
+      runtimeLine: "backend: api",
+      targetLine: `api-provider: ${getConfiguredApiProvider()}`,
+    };
   } catch {
     // ignore and fall through to agent default
   }
 
-  const provider = formatAgentBackendLabel(normalizeGlobalAgentBackend(process.env.AGENT_BACKEND || ""));
   return {
-    runtimeLine: "运行形态：agent（智能体编排）",
-    targetLine: `Agent Backend: ${provider}`,
+    runtimeLine: "backend: local",
+    targetLine: `local-app: ${getConfiguredLocalApp()}`,
   };
 }
 

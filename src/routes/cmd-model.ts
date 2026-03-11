@@ -1,14 +1,48 @@
 /**
- * msgcode: 配置域命令（model/policy/pi）
- * P5.6.14-R4: /model 命令面兼容收口 - 基于 runtime.kind 二分
+ * msgcode: 配置域命令（backend/local/api/tmux/model/policy/pi）
+ *
+ * 目标：
+ * - `/backend` 只切执行主分支
+ * - `/local /api /tmux` 只改各自分支预设
+ * - `/text-model /vision-model /tts-model /embedding-model` 只改当前分支模型覆盖
+ * - `/model` 退化为状态页与旧命令兼容入口
  */
 
 import fs from "node:fs";
 import os from "node:os";
 import { join } from "node:path";
 import type { CommandHandlerOptions, CommandResult } from "./cmd-types.js";
-import type { AgentProvider, ToolName } from "../config/workspace.js";
+import type { ToolName } from "../tools/types.js";
+import {
+  getBackendLane,
+  getBranchModel,
+  getPolicyMode,
+  getTmuxClient,
+  getRuntimeKind,
+  loadWorkspaceConfig,
+  saveWorkspaceConfig,
+  setBranchModel,
+  setPolicyMode,
+  setRuntimeKind,
+  setTmuxClient,
+  type BackendLane,
+  type ModelLane,
+  type ModelSlot,
+  type TmuxClient,
+} from "../config/workspace.js";
+import {
+  normalizeLocalAgentBackendId,
+  type LocalAgentBackendId,
+} from "../local-backend/registry.js";
 import { resolveCommandRoute } from "./workspace-resolver.js";
+
+type ApiProviderId = "minimax" | "deepseek" | "openai";
+type ActiveAgentProvider = "agent-backend" | ApiProviderId;
+
+const DEFAULT_LOCAL_APP: LocalAgentBackendId = "omlx";
+const DEFAULT_API_PROVIDER: ApiProviderId = "minimax";
+const DEFAULT_TMUX_CLIENT: TmuxClient = "codex";
+const API_PROVIDER_ENV_KEY = "MSGCODE_API_PROVIDER";
 
 function getConfigDir(): string {
   return (process.env.MSGCODE_CONFIG_DIR || "").trim() || join(os.homedir(), ".config", "msgcode");
@@ -51,239 +85,542 @@ function upsertEnvLine(lines: string[], key: string, value: string): string[] {
   return next;
 }
 
-export async function handleModelCommand(options: CommandHandlerOptions): Promise<CommandResult> {
-  const { chatId, args } = options;
-  const {
-    getPolicyMode,
-    // P5.6.14-R4: 使用新配置 API
-    getRuntimeKind,
-    getTmuxClient,
-    setTmuxClient,
-    setRuntimeKind,
-  } = await import("../config/workspace.js");
-
-  function formatPolicyMode(mode: "local-only" | "egress-allowed"): string {
-    if (mode === "egress-allowed") return `full（外网已开；raw=${mode}）`;
-    return `limit（仅本地；raw=${mode}）`;
+function normalizeRequestedApiProvider(input: string): ApiProviderId | null {
+  const value = input.trim().toLowerCase();
+  if (value === "minimax" || value === "deepseek" || value === "openai") {
+    return value;
   }
+  return null;
+}
 
-  function normalizeRequestedProvider(input: string): AgentProvider | null {
-    const v = input.trim().toLowerCase();
-    if (!v) return null;
-    if (v === "lmstudio" || v === "agent-backend" || v === "agent" || v === "local-openai") {
-      return "agent-backend";
-    }
-    if (v === "openai") return "openai";
-    if (v === "minimax") return "minimax";
-    if (v === "llama") return "llama";
-    if (v === "claude") return "claude";
-    return null;
+function normalizeRequestedLocalBackend(input: string): LocalAgentBackendId | null {
+  const value = input.trim().toLowerCase();
+  if (value === "lmstudio" || value === "omlx") {
+    return normalizeLocalAgentBackendId(value);
   }
+  return null;
+}
 
-  function formatProviderLabel(provider: AgentProvider | "none"): string {
-    if (provider === "agent-backend" || provider === "lmstudio") {
-      return "agent-backend(local-openai/lmstudio)";
-    }
-    return provider;
+function normalizeRequestedBackendLane(input: string): BackendLane | null {
+  const value = input.trim().toLowerCase();
+  if (value === "local" || value === "api" || value === "tmux") {
+    return value;
   }
+  return null;
+}
 
-  function getGlobalAgentProvider(): AgentProvider {
-    const normalized = normalizeRequestedProvider(process.env.AGENT_BACKEND || "");
-    if (
-      normalized === "agent-backend" ||
-      normalized === "openai" ||
-      normalized === "minimax"
-    ) {
-      return normalized;
-    }
-    return "agent-backend";
+function normalizeRequestedTmuxClient(input: string): TmuxClient | null {
+  const value = input.trim().toLowerCase();
+  if (value === "codex" || value === "claude-code") {
+    return value;
   }
+  return null;
+}
 
-  function setGlobalAgentProvider(provider: AgentProvider): void {
-    const envPath = getUserEnvPath();
-    let lines = readEnvLines(envPath);
-    lines = upsertEnvLine(lines, "AGENT_BACKEND", provider);
-    writeEnvLines(envPath, lines);
-    // 立即生效，无需重启
-    process.env.AGENT_BACKEND = provider;
+function normalizeModelOverrideInput(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return "";
+  if (trimmed.toLowerCase() === "auto") return "";
+  return trimmed;
+}
+
+function getActiveAgentProvider(): ActiveAgentProvider {
+  const requestedApi = normalizeRequestedApiProvider(process.env.AGENT_BACKEND || "");
+  if (requestedApi) {
+    return requestedApi;
   }
+  return "agent-backend";
+}
 
+function setActiveAgentProvider(provider: ActiveAgentProvider): void {
+  const envPath = getUserEnvPath();
+  let lines = readEnvLines(envPath);
+  lines = upsertEnvLine(lines, "AGENT_BACKEND", provider);
+  writeEnvLines(envPath, lines);
+  process.env.AGENT_BACKEND = provider;
+}
+
+function getConfiguredLocalApp(): LocalAgentBackendId {
+  const configured = normalizeRequestedLocalBackend(process.env.LOCAL_AGENT_BACKEND || "");
+  return configured || DEFAULT_LOCAL_APP;
+}
+
+function setConfiguredLocalApp(localApp: LocalAgentBackendId): void {
+  const envPath = getUserEnvPath();
+  let lines = readEnvLines(envPath);
+  lines = upsertEnvLine(lines, "LOCAL_AGENT_BACKEND", localApp);
+  writeEnvLines(envPath, lines);
+  process.env.LOCAL_AGENT_BACKEND = localApp;
+}
+
+function getConfiguredApiProvider(): ApiProviderId {
+  const configured = normalizeRequestedApiProvider(process.env[API_PROVIDER_ENV_KEY] || "");
+  if (configured) {
+    return configured;
+  }
+  const active = normalizeRequestedApiProvider(process.env.AGENT_BACKEND || "");
+  if (active) {
+    return active;
+  }
+  return DEFAULT_API_PROVIDER;
+}
+
+function setConfiguredApiProvider(provider: ApiProviderId): void {
+  const envPath = getUserEnvPath();
+  let lines = readEnvLines(envPath);
+  lines = upsertEnvLine(lines, API_PROVIDER_ENV_KEY, provider);
+  writeEnvLines(envPath, lines);
+  process.env[API_PROVIDER_ENV_KEY] = provider;
+}
+
+function formatBranchModelValue(backend: BackendLane, model: string | undefined): string {
+  if (backend === "tmux") return "n/a (tmux)";
+  return model || "auto";
+}
+
+function getTmuxClientLabel(client: TmuxClient | "none"): TmuxClient {
+  return client === "none" ? DEFAULT_TMUX_CLIENT : client;
+}
+
+function renderModelStatusMessage(params: {
+  backend: BackendLane;
+  localApp: LocalAgentBackendId;
+  apiProvider: ApiProviderId;
+  tmuxClient: TmuxClient;
+  textModel?: string;
+  visionModel?: string;
+  ttsModel?: string;
+  embeddingModel?: string;
+}): string {
+  return [
+    "/model status",
+    "",
+    `backend: ${params.backend}`,
+    `local-app: ${params.localApp}`,
+    `api-provider: ${params.apiProvider}`,
+    `tmux-client: ${params.tmuxClient}`,
+    "",
+    `text-model: ${formatBranchModelValue(params.backend, params.textModel)}`,
+    `vision-model: ${formatBranchModelValue(params.backend, params.visionModel)}`,
+    `tts-model: ${formatBranchModelValue(params.backend, params.ttsModel)}`,
+    `embedding-model: ${formatBranchModelValue(params.backend, params.embeddingModel)}`,
+  ].join("\n");
+}
+
+function renderModelFieldMessage(slot: ModelSlot, backend: BackendLane, value?: string): string {
+  return `${slot}-model: ${formatBranchModelValue(backend, value)}`;
+}
+
+function renderLocalStatusMessage(localApp: LocalAgentBackendId): string {
+  return `local-app: ${localApp}`;
+}
+
+function renderApiStatusMessage(apiProvider: ApiProviderId): string {
+  return `api-provider: ${apiProvider}`;
+}
+
+function renderTmuxStatusMessage(tmuxClient: TmuxClient): string {
+  return `tmux-client: ${tmuxClient}`;
+}
+
+function renderBackendStatusMessage(backend: BackendLane): string {
+  return `backend: ${backend}`;
+}
+
+function resolveBoundWorkspace(chatId: string): { projectDir: string; label?: string } | null {
   const resolved = resolveCommandRoute(chatId);
   const entry = resolved?.route;
-  const projectDir = entry?.workspacePath;
-  const label = entry?.label;
+  if (!entry?.workspacePath) {
+    return null;
+  }
+  return {
+    projectDir: entry.workspacePath,
+    label: entry.label,
+  };
+}
 
-  if (!projectDir) {
+async function buildModelStatus(projectDir: string): Promise<string> {
+  const backend = await getBackendLane(projectDir);
+  const localApp = getConfiguredLocalApp();
+  const apiProvider = getConfiguredApiProvider();
+  const tmuxClient = getTmuxClientLabel(await getTmuxClient(projectDir));
+
+  const lane = backend === "tmux" ? null : backend;
+  const textModel = lane ? await getBranchModel(projectDir, lane, "text") : undefined;
+  const visionModel = lane ? await getBranchModel(projectDir, lane, "vision") : undefined;
+  const ttsModel = lane ? await getBranchModel(projectDir, lane, "tts") : undefined;
+  const embeddingModel = lane ? await getBranchModel(projectDir, lane, "embedding") : undefined;
+
+  return renderModelStatusMessage({
+    backend,
+    localApp,
+    apiProvider,
+    tmuxClient,
+    textModel,
+    visionModel,
+    ttsModel,
+    embeddingModel,
+  });
+}
+
+async function ensureTmuxAllowed(projectDir: string): Promise<CommandResult | null> {
+  const currentMode = await getPolicyMode(projectDir);
+  if (currentMode === "local-only") {
     return {
       success: false,
-      message: `本群未绑定任何工作目录\n` +
-        `\n` +
-        `请先使用 /bind <dir> [client] 绑定工作空间`,
+      message: `当前策略模式为 local-only，不允许切到 tmux 分支（需要外网访问）。\n\n` +
+        `请先执行 /policy on 或 /policy full`,
+    };
+  }
+  return null;
+}
+
+async function handleModelFieldCommand(
+  slot: ModelSlot,
+  options: CommandHandlerOptions
+): Promise<CommandResult> {
+  const { chatId, args } = options;
+  const bound = resolveBoundWorkspace(chatId);
+  if (!bound) {
+    return {
+      success: false,
+      message: `本群未绑定任何工作目录\n\n请先使用 /bind <dir> [client] 绑定工作空间`,
     };
   }
 
-  // P5.6.14-R4: 基于 runtime.kind 二分展示
+  const backend = await getBackendLane(bound.projectDir);
   if (args.length === 0) {
-    const currentMode = await getPolicyMode(projectDir);
-    const kind = await getRuntimeKind(projectDir);
-    const provider = getGlobalAgentProvider();
-    const client = await getTmuxClient(projectDir);
-
-    if (kind === "tmux") {
-      // tmux 模式：显示 client 信息
-      return {
-        success: true,
-        message: `执行臂配置（tmux 透传模式）\n` +
-          `\n` +
-          `运行形态：tmux（透传执行臂）\n` +
-          `Tmux Client: ${client}\n` +
-          `策略模式：${formatPolicyMode(currentMode)}\n` +
-          `工作目录：${label || projectDir}\n` +
-          `\n` +
-          `说明：tmux 模式下 provider 不参与执行，仅透传到 tmux client\n` +
-          `\n` +
-          `可用 Tmux Client:\n` +
-          `  codex       Codex CLI（默认）\n` +
-          `  claude-code Claude Code CLI\n` +
-          `\n` +
-          `使用 /model <client> 切换 Tmux Client\n` +
-          `使用 /policy <mode> 切换策略模式`,
-      };
-    } else {
-      // agent 模式：显示 provider 信息
-      return {
-        success: true,
-        message: `执行臂配置（agent 编排模式）\n` +
-          `\n` +
-          `运行形态：agent（智能体编排）\n` +
-          `Agent Backend: ${formatProviderLabel(provider)}\n` +
-          `配置源：${getUserEnvPath()}\n` +
-          `策略模式：${formatPolicyMode(currentMode)}\n` +
-          `工作目录：${label || projectDir}\n` +
-          `\n` +
-          `可用 Agent Backend:\n` +
-          `  agent-backend  本地兼容后端（LM Studio/OpenAI-compatible，本地默认）\n` +
-          `  minimax        MiniMax（Anthropic-compatible，推荐）\n` +
-          `  openai         OpenAI API\n` +
-          `\n` +
-          `兼容别名（legacy）:\n` +
-          `  lmstudio    -> agent-backend\n` +
-          `  local-openai -> agent-backend\n` +
-          `\n` +
-          `计划中（planned）:\n` +
-          `  llama       llama-server / llama.cpp\n` +
-          `  claude      Anthropic Claude API\n` +
-          `\n` +
-          `使用 /model <backend> 切换 Agent Backend\n` +
-          `使用 /model codex|claude-code 切换到 tmux 模式\n` +
-          `使用 /policy <mode> 切换策略模式`,
-      };
+    if (backend === "tmux") {
+      return { success: true, message: renderModelFieldMessage(slot, backend) };
     }
+    const currentValue = await getBranchModel(bound.projectDir, backend, slot);
+    return {
+      success: true,
+      message: renderModelFieldMessage(slot, backend, currentValue),
+    };
   }
 
-  // P5.6.14-R4: 处理设置命令
-  const requestedRunner = args[0];
+  if (backend === "tmux") {
+    return {
+      success: false,
+      message: `tmux 模式不支持本地/API 模型覆盖，请先切回 /backend local 或 /backend api`,
+    };
+  }
 
-  // 兼容旧输入：codex/claude-code -> tmux 模式
-  if (requestedRunner === "codex" || requestedRunner === "claude-code") {
-    const currentMode = await getPolicyMode(projectDir);
-    if (currentMode === "local-only") {
+  const normalized = normalizeModelOverrideInput(args[0] ?? "");
+  if (!normalized && (args[0] ?? "").trim() === "") {
+    return {
+      success: false,
+      message: `无效的 ${slot}-model：请输入模型 ID 或 auto`,
+    };
+  }
+
+  await setBranchModel(bound.projectDir, backend as ModelLane, slot, normalized);
+  const savedValue = await getBranchModel(bound.projectDir, backend as ModelLane, slot);
+
+  return {
+    success: true,
+    message: [
+      `已更新 ${slot}-model`,
+      "",
+      `backend: ${backend}`,
+      renderModelFieldMessage(slot, backend, savedValue),
+    ].join("\n"),
+  };
+}
+
+export async function handleBackendCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  const { chatId, args } = options;
+  const bound = resolveBoundWorkspace(chatId);
+  if (!bound) {
+    return {
+      success: false,
+      message: `本群未绑定任何工作目录\n\n请先使用 /bind <dir> [client] 绑定工作空间`,
+    };
+  }
+
+  if (args.length === 0) {
+    return {
+      success: true,
+      message: renderBackendStatusMessage(await getBackendLane(bound.projectDir)),
+    };
+  }
+
+  const target = normalizeRequestedBackendLane(args[0] ?? "");
+  if (!target) {
+    return {
+      success: false,
+      message: `无效的 backend：${args[0]}\n\n可用值：local | api | tmux`,
+    };
+  }
+
+  if (target === "tmux") {
+    const blocked = await ensureTmuxAllowed(bound.projectDir);
+    if (blocked) return blocked;
+    await setRuntimeKind(bound.projectDir, "tmux");
+    const currentClient = getTmuxClientLabel(await getTmuxClient(bound.projectDir));
+    await setTmuxClient(bound.projectDir, currentClient);
+    return {
+      success: true,
+      message: [
+        `已切换 backend`,
+        "",
+        renderBackendStatusMessage("tmux"),
+        renderTmuxStatusMessage(currentClient),
+      ].join("\n"),
+    };
+  }
+
+  await setRuntimeKind(bound.projectDir, "agent");
+
+  if (target === "local") {
+    const localApp = getConfiguredLocalApp();
+    setConfiguredLocalApp(localApp);
+    setActiveAgentProvider("agent-backend");
+    return {
+      success: true,
+      message: [
+        `已切换 backend`,
+        "",
+        renderBackendStatusMessage("local"),
+        renderLocalStatusMessage(localApp),
+      ].join("\n"),
+    };
+  }
+
+  const apiProvider = getConfiguredApiProvider();
+  setConfiguredApiProvider(apiProvider);
+  setActiveAgentProvider(apiProvider);
+  return {
+    success: true,
+    message: [
+      `已切换 backend`,
+      "",
+      renderBackendStatusMessage("api"),
+      renderApiStatusMessage(apiProvider),
+    ].join("\n"),
+  };
+}
+
+export async function handleLocalCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  const { chatId, args } = options;
+  const bound = resolveBoundWorkspace(chatId);
+  if (!bound) {
+    return {
+      success: false,
+      message: `本群未绑定任何工作目录\n\n请先使用 /bind <dir> [client] 绑定工作空间`,
+    };
+  }
+
+  if (args.length === 0) {
+    return {
+      success: true,
+      message: renderLocalStatusMessage(getConfiguredLocalApp()),
+    };
+  }
+
+  const requested = normalizeRequestedLocalBackend(args[0] ?? "");
+  if (!requested) {
+    return {
+      success: false,
+      message: `无效的 local-app：${args[0]}\n\n可用值：omlx | lmstudio`,
+    };
+  }
+
+  setConfiguredLocalApp(requested);
+  const backend = await getBackendLane(bound.projectDir);
+  if (backend === "local") {
+    setActiveAgentProvider("agent-backend");
+  }
+
+  return {
+    success: true,
+    message: [
+      `已更新 local-app`,
+      "",
+      renderLocalStatusMessage(requested),
+      `backend: ${backend}`,
+    ].join("\n"),
+  };
+}
+
+export async function handleApiCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  const { chatId, args } = options;
+  const bound = resolveBoundWorkspace(chatId);
+  if (!bound) {
+    return {
+      success: false,
+      message: `本群未绑定任何工作目录\n\n请先使用 /bind <dir> [client] 绑定工作空间`,
+    };
+  }
+
+  if (args.length === 0) {
+    return {
+      success: true,
+      message: renderApiStatusMessage(getConfiguredApiProvider()),
+    };
+  }
+
+  const requested = normalizeRequestedApiProvider(args[0] ?? "");
+  if (!requested) {
+    return {
+      success: false,
+      message: `无效的 api-provider：${args[0]}\n\n可用值：minimax | deepseek | openai`,
+    };
+  }
+
+  setConfiguredApiProvider(requested);
+  const backend = await getBackendLane(bound.projectDir);
+  if (backend === "api") {
+    setActiveAgentProvider(requested);
+  }
+
+  return {
+    success: true,
+    message: [
+      `已更新 api-provider`,
+      "",
+      renderApiStatusMessage(requested),
+      `backend: ${backend}`,
+    ].join("\n"),
+  };
+}
+
+export async function handleTmuxCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  const { chatId, args } = options;
+  const bound = resolveBoundWorkspace(chatId);
+  if (!bound) {
+    return {
+      success: false,
+      message: `本群未绑定任何工作目录\n\n请先使用 /bind <dir> [client] 绑定工作空间`,
+    };
+  }
+
+  if (args.length === 0) {
+    return {
+      success: true,
+      message: renderTmuxStatusMessage(getTmuxClientLabel(await getTmuxClient(bound.projectDir))),
+    };
+  }
+
+  const requested = normalizeRequestedTmuxClient(args[0] ?? "");
+  if (!requested) {
+    return {
+      success: false,
+      message: `无效的 tmux-client：${args[0]}\n\n可用值：codex | claude-code`,
+    };
+  }
+
+  const backend = await getBackendLane(bound.projectDir);
+  if (backend === "tmux") {
+    const blocked = await ensureTmuxAllowed(bound.projectDir);
+    if (blocked) return blocked;
+  }
+
+  await setTmuxClient(bound.projectDir, requested);
+
+  return {
+    success: true,
+    message: [
+      `已更新 tmux-client`,
+      "",
+      renderTmuxStatusMessage(requested),
+      `backend: ${backend}`,
+    ].join("\n"),
+  };
+}
+
+export async function handleTextModelCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  return handleModelFieldCommand("text", options);
+}
+
+export async function handleVisionModelCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  return handleModelFieldCommand("vision", options);
+}
+
+export async function handleTtsModelCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  return handleModelFieldCommand("tts", options);
+}
+
+export async function handleEmbeddingModelCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  return handleModelFieldCommand("embedding", options);
+}
+
+export async function handleModelCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  const { args } = options;
+
+  if (args.length === 0 || (args[0] ?? "").trim().toLowerCase() === "status") {
+    const bound = resolveBoundWorkspace(options.chatId);
+    if (!bound) {
       return {
         success: false,
-        message: `当前策略模式为 local-only，不允许使用 ${requestedRunner}（需要外网访问）。\n\n` +
-          `请先执行以下命令之一：\n` +
-          `1. /policy on             （允许外网访问；等同 /policy egress-allowed）\n` +
-          `2. /model agent-backend   （使用本地模型）`,
+        message: `本群未绑定任何工作目录\n\n请先使用 /bind <dir> [client] 绑定工作空间`,
       };
     }
-
-    // P5.6.14-R4: 映射到 runtime.kind=tmux + tmux.client
-    await setRuntimeKind(projectDir, "tmux");
-    await setTmuxClient(projectDir, requestedRunner);
-
-    const oldClient = await getTmuxClient(projectDir);
     return {
       success: true,
-      message: `已切换到 tmux 模式\n` +
-        `\n` +
-        `运行形态：tmux（透传执行臂）\n` +
-        `Tmux Client: ${requestedRunner}\n` +
-        `\n` +
-        `下次提问时将使用 ${requestedRunner}（tmux 透传）`,
+      message: await buildModelStatus(bound.projectDir),
     };
   }
 
-  // agent backend 设置
-  const normalizedProvider = normalizeRequestedProvider(requestedRunner);
-  const plannedProviders: AgentProvider[] = ["llama", "claude"];
+  const requested = (args[0] ?? "").trim().toLowerCase();
 
-  if (normalizedProvider && plannedProviders.includes(normalizedProvider)) {
+  if (requested === "agent-backend" || requested === "agent" || requested === "local-openai") {
+    return handleBackendCommand({ ...options, args: ["local"] });
+  }
+
+  const localBackend = normalizeRequestedLocalBackend(requested);
+  if (localBackend) {
+    await handleLocalCommand({ ...options, args: [localBackend] });
+    const backendResult = await handleBackendCommand({ ...options, args: ["local"] });
     return {
-      success: false,
-      message: `"${requestedRunner}" Backend 尚未实现。\n` +
-        `\n` +
-        `计划中的 Backend:\n` +
-        `  llama       llama-server / llama.cpp\n` +
-        `  claude      Anthropic Claude API\n` +
-        `\n` +
-        `目前可用的 Backend:\n` +
-        `  agent-backend  本地兼容后端（默认）\n` +
-        `  minimax        MiniMax（Anthropic-compatible，推荐）\n` +
-        `  openai      OpenAI API`,
+      success: backendResult.success,
+      message: `${backendResult.message}\n\n兼容提示：旧命令 /model ${requested} 已映射为 /local ${localBackend} + /backend local`,
     };
   }
 
-  if (!normalizedProvider) {
+  const apiProvider = normalizeRequestedApiProvider(requested);
+  if (apiProvider) {
+    await handleApiCommand({ ...options, args: [apiProvider] });
+    const backendResult = await handleBackendCommand({ ...options, args: ["api"] });
     return {
-      success: false,
-      message: `无效的 Backend: ${requestedRunner}\n` +
-        `\n` +
-        `可用的 Agent Backend:\n` +
-        `  agent-backend  本地兼容后端（LM Studio）\n` +
-        `  minimax        MiniMax（Anthropic-compatible，推荐）\n` +
-        `  openai      OpenAI API\n` +
-        `\n` +
-        `兼容别名:\n` +
-        `  lmstudio\n` +
-        `  local-openai\n` +
-        `\n` +
-        `切换到 tmux 模式:\n` +
-        `  /model codex       Codex CLI\n` +
-        `  /model claude-code Claude Code CLI`,
+      success: backendResult.success,
+      message: `${backendResult.message}\n\n兼容提示：旧命令 /model ${requested} 已映射为 /api ${apiProvider} + /backend api`,
     };
   }
 
-  try {
-    // 单源化：runtime.kind 仍按 workspace 管理，但 backend 只写全局 AGENT_BACKEND
-    await setRuntimeKind(projectDir, "agent");
-    setGlobalAgentProvider(normalizedProvider);
-
-    const effectiveProvider = getGlobalAgentProvider();
-    const effectiveLabel = formatProviderLabel(effectiveProvider);
-    const aliasHint = normalizedProvider === "agent-backend" && requestedRunner !== "agent-backend"
-      ? `（已按兼容别名映射为本地 backend）`
-      : "";
+  const tmuxClient = normalizeRequestedTmuxClient(requested);
+  if (tmuxClient) {
+    const presetResult = await handleTmuxCommand({ ...options, args: [tmuxClient] });
+    if (!presetResult.success) {
+      return presetResult;
+    }
+    const backendResult = await handleBackendCommand({ ...options, args: ["tmux"] });
+    if (!backendResult.success) {
+      return backendResult;
+    }
     return {
       success: true,
-      message: `已切换 Agent Backend${aliasHint}\n` +
-        `\n` +
-        `运行形态：agent（智能体编排）\n` +
-        `Agent Backend: ${effectiveLabel}\n` +
-        `作用域：global（${getUserEnvPath()}）\n` +
-        `\n` +
-        `下次提问时将使用 ${effectiveLabel}`,
-    };
-  } catch (error) {
-    return {
-      success: false,
-      message: `切换失败：${error instanceof Error ? error.message : String(error)}`,
+      message: `${backendResult.message}\n\n兼容提示：旧命令 /model ${requested} 已映射为 /tmux ${tmuxClient} + /backend tmux`,
     };
   }
+
+  return {
+    success: false,
+    message: `无效的 /model 参数：${args[0]}\n\n` +
+      `新协议：/model status | /backend <local|api|tmux> | /local <omlx|lmstudio> | /api <minimax|deepseek|openai> | /tmux <codex|claude-code>`,
+  };
 }
 
 export async function handlePolicyCommand(options: CommandHandlerOptions): Promise<CommandResult> {
   const { chatId, args } = options;
-  const { getPolicyMode, setPolicyMode } = await import("../config/workspace.js");
+  const bound = resolveBoundWorkspace(chatId);
+  if (!bound) {
+    return {
+      success: false,
+      message: `本群未绑定工作目录\n\n请先使用 /bind <dir> 绑定工作空间`,
+    };
+  }
 
   function describePolicyMode(mode: "local-only" | "egress-allowed"): { short: "limit" | "full"; label: string; raw: string } {
     if (mode === "egress-allowed") {
@@ -293,45 +630,28 @@ export async function handlePolicyCommand(options: CommandHandlerOptions): Promi
   }
 
   function normalizePolicyMode(input: string): "local-only" | "egress-allowed" | null {
-    const v = input.trim().toLowerCase();
-    if (["on", "full", "egress", "egress-allowed", "allow", "open"].includes(v)) {
+    const value = input.trim().toLowerCase();
+    if (["on", "full", "egress", "egress-allowed", "allow", "open"].includes(value)) {
       return "egress-allowed";
     }
-    if (["off", "limit", "local", "local-only", "deny", "closed"].includes(v)) {
+    if (["off", "limit", "local", "local-only", "deny", "closed"].includes(value)) {
       return "local-only";
     }
     return null;
   }
 
-  const resolved = resolveCommandRoute(chatId);
-  const entry = resolved?.route;
-  const projectDir = entry?.workspacePath;
-  const label = entry?.label;
-
-  if (!projectDir) {
-    return {
-      success: false,
-      message: `本群未绑定工作目录\n` +
-        `\n` +
-        `请先使用 /bind <dir> 绑定工作空间`,
-    };
-  }
-
   if (args.length === 0) {
-    const currentMode = await getPolicyMode(projectDir);
+    const currentMode = await getPolicyMode(bound.projectDir);
     const current = describePolicyMode(currentMode);
 
     return {
       success: true,
-      message: `策略模式\n` +
-        `\n` +
+      message: `策略模式\n\n` +
         `当前：${current.short}（${current.label}；raw=${current.raw}）\n` +
-        `工作目录：${label || projectDir}\n` +
-        `\n` +
+        `工作目录：${bound.label || bound.projectDir}\n\n` +
         `可用模式:\n` +
         `  full   外网已开（可使用 codex/claude-code；= egress-allowed）\n` +
-        `  limit  仅本地（禁止外网访问；= local-only）\n` +
-        `\n` +
+        `  limit  仅本地（禁止外网访问；= local-only）\n\n` +
         `用法:\n` +
         `  /policy full   开外网\n` +
         `  /policy limit  仅本地`,
@@ -339,12 +659,10 @@ export async function handlePolicyCommand(options: CommandHandlerOptions): Promi
   }
 
   const requestedMode = normalizePolicyMode(args[0] ?? "");
-
   if (!requestedMode) {
     return {
       success: false,
-      message: `无效的策略模式：${args[0]}\n` +
-        `\n` +
+      message: `无效的策略模式：${args[0]}\n\n` +
         `可用模式:\n` +
         `  on / egress-allowed   允许外网访问\n` +
         `  off / local-only      仅本地模式`,
@@ -352,30 +670,26 @@ export async function handlePolicyCommand(options: CommandHandlerOptions): Promi
   }
 
   try {
-    const oldMode = await getPolicyMode(projectDir);
+    const oldMode = await getPolicyMode(bound.projectDir);
     const oldDesc = describePolicyMode(oldMode);
     const newDesc = describePolicyMode(requestedMode);
-    await setPolicyMode(projectDir, requestedMode);
+    await setPolicyMode(bound.projectDir, requestedMode);
 
     if (oldMode === requestedMode) {
       return {
         success: true,
-        message: `策略模式未变更\n` +
-          `\n` +
-          `当前：${newDesc.short}（${newDesc.label}；raw=${newDesc.raw}）`,
+        message: `策略模式未变更\n\n当前：${newDesc.short}（${newDesc.label}；raw=${newDesc.raw}）`,
       };
     }
 
     return {
       success: true,
-      message: `已切换策略模式\n` +
-        `\n` +
+      message: `已切换策略模式\n\n` +
         `旧模式：${oldDesc.short}（${oldDesc.label}；raw=${oldDesc.raw}）\n` +
-        `新模式：${newDesc.short}（${newDesc.label}；raw=${newDesc.raw}）\n` +
-        `\n` +
+        `新模式：${newDesc.short}（${newDesc.label}；raw=${newDesc.raw}）\n\n` +
         `${requestedMode === "egress-allowed"
-          ? "现在可以使用 codex/claude-code 执行臂了"
-          : "已禁止使用外网执行臂，只能使用本地模型"}`,
+          ? "现在可以使用 tmux 分支了"
+          : "已禁止使用外网执行分支，只能使用本地模型"}`,
     };
   } catch (error) {
     return {
@@ -387,35 +701,27 @@ export async function handlePolicyCommand(options: CommandHandlerOptions): Promi
 
 export async function handlePiCommand(options: CommandHandlerOptions): Promise<CommandResult> {
   const { chatId, args } = options;
-  const { loadWorkspaceConfig, saveWorkspaceConfig, getRuntimeKind } = await import("../config/workspace.js");
-
-  const resolved = resolveCommandRoute(chatId);
-  const entry = resolved?.route;
-  const projectDir = entry?.workspacePath;
-
-  if (!projectDir) {
+  const bound = resolveBoundWorkspace(chatId);
+  if (!bound) {
     return {
       success: false,
       message: `未绑定工作目录，请先使用 /bind <dir> 绑定工作空间`,
     };
   }
 
-  // P5.6.14-R4: 改用 runtime.kind 判断
-  const kind = await getRuntimeKind(projectDir);
-  const config = await loadWorkspaceConfig(projectDir);
+  const kind = await getRuntimeKind(bound.projectDir);
+  const config = await loadWorkspaceConfig(bound.projectDir);
   const enabled = config["pi.enabled"] ?? false;
   const action = (args[0] ?? "status").trim().toLowerCase();
 
   if (action === "status") {
     return {
       success: true,
-      message: `PI: ${enabled ? "已启用" : "已禁用"}\n` +
-        `运行形态：${kind}`,
+      message: `PI: ${enabled ? "已启用" : "已禁用"}\n运行形态：${kind}`,
     };
   }
 
   if (action === "on") {
-    // P5.6.14-R4: tmux 模式不支持 PI
     if (kind === "tmux") {
       return {
         success: false,
@@ -423,19 +729,16 @@ export async function handlePiCommand(options: CommandHandlerOptions): Promise<C
       };
     }
 
-    // 自动补最小文件主链工具，避免把脆弱写工具重新暴露给模型
     const { getToolPolicy, setToolingAllow } = await import("../config/workspace.js");
-    const policy = await getToolPolicy(projectDir);
+    const policy = await getToolPolicy(bound.projectDir);
     const piTools = ["read_file", "bash"] as const;
-
-    // 确保 PI 四工具在 allow 列表中
     const missingTools = piTools.filter(t => !policy.allow.includes(t));
     if (missingTools.length > 0) {
       const newAllow: ToolName[] = [...new Set([...policy.allow, ...piTools])];
-      await setToolingAllow(projectDir, newAllow);
+      await setToolingAllow(bound.projectDir, newAllow);
     }
 
-    await saveWorkspaceConfig(projectDir, { "pi.enabled": true });
+    await saveWorkspaceConfig(bound.projectDir, { "pi.enabled": true });
     return {
       success: true,
       message: "PI 已启用" + (missingTools.length > 0 ? `\n\n已自动添加工具：${missingTools.join(", ")}` : ""),
@@ -443,7 +746,7 @@ export async function handlePiCommand(options: CommandHandlerOptions): Promise<C
   }
 
   if (action === "off") {
-    await saveWorkspaceConfig(projectDir, { "pi.enabled": false });
+    await saveWorkspaceConfig(bound.projectDir, { "pi.enabled": false });
     return {
       success: true,
       message: "PI 已禁用",
@@ -452,7 +755,6 @@ export async function handlePiCommand(options: CommandHandlerOptions): Promise<C
 
   return {
     success: false,
-    message: `未知操作：${action}\n` +
-      `用法：/pi | /pi on | /pi off`,
+    message: `未知操作：${action}\n用法：/pi | /pi on | /pi off`,
   };
 }

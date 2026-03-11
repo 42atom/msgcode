@@ -3,6 +3,12 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-11
+  - routes/backend-lanes: 新的执行基座命令协议已落地；`/backend local|api|tmux`、`/local`、`/api`、`/tmux`、`/text-model`、`/vision-model`、`/tts-model`、`/embedding-model` 已接入，`/model` 退化为 `status + legacy alias`，同时 `api-provider` 预设已从当前 active backend 解耦，`/model status` 只展示当前分支模型覆盖 (Issue: 0080, Plan: docs/design/plan-260311-backend-command-lanes-v1.md) [risk: medium] [rollback: 回退 `src/routes/{commands,cmd-model,cmd-info,cmd-bind}.ts`、`src/config/workspace.ts`、`src/runtime/session-orchestrator.ts`、`src/handlers.ts` 与新增命令测试]
+- 2026-03-11
+  - runtime/vision: OMLX 图片请求现在会先查 `/v1/models/status`，只有 `model_type=vlm` 时才放行；同时本地运行环境已固定 `OMLX_MODEL=Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit` 与 `OMLX_VISION_MODEL=Qwen3.5-4B-MLX-4bit`，避免把图片误送给文本模型 (Issue: 0079, Plan: docs/design/plan-260311-local-backend-control-plane-mvp.md) [risk: medium] [rollback: 回退 `src/runners/vision.ts`、`test/p5-7-r23-vision-mainline.test.ts` 与本地 `.env` 中 OMLX 文本/视觉模型分工配置]
+- 2026-03-11
+  - runtime/local-backend: 主后端已切回 `minimax`，并新增薄的本地 backend 注册表；`/model` 现可手动切换 `lmstudio / omlx`，且 `chat / capabilities / vision / embedding` 已统一读取同一份本地 backend 真相源，云端 provider 与本地 backend 选择不再混层 (Issue: 0079, Plan: docs/design/plan-260311-local-backend-control-plane-mvp.md) [risk: medium] [rollback: 回退 `src/local-backend/registry.ts`、`src/routes/cmd-model.ts`、`src/agent-backend/{config,chat,index,types}.ts`、`src/capabilities.ts`、`src/runners/vision.ts`、`src/memory/embedding.ts` 与相关测试]
+- 2026-03-11
   - skills/runtime: skills 自包含分发规则已正式写入仓库；`src/skills/runtime` 与 `src/skills/optional` 现在受静态锁保护，禁止引用用户目录中的外部 skill 仓库，也禁止通过 symlink 挂外部实现，后续若需复用外部 skill 必须把必要脚本或资产复制进 repo 真相源 (Issue: 0078, Plan: docs/design/plan-260311-skill-self-contained-distribution.md) [risk: low] [rollback: 回退 `src/skills/README.md`、新增静态测试与相关文档]
 - 2026-03-11
   - skills/runtime: `local-vision-lmstudio` 现在正式自带 `analyze_image.py` 脚本并随 runtime skill 同步；wrapper 与说明书已收口到 repo 自己的 skill 真相源，不再依赖用户目录里的外部 skill 残留 (Issue: 0077) [risk: low] [rollback: 回退 `src/skills/runtime/local-vision-lmstudio/`、`src/skills/runtime/vision-index/SKILL.md` 与相关测试]

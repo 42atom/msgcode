@@ -91,6 +91,25 @@
    - 新增/更新命令协议专项测试
    - `docs/CHANGELOG.md`
 
+## Result
+
+已按最小可删版本落地：
+
+1. 新协议命令已接入：
+   - `/backend`
+   - `/local`
+   - `/api`
+   - `/tmux`
+   - `/text-model`
+   - `/vision-model`
+   - `/tts-model`
+   - `/embedding-model`
+   - `/model status`
+2. `api-provider` 现在有独立预设真相源，当前 backend 不再吞掉 API 分支预设
+3. 模型覆盖已按 `local/api` 分支分别存储，`/model status` 只显示当前分支模型值
+4. 旧 `/model minimax|omlx|codex|...` 继续可用，但已退化为兼容 alias
+5. 本轮还顺手补齐了 `deepseek` API provider 直连能力
+
 ## Risks
 
 1. 如果 API provider 预设没有独立真相源，`/api xxx` 在当前 `backend=local|tmux` 时会偷偷切主链。

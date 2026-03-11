@@ -6,7 +6,11 @@
  */
 
 import { logger } from "../logger/index.js";
-import { config } from "../config.js";
+import { getBranchModel } from "../config/workspace.js";
+import {
+    resolveLocalBackendRuntime,
+    resolveLocalEmbeddingModel,
+} from "../local-backend/registry.js";
 
 // ============================================
 // 常量
@@ -26,6 +30,8 @@ const EMBEDDING_TIMEOUT_MS = 30000;
 // ============================================
 
 export interface EmbeddingOptions {
+    /** 工作区路径（可选，用于读取 local 分支 embedding 覆盖） */
+    workspacePath?: string;
     /** LM Studio base URL（默认从 config 读取） */
     baseUrl?: string;
     /** 模型名称（默认 text-embedding-embeddinggemma-300m） */
@@ -65,9 +71,13 @@ export async function generateEmbedding(
     text: string,
     options?: EmbeddingOptions
 ): Promise<EmbeddingResult | null> {
-    const baseUrl = normalizeBaseUrl(options?.baseUrl || config.lmstudioBaseUrl || "http://127.0.0.1:1234");
-    const model = options?.model || DEFAULT_EMBEDDING_MODEL;
-    const timeoutMs = options?.timeoutMs || EMBEDDING_TIMEOUT_MS;
+    const localRuntime = resolveLocalBackendRuntime();
+    const baseUrl = normalizeBaseUrl(options?.baseUrl || localRuntime.baseUrl || "http://127.0.0.1:1234");
+    const configuredModel = options?.workspacePath
+        ? await getBranchModel(options.workspacePath, "local", "embedding")
+        : undefined;
+    const model = options?.model || configuredModel || resolveLocalEmbeddingModel(localRuntime, DEFAULT_EMBEDDING_MODEL);
+    const timeoutMs = options?.timeoutMs || localRuntime.timeoutMs || EMBEDDING_TIMEOUT_MS;
 
     try {
         const controller = new AbortController();
@@ -77,6 +87,7 @@ export async function generateEmbedding(
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
+                ...(localRuntime.apiKey ? { "Authorization": `Bearer ${localRuntime.apiKey}` } : {}),
             },
             body: JSON.stringify({
                 model,

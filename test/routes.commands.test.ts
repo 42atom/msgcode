@@ -111,6 +111,17 @@ describe("路由命令处理器", () => {
       expect(isRouteCommand("/owner-only on")).toBe(true);
     });
 
+    it("识别 backend lanes 与模型覆盖命令", () => {
+      expect(isRouteCommand("/backend")).toBe(true);
+      expect(isRouteCommand("/backend local")).toBe(true);
+      expect(isRouteCommand("/local omlx")).toBe(true);
+      expect(isRouteCommand("/api minimax")).toBe(true);
+      expect(isRouteCommand("/tmux codex")).toBe(true);
+      expect(isRouteCommand("/text-model auto")).toBe(true);
+      expect(isRouteCommand("/vision-model glm-4.6v")).toBe(true);
+      expect(isRouteCommand("/embedding-model auto")).toBe(true);
+    });
+
     it("拒绝非路由命令", () => {
       expect(isRouteCommand("/start")).toBe(false);
       expect(isRouteCommand("/stop")).toBe(false);
@@ -173,6 +184,15 @@ describe("路由命令处理器", () => {
       });
     });
 
+    it("解析 backend lanes 与模型覆盖命令", () => {
+      expect(parseRouteCommand("/backend local")).toEqual({ command: "backend", args: ["local"] });
+      expect(parseRouteCommand("/local omlx")).toEqual({ command: "local", args: ["omlx"] });
+      expect(parseRouteCommand("/api minimax")).toEqual({ command: "api", args: ["minimax"] });
+      expect(parseRouteCommand("/tmux codex")).toEqual({ command: "tmux", args: ["codex"] });
+      expect(parseRouteCommand("/text-model auto")).toEqual({ command: "textModel", args: ["auto"] });
+      expect(parseRouteCommand("/model status")).toEqual({ command: "model", args: ["status"] });
+    });
+
     it("拒绝非路由命令", () => {
       expect(parseRouteCommand("/start")).toBeNull();
       expect(parseRouteCommand("hello")).toBeNull();
@@ -205,16 +225,15 @@ describe("路由命令处理器", () => {
       expect(fs.existsSync(expectedPath)).toBe(true);
     });
 
-    it("绑定成功时显示真实 Agent Backend", async () => {
+    it("绑定成功时显示真实 backend lane", async () => {
       process.env.AGENT_BACKEND = "minimax";
 
       const options: CommandHandlerOptions = { chatId: testChatId, args: ["agent/backend"] };
       const result = await handleBindCommand(options);
 
       expect(result.success).toBe(true);
-      expect(result.message).toContain("运行形态：agent（智能体编排）");
-      expect(result.message).toContain("Agent Backend: minimax");
-      expect(result.message).not.toContain("模型客户端:");
+      expect(result.message).toContain("backend: api");
+      expect(result.message).toContain("api-provider: minimax");
     });
 
     it("拒绝绝对路径", async () => {
@@ -263,7 +282,7 @@ describe("路由命令处理器", () => {
       expect(result.message).toContain("test/project");
     });
 
-    it("legacy runner.default=lmstudio 时仍显示真实 Agent Backend", async () => {
+    it("legacy runner.default=lmstudio 时仍显示真实 backend lane", async () => {
       process.env.AGENT_BACKEND = "minimax";
 
       const bindResult = await handleBindCommand({
@@ -278,8 +297,8 @@ describe("路由命令处理器", () => {
       const result = await handleWhereCommand({ chatId: testChatId, args: [] });
 
       expect(result.success).toBe(true);
-      expect(result.message).toContain("运行形态：agent（智能体编排）");
-      expect(result.message).toContain("Agent Backend: minimax");
+      expect(result.message).toContain("backend: api");
+      expect(result.message).toContain("api-provider: minimax");
       expect(result.message).not.toContain("模型客户端: lmstudio");
     });
 
@@ -299,8 +318,8 @@ describe("路由命令处理器", () => {
       const result = await handleWhereCommand({ chatId: testChatId, args: [] });
 
       expect(result.success).toBe(true);
-      expect(result.message).toContain("运行形态：tmux（透传执行臂）");
-      expect(result.message).toContain("Tmux Client: codex");
+      expect(result.message).toContain("backend: tmux");
+      expect(result.message).toContain("tmux-client: codex");
       expect(result.message).not.toContain("Agent Backend:");
     });
   });

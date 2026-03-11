@@ -12,6 +12,7 @@
  */
 
 import { config } from "../config.js";
+import { resolveLocalBackendRuntime } from "../local-backend/registry.js";
 import type { AgentBackendId, AgentBackendRuntime } from "./types.js";
 
 // ============================================
@@ -24,10 +25,12 @@ import type { AgentBackendId, AgentBackendRuntime } from "./types.js";
  */
 export const MODEL_ALIAS_SET = new Set([
     "lmstudio",
+    "omlx",
     "agent-backend",
     "local-openai",
     "openai",
     "minimax",
+    "deepseek",
     "llama",
     "claude",
     "none",
@@ -70,15 +73,23 @@ export function parseBackendTimeoutMs(raw: string | undefined, fallback: number)
  * - lmstudio / agent-backend / local-openai → local-openai
  * - openai → openai
  * - minimax → minimax
+ * - deepseek → deepseek
  * - llama / claude / none → local-openai（兼容遗留）
  */
 export function normalizeAgentBackendId(raw?: string): AgentBackendId {
     const normalized = (raw || "").trim().toLowerCase();
-    if (!normalized || normalized === "lmstudio" || normalized === "agent-backend" || normalized === "local-openai") {
+    if (
+        !normalized ||
+        normalized === "lmstudio" ||
+        normalized === "omlx" ||
+        normalized === "agent-backend" ||
+        normalized === "local-openai"
+    ) {
         return "local-openai";
     }
     if (normalized === "openai") return "openai";
     if (normalized === "minimax") return "minimax";
+    if (normalized === "deepseek") return "deepseek";
     // 兼容遗留 provider 名称，先统一回本地后端
     if (normalized === "llama" || normalized === "claude" || normalized === "none") {
         return "local-openai";
@@ -135,13 +146,29 @@ export function resolveAgentBackendRuntime(rawBackend?: string): AgentBackendRun
         };
     }
 
+    if (id === "deepseek") {
+        return {
+            id,
+            baseUrl: (process.env.DEEPSEEK_BASE_URL || process.env.AGENT_BASE_URL || "https://api.deepseek.com").trim(),
+            apiKey: (process.env.DEEPSEEK_API_KEY || process.env.AGENT_API_KEY || "").trim() || undefined,
+            model: (process.env.DEEPSEEK_MODEL || process.env.AGENT_MODEL || "").trim() || undefined,
+            timeoutMs: parseBackendTimeoutMs(process.env.DEEPSEEK_TIMEOUT_MS || process.env.AGENT_TIMEOUT_MS, defaultTimeout),
+            nativeApiEnabled: false,
+        };
+    }
+
+    const localRuntime = resolveLocalBackendRuntime(rawBackend);
     return {
         id: "local-openai",
-        baseUrl: (process.env.LMSTUDIO_BASE_URL || process.env.AGENT_BASE_URL || config.lmstudioBaseUrl || "http://127.0.0.1:1234").trim(),
-        apiKey: (process.env.LMSTUDIO_API_KEY || process.env.AGENT_API_KEY || config.lmstudioApiKey || "").trim() || undefined,
-        model: (process.env.LMSTUDIO_MODEL || process.env.AGENT_MODEL || config.lmstudioModel || "").trim() || undefined,
-        timeoutMs: parseBackendTimeoutMs(process.env.LMSTUDIO_TIMEOUT_MS || process.env.AGENT_TIMEOUT_MS, defaultTimeout),
-        nativeApiEnabled: true,
+        baseUrl: localRuntime.baseUrl,
+        apiKey: localRuntime.apiKey,
+        model: localRuntime.model,
+        timeoutMs: localRuntime.timeoutMs || defaultTimeout,
+        nativeApiEnabled: localRuntime.nativeApiEnabled,
+        localBackendId: localRuntime.id,
+        supportsModelLifecycle: localRuntime.supportsModelLifecycle,
+        modelsListPath: localRuntime.modelsListPath,
+        modelsStatusPath: localRuntime.modelsStatusPath,
     };
 }
 

@@ -1,7 +1,7 @@
 ---
 id: 0080
 title: 执行基座命令面重构为 backend lanes v0.1
-status: open
+status: done
 owner: agent
 labels: [feature, refactor, docs, test]
 risk: medium
@@ -57,14 +57,14 @@ links: []
 
 ## Plan
 
-- [ ] 冻结命令字典文档并补实现级 Issue / Plan
-- [ ] 将 `/backend /local /api /tmux` 接入路由命令层
-- [ ] 增加 `api-provider` 预设真相源，解除“当前 backend”和“API 预设”耦合
-- [ ] 增加按分支存储的 `text/vision/tts/embedding-model` 配置
-- [ ] 让 `/model status` 成为唯一聚合状态页
-- [ ] 将旧 `/model xxx` 退化为兼容 alias
-- [ ] 补测试并更新帮助/提示文案
-- [ ] 更新 changelog
+- [x] 冻结命令字典文档并补实现级 Issue / Plan
+- [x] 将 `/backend /local /api /tmux` 接入路由命令层
+- [x] 增加 `api-provider` 预设真相源，解除“当前 backend”和“API 预设”耦合
+- [x] 增加按分支存储的 `text/vision/tts/embedding-model` 配置
+- [x] 让 `/model status` 成为唯一聚合状态页
+- [x] 将旧 `/model xxx` 退化为兼容 alias
+- [x] 补测试并更新帮助/提示文案
+- [x] 更新 changelog
 
 ## Acceptance Criteria
 
@@ -80,13 +80,19 @@ links: []
 
 - 协议真相源：`AIDOCS/design/command-dictionary-260311-backend-lanes-v1.md`
 - 现有关键实现文件：
+  - `src/config/workspace.ts`
   - `src/routes/commands.ts`
   - `src/routes/cmd-model.ts`
   - `src/routes/cmd-info.ts`
-  - `src/config/workspace.ts`
   - `src/routes/cmd-bind.ts`
+  - `src/runtime/session-orchestrator.ts`
+  - `src/handlers.ts`
 - 当前已存在的本地 backend 真相源：
   - `src/local-backend/registry.ts`
+- Tests:
+  - `npm test -- test/routes.commands.test.ts test/p5-7-r8c-agent-backend-single-source.test.ts test/p5-7-r24-backend-command-lanes.test.ts test/p5-7-r9-t7-step4-compatibility-lock.test.ts test/p5-7-r9-t2-runtime-capabilities.test.ts test/p5-7-r23-vision-mainline.test.ts test/p5-7-r3e-model-alias-guard.test.ts`
+- Typecheck:
+  - `npx tsc --noEmit` 仍有仓库既存错误，集中在 `src/feishu/transport.ts` 与 `src/routes/cmd-schedule.ts`
 
 ## Links
 

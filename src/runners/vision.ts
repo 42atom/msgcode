@@ -2,7 +2,7 @@
  * msgcode: 图片理解 Runner（M4-IMG-P0）
  *
  * 职责：
- * - 调用 LM Studio Vision API (GLM-4V) 理解图片
+ * - 调用本地视觉模型 OpenAI 兼容 API 理解图片
  * - 支持 heic/heif 转换（通过 sips）
  * - 输出 artifacts/vision/<digest>.txt
  */
@@ -13,8 +13,13 @@ import { join } from "node:path";
 import { exec, execSync } from "node:child_process";
 import { promisify } from "node:util";
 import { createHash } from "node:crypto";
-import { config } from "../config.js";
 import { logger } from "../logger/index.js";
+import { getBranchModel } from "../config/workspace.js";
+import {
+  resolveLocalBackendRuntime,
+  resolveLocalVisionModel,
+  type LocalBackendRuntime,
+} from "../local-backend/registry.js";
 import {
   getModelServiceLeaseManager,
   createLocalModelReleaseAction,
@@ -214,12 +219,98 @@ function getImageMimeType(filePath: string): string {
   return mimeMap[ext || ""] || "image/jpeg";
 }
 
+interface OmlxModelsStatusResponse {
+  models?: Array<{
+    id?: unknown;
+    model_type?: unknown;
+    engine_type?: unknown;
+  }>;
+}
+
+/**
+ * OMLX 视觉能力预检
+ *
+ * 原则：
+ * - 只信 oMLX `/v1/models/status` 暴露的 `model_type`
+ * - 只有 `model_type=vlm` 时才允许发图
+ * - 不做名字猜测，不做静默 fallback
+ */
+async function ensureOmlxVisionModel(
+  runtime: LocalBackendRuntime,
+  modelId: string,
+  timeoutMs: number
+): Promise<{ success: true } | { success: false; error: string }> {
+  if (runtime.id !== "omlx") {
+    return { success: true };
+  }
+
+  if (!runtime.modelsStatusPath) {
+    return {
+      success: false,
+      error: "当前 OMLX backend 未暴露 models/status 路径，无法确认视觉能力",
+    };
+  }
+
+  const url = `${runtime.baseUrl.replace(/\/+$/, "")}${runtime.modelsStatusPath}`;
+
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        ...(runtime.apiKey ? { Authorization: `Bearer ${runtime.apiKey}` } : {}),
+      },
+      signal: AbortSignal.timeout(Math.min(timeoutMs, 15_000)),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return {
+        success: false,
+        error: `OMLX 模型状态检查失败 (${response.status}): ${errorText.slice(0, 200)}`,
+      };
+    }
+
+    const payload = await response.json() as OmlxModelsStatusResponse;
+    const models = Array.isArray(payload.models) ? payload.models : [];
+    const current = models.find((item) => typeof item?.id === "string" && item.id === modelId);
+
+    if (!current) {
+      return {
+        success: false,
+        error: `当前 OMLX 视觉模型 ${modelId} 未出现在 /v1/models/status 中；请使用模型目录名，并确认该模型已被 oMLX 发现`,
+      };
+    }
+
+    const modelType = typeof current.model_type === "string" ? current.model_type : "";
+    if (modelType !== "vlm") {
+      return {
+        success: false,
+        error: `当前 OMLX 模型 ${modelId} 的 model_type=${modelType || "unknown"}，不支持图片识别；请切换到 VLM，并单独配置 OMLX_VISION_MODEL`,
+      };
+    }
+
+    logger.info("OMLX 视觉模型预检通过", {
+      module: "vision",
+      model: modelId,
+      modelType,
+      engineType: typeof current.engine_type === "string" ? current.engine_type : undefined,
+    });
+
+    return { success: true };
+  } catch (error) {
+    return {
+      success: false,
+      error: `OMLX 模型状态检查失败: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+}
+
 // ============================================
-// LM Studio Vision
+// 本地视觉模型调用
 // ============================================
 
 /**
- * 调用 LM Studio OpenAI 兼容 API 进行图片理解（带重试机制）
+ * 调用本地视觉模型 OpenAI 兼容 API 进行图片理解（带重试机制）
  *
  * P0-3: 硬策略处理 content 为空的情况：
  * - 如果 content 为空但有 reasoning_content → 视为失败（不要用 reasoning 做 OCR 文本）
@@ -229,6 +320,7 @@ function getImageMimeType(filePath: string): string {
  * - 一般 5xx/连接错误：最多 2 次普通重试
  */
 async function callLmStudioVisionOcr(
+  runtime: LocalBackendRuntime,
   imagePath: string,
   mimeType: string,
   modelId: string,
@@ -239,7 +331,7 @@ async function callLmStudioVisionOcr(
   const retryDelays = [1000, 2000]; // 重试间隔：1秒、2秒
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const result = await callLmStudioVisionOcrOnce(imagePath, mimeType, modelId, timeoutMs, userQuery);
+    const result = await callLmStudioVisionOcrOnce(runtime, imagePath, mimeType, modelId, timeoutMs, userQuery);
 
     if (result.success) {
       if (attempt > 0) {
@@ -251,21 +343,23 @@ async function callLmStudioVisionOcr(
       return result;
     }
 
-    const reloaded = await maybeReloadLocalModelAndRetry({
-      module: "vision",
-      baseUrl: (config.lmstudioBaseUrl || "http://127.0.0.1:1234").replace(/\/+$/, ""),
-      model: modelId,
-      errorMessage: result.error || "",
-      attempt,
-      apiKey: config.lmstudioApiKey,
-      timeoutMs,
-    });
-    if (reloaded) {
-      continue;
+    if (runtime.supportsModelLifecycle) {
+      const reloaded = await maybeReloadLocalModelAndRetry({
+        module: "vision",
+        baseUrl: runtime.baseUrl,
+        model: modelId,
+        errorMessage: result.error || "",
+        attempt,
+        apiKey: runtime.apiKey,
+        timeoutMs,
+      });
+      if (reloaded) {
+        continue;
+      }
     }
 
     // 检查是否是可重试的错误（5xx 服务器错误）
-    const isRetryable = result.error?.includes("LM Studio API 错误 (5") ||
+    const isRetryable = result.error?.includes("视觉模型 API 错误 (5") ||
                         result.error?.includes("503") ||
                         result.error?.includes("502") ||
                         result.error?.includes("500") ||
@@ -294,13 +388,14 @@ async function callLmStudioVisionOcr(
  * 单次 Vision API 调用（无重试）
  */
 async function callLmStudioVisionOcrOnce(
+  runtime: LocalBackendRuntime,
   imagePath: string,
   mimeType: string,
   modelId: string,
   timeoutMs: number,
   userQuery?: string
 ): Promise<{ success: boolean; text?: string; error?: string; hasReasoningOnly?: boolean }> {
-  const baseUrl = (config.lmstudioBaseUrl || "http://127.0.0.1:1234").replace(/\/+$/, "");
+  const baseUrl = runtime.baseUrl.replace(/\/+$/, "");
   const url = `${baseUrl}/v1/chat/completions`;
 
   // 读取图片并转换为 base64
@@ -360,17 +455,18 @@ async function callLmStudioVisionOcrOnce(
     // DEBUG: 记录请求信息
     logger.info("Vision API 请求", {
       module: "vision",
+      localBackend: runtime.id,
       model: modelId,
       promptLength: prompt.length,
       imageSize: base64Image.length,
-      hasApiKey: !!config.lmstudioApiKey,
+      hasApiKey: !!runtime.apiKey,
     });
 
     const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(config.lmstudioApiKey ? { "Authorization": `Bearer ${config.lmstudioApiKey}` } : {}),
+        ...(runtime.apiKey ? { "Authorization": `Bearer ${runtime.apiKey}` } : {}),
       },
       body: JSON.stringify(requestBody),
       signal: AbortSignal.timeout(timeoutMs),
@@ -378,7 +474,7 @@ async function callLmStudioVisionOcrOnce(
 
     if (!response.ok) {
       const errorText = await response.text();
-      return { success: false, error: `LM Studio API 错误 (${response.status}): ${errorText.slice(0, 200)}` };
+      return { success: false, error: `视觉模型 API 错误 (${response.status}): ${errorText.slice(0, 200)}` };
     }
 
     const data = await response.json() as {
@@ -395,6 +491,7 @@ async function callLmStudioVisionOcrOnce(
     // DEBUG: 记录响应信息
     logger.info("Vision API 响应", {
       module: "vision",
+      localBackend: runtime.id,
       contentType: typeof content,
       contentLength: (typeof content === "string" ? content.length : 0),
       contentPreview: (typeof content === "string" ? content.slice(0, 100) : ""),
@@ -422,7 +519,7 @@ async function callLmStudioVisionOcrOnce(
     }
 
     // 既没有 content 也没有 reasoning_content
-    return { success: false, error: "LM Studio 未返回文本内容" };
+    return { success: false, error: "视觉模型未返回文本内容" };
   } catch (error) {
     logger.error("Vision API 调用异常", {
       module: "vision",
@@ -456,22 +553,34 @@ export async function runVision(options: VisionOcrOptions): Promise<VisionOcrRes
     maxBytes = parseInt(process.env.VISION_MAX_BYTES || String(VISION_MAX_BYTES), 10),
   } = options;
 
-  // 统一使用 LMSTUDIO_VISION_MODEL（GLM-4.6V），不再切换模型
-  const modelId = process.env.LMSTUDIO_VISION_MODEL || "huihui-glm-4.6v-flash-abliterated-mlx";
-  const modelBaseUrl = (config.lmstudioBaseUrl || "http://127.0.0.1:1234").replace(/\/+$/, "");
+  const localRuntime = resolveLocalBackendRuntime();
+  const configuredVisionModel = await getBranchModel(workspacePath, "local", "vision");
+  const modelId = options.modelId
+    || configuredVisionModel
+    || resolveLocalVisionModel(localRuntime, "huihui-glm-4.6v-flash-abliterated-mlx");
+  const modelBaseUrl = localRuntime.baseUrl.replace(/\/+$/, "");
   const modelServiceLease = getModelServiceLeaseManager();
-  const modelServiceName = `vision:lmstudio:${modelId}`;
-  const releaseAction = createLocalModelReleaseAction({
-    baseUrl: modelBaseUrl,
-    model: modelId,
-    apiKey: config.lmstudioApiKey,
-    timeoutMs: 10_000,
-  });
+  const modelServiceName = `vision:${localRuntime.id}:${modelId}`;
+  const releaseAction = localRuntime.supportsModelLifecycle
+    ? createLocalModelReleaseAction({
+        baseUrl: modelBaseUrl,
+        model: modelId,
+        apiKey: localRuntime.apiKey,
+        timeoutMs: 10_000,
+      })
+    : undefined;
   const userQuery = (options.userQuery || "").trim();
 
   // 1. 检查文件存在
   if (!existsSync(imagePath)) {
     result.error = `图片文件不存在: ${imagePath}`;
+    return result;
+  }
+
+  // 1.5 OMLX 必须先确认当前模型真的是 VLM，避免图片误送到文本模型。
+  const visionCapability = await ensureOmlxVisionModel(localRuntime, modelId, timeoutMs);
+  if (!visionCapability.success) {
+    result.error = visionCapability.error;
     return result;
   }
 
@@ -555,10 +664,10 @@ export async function runVision(options: VisionOcrOptions): Promise<VisionOcrRes
     return result;
   }
 
-  // 7. 调用 LM Studio Vision API
+  // 7. 调用本地视觉模型 API
   const ocrResult = await modelServiceLease.withService(
     modelServiceName,
-    async () => callLmStudioVisionOcr(actualImagePath, mimeType, modelId, timeoutMs, options.userQuery),
+    async () => callLmStudioVisionOcr(localRuntime, actualImagePath, mimeType, modelId, timeoutMs, options.userQuery),
     releaseAction
   );
 

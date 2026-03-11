@@ -23,7 +23,7 @@ import { resetThread } from "./thread-store.js";
 export interface RunnerInfo {
   runner: RunnerType;
   // P5.7-R9-T6: 新增 agent-backend 中性语义
-  runnerConfig?: "agent-backend" | "lmstudio" | "minimax" | "llama" | "claude" | "openai" | "codex" | "claude-code";
+  runnerConfig?: "agent-backend" | "lmstudio" | "minimax" | "deepseek" | "llama" | "claude" | "openai" | "codex" | "claude-code";
   blockedReason?: string;
 }
 
@@ -98,7 +98,7 @@ export async function startSession(ctx: SessionContext): Promise<SessionResult> 
     return {
       success: true,
       response: `当前为 direct 执行臂 (${r.runnerConfig})，无需 /start。\n\n直接发送消息即可开始对话。\n\n` +
-        `提示：如需切换到 tmux 执行臂，请使用 /model codex 或 /model claude-code`
+        `提示：如需切换到 tmux 执行臂，请先 /tmux codex（或 /tmux claude-code），再执行 /backend tmux`
     };
   }
 

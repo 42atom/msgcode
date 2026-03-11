@@ -20,7 +20,15 @@ import {
   renderUnknownCommandHint,
 } from "./cmd-info.js";
 import {
+  handleBackendCommand as handleBackendCommandImpl,
+  handleLocalCommand as handleLocalCommandImpl,
+  handleApiCommand as handleApiCommandImpl,
+  handleTmuxCommand as handleTmuxCommandImpl,
   handleModelCommand as handleModelCommandImpl,
+  handleTextModelCommand as handleTextModelCommandImpl,
+  handleVisionModelCommand as handleVisionModelCommandImpl,
+  handleTtsModelCommand as handleTtsModelCommandImpl,
+  handleEmbeddingModelCommand as handleEmbeddingModelCommandImpl,
   handlePolicyCommand as handlePolicyCommandImpl,
   handlePiCommand as handlePiCommandImpl,
 } from "./cmd-model.js";
@@ -66,7 +74,15 @@ export const handleBindCommand = handleBindCommandImpl;
 export const handleWhereCommand = handleWhereCommandImpl;
 export const handleUnbindCommand = handleUnbindCommandImpl;
 export const handleInfoCommand = handleInfoCommandImpl;
+export const handleBackendCommand = handleBackendCommandImpl;
+export const handleLocalCommand = handleLocalCommandImpl;
+export const handleApiCommand = handleApiCommandImpl;
+export const handleTmuxCommand = handleTmuxCommandImpl;
 export const handleModelCommand = handleModelCommandImpl;
+export const handleTextModelCommand = handleTextModelCommandImpl;
+export const handleVisionModelCommand = handleVisionModelCommandImpl;
+export const handleTtsModelCommand = handleTtsModelCommandImpl;
+export const handleEmbeddingModelCommand = handleEmbeddingModelCommandImpl;
 export const handleChatlistCommand = handleChatlistCommandImpl;
 export const handleCursorCommand = handleCursorCommandImpl;
 export const handleResetCursorCommand = handleResetCursorCommandImpl;
@@ -106,8 +122,24 @@ export async function handleRouteCommand(
       return handleUnbindCommand(options);
     case "info":
       return handleInfoCommand(options);
+    case "backend":
+      return handleBackendCommand(options);
+    case "local":
+      return handleLocalCommand(options);
+    case "api":
+      return handleApiCommand(options);
+    case "tmux":
+      return handleTmuxCommand(options);
     case "model":
       return handleModelCommand(options);
+    case "textModel":
+      return handleTextModelCommand(options);
+    case "visionModel":
+      return handleVisionModelCommand(options);
+    case "ttsModel":
+      return handleTtsModelCommand(options);
+    case "embeddingModel":
+      return handleEmbeddingModelCommand(options);
     case "chatlist":
       return handleChatlistCommand(options);
     case "cursor":
@@ -180,8 +212,24 @@ export function isRouteCommand(text: string): boolean {
     trimmed === "/where" ||
     trimmed === "/unbind" ||
     trimmed === "/info" ||
+    trimmed === "/backend" ||
+    trimmed.startsWith("/backend ") ||
+    trimmed === "/local" ||
+    trimmed.startsWith("/local ") ||
+    trimmed === "/api" ||
+    trimmed.startsWith("/api ") ||
+    trimmed === "/tmux" ||
+    trimmed.startsWith("/tmux ") ||
     trimmed.startsWith("/model ") ||
     trimmed === "/model" ||
+    trimmed === "/text-model" ||
+    trimmed.startsWith("/text-model ") ||
+    trimmed === "/vision-model" ||
+    trimmed.startsWith("/vision-model ") ||
+    trimmed === "/tts-model" ||
+    trimmed.startsWith("/tts-model ") ||
+    trimmed === "/embedding-model" ||
+    trimmed.startsWith("/embedding-model ") ||
     trimmed === "/chatlist" ||
     trimmed === "/cursor" ||
     trimmed === "/reset-cursor" ||
@@ -239,12 +287,68 @@ export function parseRouteCommand(text: string): { command: string; args: string
   if (trimmed === "/info") {
     return { command: "info", args: [] };
   }
+  if (trimmed.startsWith("/backend ")) {
+    const parts = trimmed.split(/\s+/);
+    return { command: "backend", args: parts.slice(1) };
+  }
+  if (trimmed === "/backend") {
+    return { command: "backend", args: [] };
+  }
+  if (trimmed.startsWith("/local ")) {
+    const parts = trimmed.split(/\s+/);
+    return { command: "local", args: parts.slice(1) };
+  }
+  if (trimmed === "/local") {
+    return { command: "local", args: [] };
+  }
+  if (trimmed.startsWith("/api ")) {
+    const parts = trimmed.split(/\s+/);
+    return { command: "api", args: parts.slice(1) };
+  }
+  if (trimmed === "/api") {
+    return { command: "api", args: [] };
+  }
+  if (trimmed.startsWith("/tmux ")) {
+    const parts = trimmed.split(/\s+/);
+    return { command: "tmux", args: parts.slice(1) };
+  }
+  if (trimmed === "/tmux") {
+    return { command: "tmux", args: [] };
+  }
   if (trimmed.startsWith("/model ")) {
     const parts = trimmed.split(/\s+/);
     return { command: "model", args: parts.slice(1) };
   }
   if (trimmed === "/model") {
     return { command: "model", args: [] };
+  }
+  if (trimmed.startsWith("/text-model ")) {
+    const parts = trimmed.split(/\s+/);
+    return { command: "textModel", args: parts.slice(1) };
+  }
+  if (trimmed === "/text-model") {
+    return { command: "textModel", args: [] };
+  }
+  if (trimmed.startsWith("/vision-model ")) {
+    const parts = trimmed.split(/\s+/);
+    return { command: "visionModel", args: parts.slice(1) };
+  }
+  if (trimmed === "/vision-model") {
+    return { command: "visionModel", args: [] };
+  }
+  if (trimmed.startsWith("/tts-model ")) {
+    const parts = trimmed.split(/\s+/);
+    return { command: "ttsModel", args: parts.slice(1) };
+  }
+  if (trimmed === "/tts-model") {
+    return { command: "ttsModel", args: [] };
+  }
+  if (trimmed.startsWith("/embedding-model ")) {
+    const parts = trimmed.split(/\s+/);
+    return { command: "embeddingModel", args: parts.slice(1) };
+  }
+  if (trimmed === "/embedding-model") {
+    return { command: "embeddingModel", args: [] };
   }
   if (trimmed === "/chatlist") {
     return { command: "chatlist", args: [] };

@@ -231,7 +231,7 @@ export abstract class BaseHandler implements CommandHandler {
      */
     protected getHelp(extraCommands?: string[]): string {
         const commands = [
-            "• /start - 启动 tmux 会话（按 /model 选择执行臂）",
+            "• /start - 启动 tmux 会话（先用 /tmux + /backend tmux 选择执行臂）",
             "• /stop - 关闭 tmux 会话",
             "• /status - 查看会话状态",
             "• /snapshot - 获取终端输出",
