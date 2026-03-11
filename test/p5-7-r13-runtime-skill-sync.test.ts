@@ -128,6 +128,10 @@ describe("P5.7-R13: runtime skill sync", () => {
     const visionIndexSh = await readFile(join(userSkillsDir, "vision-index", "main.sh"), "utf-8");
     const localVisionDoc = await readFile(join(userSkillsDir, "local-vision-lmstudio", "SKILL.md"), "utf-8");
     const localVisionSh = await readFile(join(userSkillsDir, "local-vision-lmstudio", "main.sh"), "utf-8");
+    const localVisionScript = await readFile(
+      join(userSkillsDir, "local-vision-lmstudio", "scripts", "analyze_image.py"),
+      "utf-8",
+    );
     const planFilesDoc = await readFile(join(userSkillsDir, "plan-files", "SKILL.md"), "utf-8");
     const characterIdentityDoc = await readFile(join(userSkillsDir, "character-identity", "SKILL.md"), "utf-8");
     const feishuSendFileDoc = await readFile(join(userSkillsDir, "feishu-send-file", "SKILL.md"), "utf-8");
@@ -178,14 +182,24 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(visionIndexDoc).toContain("当前模型原生支持图片输入");
     expect(visionIndexDoc).toContain("真实调用合同");
     expect(visionIndexDoc).toContain("~/.config/msgcode/skills/local-vision-lmstudio/SKILL.md");
+    expect(visionIndexDoc).toContain("不要再去外部 skills 目录找实现");
     expect(visionIndexDoc).not.toContain("zai-vision-mcp");
     expect(visionIndexSh).toContain("系统只负责图片预览摘要");
     expect(visionIndexSh).not.toContain("ZAI / GLM Vision MCP");
     expect(localVisionDoc).toContain("local-vision-lmstudio skill");
-    expect(localVisionDoc).toContain("python3 ~/.agents/skills/local-vision-lmstudio/scripts/analyze_image.py");
-    expect(localVisionDoc).toContain("不要假设 `~/.config/msgcode/skills/local-vision-lmstudio/` 下面存在 `analyze_image.py`");
-    expect(localVisionSh).toContain("analyze_image.py");
+    expect(localVisionDoc).toContain("bash ~/.config/msgcode/skills/local-vision-lmstudio/main.sh --print-models");
+    expect(localVisionDoc).toContain("python3 ~/.config/msgcode/skills/local-vision-lmstudio/scripts/analyze_image.py --model <model-key>");
+    expect(localVisionDoc).toContain("不要再去用户目录里的其他 skill 仓库找实现");
+    expect(localVisionDoc).not.toContain("python3 ~/.agents/skills/local-vision-lmstudio/scripts/analyze_image.py");
+    expect(localVisionDoc).not.toContain("python3 ~/.codex/skills/local-vision-lmstudio/scripts/analyze_image.py");
+    expect(localVisionSh).toContain('skill_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"');
+    expect(localVisionSh).toContain('script_path="$skill_dir/scripts/analyze_image.py"');
     expect(localVisionSh).toContain('exec python3 "$script_path" "$@"');
+    expect(localVisionSh).not.toContain(".agents/skills/local-vision-lmstudio");
+    expect(localVisionSh).not.toContain(".codex/skills/local-vision-lmstudio");
+    expect(localVisionScript).toContain("def analyze_image(");
+    expect(localVisionScript).toContain("urllib.request");
+    expect(localVisionScript).toContain('DEFAULT_SERVER = os.getenv("LMSTUDIO_SERVER")');
     expect(planFilesDoc).toContain("plan-files skill");
     expect(planFilesDoc).toContain("复杂任务时，用文件保存任务内计划");
     expect(planFilesDoc).toContain("`plan`：当前任务的临时工作记忆");

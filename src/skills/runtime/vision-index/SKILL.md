@@ -51,7 +51,7 @@ description: This skill should be used when the model needs detailed image under
 
 - `~/.config/msgcode/skills/local-vision-lmstudio/SKILL.md`
 
-再按那份说明书里的真实调用合同执行。重点是：使用真实脚本路径，不要猜 `~/.config/msgcode/skills/.../analyze_image.py`。
+再按那份说明书里的真实调用合同执行。重点是：优先用该 skill 自带的 `main.sh` 或 `scripts/analyze_image.py`，不要再去外部 skills 目录找实现。
 
 ## 失败处理
 

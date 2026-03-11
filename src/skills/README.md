@@ -30,6 +30,14 @@
 - `main.sh` 只是兼容辅助物，不应默认成为所有 skill 的 canonical 入口
 - `main.sh` 不是必选项；纯文档型 skill 可以只暴露 `SKILL.md`
 
+**自包含分发原则（2026-03-11）**：
+
+- msgcode skill 必须以 repo 为真相源，能随仓库一起分发
+- 不允许依赖用户目录中的其他外部 skill 仓库
+- 不允许通过 symlink 把 repo skill 指向外部实现
+- 若外部 skill 的脚本或资产确有必要，必须复制或 vendor 到 `src/skills/runtime/<skill-id>/` 或 `src/skills/optional/<skill-id>/`
+- 允许依赖外部服务、系统命令、环境变量；不允许依赖“另一份本地 skill 仓库”
+
 **builtin registry 退役说明**：
 
 - `registry.ts` 保留仅为向后兼容
@@ -96,7 +104,9 @@ src/skills/
     │   └── main.sh
     ├── local-vision-lmstudio/
     │   ├── SKILL.md
-    │   └── main.sh
+    │   ├── main.sh
+    │   └── scripts/
+    │       └── analyze_image.py
     └── patchright-browser/
         ├── SKILL.md
         └── main.sh

@@ -1,0 +1,57 @@
+# skills 自包含分发规则
+
+## Problem
+
+`msgcode` 已经把 runtime/optional skills 收口进 repo，但仓库层还缺一条明确规则来保证这些 skills 真正可分发。如果未来某个 skill 再引用 `~/.agents`、`~/.codex`、`~/.claude` 或用 symlink 指向外部目录，clean checkout、换机器、交付他人时都会失效，破坏“repo 是真相源”。
+
+## Occam Check
+
+- 不加它，系统具体坏在哪？
+  同一个 skill 在作者机器能跑，在新机器/新用户目录/打包环境会直接失效，失败场景可复现。
+- 用更少的层能不能解决？
+  能。只补一条仓库规则和一条静态测试，不新增 skill 管理平台。
+- 这个改动让主链数量变多了还是变少了？
+  变少了。skill 实现只允许一条“repo 真相源 -> runtime sync -> 用户目录”主链。
+
+## Decision
+
+采用最小收口方案：
+
+1. 在 `src/skills/README.md` 明确“skill 自包含分发”规则
+2. 新增一条静态测试，扫描 `src/skills/runtime` 与 `src/skills/optional`
+3. 规则锁住两件事：
+   - 不允许引用 `~/.agents` / `~/.codex` / `~/.claude` 外部 skill 路径
+   - 不允许 skill 目录内出现 symlink
+
+核心理由：
+
+- 不改执行核，只加文档和静态锁，风险最低
+- 让“repo 自带、可分发”从口头约定变成可执行约束
+- 后续复用外部 skill 时，方向明确为“复制必要资产进 repo”，而不是继续外挂依赖
+
+## Plan
+
+1. 更新 `src/skills/README.md`
+   - 增加“自包含分发原则”
+   - 明确禁止外部 skill 目录依赖与 symlink
+2. 新增 `test/p5-7-r33-skill-self-contained-distribution.test.ts`
+   - 扫描 `src/skills/runtime`
+   - 扫描 `src/skills/optional`
+   - 验收点：无外部 skill 路径、无 symlink
+3. 清理本轮相关文档中的外部路径残留
+   - `issues/0057-plan-files-runtime-skill.md`
+   - `issues/0077-local-vision-lmstudio-self-contained.md`
+4. 更新 `docs/CHANGELOG.md`
+5. 运行相关测试
+   - `bun test test/p5-7-r33-skill-self-contained-distribution.test.ts`
+   - `bun test test/p5-7-r24-vision-skill-first.test.ts`
+   - `bun test test/p5-7-r13-runtime-skill-sync.test.ts`
+
+## Risks
+
+- 风险 1：静态锁误伤合法文档
+  - 回滚/降级：仅把扫描范围收口到 `src/skills/runtime` 与 `src/skills/optional`
+- 风险 2：未来确有外部实现依赖的 skill 进入 repo
+  - 回滚/降级：不放开外链；改为把必要脚本或资产 vendor 到 repo 内
+
+评审意见：[留空,用户将给出反馈]

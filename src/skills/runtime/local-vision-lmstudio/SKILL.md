@@ -23,12 +23,18 @@ description: This skill should be used when the model needs detailed image under
 
 ## 调用合同
 
-这项能力的真实实现不在 `~/.config/msgcode/skills/` 目录里，而在外部 skill 仓库。先确认哪个真实脚本存在：
+这项能力的真实实现就在当前 runtime skill 目录里。
 
-- `~/.agents/skills/local-vision-lmstudio/scripts/analyze_image.py`
-- `~/.codex/skills/local-vision-lmstudio/scripts/analyze_image.py`
+- repo 真相源：
+  - `src/skills/runtime/local-vision-lmstudio/scripts/analyze_image.py`
+- 运行时同步后路径：
+  - `~/.config/msgcode/skills/local-vision-lmstudio/scripts/analyze_image.py`
 
-不要假设 `~/.config/msgcode/skills/local-vision-lmstudio/` 下面存在 `analyze_image.py`。如果要调用，直接调用真实脚本本身。
+优先使用本 skill 自带 wrapper：
+
+- `bash ~/.config/msgcode/skills/local-vision-lmstudio/main.sh ...`
+
+如需直接调用，也只调用本 skill 自带脚本本身。
 
 参数合同：
 
@@ -43,22 +49,23 @@ description: This skill should be used when the model needs detailed image under
 - 如果需要结构化结果，可以用 `--out <abs-path>` 落盘，再用 `read_file` 读取。
 - 如果脚本或模型失败，先向用户说明限制，再决定是否重试。
 - 不要假设 LM Studio 一定稳定；失败不应伪装成成功摘要。
-- 不要自己发明 `wrapper`、`main.sh` 子命令或 `~/.config/msgcode/skills/.../analyze_image.py` 路径。
+- 不要再去用户目录里的其他 skill 仓库找实现。
+- 不要自己发明新的 `main.sh` 子命令或额外 wrapper 层。
 
 ## 参考调用
 
 ```bash
-python3 ~/.agents/skills/local-vision-lmstudio/scripts/analyze_image.py --print-models
-python3 ~/.agents/skills/local-vision-lmstudio/scripts/analyze_image.py /abs/path/to/image.png "把图里的表格文字尽量忠实提出来，保持原有结构"
-python3 ~/.agents/skills/local-vision-lmstudio/scripts/analyze_image.py --model <model-key> /abs/path/to/image.png "描述图片"
-python3 ~/.agents/skills/local-vision-lmstudio/scripts/analyze_image.py /abs/path/to/image.png "提取全部文字" --out /abs/path/to/output.txt
+bash ~/.config/msgcode/skills/local-vision-lmstudio/main.sh --print-models
+bash ~/.config/msgcode/skills/local-vision-lmstudio/main.sh /abs/path/to/image.png "把图里的表格文字尽量忠实提出来，保持原有结构"
+python3 ~/.config/msgcode/skills/local-vision-lmstudio/scripts/analyze_image.py --model <model-key> /abs/path/to/image.png "描述图片"
+python3 ~/.config/msgcode/skills/local-vision-lmstudio/scripts/analyze_image.py /abs/path/to/image.png "提取全部文字" --out /abs/path/to/output.txt
 ```
 
 ## 常见错误
 
 - ❌ 用相对路径或猜测图片路径
 - ❌ 只说“帮我看看”，不说明要抽字、抄表格还是总结 UI
-- ❌ 把 `~/.config/msgcode/skills/local-vision-lmstudio/` 当成真实脚本目录
+- ❌ 继续依赖用户目录里的历史 skill 副本
 - ❌ 把系统 `[图片摘要]` 当成详细视觉结果
 
 ## 排障

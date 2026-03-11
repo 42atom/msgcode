@@ -62,7 +62,7 @@ links: []
 # Notes
 
 - Docs:
-  - `/Users/admin/.codex/skills/planning-with-files/SKILL.md`
+  - 历史外部 `planning-with-files` skill 说明书（仅作设计参考，非运行时依赖）
   - `/Users/admin/.config/alma/skills/plan-mode/SKILL.md`
 - Code:
   - `src/skills/runtime/index.json`

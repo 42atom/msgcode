@@ -3,6 +3,10 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-11
+  - skills/runtime: skills 自包含分发规则已正式写入仓库；`src/skills/runtime` 与 `src/skills/optional` 现在受静态锁保护，禁止引用用户目录中的外部 skill 仓库，也禁止通过 symlink 挂外部实现，后续若需复用外部 skill 必须把必要脚本或资产复制进 repo 真相源 (Issue: 0078, Plan: docs/design/plan-260311-skill-self-contained-distribution.md) [risk: low] [rollback: 回退 `src/skills/README.md`、新增静态测试与相关文档]
+- 2026-03-11
+  - skills/runtime: `local-vision-lmstudio` 现在正式自带 `analyze_image.py` 脚本并随 runtime skill 同步；wrapper 与说明书已收口到 repo 自己的 skill 真相源，不再依赖用户目录里的外部 skill 残留 (Issue: 0077) [risk: low] [rollback: 回退 `src/skills/runtime/local-vision-lmstudio/`、`src/skills/runtime/vision-index/SKILL.md` 与相关测试]
+- 2026-03-11
   - skills/runtime: 把仍在主线使用的 `memory/file/thread/todo/media/gen/banana-pro-image-gen` 正式升格进 repo `runtime` 真相源，不再依赖用户目录残留；同时将 Banana Pro 的输出目录合同统一到 `AIDOCS/banana-images`，减少生成产物路径漂移 (Issue: 0076, Plan: docs/design/plan-260311-legacy-active-skills-and-artifact-path-cleanup.md) [risk: medium] [rollback: 回退 `src/skills/runtime/index.json`、新增 runtime skill 目录、`src/skills/README.md` 与 `test/p5-7-r13-runtime-skill-sync.test.ts`]
 - 2026-03-11
   - feishu/runtime: 最近消息查询与上下文索引统一扩到 40 条，compact 保留最近消息提升到 16 条；同时新增 `[最近生成产物索引]`，并在系统提示词里明确 AI 生成产物默认优先从当前 workspace 的 `AIDOCS/` 查找，减少“最近20条限制”和生成图片路径失忆导致的误判 (Issue: 0073, Plan: docs/design/plan-260311-feishu-message-context-and-actions.md) [risk: low] [rollback: 回退 `src/runtime/context-policy.ts`、`src/tools/bus.ts`、`src/tools/feishu-list-recent-messages.ts`、`prompts/agents-prompt.md` 与相关测试]

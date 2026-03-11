@@ -1,0 +1,64 @@
+---
+id: 0078
+title: skills 自包含分发规则与静态锁
+status: done
+owner: agent
+labels: [refactor, docs, test]
+risk: low
+scope: 将 msgcode skills 收口为仓库自带可分发资产，并增加禁止外部 skills 目录依赖的静态回归锁
+plan_doc: docs/design/plan-260311-skill-self-contained-distribution.md
+links:
+  - src/skills/README.md
+  - test/p5-7-r33-skill-self-contained-distribution.test.ts
+  - docs/CHANGELOG.md
+---
+
+## Context
+
+用户要求把“skills 必须自包含、便于分发”提升为仓库级规则：
+
+- 不允许 msgcode skill 依赖 `~/.agents`、`~/.codex`、`~/.claude` 等外部 skill 目录
+- 如需复用外部 skill 能力，必须把必要脚本或资源复制进 repo 真相源
+- 不允许通过 symlink 把 skill 实现挂到外部目录
+
+目前 `local-vision-lmstudio` 已完成单点修复，但还缺全局规则文档与静态回归锁。
+
+## Goal / Non-Goals
+
+- Goal: 在 `src/skills/README.md` 明确“skill 自包含分发”规则
+- Goal: 增加静态测试，锁住 `src/skills/runtime` / `src/skills/optional` 不再引用外部 skills 目录
+- Goal: 增加静态测试，锁住 skill 目录内禁止 symlink
+- Goal: 清理本轮相关 issue 中残留的外部 skill 路径引用
+- Non-Goals: 不改 runtime skill 功能语义
+- Non-Goals: 不平台化 skill 管理，不新增 managed/control 面
+
+## Plan
+
+- [x] 新增 Plan 文档
+- [x] 更新 `src/skills/README.md`
+- [x] 新增 skills 自包含静态测试
+- [x] 清理本轮相关 issue 文档中的外部路径残留
+- [x] 更新 `docs/CHANGELOG.md`
+- [x] 运行相关测试
+
+## Acceptance Criteria
+
+1. `src/skills/README.md` 明确禁止依赖 `~/.agents` / `~/.codex` / `~/.claude` 外部 skill 目录
+2. 静态测试会扫描 `src/skills/runtime` 与 `src/skills/optional`，发现外部 skill 路径即失败
+3. 静态测试会扫描 `src/skills/runtime` 与 `src/skills/optional`，发现 symlink 即失败
+4. 本轮相关文档不再把外部 skill 目录写成 msgcode 正式依赖
+
+## Notes
+
+- 依赖前置：Issue 0077 已把 `local-vision-lmstudio` 收口为 repo 自带脚本
+- Docs:
+  - `src/skills/README.md`
+  - `docs/design/plan-260311-skill-self-contained-distribution.md`
+- Tests:
+  - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r33-skill-self-contained-distribution.test.ts`
+  - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r24-vision-skill-first.test.ts`
+  - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r13-runtime-skill-sync.test.ts`
+
+## Links
+
+- Plan: docs/design/plan-260311-skill-self-contained-distribution.md

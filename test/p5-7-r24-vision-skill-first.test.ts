@@ -23,11 +23,13 @@ describe("P5.7-R24: vision skill-first", () => {
     expect(content).not.toContain("统一视觉控制面");
   });
 
-  it("local-vision-lmstudio wrapper 应直接转发到外部 analyze_image.py", () => {
+  it("local-vision-lmstudio wrapper 应直接转发到 runtime skill 自带脚本", () => {
     const content = readText("src/skills/runtime/local-vision-lmstudio/main.sh");
-    expect(content).toContain("$HOME/.agents/skills/local-vision-lmstudio/scripts/analyze_image.py");
-    expect(content).toContain("$HOME/.codex/skills/local-vision-lmstudio/scripts/analyze_image.py");
+    expect(content).toContain('skill_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"');
+    expect(content).toContain('script_path="$skill_dir/scripts/analyze_image.py"');
     expect(content).toContain('exec python3 "$script_path" "$@"');
+    expect(content).not.toContain(".agents/skills/local-vision-lmstudio");
+    expect(content).not.toContain(".codex/skills/local-vision-lmstudio");
   });
 
   it("runtime skill 索引不应再暴露 zai-vision-mcp", () => {
