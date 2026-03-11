@@ -15,7 +15,7 @@ import type { CronJob, JobStatus } from "./types.js";
 import type { RouteEntry } from "../routes/store.js";
 import { getRouteByChatId } from "../routes/store.js";
 import { handleTmuxSend } from "../tmux/responder.js";
-import { stableGroupNameForChatId } from "../imsg/adapter.js";
+import { stableGroupNameForChatId } from "../channels/chat-id.js";
 import { beginRun, toRunErrorMessage } from "../runtime/run-store.js";
 
 // ============================================

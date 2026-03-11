@@ -12,7 +12,7 @@ import { promisify } from "node:util";
 import { logger } from "./logger/index.js";
 import { config } from "./config.js";
 import { ImsgRpcClient } from "./imsg/rpc-client.js";
-import type { InboundMessage } from "./imsg/types.js";
+import type { InboundMessage } from "./channels/types.js";
 import crypto from "node:crypto";
 import { getVersion } from "./version.js";
 import type { DependencyCheckResult } from "./deps/types.js";

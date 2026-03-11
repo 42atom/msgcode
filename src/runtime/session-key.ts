@@ -9,7 +9,7 @@
 
 import { createHash } from "node:crypto";
 import path from "node:path";
-import { normalizeChatId } from "../imsg/adapter.js";
+import { normalizeChatId } from "../channels/chat-id.js";
 import { getRouteByChatId } from "../routes/store.js";
 import type { RunSource } from "./run-types.js";
 

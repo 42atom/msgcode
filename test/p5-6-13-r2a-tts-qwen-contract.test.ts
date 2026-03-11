@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { __test as ttsTest } from "../src/runners/tts.js";
 import type { TtsResult } from "../src/runners/tts/backends/types.js";
 import { RuntimeRouterHandler, type HandlerContext } from "../src/handlers.js";
-import type { InboundMessage } from "../src/imsg/types.js";
+import type { InboundMessage } from "../src/channels/types.js";
 
 type EnvSnapshot = {
   ttsBackend: string | undefined;

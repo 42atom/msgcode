@@ -46,7 +46,7 @@ msgcode 的默认原则不是“约束 LLM”，而是“支持 LLM 完成任务
 - `tmux`
 - 飞书企业自建应用凭据（`FEISHU_APP_ID` / `FEISHU_APP_SECRET`）
 - Chrome/Chromium（供浏览器自动化底座使用）
-- iMessage 仅在显式启用 `imsg` transport 时需要
+- iMessage 仅用于 legacy transport 兼容；默认主叙事已转为 Feishu
 
 ### 2. 安装依赖
 
@@ -83,7 +83,7 @@ FEISHU_APP_ID=cli_xxx
 FEISHU_APP_SECRET=xxx
 WORKSPACE_ROOT=/Users/<you>/msgcode-workspaces
 
-# 可选：仅在显式启用 iMessage transport 时需要
+# 可选：仅在启用 legacy imsg transport 时需要
 # MSGCODE_TRANSPORTS=imsg,feishu
 # IMSG_PATH=/Users/<you>/msgcode/vendor/imsg/v0.4.0/imsg
 ```
@@ -91,6 +91,7 @@ WORKSPACE_ROOT=/Users/<you>/msgcode-workspaces
 默认 transport 口径：
 - 配置飞书凭据时，默认只启 `feishu`
 - 未配置飞书凭据时，回退到 `imsg`
+- 上面的 `fallback-imsg` 仍是过渡期兼容行为，不再是推荐主链，后续会继续 sunset
 - 如需显式启用 iMessage，请设置 `MSGCODE_TRANSPORTS=imsg` 或 `MSGCODE_TRANSPORTS=imsg,feishu`
 
 Browser Core 配置口径：
@@ -167,7 +168,7 @@ npx tsx src/cli.ts /desktop observe
 
 ## Known Limits
 
-- 飞书已是主通道；iMessage 仅作为本地可选通道保留，受 macOS 本地权限与系统升级影响更大。
+- 飞书已是主通道；iMessage 处于 legacy / sunset 轨道，受 macOS 本地权限与系统升级影响更大。
 - Tmux 代理属于“终端通道”，输出质量受上游 CLI 工具更新影响。
 - 命令在不同运行态可见性不同，出现分歧时一律以 `/help` 输出为准。
 

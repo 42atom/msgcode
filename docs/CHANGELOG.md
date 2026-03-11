@@ -2,6 +2,8 @@
 
 ## Protocol Entries（CLAUDE.md 约束格式）
 
+- 2026-03-12
+  - runtime/channels: 已抽出 `src/channels/{types,chat-id}.ts` 作为 channel-neutral 核心 seam，主链模块不再从 `src/imsg/*` 借通用消息类型与 chatId 工具；同时默认 remote hint、CLI 描述与 `.env.example` 的 TTS/iMessage 文案已收口到当前真实口径，避免继续把 legacy iMessage 和已退役 IndexTTS 当作主叙事 (Issue: 0093, Plan: docs/design/plan-260312-feishu-only-channel-simplification-and-imsg-sunset.md) [risk: medium] [rollback: 回退 `src/channels/*`、`src/imsg/{types,adapter}.ts`、相关 imports，以及 README/.env.example/CLI/remote_hint 本轮改动]
 - 2026-03-11
   - release-gate/tests: merge 后失真的回归锁已对齐到当前真相源；browser tool bus、context-policy、agent-first 类型锁、默认模型与 ToolName 测试均已改为锁当前实现，`bun test` 已恢复 `1573 pass / 0 fail` (Issue: 0091, Plan: docs/design/plan-260311-release-gate-stale-regression-lock-alignment.md) [risk: low] [rollback: 回退本轮测试文件改动，重新恢复旧回归锁]
 - 2026-03-11

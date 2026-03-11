@@ -11,7 +11,7 @@ import os from "node:os";
 import path from "node:path";
 import type { BotType } from "./router.js";
 import { executeAgentTurn, runAgentChat } from "./agent-backend.js";
-import type { InboundMessage } from "./imsg/types.js";
+import type { InboundMessage } from "./channels/types.js";
 import { clearTtsPrefs, getTtsPrefs, getVoiceReplyMode, setTtsPrefs, setVoiceReplyMode } from "./state/store.js";
 import { logger } from "./logger/index.js";
 import { getPrimaryOwnerIdsForChannel } from "./config.js";

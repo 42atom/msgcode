@@ -4,9 +4,9 @@
  * 白名单验证、权限检查
  */
 
-import type { InboundMessage } from "./imsg/types.js";
+import type { InboundMessage } from "./channels/types.js";
 import { config, isWhitelisted } from "./config.js";
-import { isGroupChatId } from "./imsg/adapter.js";
+import { isGroupChatId } from "./channels/chat-id.js";
 import { isFeishuChatGuid } from "./feishu/transport.js";
 
 /**

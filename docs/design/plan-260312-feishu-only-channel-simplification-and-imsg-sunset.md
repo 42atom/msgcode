@@ -49,6 +49,8 @@ Issue: 0093
    - 本 plan 只承接执行层
    - [AIDOCS/reviews/remove-imessage-channel.md](/Users/admin/GitProjects/msgcode/AIDOCS/reviews/remove-imessage-channel.md) 仅作为输入清单
 2. Phase A: Channel-Neutral Cleanup
+   - 先把 `InboundMessage / Attachment / chatId helpers` 提取到 `src/channels/*`
+   - `src/imsg/*` 仅保留 legacy compat 壳，避免一次性大删除
    - 清理 `src/config.ts` 中 `IMSG_PATH / IMSG_DB_PATH / MSGCODE_TRANSPORTS` 的默认面假设
    - 清理 `src/cli*`、README、help、package 描述中的 iMessage 主叙事
    - 收口 `src/probe/probes/*` 中对 imsg/chat.db/FDA 的默认依赖
@@ -82,5 +84,10 @@ Issue: 0093
 - `0065` 继续作为总路线 issue
 - `0093` 承接具体执行规划
 - `remove-imessage-channel.md` 明确归类为执行输入
+- 已完成 Phase A 第一刀：
+  - `src/channels/types.ts`
+  - `src/channels/chat-id.ts`
+  - 主链 imports 已脱离 `src/imsg/*`
+  - `src/imsg/types.ts` / `src/imsg/adapter.ts` 暂保留 compat re-export
 
 （章节级）评审意见：[留空,用户将给出反馈]

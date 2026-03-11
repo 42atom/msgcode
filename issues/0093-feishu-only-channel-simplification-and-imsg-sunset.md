@@ -1,7 +1,7 @@
 ---
 id: 0093
 title: Feishu-only 通道简化与 iMessage Sunset 执行规划
-status: open
+status: doing
 owner: agent
 labels: [feature, refactor, docs]
 risk: high
@@ -44,7 +44,7 @@ links:
 
 ## Plan
 
-- [ ] 把 `remove-imessage-channel.md` 收口成正式迁移步骤与边界清单
+- [x] 把 `remove-imessage-channel.md` 收口成正式迁移步骤与边界清单
 - [ ] 第一阶段：先做 channel-neutral cleanup，清理配置/命名/CLI/help 中的 iMessage 默认假设
 - [ ] 第二阶段：清理 runtime/probe 对 imsg 的启动硬依赖与默认探测
 - [ ] 第三阶段：移除 `src/imsg/` 主链入口，并同步归档 `vendor/imsg` 与历史脚本
@@ -63,9 +63,18 @@ links:
 - 归类判断：
   - 战略层：归属于 [Issue 0065](/Users/admin/GitProjects/msgcode/issues/0065-post-imessage-channel-strategy.md)
   - 执行层：由本 issue 承接，覆盖 `0065` 的 `Phase 2: Channel-Neutral Cleanup` 和 `Phase 5: iMessage Sunset`
+- 当前进展：
+  - 已新增 `src/channels/types.ts` 与 `src/channels/chat-id.ts`
+  - 核心主链模块已改为依赖 `src/channels/*`，不再从 `src/imsg/*` 借通用消息类型和 chatId 工具
+  - `src/imsg/types.ts` / `src/imsg/adapter.ts` 仅保留 legacy compat re-export，便于 Phase A 期间渐进迁移
+  - 用户面文案已开始同步：
+    - `src/cli.ts` 默认描述改为中性 runtime 口径
+    - `src/tmux/remote_hint.ts` 默认提示词不再写死 iMessage
+    - `README.md` / `.env.example` 已清掉过时的 IndexTTS 主叙事，并把 iMessage 标成 legacy
 - 执行输入：
   - [AIDOCS/reviews/remove-imessage-channel.md](/Users/admin/GitProjects/msgcode/AIDOCS/reviews/remove-imessage-channel.md)
 - 受影响边界（初始）：
+  - `src/channels/*`
   - `src/imsg/`
   - `src/config.ts`
   - `src/config/workspace.ts`

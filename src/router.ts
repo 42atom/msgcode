@@ -8,7 +8,7 @@
  */
 
 import { config, type GroupConfig } from "./config.js";
-import { normalizeChatId, stableGroupNameForChatId } from "./imsg/adapter.js";
+import { normalizeChatId, stableGroupNameForChatId } from "./channels/chat-id.js";
 import { getRouteByChatId as getRouteFromStore, setRoute } from "./routes/store.js";
 import fs from "node:fs";
 import path from "node:path";

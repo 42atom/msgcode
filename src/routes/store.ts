@@ -9,7 +9,7 @@ import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import { config } from "../config.js";
-import { normalizeChatId } from "../imsg/adapter.js";
+import { normalizeChatId } from "../channels/chat-id.js";
 import type { BotType, ModelClient } from "../router.js";
 
 // ============================================

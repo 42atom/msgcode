@@ -5,7 +5,7 @@
  */
 
 import { TmuxSession, type RunnerType } from "./session.js";
-import type { Attachment } from "../imsg/types.js";
+import type { Attachment } from "../channels/types.js";
 import { withRemoteHintIfNeeded } from "./remote_hint.js";
 
 /**

@@ -7,7 +7,7 @@
  * - 只做转发、路由、会话控制（不做内容理解/ASR/TTS）
  */
 
-import type { InboundMessage } from "./imsg/types.js";
+import type { InboundMessage } from "./channels/types.js";
 import type { ImsgRpcClient } from "./imsg/rpc-client.js";
 import { checkWhitelist, formatSender } from "./security.js";
 import { routeByChatId } from "./router.js";

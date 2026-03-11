@@ -11,7 +11,7 @@ import http from "node:http";
 import { config } from "./config.js";
 import { logger } from "./logger/index.js";
 import { ImsgRpcClient } from "./imsg/rpc-client.js";
-import type { InboundMessage } from "./imsg/types.js";
+import type { InboundMessage } from "./channels/types.js";
 import { handleMessage } from "./listener.js";
 import { getActiveRoutes } from "./routes/store.js";
 import { getVersion } from "./version.js";

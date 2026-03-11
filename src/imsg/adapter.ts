@@ -1,11 +1,12 @@
 /**
  * msgcode: imsg 消息适配器
  *
- * 将各种消息源转换为统一的 InboundMessage 接口
+ * 将 imsg RPC payload 转成 channel-neutral InboundMessage。
  */
 
-import type { InboundMessage } from "./types.js";
+import type { InboundMessage } from "../channels/types.js";
 import type { ImsgRpcMessage, ImsgAttachment } from "./types.js";
+export { isGroupChatId, normalizeChatId, stableGroupNameForChatId } from "../channels/chat-id.js";
 
 // ============================================
 // imsg RPC 消息适配器
@@ -49,44 +50,4 @@ export function fromImsgRpcMessage(message: ImsgRpcMessage): InboundMessage {
     rowid: message.id, // E14: 传递 rowid 用于游标管理
     isGroup: typeof message.is_group === "boolean" ? message.is_group : undefined,
   };
-}
-
-// ============================================
-// 辅助函数
-// ============================================
-
-/**
- * 判断是否为群聊 chatId
- *
- * 群聊格式：
- * - 纯 GUID (32位十六进制) 或
- * - any;+;GUID
- */
-export function isGroupChatId(chatId: string): boolean {
-  return /^[a-f0-9]{32}$/i.test(chatId) || chatId.startsWith("any;+;");
-}
-
-/**
- * 归一化 chatId
- *
- * 提取 GUID 部分（去掉 any;+; 或 any;-; 前缀）
- */
-export function normalizeChatId(chatId: string): string {
-  const parts = chatId.split(";");
-  return parts[parts.length - 1];
-}
-
-/**
- * 为 tmux 会话生成稳定的 groupName
- *
- * 约束：
- * - 不依赖 label（/bind 改目录不应导致会话名漂移）
- * - 仅使用 chatId 的稳定后缀
- */
-export function stableGroupNameForChatId(chatId: string): string {
-  const normalized = normalizeChatId(chatId);
-  const suffix = normalized.length >= 8 ? normalized.slice(-8) : normalized;
-  // tmux session name 需要尽量可移植：去掉潜在非法字符（例如 feishu:<id> 的冒号）
-  const safe = suffix.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-  return `chat-${safe || "unknown"}`;
 }

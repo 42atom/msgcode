@@ -14,7 +14,7 @@ import { BufferManager } from "../output/buffer.js";
 import { Throttler } from "../output/throttler.js";
 import { logger } from "../logger/index.js";
 import { sendAttachmentsToSession } from "./sender.js";
-import type { Attachment } from "../imsg/types.js";
+import type { Attachment } from "../channels/types.js";
 
 // 轮询配置（优化响应速度）
 const FAST_INTERVAL = 150;        // 首次交付前（更快的初始检测）

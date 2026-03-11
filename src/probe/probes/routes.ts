@@ -7,7 +7,7 @@
 import { promises as fs } from "node:fs";
 import { getActiveRoutes } from "../../routes/store.js";
 import { TmuxSession } from "../../tmux/session.js";
-import { stableGroupNameForChatId } from "../../imsg/adapter.js";
+import { stableGroupNameForChatId } from "../../channels/chat-id.js";
 import type { ProbeResult, ProbeOptions } from "../types.js";
 
 /**

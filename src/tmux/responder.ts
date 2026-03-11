@@ -13,7 +13,7 @@ import { AssistantParser } from "../output/parser.js";
 import { logger } from "../logger/index.js";
 import { sendAttachmentsToSession } from "./sender.js";
 import { withRemoteHintIfNeeded } from "./remote_hint.js";
-import type { Attachment } from "../imsg/types.js";
+import type { Attachment } from "../channels/types.js";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promises as fs } from "node:fs";
 

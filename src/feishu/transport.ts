@@ -14,7 +14,7 @@
 import { Client, EventDispatcher, LoggerLevel, WSClient } from "@larksuiteoapi/node-sdk";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import type { InboundMessage } from "../imsg/types.js";
+import type { InboundMessage } from "../channels/types.js";
 import { logger } from "../logger/index.js";
 
 export const FEISHU_CHAT_GUID_PREFIX = "feishu:";

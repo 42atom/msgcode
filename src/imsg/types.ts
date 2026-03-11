@@ -3,71 +3,7 @@
  *
  * JSON-RPC over stdio 协议类型
  */
-
-// ============================================
-// 统一消息接口（listener 实际使用的字段）
-// ============================================
-
-/**
- * 入站消息接口（listener 依赖的字段集）
- *
- * 根据 src/listener.ts 实际使用情况：
- * - id: 去重、已处理缓存（handledMessages, processedMessages）
- * - chatId: 路由、白名单检查、队列管理
- * - text: 消息内容、去重
- * - isFromMe: 过滤自身消息
- * - date: 排序（仅用于 checkExistingMessages 中排序）
- * - attachments: 流式处理时传递
- * - sender: security.ts checkWhitelist 需要
- * - handle: security.ts checkWhitelist 需要
- * - address: handlers.ts 可能需要
- */
-export interface InboundMessage {
-  /** 消息唯一标识 */
-  id: string;
-  /** 聊天 ID（可能是 rowid 或 GUID） */
-  chatId: string;
-  /** 消息文本（可选，空消息跳过） */
-  text?: string;
-  /** 是否为本人发送（用于过滤自我回路） */
-  isFromMe: boolean;
-  /** 消息日期（Unix timestamp 微秒，Apple 格式） */
-  date?: number;
-  /** 附件列表（可选） */
-  attachments?: readonly Attachment[];
-  /** 发送者地址（电话/邮箱；白名单检查需要） */
-  sender?: string;
-  /** 发送者显示名（可选；日志展示需要） */
-  senderName?: string;
-  /** 处理标识（兼容旧字段，可与 sender 相同） */
-  handle?: string;
-  /** E14: 消息 rowid（用于游标管理） */
-  rowid?: number;
-  /** 是否群聊（用于安全策略/风控；来自 imsg RPC 的 is_group） */
-  isGroup?: boolean;
-  /** 消息类型（如 text/image/audio/file；通道支持时填充） */
-  messageType?: string;
-}
-
-/**
- * 附件元数据
- */
-export interface Attachment {
-  /** 文件名 */
-  filename?: string;
-  /** MIME 类型 */
-  mime?: string;
-  /** 文件路径 */
-  path?: string;
-  /** 文件是否缺失 */
-  missing?: boolean;
-  /** E17: UTI（Apple Uniform Type Identifier）- 用于 .caf 等音频识别 */
-  uti?: string;
-  /** E17: 原始传输文件名（比 filename 更可靠） */
-  transfer_name?: string;
-  /** E17: 文件大小（字节） */
-  total_bytes?: number;
-}
+export type { Attachment, InboundMessage } from "../channels/types.js";
 
 // ============================================
 // imsg RPC JSON-RPC 类型

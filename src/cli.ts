@@ -3,8 +3,8 @@
  * msgcode: CLI 入口（2.0）
  *
  * 原则：
- * - iMessage I/O 统一走 imsg RPC
- * - 无 iMessage SDK / 无 AppleScript
+ * - 主通道是 Feishu；legacy iMessage 仅在显式启用时保留
+ * - CLI 只暴露真实可运行主链，不制造 transport 幻觉
  */
 
 import { Command } from "commander";
@@ -69,7 +69,7 @@ if (hasDebugFlag(process.argv.slice(2))) {
 
 const program = new Command();
 
-program.name("msgcode").description("msgcode - iMessage-based bot (imsg RPC)").version(getVersion());
+program.name("msgcode").description("msgcode - personal agent runtime on macOS").version(getVersion());
 
 program
   .command("start [mode]")
