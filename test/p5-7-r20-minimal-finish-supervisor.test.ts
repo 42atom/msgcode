@@ -134,7 +134,6 @@ describe("P5.7-R20: minimal finish supervisor", () => {
             expect(result.answer).toContain("verified-evidence");
             expect(result.actionJournal.map((entry) => entry.tool)).toEqual([
                 "read_file",
-                "read_file",
             ]);
             expect(result.actionJournal.some((entry) => entry.tool === "finish-supervisor")).toBe(false);
         } finally {
@@ -340,7 +339,6 @@ describe("P5.7-R20: minimal finish supervisor", () => {
             expect(result.answer).toBe("已创建完成。");
             expect(result.actionJournal.map((entry) => `${entry.phase}:${entry.tool}:${entry.ok}`)).toEqual([
                 "act:bash:true",
-                "verify:bash:true",
             ]);
         } finally {
             await rm(workspacePath, { recursive: true, force: true });
@@ -483,12 +481,10 @@ describe("P5.7-R20: minimal finish supervisor", () => {
             expect(callCount).toBe(3);
             expect(result.answer).toContain("PASS");
             expect(result.answer).not.toContain("TOOL_EXEC_FAILED");
-            expect(result.verifyResult?.ok).toBe(false);
-            expect(result.verifyResult?.errorCode).toBe("TOOL_VERIFY_FAILED");
+            expect(result.verifyResult).toBeUndefined();
             expect(result.actionJournal.map((entry) => `${entry.phase}:${entry.tool}:${entry.ok}`)).toEqual([
                 "act:read_file:true",
                 "act:bash:false",
-                "verify:bash:false",
             ]);
         } finally {
             await rm(workspacePath, { recursive: true, force: true });
@@ -555,8 +551,7 @@ describe("P5.7-R20: minimal finish supervisor", () => {
 
             expect(callCount).toBe(2);
             expect(result.answer).toBe("已删除，我还是直接结束。");
-            expect(result.verifyResult?.ok).toBe(false);
-            expect(result.verifyResult?.errorCode).toBe("TOOL_VERIFY_FAILED");
+            expect(result.verifyResult).toBeUndefined();
             expect(result.actionJournal.some((entry) => entry.tool === "finish-supervisor")).toBe(false);
             expect(result.actionJournal[0]?.tool).toBe("bash");
             expect(result.actionJournal[0]?.ok).toBe(false);

@@ -210,7 +210,7 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path transparency", () => {
 
             expect(callCount).toBe(2);
             expect(result.answer).toContain("错误路径");
-            expect(result.actionJournal.length).toBe(2);
+            expect(result.actionJournal.length).toBe(1);
             expect(result.actionJournal[0].tool).toBe("read_file");
             expect(result.actionJournal[0].ok).toBe(false);
             expect(result.actionJournal[0].errorCode).toBe("TOOL_EXEC_FAILED");
@@ -274,7 +274,7 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path transparency", () => {
 
             expect(callCount).toBe(2);
             expect(result.answer).toContain("other-soul-read-ok");
-            expect(result.actionJournal.length).toBe(2);
+            expect(result.actionJournal.length).toBe(1);
             expect(result.actionJournal[0].tool).toBe("read_file");
             expect(result.actionJournal[0].ok).toBe(true);
         } finally {
@@ -615,12 +615,10 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path transparency", () => {
             expect(callCount).toBe(2);
             expect(result.answer).toContain("没有暴露 edit_file");
             expect(result.answer).not.toContain("TOOL_NOT_ALLOWED");
-            expect(result.actionJournal).toHaveLength(2);
+            expect(result.actionJournal).toHaveLength(1);
             expect(result.actionJournal[0]?.ok).toBe(false);
             expect(result.actionJournal[0]?.errorCode).toBe("TOOL_NOT_ALLOWED");
-            expect(result.actionJournal[1]?.phase).toBe("verify");
-            expect(result.verifyResult?.ok).toBe(false);
-            expect(result.verifyResult?.errorCode).toBe("TOOL_VERIFY_FAILED");
+            expect(result.verifyResult).toBeUndefined();
         } finally {
             globalThis.fetch = originalFetch;
             await rm(workspacePath, { recursive: true, force: true });

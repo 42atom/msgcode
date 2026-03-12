@@ -216,13 +216,11 @@ describe("P5.7-R3h: Tool Failure Diagnostics (Behavior Lock)", () => {
                 expect(callCount).toBe(2);
                 expect(result.answer).toContain("没有执行成功");
                 expect(result.answer).not.toContain("TOOL_EXEC_FAILED");
-                expect(result.actionJournal.length).toBe(2);
+                expect(result.actionJournal.length).toBe(1);
                 expect(result.actionJournal[0].ok).toBe(false);
                 expect(result.actionJournal[0].errorCode).toBe("TOOL_EXEC_FAILED");
                 expect(result.actionJournal[0].exitCode).toBe(5);
-                expect(result.actionJournal[1].phase).toBe("verify");
-                expect(result.verifyResult?.ok).toBe(false);
-                expect(result.verifyResult?.errorCode).toBe("TOOL_VERIFY_FAILED");
+                expect(result.verifyResult).toBeUndefined();
             } finally {
                 globalThis.fetch = originalFetch;
                 await rm(workspacePath, { recursive: true, force: true });
@@ -296,7 +294,7 @@ describe("P5.7-R3h: Tool Failure Diagnostics (Behavior Lock)", () => {
                 expect(result.answer).not.toContain("读取成功，内容预览如下");
                 expect(result.answer).not.toContain("工具执行成功");
                 expect(result.actionJournal[0].tool).toBe("read_file");
-                expect(result.actionJournal.at(-1)?.phase).toBe("verify");
+                expect(result.actionJournal).toHaveLength(1);
             } finally {
                 globalThis.fetch = originalFetch;
                 await rm(workspacePath, { recursive: true, force: true });

@@ -12,7 +12,6 @@ import * as path from "node:path";
 import * as fsPromises from "node:fs/promises";
 import * as crypto from "node:crypto";
 import { logger } from "../logger/index.js";
-import { sanitizeLmStudioOutput } from "../providers/output-normalizer.js";
 import {
     normalizeBaseUrl as normalizeBaseUrlAdapter,
     buildChatCompletionRequest,
@@ -24,8 +23,6 @@ import {
     type AgentBackendRuntime,
     type ActionJournalEntry,
     type ParsedToolCall,
-    type VerifyJournalEntry,
-    type VerifyResult,
 } from "./types.js";
 import {
     resolveBaseSystemPrompt,
@@ -65,106 +62,6 @@ export type {
     ActionJournalEntry,
     ParsedToolCall,
 } from "./types.js";
-
-// ============================================
-// Verify Phase 函数（P5.7-R12-T3）
-// ============================================
-
-/**
- * 执行 verify phase
- *
- * 对每个工具调用执行验证，确保执行结果真实有效
- *
- * @param executedToolCalls 已执行的工具调用
- * @param actionJournal 当前 action journal
- * @param traceId 追踪 ID
- * @returns verify 结果
- */
-async function runVerifyPhase(
-    executedToolCalls: ExecutedToolCall[],
-    actionJournal: ActionJournalEntry[],
-    traceId: string,
-    route: "tool" | "complex-tool"
-): Promise<{ verifyResult?: VerifyResult; verifyJournal?: VerifyJournalEntry }> {
-    if (executedToolCalls.length === 0) {
-        // 无工具调用，无需 verify
-        return {};
-    }
-
-    const lastToolCall = executedToolCalls[executedToolCalls.length - 1];
-    const toolName = lastToolCall.tc.function.name;
-    const args = lastToolCall.args;
-    const result = lastToolCall.result;
-
-    // 最小验证矩阵
-    let verifyOk = false;
-    let verifyMethod: VerifyJournalEntry["verifyMethod"] = "file-read";
-    let verifyEvidence: string | undefined;
-    let failureReason: string | undefined;
-
-    try {
-        if (toolName === "bash") {
-            // bash 验证：exitCode === 0 且失败信息可诊断
-            const exitCode = (result as ToolRunResult)?.exitCode;
-            verifyOk = exitCode === 0;
-            verifyMethod = "bash";
-            verifyEvidence = JSON.stringify({ exitCode });
-            failureReason = verifyOk ? undefined : `exitCode: ${exitCode}`;
-        } else if (toolName === "write_file" || toolName === "edit_file") {
-            // 文件修改验证：回读成功或目标文件存在
-            const filePath = args.path as string;
-            try {
-                await fsPromises.access(filePath);
-                verifyOk = true;
-                verifyMethod = "file-exists";
-                verifyEvidence = JSON.stringify({ filePath, exists: true });
-            } catch {
-                verifyOk = false;
-                verifyMethod = "file-exists";
-                verifyEvidence = JSON.stringify({ filePath, exists: false });
-                failureReason = "文件不存在";
-            }
-        } else if (toolName === "read_file") {
-            // 文件读取验证：假设成功执行即为有效
-            verifyOk = true;
-            verifyMethod = "file-read";
-            verifyEvidence = JSON.stringify({ filePath: args.path });
-        } else {
-            // 其他工具：假设成功执行即为有效
-            verifyOk = true;
-            verifyMethod = "file-read";
-            verifyEvidence = JSON.stringify({ toolName, args });
-        }
-    } catch (error) {
-        verifyOk = false;
-        failureReason = error instanceof Error ? error.message : String(error);
-    }
-
-    // 构建 verify journal entry
-    const verifyJournal: VerifyJournalEntry = {
-        traceId,
-        stepId: actionJournal.length + 1,
-        phase: "verify",
-        timestamp: Date.now(),
-        route,
-        tool: toolName,
-        ok: verifyOk,
-        verifyMethod,
-        verifiedTool: toolName,
-        verifyEvidence,
-        durationMs: 0, // verify 是快速检查，不计时
-    };
-
-    // 构建 verify result
-    const verifyResult: VerifyResult = {
-        ok: verifyOk,
-        evidence: verifyEvidence,
-        failureReason: verifyOk ? undefined : failureReason ?? "验证失败",
-        errorCode: verifyOk ? undefined : "TOOL_VERIFY_FAILED",
-    };
-
-    return { verifyResult, verifyJournal };
-}
 
 // ============================================
 // 类型定义
@@ -1081,17 +978,6 @@ async function runMiniMaxAnthropicToolLoop(params: {
         }
 
         const finalAnswer = currentResponse.content || "";
-        const verifyOutcome = await runVerifyPhase(
-            executedToolCalls,
-            actionJournal,
-            params.traceId,
-            params.route
-        );
-        const verifyResult = verifyOutcome.verifyResult;
-
-        if (verifyOutcome.verifyJournal) {
-            actionJournal.push(verifyOutcome.verifyJournal);
-        }
 
         const firstCall = executedToolCalls[0]
             ? { name: executedToolCalls[0].tc.function.name, args: executedToolCalls[0].args, result: executedToolCalls[0].result }
@@ -1109,7 +995,6 @@ async function runMiniMaxAnthropicToolLoop(params: {
             answer: finalAnswer,
             toolCall: firstCall,
             actionJournal,
-            verifyResult,
             decisionSource: executedToolCalls.length === 0 ? "model" : undefined,
             quotaProfile: params.quotaProfile,
             perTurnToolCallLimit: params.perTurnToolCallLimit,
@@ -1577,20 +1462,6 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
 
         const finalAnswer = currentAssistantContent ?? "";
 
-        // P5.7-R12-T3: 在返回前执行 verify phase
-        const verifyOutcome = await runVerifyPhase(
-            executedToolCalls,
-            actionJournal,
-            traceId,
-            route
-        );
-        const verifyResult = verifyOutcome.verifyResult;
-
-        // 如果有 verify journal，添加到 actionJournal
-        if (verifyOutcome.verifyJournal) {
-            actionJournal.push(verifyOutcome.verifyJournal);
-        }
-
         const firstCall = executedToolCalls[0]
             ? { name: executedToolCalls[0].tc.function.name, args: executedToolCalls[0].args, result: executedToolCalls[0].result }
             : undefined;
@@ -1607,7 +1478,6 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
             answer: finalAnswer,
             toolCall: firstCall,
             actionJournal,
-            verifyResult,
             decisionSource: executedToolCalls.length === 0 ? "model" : undefined,
             // P5.7-R12-T8: 正常结束时也返回配额信息
             quotaProfile,

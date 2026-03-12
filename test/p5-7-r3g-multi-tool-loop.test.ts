@@ -158,8 +158,7 @@ describe("P5.7-R3g: Tool Loop Multi-Tool (Behavior Lock)", () => {
 
             expect(callCount).toBe(2);
             expect(result.answer).toContain("执行完成");
-            // P5.7-R12-T3: verify phase 增加了一条 journal entry
-            expect(result.actionJournal.length).toBe(3);
+            expect(result.actionJournal.length).toBe(2);
             expect(result.actionJournal[0].tool).toBe("bash");
             expect(result.actionJournal[1].tool).toBe("read_file");
             expect(result.actionJournal[0].stepId).toBeLessThan(result.actionJournal[1].stepId);
@@ -239,8 +238,7 @@ describe("P5.7-R3g: Tool Loop Multi-Tool (Behavior Lock)", () => {
 
             expect(callCount).toBe(3);
             expect(result.answer).toContain("多轮执行完成");
-            // P5.7-R12-T3: verify phase 增加了一条 journal entry
-            expect(result.actionJournal.length).toBe(3);
+            expect(result.actionJournal.length).toBe(2);
             expect(result.actionJournal[0].tool).toBe("bash");
             expect(result.actionJournal[1].tool).toBe("read_file");
         } finally {
@@ -344,12 +342,10 @@ describe("P5.7-R3g: Tool Loop Multi-Tool (Behavior Lock)", () => {
             expect(callCount).toBe(2);
             expect(result.answer).toContain("没跑通");
             expect(result.answer).not.toContain("TOOL_EXEC_FAILED");
-            expect(result.actionJournal.length).toBe(2);
+            expect(result.actionJournal.length).toBe(1);
             expect(result.actionJournal[0].ok).toBe(false);
             expect(result.actionJournal[0].errorCode).toBe("TOOL_EXEC_FAILED");
-            expect(result.actionJournal[1].phase).toBe("verify");
-            expect(result.verifyResult?.ok).toBe(false);
-            expect(result.verifyResult?.errorCode).toBe("TOOL_VERIFY_FAILED");
+            expect(result.verifyResult).toBeUndefined();
         } finally {
             globalThis.fetch = originalFetch;
             await rm(workspacePath, { recursive: true, force: true });

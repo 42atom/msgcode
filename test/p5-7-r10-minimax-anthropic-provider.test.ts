@@ -182,7 +182,7 @@ describe("P5.7-R10: MiniMax Anthropic provider", () => {
             expect(callCount).toBe(2);
             expect(result.answer).toContain("读取完成");
             expect(result.answer).toContain("hello-minimax");
-            expect(result.actionJournal.length).toBe(2);
+            expect(result.actionJournal.length).toBe(1);
             expect(result.actionJournal[0].tool).toBe("read_file");
 
             const firstBody = capturedBodies[0];
@@ -260,7 +260,7 @@ describe("P5.7-R10: MiniMax Anthropic provider", () => {
 
             expect(callCount).toBe(3);
             expect(result.answer).toBe("MiniMax multi-round ok");
-            expect(result.actionJournal.length).toBe(3);
+            expect(result.actionJournal.length).toBe(2);
             expect(result.actionJournal[0].tool).toBe("bash");
             expect(result.actionJournal[1].tool).toBe("read_file");
         } finally {
@@ -312,11 +312,9 @@ describe("P5.7-R10: MiniMax Anthropic provider", () => {
             expect(callCount).toBe(2);
             expect(result.answer).toContain("PASS");
             expect(result.answer).not.toContain("TOOL_EXEC_FAILED");
-            expect(result.verifyResult?.ok).toBe(false);
-            expect(result.verifyResult?.errorCode).toBe("TOOL_VERIFY_FAILED");
+            expect(result.verifyResult).toBeUndefined();
             expect(result.actionJournal.map((entry) => `${entry.phase}:${entry.tool}:${entry.ok}`)).toEqual([
                 "act:bash:false",
-                "verify:bash:false",
             ]);
         } finally {
             globalThis.fetch = originalFetch;
@@ -378,7 +376,6 @@ describe("P5.7-R10: MiniMax Anthropic provider", () => {
             expect(result.answer).toBe("已创建完成。");
             expect(result.actionJournal.map((entry) => `${entry.phase}:${entry.tool}:${entry.ok}`)).toEqual([
                 "act:bash:true",
-                "verify:bash:true",
             ]);
         } finally {
             globalThis.fetch = originalFetch;
