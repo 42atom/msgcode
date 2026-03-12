@@ -1,5 +1,5 @@
 /**
- * msgcode: 单实例守护（防止多个 daemon 同时订阅 iMessage 导致重复回复）
+ * msgcode: 单实例守护（防止多个 daemon 同时运行导致重复回复）
  *
  * 设计：
  * - 使用 pidfile 作为唯一锁（原子创建 wx）

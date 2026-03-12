@@ -11,8 +11,6 @@ import { readFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { existsSync, readFileSync } from "node:fs";
-import dotenv from "dotenv";
 import type { DependencyManifest } from "./types.js";
 import { parseRuntimeTransports } from "../config/transports.js";
 
@@ -85,91 +83,20 @@ export function mergeManifest(
   };
 }
 
-function readTransportEnvFallback(key: string): string | undefined {
-  const candidates = [
-    join(process.env.HOME || homedir(), ".config", "msgcode", ".env"),
-    join(process.cwd(), ".env"),
-  ];
-
-  for (const file of candidates) {
-    if (!existsSync(file)) continue;
-    try {
-      const parsed = dotenv.parse(readFileSync(file, "utf-8"));
-      const value = parsed[key];
-      if (typeof value === "string" && value.trim()) {
-        return value.trim();
-      }
-    } catch {
-      continue;
-    }
-  }
-
-  return undefined;
-}
-
-function resolveTransportEnv(baseEnv: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  const env = { ...baseEnv };
-  for (const key of ["MSGCODE_TRANSPORTS", "FEISHU_APP_ID", "FEISHU_APP_SECRET"]) {
-    if (!env[key]) {
-      const fallback = readTransportEnvFallback(key);
-      if (fallback) {
-        env[key] = fallback;
-      }
-    }
-  }
-  return env;
-}
-
-function applyTransportAwareStartupDeps(manifest: DependencyManifest): DependencyManifest {
-  const transports = parseRuntimeTransports(resolveTransportEnv());
-  const shouldRequireImsg = transports.includes("imsg") && !transports.includes("feishu");
-  const shouldRequireFeishu = transports.includes("feishu") && !transports.includes("imsg");
-
-  if (!shouldRequireImsg && !shouldRequireFeishu) {
-    return manifest;
-  }
-
-  const promoteIds = new Set<string>();
-  if (shouldRequireImsg) {
-    promoteIds.add("imsg");
-    promoteIds.add("messages_db");
-  }
-  if (shouldRequireFeishu) {
-    promoteIds.add("feishu_app_id");
-    promoteIds.add("feishu_app_secret");
-  }
-  const requiredForStart = [...manifest.requiredForStart];
-  const optional = [];
-
-  for (const dep of manifest.optional) {
-    if (promoteIds.has(dep.id)) {
-      if (!requiredForStart.some((existing) => existing.id === dep.id)) {
-        requiredForStart.push(dep);
-      }
-      continue;
-    }
-    optional.push(dep);
-  }
-
-  return {
-    ...manifest,
-    requiredForStart,
-    optional,
-  };
-}
-
 /**
  * 加载完整 manifest（默认 + 用户覆盖）
  */
 export async function loadManifest(): Promise<DependencyManifest> {
+  // 先校验 transport 配置，避免 legacy imsg 环境变量继续静默漂进主链。
+  parseRuntimeTransports();
+
   const base = await loadDefaultManifest();
   if (!base) {
     throw new Error("默认 manifest.json 不存在");
   }
 
   const override = await loadUserManifest();
-  const merged = override ? mergeManifest(base, override) : base;
-  return applyTransportAwareStartupDeps(merged);
+  return override ? mergeManifest(base, override) : base;
 }
 
 /**

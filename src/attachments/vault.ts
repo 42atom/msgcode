@@ -19,9 +19,9 @@ import { homedir } from "node:os";
 // ============================================
 
 /**
- * iMessage 附件（来自 imsg rpc）
+ * 统一附件元数据（Vault 主链消费的最小字段集）
  */
-export interface ImsgAttachment {
+export interface VaultAttachment {
   filename?: string;
   mime?: string;
   path?: string;
@@ -65,7 +65,7 @@ function expandPath(path: string): string {
  */
 function getDownloadDir(
   workspacePath: string,
-  attachment: ImsgAttachment,
+  attachment: VaultAttachment,
   date: Date = new Date()
 ): string {
   const dateStr = date.toISOString().split("T")[0]; // YYYY-MM-DD
@@ -79,7 +79,7 @@ function getDownloadDir(
  */
 function generateFilename(
   msgId: string,
-  attachment: ImsgAttachment
+  attachment: VaultAttachment
 ): string {
   // 1. 尝试从 transfer_name 或 filename 获取扩展名
   let originalName = attachment.transfer_name || attachment.filename || "attachment";
@@ -131,7 +131,7 @@ async function calculateShortDigest(filePath: string): Promise<string> {
   return fullHash.slice(0, 12);
 }
 
-export function isVideoAttachment(attachment: ImsgAttachment): boolean {
+export function isVideoAttachment(attachment: VaultAttachment): boolean {
   if (attachment.mime?.startsWith("video/")) {
     return true;
   }
@@ -147,7 +147,7 @@ export function isVideoAttachment(attachment: ImsgAttachment): boolean {
   return false;
 }
 
-export function resolveDownloadCategory(attachment: ImsgAttachment): "audio" | "image" | "video" | "files" {
+export function resolveDownloadCategory(attachment: VaultAttachment): "audio" | "image" | "video" | "files" {
   if (isAudioAttachment(attachment)) {
     return "audio";
   }
@@ -169,13 +169,13 @@ export function resolveDownloadCategory(attachment: ImsgAttachment): "audio" | "
  *
  * @param workspacePath 工作区路径
  * @param msgId 消息 ID（message.guid）
- * @param attachment iMessage 附件
+ * @param attachment 附件元数据
  * @returns 复制结果
  */
 export async function copyToVault(
   workspacePath: string,
   msgId: string,
-  attachment: ImsgAttachment
+  attachment: VaultAttachment
 ): Promise<VaultCopyResult> {
   const result: VaultCopyResult = {
     success: false,
@@ -253,7 +253,7 @@ export async function copyToVault(
 /**
  * 检查附件是否为音频
  */
-export function isAudioAttachment(attachment: ImsgAttachment): boolean {
+export function isAudioAttachment(attachment: VaultAttachment): boolean {
   if (!attachment.mime && !attachment.uti && !attachment.filename && !attachment.transfer_name && !attachment.path) {
     return false;
   }
@@ -277,7 +277,7 @@ export function isAudioAttachment(attachment: ImsgAttachment): boolean {
     return true;
   }
 
-  // 扩展名兜底（历史 iMessage 语音常见 .caf）
+  // 扩展名兜底（历史语音常见 .caf）
   const nameForExt = attachment.transfer_name || attachment.filename || attachment.path || "";
   if (nameForExt) {
     const ext = nameForExt.toLowerCase().split(".").pop();
@@ -293,7 +293,7 @@ export function isAudioAttachment(attachment: ImsgAttachment): boolean {
 /**
  * B2: 检查附件是否为图片（支持 mime/UTI/扩展名兜底）
  */
-export function isImageAttachment(attachment: ImsgAttachment): boolean {
+export function isImageAttachment(attachment: VaultAttachment): boolean {
   if (!attachment.mime && !attachment.uti && !attachment.filename) {
     return false;
   }
@@ -335,7 +335,7 @@ export function isImageAttachment(attachment: ImsgAttachment): boolean {
  * 对于其他附件，保留路径信息以便后续处理
  */
 export function formatAttachmentForTmux(
-  attachment: ImsgAttachment,
+  attachment: VaultAttachment,
   localPath: string,
   digest: string
 ): string {

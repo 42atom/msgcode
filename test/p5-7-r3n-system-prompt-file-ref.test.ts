@@ -15,7 +15,6 @@ describe("P5.7-R3n: system prompt file reference", () => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "msgcode-prompt-ref-"));
     originalEnv = {
       NODE_ENV: process.env.NODE_ENV,
-      MSGCODE_TRANSPORTS: process.env.MSGCODE_TRANSPORTS,
       FEISHU_APP_ID: process.env.FEISHU_APP_ID,
       FEISHU_APP_SECRET: process.env.FEISHU_APP_SECRET,
       AGENT_SYSTEM_PROMPT_FILE: process.env.AGENT_SYSTEM_PROMPT_FILE,
@@ -25,7 +24,6 @@ describe("P5.7-R3n: system prompt file reference", () => {
     };
 
     process.env.NODE_ENV = "test";
-    process.env.MSGCODE_TRANSPORTS = "feishu";
     process.env.FEISHU_APP_ID = "cli-test-app";
     process.env.FEISHU_APP_SECRET = "cli-test-secret";
     process.env.MSGCODE_CONFIG_DIR = path.join(tmpDir, ".config", "msgcode");

@@ -50,7 +50,6 @@ Issue: 0093
    - [AIDOCS/reviews/remove-imessage-channel.md](/Users/admin/GitProjects/msgcode/AIDOCS/reviews/remove-imessage-channel.md) 仅作为输入清单
 2. Phase A: Channel-Neutral Cleanup
    - 先把 `InboundMessage / Attachment / chatId helpers` 提取到 `src/channels/*`
-   - `src/imsg/*` 仅保留 legacy compat 壳，避免一次性大删除
    - 清理 `src/config.ts` 中 `IMSG_PATH / IMSG_DB_PATH / MSGCODE_TRANSPORTS` 的默认面假设
    - 清理 `src/cli*`、README、help、package 描述中的 iMessage 主叙事
    - 收口 `src/probe/probes/*` 中对 imsg/chat.db/FDA 的默认依赖
@@ -79,7 +78,7 @@ Issue: 0093
 
 ## Progress
 
-当前仅完成归类与规划：
+当前进展：
 
 - `0065` 继续作为总路线 issue
 - `0093` 承接具体执行规划
@@ -88,16 +87,17 @@ Issue: 0093
   - `src/channels/types.ts`
   - `src/channels/chat-id.ts`
   - 主链 imports 已脱离 `src/imsg/*`
-  - `src/imsg/types.ts` / `src/imsg/adapter.ts` 暂保留 compat re-export
 - 已完成 Phase A 第二刀：
   - 默认 transport 已从 `fallback-imsg` 收口为 `feishu`
+  - `parseRuntimeTransports()` 现在只接受 `feishu`
+  - `MSGCODE_TRANSPORTS=imsg` 只会在 `MSGCODE_ENV_BOOTSTRAPPED=1` 的真实运行入口显式报 sunset 错误
   - `config.ts` 不再因缺飞书凭据在 import/load 阶段直接报错
   - `preflight` / `start` 会显式暴露 `FEISHU_APP_ID / FEISHU_APP_SECRET` 缺失
-  - transport-aware startup deps 已支持按 `feishu-only / imsg-only / hybrid` 动态提升依赖
+  - `src/deps/manifest.json` 与 `loadManifest()` 已收口为 Feishu-only：启动必需只剩飞书凭据，不再动态提升 `imsg/messages_db`
 - 已完成 Phase A 第三刀：
   - `msgcode init` 已改为 Feishu-first 上手路径
   - 不再检查 `chat.db` / 不再引导 Full Disk Access / 不再提示 iMessage 建群
-  - `.env.example` 已把飞书凭据前置为默认入口，`IMSG_PATH` 退回注释态
+  - `.env.example` 已把飞书凭据前置为默认入口，并移除 `IMSG_PATH` 公开示例
 - 已完成 Phase A 第四刀：
   - `package.json` 的 `dev/start` 已从 `src/index.ts` 收口到 `src/cli.ts start debug`
   - 公开 npm 脚本不再默认穿过旧的 imsg-only 入口
@@ -117,8 +117,14 @@ Issue: 0093
   - `about --json` 不再回显 `imsgPath`
   - `listener` / `commands` / `jobs` 的回发接口命名已收口为 channel-neutral，不再继续扩散 `imsgSend`
   - 黑盒测试已锁定：即使显式配置 legacy imsg，probe 正式输出面也不得再回显上述 legacy 字段
-- 下一刀：
-  - 进入 Phase B，清点 `src/imsg/`、`src/commands.ts` legacy transport 分支、`vendor/imsg` 与相关测试的真实剩余调用链
-  - 先判定是否还存在仓库内正式消费者，再决定物理删除还是先迁 archive/compat
+- 已完成 Phase B：
+  - `src/imsg/` 已迁入 `.trash/2026-03-12-imsg-sunset/src/imsg/`
+  - `vendor/imsg/` 已迁入 `.trash/2026-03-12-imsg-sunset/vendor/imsg/`
+  - `test/imsg.adapter.test.ts` 与 `test/commands.startup-guard.test.ts` 已迁入同一归档目录
+  - `.trash/2026-03-12-imsg-sunset/README.md` 已记录 sunset 原因与归档边界
+  - `src/index.ts` / `src/daemon.ts` 会在真实运行入口先设置 `MSGCODE_ENV_BOOTSTRAPPED=1`，再动态导入 `commands.js`
+- 当前收尾：
+  - 补全 `tsc + bun test` 最终验证
+  - 把 Phase B 真相源同步进 Issue/Plan/CHANGELOG
 
 （章节级）评审意见：[留空,用户将给出反馈]

@@ -668,10 +668,9 @@ export async function handleMessage(
 
   if (route.projectDir) {
     try {
-      const isFeishu = message.chatId.startsWith("feishu:");
       await saveCurrentSessionContext(route.projectDir, {
-        transport: isFeishu ? "feishu" : "imsg",
-        chatId: isFeishu ? message.chatId.replace(/^feishu:/, "") : message.chatId,
+        transport: "feishu",
+        chatId: message.chatId.replace(/^feishu:/, ""),
         chatGuid: message.chatId,
       });
     } catch (error) {

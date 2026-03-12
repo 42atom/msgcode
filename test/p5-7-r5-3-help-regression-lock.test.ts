@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { execSync } from "node:child_process";
+import { execCliStdoutIsolated } from "./helpers/cli-process.js";
 
 // ============================================
 // 辅助函数
@@ -30,10 +30,7 @@ function getHelpDocsOutput(): {
     errorCodes?: string[];
   }>;
 } {
-  const output = execSync("NODE_OPTIONS='--import tsx' node src/cli.ts help-docs --json", {
-    encoding: "utf-8",
-    stdio: ["pipe", "pipe", "pipe"],
-  });
+  const output = execCliStdoutIsolated(["help-docs", "--json"]);
 
   const envelope = JSON.parse(output);
   expect(envelope.status).toBe("pass");
@@ -331,9 +328,7 @@ describe("P5.7-R5-3: Help-Docs 回归锁", () => {
 
   describe("Envelope 结构锁", () => {
     it("help-docs --json 必须返回有效的 Envelope 结构", () => {
-      const output = execSync("NODE_OPTIONS='--import tsx' node src/cli.ts help-docs --json", {
-        encoding: "utf-8",
-      });
+      const output = execCliStdoutIsolated(["help-docs", "--json"]);
 
       const envelope = JSON.parse(output);
 

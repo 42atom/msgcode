@@ -6,8 +6,6 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const PROBE_CONFIG_URL = pathToFileURL(path.join(process.cwd(), "src/probe/probes/config.ts")).href;
-const PROBE_ENVIRONMENT_URL = pathToFileURL(path.join(process.cwd(), "src/probe/probes/environment.ts")).href;
-const PROBE_CONNECTIONS_URL = pathToFileURL(path.join(process.cwd(), "src/probe/probes/connections.ts")).href;
 
 type JsonRecord = Record<string, unknown>;
 
@@ -88,6 +86,24 @@ function runProbe(moduleUrl: string, exportName: string, overrides: Record<strin
   });
 }
 
+function runProbeFailure(moduleUrl: string, exportName: string, overrides: Record<string, string | undefined>): string {
+  return withProbeSandbox(overrides, ({ env, cwd }) => {
+    const script = `
+      const mod = await import(${JSON.stringify(moduleUrl)});
+      const result = await mod[${JSON.stringify(exportName)}]();
+      console.log(JSON.stringify(result));
+    `;
+    const result = spawnSync(process.execPath, ["--eval", script], {
+      cwd,
+      env,
+      encoding: "utf-8",
+    });
+
+    expect(result.status).not.toBe(0);
+    return `${result.stdout}\n${result.stderr}`;
+  });
+}
+
 function runAboutJson(overrides: Record<string, string | undefined>): JsonRecord {
   return withProbeSandbox(overrides, ({ env, cwd }) => {
     const result = spawnSync(process.execPath, ["run", "src/cli.ts", "about", "--json"], {
@@ -116,25 +132,17 @@ describe("P5.7-R37: imsg probe sunset", () => {
     expect(details).not.toHaveProperty("imsg_path_set");
   });
 
-  it("environment 与 connections probe 不再暴露 legacy imsg 可执行信息", () => {
-    const overrides = {
+  it("legacy MSGCODE_TRANSPORTS=imsg 时，config probe 应直接报 sunset 错误", () => {
+    const output = runProbeFailure(PROBE_CONFIG_URL, "probeConfig", {
+      MSGCODE_ENV_BOOTSTRAPPED: "1",
       MSGCODE_TRANSPORTS: "imsg",
-      IMSG_PATH: "/bin/echo",
-    };
+    });
 
-    const environment = runProbe(PROBE_ENVIRONMENT_URL, "probeEnvironment", overrides);
-    const connections = runProbe(PROBE_CONNECTIONS_URL, "probeConnections", overrides);
-
-    expect(environment.details).not.toHaveProperty("imsg_path");
-    expect(environment.details).not.toHaveProperty("imsg_executable");
-    expect(environment.details).not.toHaveProperty("imsg_version");
-    expect(connections.details).not.toHaveProperty("imsg_executable");
+    expect(output).toContain("MSGCODE_TRANSPORTS 已退役为 Feishu-only");
   });
 
   it("about --json 不再回显 imsgPath", () => {
-    const info = runAboutJson({
-      IMSG_PATH: "/bin/echo",
-    });
+    const info = runAboutJson({});
 
     expect(info).not.toHaveProperty("imsgPath");
     expect(typeof info.configPath).toBe("string");

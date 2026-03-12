@@ -84,7 +84,7 @@ WORKSPACE_ROOT=/Users/<you>/msgcode-workspaces
 ```
 
 默认 transport 口径：
-- 未显式配置 `MSGCODE_TRANSPORTS` 时，默认只启 `feishu`
+- 当前主链固定为 `feishu`
 - 未配置飞书凭据时，`preflight/start` 会明确报缺 `FEISHU_APP_ID / FEISHU_APP_SECRET`
 
 Browser Core 配置口径：
@@ -161,7 +161,7 @@ npx tsx src/cli.ts /desktop observe
 
 ## Known Limits
 
-- 飞书已是主通道；iMessage 处于 legacy / sunset 轨道，受 macOS 本地权限与系统升级影响更大。
+- 当前正式消息通道只有飞书；未来 app/web client 会接在更薄的 channel seam 上，而不是恢复旧 iMessage 主链。
 - Tmux 代理属于“终端通道”，输出质量受上游 CLI 工具更新影响。
 - 命令在不同运行态可见性不同，出现分歧时一律以 `/help` 输出为准。
 

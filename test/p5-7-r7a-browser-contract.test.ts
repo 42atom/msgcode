@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { execSync } from "node:child_process";
+import { execCliStdoutIsolated } from "./helpers/cli-process.js";
 
 describe("P5.7-R7A: browser CLI 合同", () => {
   it("BROWSER 错误码应保持 BROWSER_ 前缀", async () => {
@@ -45,10 +45,7 @@ describe("P5.7-R7A: browser CLI 合同", () => {
   });
 
   it("help-docs --json 必须包含 browser 合同", () => {
-    const output = execSync("NODE_OPTIONS='--import tsx' node src/cli.ts help-docs --json", {
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+    const output = execCliStdoutIsolated(["help-docs", "--json"]);
 
     const envelope = JSON.parse(output);
     expect(envelope.status).toBe("pass");
@@ -92,10 +89,7 @@ describe("P5.7-R7A: browser CLI 合同", () => {
   });
 
   it("browser --help 应显示核心子命令", () => {
-    const output = execSync("NODE_OPTIONS='--import tsx' node src/cli.ts browser --help", {
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "pipe"],
-    });
+    const output = execCliStdoutIsolated(["browser", "--help"]);
 
     expect(output).toContain("profiles");
     expect(output).toContain("instances");

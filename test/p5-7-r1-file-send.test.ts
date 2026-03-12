@@ -1,27 +1,8 @@
 import { describe, it, expect } from "bun:test";
-import { spawnSync } from "node:child_process";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import { runCliIsolated } from "./helpers/cli-process.js";
 
 function runCli(args: string[]) {
-  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "msgcode-file-send-retired-"));
-
-  try {
-    return spawnSync("node", ["src/cli.ts", ...args], {
-      cwd: "/Users/admin/GitProjects/msgcode",
-      env: {
-        ...process.env,
-        HOME: tempHome,
-        LOG_FILE: "false",
-        MSGCODE_ENV_BOOTSTRAPPED: "1",
-        NODE_OPTIONS: "--import tsx",
-      },
-      encoding: "utf-8",
-    });
-  } finally {
-    fs.rmSync(tempHome, { recursive: true, force: true });
-  }
+  return runCliIsolated(args, { cwd: "/Users/admin/GitProjects/msgcode" });
 }
 
 describe("P5.7-R1: legacy file send should be retired cleanly", () => {

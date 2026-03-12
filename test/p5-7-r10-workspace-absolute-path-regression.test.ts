@@ -8,8 +8,8 @@ import { afterEach, describe, expect, it } from "bun:test";
 import os from "node:os";
 import path from "node:path";
 import { mkdtempSync, rmSync } from "node:fs";
-import { spawnSync } from "node:child_process";
 import { routeByChatId } from "../src/router.js";
+import { runCliIsolated } from "./helpers/cli-process.js";
 
 interface Envelope {
   status: "pass" | "warning" | "error";
@@ -29,10 +29,12 @@ function createWorkspace(): string {
 }
 
 function runCli(args: string[]): { code: number; envelope: Envelope; stderr: string } {
-  const result = spawnSync("node", ["src/cli.ts", ...args], {
-    cwd: process.cwd(),
-    encoding: "utf8",
-    env: { ...process.env, LOG_FILE: "false", LOG_LEVEL: "warn", NODE_OPTIONS: "--import tsx" },
+  const result = runCliIsolated(args, {
+    env: {
+      WORKSPACE_ROOT: process.env.WORKSPACE_ROOT,
+      ROUTES_FILE_PATH: process.env.ROUTES_FILE_PATH,
+      MSGCODE_DEFAULT_WORKSPACE_DIR: process.env.MSGCODE_DEFAULT_WORKSPACE_DIR,
+    },
   });
 
   const stdout = (result.stdout || "").trim();

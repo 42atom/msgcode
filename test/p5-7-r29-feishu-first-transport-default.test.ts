@@ -9,9 +9,12 @@ const CONFIG_MODULE_URL = pathToFileURL(path.join(process.cwd(), "src/config.ts"
 const LOAD_MANIFEST_MODULE_URL = pathToFileURL(path.join(process.cwd(), "src/deps/load.ts")).href;
 const BIN_PATH = path.join(process.cwd(), "bin", "msgcode");
 
-function readTransportsFromIsolatedProcess(overrides: Record<string, string | undefined>): string[] {
-  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "msgcode-feishu-first-home-"));
-  const tempCwd = fs.mkdtempSync(path.join(os.tmpdir(), "msgcode-feishu-first-cwd-"));
+function withIsolatedEnv<T>(
+  overrides: Record<string, string | undefined>,
+  fn: (ctx: { env: NodeJS.ProcessEnv; cwd: string; home: string }) => T
+): T {
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "msgcode-feishu-only-home-"));
+  const tempCwd = fs.mkdtempSync(path.join(os.tmpdir(), "msgcode-feishu-only-cwd-"));
 
   try {
     fs.mkdirSync(path.join(tempHome, ".config", "msgcode"), { recursive: true });
@@ -20,7 +23,6 @@ function readTransportsFromIsolatedProcess(overrides: Record<string, string | un
     delete env.MSGCODE_TRANSPORTS;
     delete env.FEISHU_APP_ID;
     delete env.FEISHU_APP_SECRET;
-    delete env.IMSG_PATH;
 
     env.NODE_ENV = "test";
     env.HOME = tempHome;
@@ -33,9 +35,18 @@ function readTransportsFromIsolatedProcess(overrides: Record<string, string | un
       }
     }
 
+    return fn({ env, cwd: tempCwd, home: tempHome });
+  } finally {
+    fs.rmSync(tempHome, { recursive: true, force: true });
+    fs.rmSync(tempCwd, { recursive: true, force: true });
+  }
+}
+
+function readTransportsFromIsolatedProcess(overrides: Record<string, string | undefined>): string[] {
+  return withIsolatedEnv(overrides, ({ env, cwd }) => {
     const script = `const mod = await import(${JSON.stringify(CONFIG_MODULE_URL)}); console.log(JSON.stringify(mod.config.transports));`;
     const result = spawnSync(process.execPath, ["--eval", script], {
-      cwd: tempCwd,
+      cwd,
       env,
       encoding: "utf-8",
     });
@@ -45,42 +56,27 @@ function readTransportsFromIsolatedProcess(overrides: Record<string, string | un
     }
 
     return JSON.parse(result.stdout.trim());
-  } finally {
-    fs.rmSync(tempHome, { recursive: true, force: true });
-    fs.rmSync(tempCwd, { recursive: true, force: true });
-  }
+  });
+}
+
+function readConfigErrorFromIsolatedProcess(overrides: Record<string, string | undefined>): string {
+  return withIsolatedEnv(overrides, ({ env, cwd }) => {
+    const script = `await import(${JSON.stringify(CONFIG_MODULE_URL)});`;
+    const result = spawnSync(process.execPath, ["--eval", script], {
+      cwd,
+      env,
+      encoding: "utf-8",
+    });
+
+    expect(result.status).not.toBe(0);
+    return `${result.stdout}\n${result.stderr}`;
+  });
 }
 
 function readManifestSummaryFromIsolatedProcess(
-  overrides: Record<string, string | undefined>,
-  envFileContent?: string
+  overrides: Record<string, string | undefined>
 ): { requiredForStart: string[]; optional: string[] } {
-  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "msgcode-feishu-first-home-"));
-  const tempCwd = fs.mkdtempSync(path.join(os.tmpdir(), "msgcode-feishu-first-cwd-"));
-
-  try {
-    const confDir = path.join(tempHome, ".config", "msgcode");
-    fs.mkdirSync(confDir, { recursive: true });
-    if (envFileContent) {
-      fs.writeFileSync(path.join(confDir, ".env"), envFileContent, "utf-8");
-    }
-
-    const env = { ...process.env };
-    delete env.MSGCODE_TRANSPORTS;
-    delete env.FEISHU_APP_ID;
-    delete env.FEISHU_APP_SECRET;
-    delete env.IMSG_PATH;
-    env.NODE_ENV = "test";
-    env.HOME = tempHome;
-
-    for (const [key, value] of Object.entries(overrides)) {
-      if (value === undefined) {
-        delete env[key];
-      } else {
-        env[key] = value;
-      }
-    }
-
+  return withIsolatedEnv(overrides, ({ env, cwd }) => {
     const script = `
       const { loadManifest } = await import(${JSON.stringify(LOAD_MANIFEST_MODULE_URL)});
       const manifest = await loadManifest();
@@ -90,7 +86,7 @@ function readManifestSummaryFromIsolatedProcess(
       }));
     `;
     const result = spawnSync(process.execPath, ["--eval", script], {
-      cwd: tempCwd,
+      cwd,
       env,
       encoding: "utf-8",
     });
@@ -100,44 +96,15 @@ function readManifestSummaryFromIsolatedProcess(
     }
 
     return JSON.parse(result.stdout.trim());
-  } finally {
-    fs.rmSync(tempHome, { recursive: true, force: true });
-    fs.rmSync(tempCwd, { recursive: true, force: true });
-  }
+  });
 }
 
 function runPreflightFromIsolatedProcess(
-  overrides: Record<string, string | undefined>,
-  envFileContent?: string
-): { requiredForStart: string[]; optional: string[] } {
-  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), "msgcode-feishu-first-home-"));
-  const tempCwd = fs.mkdtempSync(path.join(os.tmpdir(), "msgcode-feishu-first-cwd-"));
-
-  try {
-    const confDir = path.join(tempHome, ".config", "msgcode");
-    fs.mkdirSync(confDir, { recursive: true });
-    if (envFileContent) {
-      fs.writeFileSync(path.join(confDir, ".env"), envFileContent, "utf-8");
-    }
-
-    const env = { ...process.env };
-    delete env.MSGCODE_TRANSPORTS;
-    delete env.FEISHU_APP_ID;
-    delete env.FEISHU_APP_SECRET;
-    delete env.IMSG_PATH;
-    env.NODE_ENV = "test";
-    env.HOME = tempHome;
-
-    for (const [key, value] of Object.entries(overrides)) {
-      if (value === undefined) {
-        delete env[key];
-      } else {
-        env[key] = value;
-      }
-    }
-
+  overrides: Record<string, string | undefined>
+): { requiredForStart: string[]; optional: string[]; status: string } {
+  return withIsolatedEnv(overrides, ({ env, cwd }) => {
     const result = spawnSync(BIN_PATH, ["preflight", "--json"], {
-      cwd: tempCwd,
+      cwd,
       env,
       encoding: "utf-8",
     });
@@ -148,17 +115,15 @@ function runPreflightFromIsolatedProcess(
 
     const parsed = JSON.parse(result.stdout);
     return {
+      status: parsed.status,
       requiredForStart: parsed.data.preflight.requiredForStart.map((dep: { dependencyId: string }) => dep.dependencyId),
       optional: parsed.data.preflight.optional.map((dep: { dependencyId: string }) => dep.dependencyId),
     };
-  } finally {
-    fs.rmSync(tempHome, { recursive: true, force: true });
-    fs.rmSync(tempCwd, { recursive: true, force: true });
-  }
+  });
 }
 
-describe("P5.7-R29: Feishu-first transport defaults", () => {
-  it("有飞书凭据且未显式配置 MSGCODE_TRANSPORTS 时，应默认只启 feishu", () => {
+describe("P5.7-R29: Feishu-only transport defaults", () => {
+  it("有飞书凭据时，transport 仍固定为 feishu", () => {
     const transports = readTransportsFromIsolatedProcess({
       FEISHU_APP_ID: "cli_test",
       FEISHU_APP_SECRET: "secret_test",
@@ -167,24 +132,30 @@ describe("P5.7-R29: Feishu-first transport defaults", () => {
     expect(transports).toEqual(["feishu"]);
   });
 
-  it("无飞书凭据时，默认 transport 仍应收口为 feishu", () => {
+  it("无飞书凭据时，transport 仍固定为 feishu", () => {
     const transports = readTransportsFromIsolatedProcess({});
+    expect(transports).toEqual(["feishu"]);
+  });
+
+  it("显式 MSGCODE_TRANSPORTS=feishu 时，应保持 Feishu-only", () => {
+    const transports = readTransportsFromIsolatedProcess({
+      MSGCODE_TRANSPORTS: "feishu",
+    });
 
     expect(transports).toEqual(["feishu"]);
   });
 
-  it("显式 MSGCODE_TRANSPORTS 时，应尊重用户配置", () => {
-    const transports = readTransportsFromIsolatedProcess({
-      MSGCODE_TRANSPORTS: "imsg, feishu",
-      FEISHU_APP_ID: "cli_test",
-      FEISHU_APP_SECRET: "secret_test",
-      IMSG_PATH: "/bin/echo",
+  it("显式 legacy MSGCODE_TRANSPORTS=imsg 时，应报 sunset 错误", () => {
+    const output = readConfigErrorFromIsolatedProcess({
+      MSGCODE_ENV_BOOTSTRAPPED: "1",
+      MSGCODE_TRANSPORTS: "imsg",
     });
 
-    expect(transports).toEqual(["imsg", "feishu"]);
+    expect(output).toContain("MSGCODE_TRANSPORTS 已退役为 Feishu-only");
+    expect(output).toContain("imsg");
   });
 
-  it("依赖清单中不应再把 imsg/messages_db 作为启动硬依赖", () => {
+  it("依赖清单应直接把飞书凭据列为启动必需，并移除 imsg/messages_db", () => {
     const manifest = JSON.parse(
       fs.readFileSync(path.join(process.cwd(), "src/deps/manifest.json"), "utf-8")
     ) as {
@@ -192,80 +163,33 @@ describe("P5.7-R29: Feishu-first transport defaults", () => {
       optional: Array<{ id: string }>;
     };
 
-    expect(manifest.requiredForStart.map((dep) => dep.id)).not.toContain("imsg");
-    expect(manifest.requiredForStart.map((dep) => dep.id)).not.toContain("messages_db");
-    expect(manifest.optional.map((dep) => dep.id)).toContain("imsg");
-    expect(manifest.optional.map((dep) => dep.id)).toContain("messages_db");
+    expect(manifest.requiredForStart.map((dep) => dep.id)).toEqual([
+      "feishu_app_id",
+      "feishu_app_secret",
+    ]);
+    expect(manifest.optional.map((dep) => dep.id)).not.toContain("imsg");
+    expect(manifest.optional.map((dep) => dep.id)).not.toContain("messages_db");
   });
 
-  it("默认 feishu-only 时，loadManifest 应把 FEISHU_APP_ID/SECRET 提升为启动必需", () => {
+  it("loadManifest 不再动态提升 iMessage 依赖，只保留 Feishu-only 启动门槛", () => {
     const manifest = readManifestSummaryFromIsolatedProcess({});
 
-    expect(manifest.requiredForStart).toContain("feishu_app_id");
-    expect(manifest.requiredForStart).toContain("feishu_app_secret");
-    expect(manifest.requiredForStart).not.toContain("imsg");
-    expect(manifest.requiredForStart).not.toContain("messages_db");
+    expect(manifest.requiredForStart).toEqual([
+      "feishu_app_id",
+      "feishu_app_secret",
+    ]);
+    expect(manifest.optional).not.toContain("imsg");
+    expect(manifest.optional).not.toContain("messages_db");
   });
 
-  it("feishu-only 时，loadManifest 不应把 iMessage 依赖提升为启动必需", () => {
-    const manifest = readManifestSummaryFromIsolatedProcess({}, [
-      "FEISHU_APP_ID=cli_test",
-      "FEISHU_APP_SECRET=secret_test",
-    ].join("\n"));
-
-    expect(manifest.requiredForStart).toContain("feishu_app_id");
-    expect(manifest.requiredForStart).toContain("feishu_app_secret");
-    expect(manifest.requiredForStart).not.toContain("imsg");
-    expect(manifest.requiredForStart).not.toContain("messages_db");
-    expect(manifest.optional).toContain("imsg");
-    expect(manifest.optional).toContain("messages_db");
-  });
-
-  it("显式 imsg-only 时，loadManifest 应把 imsg/messages_db 提升为启动必需", () => {
-    const manifest = readManifestSummaryFromIsolatedProcess({
-      MSGCODE_TRANSPORTS: "imsg",
-      IMSG_PATH: "/bin/echo",
-    });
-
-    expect(manifest.requiredForStart).toContain("imsg");
-    expect(manifest.requiredForStart).toContain("messages_db");
-    expect(manifest.requiredForStart).not.toContain("feishu_app_id");
-    expect(manifest.requiredForStart).not.toContain("feishu_app_secret");
-  });
-
-  it("显式 imsg,feishu 双通道时，不应把任一单通道依赖强行拉回全局启动硬门槛", () => {
-    const manifest = readManifestSummaryFromIsolatedProcess({
-      MSGCODE_TRANSPORTS: "imsg,feishu",
-      FEISHU_APP_ID: "cli_test",
-      FEISHU_APP_SECRET: "secret_test",
-      IMSG_PATH: "/bin/echo",
-    });
-
-    expect(manifest.requiredForStart).not.toContain("imsg");
-    expect(manifest.requiredForStart).not.toContain("messages_db");
-    expect(manifest.requiredForStart).not.toContain("feishu_app_id");
-    expect(manifest.requiredForStart).not.toContain("feishu_app_secret");
-  });
-
-  it("CLI preflight 在默认 feishu-only 且缺凭据时，应把 FEISHU_APP_ID/SECRET 列为启动必需", () => {
+  it("CLI preflight 在 Feishu-only 场景下不应再列出 iMessage 依赖", () => {
     const preflight = runPreflightFromIsolatedProcess({});
 
-    expect(preflight.requiredForStart).toContain("feishu_app_id");
-    expect(preflight.requiredForStart).toContain("feishu_app_secret");
-    expect(preflight.requiredForStart).not.toContain("imsg");
-    expect(preflight.requiredForStart).not.toContain("messages_db");
-  });
-
-  it("CLI preflight 在 feishu-only 场景下不应把 iMessage 依赖列为启动必需", () => {
-    const preflight = runPreflightFromIsolatedProcess({}, [
-      "FEISHU_APP_ID=cli_test",
-      "FEISHU_APP_SECRET=secret_test",
-    ].join("\n"));
-
-    expect(preflight.requiredForStart).toContain("feishu_app_id");
-    expect(preflight.requiredForStart).toContain("feishu_app_secret");
-    expect(preflight.requiredForStart).not.toContain("imsg");
-    expect(preflight.requiredForStart).not.toContain("messages_db");
-    expect(preflight.optional).toContain("imsg");
+    expect(preflight.requiredForStart).toEqual([
+      "feishu_app_id",
+      "feishu_app_secret",
+    ]);
+    expect(preflight.optional).not.toContain("imsg");
+    expect(preflight.optional).not.toContain("messages_db");
   });
 });

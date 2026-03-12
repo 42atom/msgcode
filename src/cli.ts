@@ -3,7 +3,7 @@
  * msgcode: CLI 入口（2.0）
  *
  * 原则：
- * - 主通道是 Feishu；legacy iMessage 仅在显式启用时保留
+ * - 主通道已收口为 Feishu-only
  * - CLI 只暴露真实可运行主链，不制造 transport 幻觉
  */
 
@@ -630,7 +630,6 @@ async function initBot(options: { overwriteSkills?: boolean } = {}): Promise<voi
   console.log("4) 把机器人拉进飞书群，在群里发送：");
   console.log("   /bind acme/ops");
   console.log("   /start");
-  console.log("5) 如需 legacy iMessage，再显式配置 MSGCODE_TRANSPORTS=imsg 或 imsg,feishu");
 }
 
 /**

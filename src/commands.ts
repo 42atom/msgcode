@@ -3,7 +3,7 @@
  *
  * 原则：
  * - 统一运行时只保留一条消息主链
- * - Feishu 是当前正式主通道；legacy imsg 仅在显式启用时保留
+ * - 当前正式消息通道已收口为 Feishu-only
  * - start/stop 只解决真实问题，避免过度防御
  */
 
@@ -11,11 +11,9 @@ import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { logger } from "./logger/index.js";
 import { config } from "./config.js";
-import { ImsgRpcClient } from "./imsg/rpc-client.js";
 import type { InboundMessage } from "./channels/types.js";
 import crypto from "node:crypto";
 import { getVersion } from "./version.js";
-import type { DependencyCheckResult } from "./deps/types.js";
 
 const execAsync = promisify(exec);
 
@@ -29,7 +27,6 @@ type OutboundSendClient = {
   send(params: OutboundSendParams): Promise<{ ok?: boolean }>;
 };
 
-let imsgClient: ImsgRpcClient | null = null;
 let sendClient: OutboundSendClient | null = null;
 let feishuTransport: import("./feishu/transport.js").FeishuTransport | null = null;
 let jobScheduler: import("./jobs/scheduler.js").JobScheduler | null = null;
@@ -124,12 +121,12 @@ async function handleControlCommandInFastLaneWithClient(
   message: InboundMessage,
   clientOverride?: FastLaneSendClient
 ): Promise<void> {
-  const client = clientOverride ?? imsgClient;
+  const client = clientOverride ?? sendClient;
   if (!client) {
     return;
   }
 
-  // P0: 防止同一条消息被 imsg 重复推送导致快车道重复回复
+  // P0: 防止同一条消息被 transport 重复推送导致快车道重复回复
   // 以 rowid 优先做幂等 key，缺失时降级到 message.id
   const key = fastReplyKey(message);
   if (key) {
@@ -224,48 +221,7 @@ async function handleControlCommandInFastLaneWithClient(
   }
 }
 
-type RuntimeTransport = "imsg" | "feishu";
-
-function isImsgUnavailableError(message: string): boolean {
-  return message.includes("RPC 客户端已关闭") || message.includes("imsg 进程未运行");
-}
-
-export function filterStartupDependencyFailures(
-  checks: DependencyCheckResult[],
-  options: {
-    enableImsg: boolean;
-    supervisor?: string;
-  }
-): {
-  blocking: DependencyCheckResult[];
-  downgraded: DependencyCheckResult[];
-} {
-  const blocking: DependencyCheckResult[] = [];
-  const downgraded: DependencyCheckResult[] = [];
-  const launchdManaged = options.supervisor === "launchd";
-
-  for (const check of checks) {
-    if (check.available) {
-      continue;
-    }
-
-    // feishu-only：允许缺失 iMessage 相关依赖
-    if (!options.enableImsg && ["imsg", "messages_db"].includes(check.dependencyId)) {
-      downgraded.push(check);
-      continue;
-    }
-
-    // launchd 下 node 读取 chat.db 可能被 TCC 拒绝，但不代表 daemon 不能继续
-    if (launchdManaged && check.dependencyId === "messages_db") {
-      downgraded.push(check);
-      continue;
-    }
-
-    blocking.push(check);
-  }
-
-  return { blocking, downgraded };
-}
+type RuntimeTransport = "feishu";
 
 /**
  * 检查消息是否已通过快车道回复（供 listener.ts 使用）
@@ -409,25 +365,10 @@ export async function startBot(): Promise<void> {
     const manifest = await loadManifest();
     const preflightResult = await runPreflight(manifest);
 
-    // 检查 requiredForStart
-    const enableImsg = config.transports.includes("imsg");
-    const startupDeps = filterStartupDependencyFailures(preflightResult.requiredForStart, {
-      enableImsg,
-      supervisor: process.env.MSGCODE_DAEMON_SUPERVISOR,
-    });
-    if (startupDeps.downgraded.length > 0) {
-      logger.warn("启动依赖已降级为告警", {
-        module: "commands",
-        supervisor: process.env.MSGCODE_DAEMON_SUPERVISOR ?? "standalone",
-        downgraded: startupDeps.downgraded.map((check) => ({
-          dependencyId: check.dependencyId,
-          error: check.error,
-        })),
-      });
-    }
-    if (startupDeps.blocking.length > 0) {
+    const startupDeps = preflightResult.requiredForStart.filter((check) => !check.available);
+    if (startupDeps.length > 0) {
       console.error("启动必需依赖缺失:");
-      for (const check of startupDeps.blocking) {
+      for (const check of startupDeps) {
         console.error(`  - ${check.dependencyId}: ${check.error}`);
       }
       console.error("\n请解决缺失依赖后重试。运行 'msgcode preflight --json' 查看详情。");
@@ -492,118 +433,21 @@ export async function startBot(): Promise<void> {
   }
 
   const transports = config.transports;
-  const enableImsg = transports.includes("imsg");
-  const enableFeishu = transports.includes("feishu");
   const activeTransports: RuntimeTransport[] = [];
-  const degradeImsgTransport = async (reason: string): Promise<void> => {
-    if (!enableFeishu) {
-      throw new Error(reason);
-    }
 
-    logger.warn("legacy imsg transport 初始化失败，已降级为仅保留其余 transport", {
-      module: "commands",
-      error: reason,
-    });
-    try {
-      await imsgClient?.stop();
-    } catch {
-      // ignore
-    }
-    imsgClient = null;
-    const imsgIndex = activeTransports.indexOf("imsg");
-    if (imsgIndex >= 0) {
-      activeTransports.splice(imsgIndex, 1);
-    }
-  };
-
-  // 统一发送口径：按 chat_guid 前缀分发到具体 transport。
-  // - 当前正式主链：Feishu（feishu:<chat_id>）
-  // - legacy iMessage：仅在显式启用时透传原始 guid
+  // 统一发送口径：当前正式主链只允许 Feishu chat_guid。
   sendClient = {
     send: async (params: OutboundSendParams) => {
       const chatGuid = params.chat_guid;
       const text = typeof params.text === "string" ? params.text : String(params.text ?? "");
       const file = params.file ? String(params.file) : undefined;
 
-      if (typeof chatGuid === "string" && chatGuid.startsWith("feishu:")) {
-        if (!feishuTransport) {
-          throw new Error("feishu transport 未初始化");
-        }
-        return await feishuTransport.send({ chat_guid: chatGuid, text, file });
+      if (!feishuTransport) {
+        throw new Error("feishu transport 未初始化");
       }
-
-      if (!imsgClient) {
-        throw new Error("legacy imsg transport 未初始化");
-      }
-      return await imsgClient.send({ chat_guid: chatGuid, text, ...(file ? { file } : {}) });
+      return await feishuTransport.send({ chat_guid: chatGuid, text, file });
     },
   };
-
-  if (enableImsg) {
-    try {
-      if (!config.imsgPath) {
-        throw new Error("已启用 imsg transport，但 config.imsgPath 为空");
-      }
-      imsgClient = new ImsgRpcClient(config.imsgPath);
-      await imsgClient.start();
-      activeTransports.push("imsg");
-    } catch (error) {
-      imsgClient = null;
-      if (!enableFeishu) {
-        throw error;
-      }
-      logger.warn("legacy imsg transport 启动失败，已降级为仅保留其余 transport", {
-        module: "commands",
-        error: error instanceof Error ? error.message : String(error),
-      });
-    }
-  }
-
-  // E14: 加载游标状态，使用 since_rowid 或 start 参数
-  // rowid 全局递增，因此使用 max(lastSeenRowid) 即可避免历史积压
-  const { loadState } = await import("./state/store.js");
-
-  if (enableImsg && imsgClient) {
-    try {
-      const state = loadState();
-      const chatStates = Object.values(state.chats);
-
-      if (chatStates.length > 0) {
-        const maxRowid = chatStates.reduce((acc, s) => Math.max(acc, s.lastSeenRowid), 0);
-        if (maxRowid > 0) {
-          logger.info(`加载 ${chatStates.length} 个群组游标，使用最大 rowid: ${maxRowid}`, { module: "commands" });
-          await imsgClient.subscribe({
-            sinceRowid: maxRowid,
-          });
-        } else {
-          // 有 state 但无有效游标：使用 start 窗口
-          const startTime = new Date(Date.now() - 60000).toISOString();
-          logger.info(`游标为空，使用 start 时间窗口: ${startTime}`, { module: "commands" });
-          await imsgClient.subscribe({ start: startTime });
-        }
-      } else {
-        // 无游标：使用 start 参数（最近 60 秒）
-        const startTime = new Date(Date.now() - 60000).toISOString();
-        logger.info(`无游标，使用 start 时间窗口: ${startTime}`, { module: "commands" });
-        await imsgClient.subscribe({ start: startTime });
-      }
-    } catch (stateError) {
-      const reason = stateError instanceof Error ? stateError.message : String(stateError);
-      logger.warn(`无法加载游标状态: ${reason}`, { module: "commands" });
-
-      if (isImsgUnavailableError(reason)) {
-        await degradeImsgTransport(reason);
-      } else {
-        try {
-          const startTime = new Date(Date.now() - 60000).toISOString();
-          await imsgClient.subscribe({ start: startTime });
-        } catch (subscribeError) {
-          const subscribeReason = subscribeError instanceof Error ? subscribeError.message : String(subscribeError);
-          await degradeImsgTransport(subscribeReason);
-        }
-      }
-    }
-  }
 
   // M3.2-2: 初始化 JobScheduler（daemon 自动调度）
   const { createJobScheduler, registerActiveJobScheduler } = await import("./jobs/scheduler.js");
@@ -834,47 +678,23 @@ export async function startBot(): Promise<void> {
     perChatQueue.set(chatKey, next);
   };
 
-  // legacy iMessage transport
-  if (imsgClient) {
-    imsgClient.on("message", handleInbound);
-    imsgClient.on("error", (error: Error) => {
-      logger.error("imsg RPC 错误", { module: "commands", error: error.message });
-    });
-    imsgClient.on("close", () => {
-      logger.warn("imsg RPC 连接已关闭", { module: "commands" });
-    });
-  }
-
-  // Feishu transport（可选）
-  if (enableFeishu) {
-    try {
-      if (!config.feishu) {
-        throw new Error("已启用 feishu transport，但未配置 FEISHU_APP_ID / FEISHU_APP_SECRET");
-      }
-      const { createFeishuTransport } = await import("./feishu/transport.js");
-      feishuTransport = createFeishuTransport({
-        appId: config.feishu.appId,
-        appSecret: config.feishu.appSecret,
-        encryptKey: config.feishu.encryptKey,
-        onInbound: (m) => handleInbound(m),
-      });
-      await feishuTransport.start();
-      activeTransports.push("feishu");
-      logger.info("Feishu transport 已启用", { module: "commands" });
-    } catch (error) {
-      feishuTransport = null;
-      if (activeTransports.length === 0) {
-        throw error;
-      }
-      logger.warn("feishu transport 启动失败，已降级为仅保留其余 transport", {
-        module: "commands",
-        error: error instanceof Error ? error.message : String(error),
-      });
+  try {
+    if (!config.feishu) {
+      throw new Error("Feishu-only 主链未配置 FEISHU_APP_ID / FEISHU_APP_SECRET");
     }
-  }
-
-  if (activeTransports.length === 0) {
-    throw new Error("没有可用 transport，daemon 启动取消");
+    const { createFeishuTransport } = await import("./feishu/transport.js");
+    feishuTransport = createFeishuTransport({
+      appId: config.feishu.appId,
+      appSecret: config.feishu.appSecret,
+      encryptKey: config.feishu.encryptKey,
+      onInbound: (m) => handleInbound(m),
+    });
+    await feishuTransport.start();
+    activeTransports.push("feishu");
+    logger.info("Feishu transport 已启用", { module: "commands" });
+  } catch (error) {
+    feishuTransport = null;
+    throw error;
   }
 
   console.log(`msgcode 已启动（transports: ${activeTransports.join(",")}）`);
@@ -932,15 +752,6 @@ export async function stopBot(): Promise<void> {
     jobScheduler.stop();
     jobScheduler = null;
     logger.info("JobScheduler 已停止", { module: "commands" });
-  }
-
-  if (imsgClient) {
-    try {
-      await imsgClient.stop();
-    } catch {
-      // ignore
-    }
-    imsgClient = null;
   }
 
   if (feishuTransport) {

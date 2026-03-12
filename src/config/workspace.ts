@@ -87,22 +87,19 @@ export interface WorkspaceConfig {
 
   /**
    * 当前请求所属 transport（运行时写入）
-   * - imsg: iMessage / 本地消息链路
    * - feishu: 飞书 Bot 链路
    */
-  "runtime.current_transport"?: "imsg" | "feishu";
+  "runtime.current_transport"?: "feishu";
 
   /**
    * 当前请求所属 chatId（运行时写入）
    * - 飞书场景：oc_xxx
-   * - iMessage 场景：归一化 chatId
    */
   "runtime.current_chat_id"?: string;
 
   /**
    * 当前请求所属完整 chatGuid（运行时写入）
    * - 飞书场景：feishu:oc_xxx
-   * - iMessage 场景：chat123 / +8613xxxx 等现有 chatGuid
    */
   "runtime.current_chat_guid"?: string;
 
@@ -247,7 +244,7 @@ export const DEFAULT_WORKSPACE_CONFIG: Required<WorkspaceConfig> = {
   "model.api.embedding": "",
   "policy.mode": "egress-allowed", // 默认允许外联（远程场景避免被门禁卡住；高敏 workspace 可手动切回 local-only）
   "runtime.kind": "agent", // P5.6.14-R1: 默认 agent 形态
-  "runtime.current_transport": "imsg",
+  "runtime.current_transport": "feishu",
   "runtime.current_chat_id": "",
   "runtime.current_chat_guid": "",
   "agent.provider": "agent-backend", // P5.7-R9-T6: 默认 agent-backend（中性语义）
@@ -328,7 +325,7 @@ export async function saveWorkspaceConfig(
 export async function saveCurrentSessionContext(
   projectDir: string,
   session: {
-    transport: "imsg" | "feishu";
+    transport: "feishu";
     chatId: string;
     chatGuid: string;
   }

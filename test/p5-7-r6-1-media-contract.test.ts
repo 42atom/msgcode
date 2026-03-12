@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { execSync } from "node:child_process";
+import { execCliStdoutIsolated } from "./helpers/cli-process.js";
 
 // ============================================
 // 测试
@@ -73,9 +73,7 @@ describe("P5.7-R6-1: Media 命令合同", () => {
 
   describe("help-docs 集成验证", () => {
     it("help-docs --json 必须包含 msgcode media screen 合同", () => {
-      const output = execSync("NODE_OPTIONS='--import tsx' node src/cli.ts help-docs --json", {
-        encoding: "utf-8",
-      });
+      const output = execCliStdoutIsolated(["help-docs", "--json"]);
 
       const envelope = JSON.parse(output);
       expect(envelope.status).toBe("pass");
@@ -105,9 +103,7 @@ describe("P5.7-R6-1: Media 命令合同", () => {
 
   describe("命令行帮助验证", () => {
     it("media --help 应该显示 screen 子命令", () => {
-      const output = execSync("NODE_OPTIONS='--import tsx' node src/cli.ts media --help", {
-        encoding: "utf-8",
-      });
+      const output = execCliStdoutIsolated(["media", "--help"]);
 
       expect(output).toContain("screen");
       expect(output).toContain("截图");

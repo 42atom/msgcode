@@ -2,14 +2,16 @@
  * msgcode: 直接入口薄壳
  *
  * 规则：
- * - 不再维护第二套 imsg-only 运行时
+ * - 不再维护第二套历史 transport 运行时
  * - 任何直接运行 src/index.ts 的场景，都统一落到当前 startBot() 主链
  */
 
-import { startBot } from "./commands.js";
+process.env.MSGCODE_ENV_BOOTSTRAPPED = process.env.MSGCODE_ENV_BOOTSTRAPPED || "1";
 
-void startBot().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  console.error(message);
-  process.exit(1);
-});
+void import("./commands.js")
+  .then(({ startBot }) => startBot())
+  .catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(message);
+    process.exit(1);
+  });

@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { execSync } from "node:child_process";
+import { execCliStdoutIsolated } from "./helpers/cli-process.js";
 
 // ============================================
 // 测试
@@ -107,9 +107,7 @@ describe("P5.7-R6-2: Gen Image 命令合同", () => {
 
   describe("help-docs 集成验证", () => {
     it("help-docs --json 必须包含 msgcode gen image 合同", () => {
-      const output = execSync("NODE_OPTIONS='--import tsx' node src/cli.ts help-docs --json", {
-        encoding: "utf-8",
-      });
+      const output = execCliStdoutIsolated(["help-docs", "--json"]);
 
       const envelope = JSON.parse(output);
       expect(envelope.status).toBe("pass");
@@ -125,9 +123,7 @@ describe("P5.7-R6-2: Gen Image 命令合同", () => {
     });
 
     it("help-docs --json 必须包含 msgcode gen selfie 合同", () => {
-      const output = execSync("NODE_OPTIONS='--import tsx' node src/cli.ts help-docs --json", {
-        encoding: "utf-8",
-      });
+      const output = execCliStdoutIsolated(["help-docs", "--json"]);
 
       const envelope = JSON.parse(output);
       expect(envelope.status).toBe("pass");
@@ -168,9 +164,7 @@ describe("P5.7-R6-2: Gen Image 命令合同", () => {
 
   describe("命令行帮助验证", () => {
     it("gen-image --help 应该显示 image 和 selfie 子命令", () => {
-      const output = execSync("NODE_OPTIONS='--import tsx' node src/cli.ts gen-image --help", {
-        encoding: "utf-8",
-      });
+      const output = execCliStdoutIsolated(["gen-image", "--help"]);
 
       expect(output).toContain("image");
       expect(output).toContain("selfie");

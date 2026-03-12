@@ -201,7 +201,7 @@ export function saveRoutes(data: RouteStoreData): void {
 /**
  * 根据 chatId 查找路由
  *
- * 支持完整 chatGuid、归一化 chatId 或后缀匹配（兼容 imsg RPC 短 ID）
+ * 支持完整 chatGuid、归一化 chatId 或后缀匹配（兼容历史短 ID）
  */
 export function getRouteByChatId(chatId: string): RouteEntry | null {
   const data = loadRoutes();
@@ -219,8 +219,8 @@ export function getRouteByChatId(chatId: string): RouteEntry | null {
     }
   }
 
-  // 后缀匹配（兼容 imsg RPC 返回的短 ID，如 953e31）
-  // 注意：只对 iMessage chatId 启用，避免跨 transport（如 feishu:<id>）误命中。
+  // 后缀匹配（兼容历史短 ID，如 953e31）
+  // 注意：只对无前缀 chatId 启用，避免跨 transport（如 feishu:<id>）误命中。
   if (normalized.includes(":")) {
     return null;
   }

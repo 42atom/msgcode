@@ -1,6 +1,19 @@
 {
   "version": 1,
-  "requiredForStart": [],
+  "requiredForStart": [
+    {
+      "id": "feishu_app_id",
+      "kind": "env_set",
+      "pathEnv": "FEISHU_APP_ID",
+      "description": "飞书应用 App ID（Feishu-only 主链必需）"
+    },
+    {
+      "id": "feishu_app_secret",
+      "kind": "env_set",
+      "pathEnv": "FEISHU_APP_SECRET",
+      "description": "飞书应用 App Secret（Feishu-only 主链必需）"
+    }
+  ],
   "requiredForJobs": [
     {
       "id": "tmux",
@@ -9,30 +22,6 @@
     }
   ],
   "optional": [
-    {
-      "id": "feishu_app_id",
-      "kind": "env_set",
-      "pathEnv": "FEISHU_APP_ID",
-      "description": "飞书应用 App ID（启用 feishu transport 时需要）"
-    },
-    {
-      "id": "feishu_app_secret",
-      "kind": "env_set",
-      "pathEnv": "FEISHU_APP_SECRET",
-      "description": "飞书应用 App Secret（启用 feishu transport 时需要）"
-    },
-    {
-      "id": "imsg",
-      "kind": "bin",
-      "pathEnv": "IMSG_PATH",
-      "description": "iMessage transport 可执行入口（仅在启用 imsg 时需要）"
-    },
-    {
-      "id": "messages_db",
-      "kind": "fs_read",
-      "path": "~/Library/Messages/chat.db",
-      "description": "macOS iMessage 本地 chat.db（仅在启用 imsg 时需要）"
-    },
     {
       "id": "lmstudio",
       "kind": "http",

@@ -6,9 +6,10 @@
  * 注意：使用与 index.ts 相同的锁名 "msgcode"，确保 daemon 和 index.ts 不能同时运行。
  */
 
-import { startBot } from "./commands.js";
 import { logger } from "./logger/index.js";
 import { acquireSingletonLock } from "./runtime/singleton.js";
+
+process.env.MSGCODE_ENV_BOOTSTRAPPED = process.env.MSGCODE_ENV_BOOTSTRAPPED || "1";
 
 function reportDaemonFatal(kind: "uncaughtException" | "unhandledRejection", error: unknown): void {
     const message = error instanceof Error ? error.stack ?? error.message : String(error);
@@ -41,6 +42,7 @@ process.on("unhandledRejection", (reason) => {
         process.exit(1);
     }
 
+    const { startBot } = await import("./commands.js");
     await startBot();
 })().catch((error) => {
     console.error("[Daemon] 启动失败:", error);

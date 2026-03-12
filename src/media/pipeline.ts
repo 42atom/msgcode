@@ -11,7 +11,7 @@ import { mkdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { ImsgAttachment } from "../attachments/vault.js";
+import type { VaultAttachment } from "../attachments/vault.js";
 import { isAudioAttachment, isImageAttachment } from "../attachments/vault.js";
 import { resolveMlxWhisper } from "../runners/utils.js";
 import { executeTool } from "../tools/bus.js";
@@ -319,13 +319,13 @@ async function processDoc(
  * 处理附件（生成派生文本）
  *
  * @param vaultPath Vault 中的附件路径
- * @param attachment iMessage 附件信息
+ * @param attachment 附件信息
  * @param workspacePath 工作区路径
  * @returns 处理结果
  */
 export async function processAttachment(
   vaultPath: string,
-  attachment: ImsgAttachment,
+  attachment: VaultAttachment,
   workspacePath: string
 ): Promise<AttachmentProcessResult> {
   const digest = await calculateDigest(vaultPath);

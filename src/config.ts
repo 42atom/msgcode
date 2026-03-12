@@ -69,8 +69,8 @@ export interface WhitelistConfig {
  */
 export interface Config {
     // Transport 列表（启动时启用哪些通道）
-    // - 默认：未显式配置时只启 feishu
-    // - 可用 MSGCODE_TRANSPORTS 显式覆盖
+    // - 当前主链已收口为 Feishu-only
+    // - 仅保留该字段作为统一状态输出
     transports: RuntimeTransport[];
     // 白名单
     whitelist: WhitelistConfig;
@@ -78,10 +78,6 @@ export interface Config {
     groupRoutes: Map<string, GroupConfig>;
     // 日志级别
     logLevel: "debug" | "info" | "warn" | "error";
-    // imsg 二进制路径（2.0 唯一 iMessage Provider）
-    imsgPath?: string;
-    // imsg 数据库路径 (可选)
-    imsgDbPath?: string;
     // 工作空间根目录（E08 新增）
     workspaceRoot: string;
     // 未绑定 chat 的默认工作目录名（相对 WORKSPACE_ROOT）
@@ -244,20 +240,14 @@ export function loadConfig(): Config {
         }
     }
 
-    const enableImsg = transports.includes("imsg");
     const enableFeishu = transports.includes("feishu");
-
-    const imsgPath = (process.env.IMSG_PATH || "").trim() || undefined;
-    if (enableImsg && !imsgPath) {
-        throw new Error("未设置 IMSG_PATH（已启用 imsg transport）");
-    }
 
     const feishuAppId = (process.env.FEISHU_APP_ID || "").trim();
     const feishuAppSecret = (process.env.FEISHU_APP_SECRET || "").trim();
     const feishuEncryptKey = (process.env.FEISHU_ENCRYPT_KEY || "").trim();
     const feishuAllowAll = parseBool(process.env.FEISHU_ALLOW_ALL);
 
-    if (!enableImsg && !enableFeishu) {
+    if (!enableFeishu) {
         throw new Error("未启用任何 transport（MSGCODE_TRANSPORTS 为空）");
     }
 
@@ -269,8 +259,6 @@ export function loadConfig(): Config {
         },
         groupRoutes,
         logLevel: (process.env.LOG_LEVEL as Config["logLevel"]) || "info",
-        imsgPath,
-        imsgDbPath: process.env.IMSG_DB_PATH || `${process.env.HOME}/Library/Messages/chat.db`,
         // E08: 工作空间根目录配置
         workspaceRoot: process.env.WORKSPACE_ROOT || path.join(os.homedir(), "msgcode-workspaces"),
         defaultWorkspaceDir: parseDefaultWorkspaceDir(),

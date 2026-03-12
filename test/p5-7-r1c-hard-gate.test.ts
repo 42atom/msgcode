@@ -8,20 +8,12 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { spawnSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { runCliIsolated } from "./helpers/cli-process.js";
 
 function runCli(args: string[]) {
-  return spawnSync("node", ["src/cli.ts", ...args], {
-    cwd: process.cwd(),
-    env: {
-      ...process.env,
-      MSGCODE_ENV_BOOTSTRAPPED: "1",
-      NODE_OPTIONS: "--import tsx",
-    },
-    encoding: "utf-8",
-  });
+  return runCliIsolated(args);
 }
 
 /**

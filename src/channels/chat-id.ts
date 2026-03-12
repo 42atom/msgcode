@@ -1,11 +1,11 @@
 /**
  * msgcode: channel-neutral chatId 工具
  *
- * 当前仍兼容历史 iMessage chatId 形态，同时允许其他通道直接透传。
+ * 当前仍兼容历史群聊 chatId 形态，同时允许其他通道直接透传。
  */
 
 /**
- * 判断是否为 iMessage 群聊 chatId
+ * 判断是否为历史群聊 chatId
  *
  * 群聊格式：
  * - 纯 GUID (32 位十六进制)
@@ -18,7 +18,7 @@ export function isGroupChatId(chatId: string): boolean {
 /**
  * 归一化 chatId
  *
- * 对 iMessage 兼容形态提取 GUID；其他通道保持原样。
+ * 对历史兼容形态提取 GUID；其他通道保持原样。
  */
 export function normalizeChatId(chatId: string): string {
   const parts = chatId.split(";");

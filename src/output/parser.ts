@@ -146,12 +146,12 @@ export class AssistantParser {
     }
 
     /**
-     * 格式化为 iMessage 友好的文本
+     * 格式化为移动端友好的文本
      */
     static formatForIMessage(result: ParseResult): string {
         const plainText = this.toPlainText(result);
 
-        // 限制长度（iMessage 有长度限制）
+        // 限制长度（避免移动端消息过长难以阅读）
         const maxLength = 4000;
         if (plainText.length <= maxLength) {
             return plainText;

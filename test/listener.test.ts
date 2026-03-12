@@ -16,7 +16,7 @@ import { config } from "../src/config.js";
 const TEST_ROUTES_FILE = path.join(os.tmpdir(), ".config/msgcode/routes-listener.test.json");
 const TEST_WORKSPACE_ROOT = path.join(os.tmpdir(), "msgcode-workspaces-listener.test");
 
-class FakeImsgClient {
+class FakeSendClient {
   public sent: Array<{ chat_guid: string; text: string }> = [];
   async send(params: { chat_guid: string; text: string }): Promise<{ ok: boolean }> {
     this.sent.push({ chat_guid: params.chat_guid, text: params.text });
@@ -57,7 +57,7 @@ describe("listener (2.0)", () => {
   });
 
   it("未绑定时，/where 会显示默认工作目录，并提示可 /bind 覆盖", async () => {
-    const imsg = new FakeImsgClient();
+    const client = new FakeSendClient();
     await handleMessage(
       {
         id: "m1",
@@ -67,17 +67,17 @@ describe("listener (2.0)", () => {
         sender: "test@example.com",
         handle: "test@example.com",
       },
-      { sendClient: imsg as unknown as any }
+      { sendClient: client as unknown as any }
     );
 
-    expect(imsg.sent.length).toBe(1);
-    expect(imsg.sent[0].text).toContain("默认工作目录");
-    expect(imsg.sent[0].text).toContain(path.join(TEST_WORKSPACE_ROOT, "default"));
-    expect(imsg.sent[0].text).toContain("/bind");
+    expect(client.sent.length).toBe(1);
+    expect(client.sent[0].text).toContain("默认工作目录");
+    expect(client.sent[0].text).toContain(path.join(TEST_WORKSPACE_ROOT, "default"));
+    expect(client.sent[0].text).toContain("/bind");
   });
 
   it("/bind 会写入 RouteStore，并且 /where 可查询", async () => {
-    const imsg = new FakeImsgClient();
+    const client = new FakeSendClient();
     const chatId = "any;+;chat-guid-2";
 
     await handleMessage(
@@ -89,11 +89,11 @@ describe("listener (2.0)", () => {
         sender: "test@example.com",
         handle: "test@example.com",
       },
-      { sendClient: imsg as unknown as any }
+      { sendClient: client as unknown as any }
     );
 
-    expect(imsg.sent.length).toBe(1);
-    expect(imsg.sent[0].text).toContain("绑定成功");
+    expect(client.sent.length).toBe(1);
+    expect(client.sent[0].text).toContain("绑定成功");
     expect(fs.existsSync(TEST_ROUTES_FILE)).toBe(true);
 
     await handleMessage(
@@ -105,11 +105,11 @@ describe("listener (2.0)", () => {
         sender: "test@example.com",
         handle: "test@example.com",
       },
-      { sendClient: imsg as unknown as any }
+      { sendClient: client as unknown as any }
     );
 
-    expect(imsg.sent.length).toBe(2);
-    expect(imsg.sent[1].text).toContain("当前绑定");
-    expect(imsg.sent[1].text).toContain(path.join(TEST_WORKSPACE_ROOT, "acme/ops"));
+    expect(client.sent.length).toBe(2);
+    expect(client.sent[1].text).toContain("当前绑定");
+    expect(client.sent[1].text).toContain(path.join(TEST_WORKSPACE_ROOT, "acme/ops"));
   });
 });

@@ -5,7 +5,7 @@
 ```text
 src/
 ├── cli/             # 命令合同与 CLI 子命令实现
-├── routes/          # iMessage 路由命令层（bind/model/policy/...）
+├── routes/          # 路由命令层（bind/model/policy/...）
 ├── runtime/         # 运行时编排（会话、调度、路由决策）
 ├── providers/       # 后端适配层（OpenAI-compatible / Anthropic-compatible / ToolLoop 适配）
 ├── tools/           # Tool Bus 与工具执行网关

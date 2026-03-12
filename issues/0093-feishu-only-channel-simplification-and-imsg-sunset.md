@@ -1,7 +1,7 @@
 ---
 id: 0093
 title: Feishu-only 通道简化与 iMessage Sunset 执行规划
-status: doing
+status: done
 owner: agent
 labels: [feature, refactor, docs]
 risk: high
@@ -47,9 +47,9 @@ links:
 - [x] 把 `remove-imessage-channel.md` 收口成正式迁移步骤与边界清单
 - [x] 第一阶段：先做 channel-neutral cleanup，清理配置/命名/CLI/help 中的 iMessage 默认假设
 - [x] 第二阶段：清理 runtime/probe 对 imsg 的启动硬依赖与默认探测
-- [ ] 第三阶段：移除 `src/imsg/` 主链入口，并同步归档 `vendor/imsg` 与历史脚本
-- [ ] 第四阶段：清理受影响测试，改为 Feishu-only / channel-neutral 真相源
-- [ ] 更新 README / docs / package metadata，对外口径收口为 Feishu-first，面向未来 app/web client
+- [x] 第三阶段：移除 `src/imsg/` 主链入口，并同步归档 `vendor/imsg` 与历史脚本
+- [x] 第四阶段：清理受影响测试，改为 Feishu-only / channel-neutral 真相源
+- [x] 更新 README / docs / package metadata，对外口径收口为 Feishu-only，面向未来 app/web client
 
 ## Acceptance Criteria
 
@@ -66,22 +66,25 @@ links:
 - 当前进展：
   - 已新增 `src/channels/types.ts` 与 `src/channels/chat-id.ts`
   - 核心主链模块已改为依赖 `src/channels/*`，不再从 `src/imsg/*` 借通用消息类型和 chatId 工具
-  - `src/imsg/types.ts` / `src/imsg/adapter.ts` 仅保留 legacy compat re-export，便于 Phase A 期间渐进迁移
   - transport 默认面已进一步收口：
     - 未显式配置 `MSGCODE_TRANSPORTS` 时默认只启 `feishu`
+    - `parseRuntimeTransports()` 现在只接受 `feishu`
+    - legacy `MSGCODE_TRANSPORTS=imsg` 只会在 `MSGCODE_ENV_BOOTSTRAPPED=1` 的真实运行入口显式报 sunset 错误
+    - 维护脚本 / 普通源码分析不会被开发机残留 shell env 直接拖垮
     - 不再因缺少飞书凭据在 `config.ts` import/load 阶段直接炸整仓
     - 缺失 `FEISHU_APP_ID / FEISHU_APP_SECRET` 改为在 `preflight` / `start` 边界显式报错
-    - `loadManifest()` 已按 transport 模式动态提升 `feishu_app_id` / `feishu_app_secret` 或 `imsg` / `messages_db`
+    - `loadManifest()` 已收口为 Feishu-only：启动必需只剩 `feishu_app_id` / `feishu_app_secret`
   - 默认上手入口已收口为 Feishu-first：
     - `msgcode init` 不再检查 `chat.db`、不再引导 Full Disk Access、也不再提示 iMessage 建群
     - `.env.example` 已显式暴露 `FEISHU_APP_ID` / `FEISHU_APP_SECRET`
-    - `IMSG_PATH` 已退回注释态，只保留 legacy 显式启用时的说明
+    - `.env.example` 不再公开 `IMSG_PATH`
   - 公开脚本入口已纠偏：
     - `package.json` 的 `npm run dev` / `npm start` 不再指向 `src/index.ts`
     - 对外脚本现统一落到 `tsx src/cli.ts start debug`
     - 黑盒测试已锁定：公开脚本必须命中当前 Feishu 主链，不允许再落回 `index.ts` 的 imsg-only 壳
   - 直接入口已收口为单一主链：
     - `src/index.ts` 不再维护第二套 imsg-only runtime
+    - `src/index.ts` / `src/daemon.ts` 都会先设置 `MSGCODE_ENV_BOOTSTRAPPED=1`，再动态导入 `commands.js`
   - 直接运行 `src/index.ts` 时已统一转发到当前 `startBot()` 主链
   - 黑盒测试已锁定：`src/index.ts` 不得再返回旧的“仅支持 imsg”错误
   - 公开 legacy CLI 面已继续收口：
@@ -93,11 +96,22 @@ links:
     - `doctor/status/about` 不再把 `IMSG_PATH`、`imsg executable`、`chat.db`、Full Disk Access 作为当前正式输出字段
     - `probe config/environment/connections/permissions` 已移除 legacy imsg 默认探测字段
     - `listener` / `commands` / `jobs` 的发送接口命名已收口为 channel-neutral，避免 `imsgSend` 继续扩散到现役主链
+    - `listener` 写入的 `runtime.current_transport` 已固定为 `feishu`
     - 黑盒测试已锁定：即使显式配置 legacy imsg，probe 和 `about --json` 也不得再回显这些字段
   - 用户面文案已开始同步：
     - `src/cli.ts` 默认描述改为中性 runtime 口径
     - `src/tmux/remote_hint.ts` 默认提示词不再写死 iMessage
     - `README.md` / `.env.example` 已清掉过时的 IndexTTS 主叙事，并把 iMessage 标成 legacy
+  - Phase B 已完成：
+    - `src/imsg/` 已迁入 `.trash/2026-03-12-imsg-sunset/src/imsg/`
+    - `vendor/imsg/` 已迁入 `.trash/2026-03-12-imsg-sunset/vendor/imsg/`
+    - `test/imsg.adapter.test.ts` 与 `test/commands.startup-guard.test.ts` 已迁入同一归档目录
+    - `.trash/2026-03-12-imsg-sunset/README.md` 已记录 sunset 原因与归档边界
+  - 最终验证：
+    - `PATH="$HOME/.bun/bin:$PATH" bun test` -> `1492 pass / 0 fail`
+    - `npx tsc --noEmit` -> 通过
+    - `npm run docs:check` -> 通过
+    - 直接 CLI 黑盒测试已统一改为走 `test/helpers/cli-process.ts`，隔离宿主 shell 遗留的 `MSGCODE_TRANSPORTS=imsg` 污染
 - 执行输入：
   - [AIDOCS/reviews/remove-imessage-channel.md](/Users/admin/GitProjects/msgcode/AIDOCS/reviews/remove-imessage-channel.md)
 - 受影响边界（初始）：

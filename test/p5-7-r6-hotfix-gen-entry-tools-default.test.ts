@@ -7,10 +7,10 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { execSync, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { execCliStdoutIsolated, runCliIsolated } from "./helpers/cli-process.js";
 
 describe("P5.7-R6 HOTFIX: gen 入口 + tools 缺省值", () => {
   it("getToolsForLlm: config 缺少 tooling.allow 时应返回 read_file + bash 基线", async () => {
@@ -72,10 +72,7 @@ describe("P5.7-R6 HOTFIX: gen 入口 + tools 缺省值", () => {
   });
 
   it("CLI: `msgcode gen --help` 应包含 image/selfie/tts/music 子命令", () => {
-    const out = execSync("NODE_OPTIONS='--import tsx' node src/cli.ts gen --help", {
-      encoding: "utf-8",
-      cwd: process.cwd(),
-    });
+    const out = execCliStdoutIsolated(["gen", "--help"]);
     expect(out).toContain("image");
     expect(out).toContain("selfie");
     expect(out).toContain("tts");
@@ -83,11 +80,7 @@ describe("P5.7-R6 HOTFIX: gen 入口 + tools 缺省值", () => {
   });
 
   it("CLI: `msgcode gen image --prompt '' --json` 应返回固定错误码", () => {
-    const res = spawnSync("node", ["src/cli.ts", "gen", "image", "--prompt", "", "--json"], {
-      encoding: "utf-8",
-      cwd: process.cwd(),
-      env: { ...process.env, NODE_OPTIONS: "--import tsx" },
-    });
+    const res = runCliIsolated(["gen", "image", "--prompt", "", "--json"]);
     expect(res.status).toBe(1);
     const output = `${res.stdout ?? ""}${res.stderr ?? ""}`;
     expect(output).toContain("GEN_INVALID_PROMPT");
