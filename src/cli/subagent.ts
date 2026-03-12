@@ -13,6 +13,7 @@ import {
   SUBAGENT_ERROR_CODES,
   SubagentRuntimeError,
   getSubagentTaskStatus,
+  listSubagentTasks,
   runSubagentTask,
   stopSubagentTask,
 } from "../runtime/subagent.js";
@@ -71,6 +72,32 @@ function formatStatusText(data: {
   ];
   if (data.paneTail) {
     lines.push("", "paneTail:", data.paneTail);
+  }
+  return lines.join("\n");
+}
+
+function formatListText(data: {
+  workspacePath: string;
+  tasks: Array<{
+    taskId: string;
+    client: string;
+    status: string;
+    updatedAt: string;
+    taskFile: string;
+    goal: string;
+  }>;
+}): string {
+  const lines = [`workspace: ${data.workspacePath}`, `count: ${data.tasks.length}`];
+  for (const task of data.tasks) {
+    lines.push(
+      "",
+      `taskId: ${task.taskId}`,
+      `client: ${task.client}`,
+      `status: ${task.status}`,
+      `updatedAt: ${task.updatedAt}`,
+      `taskFile: ${task.taskFile}`,
+      `goal: ${task.goal}`,
+    );
   }
   return lines.join("\n");
 }
@@ -206,6 +233,66 @@ export function createSubagentStatusCommand(): Command {
   return cmd;
 }
 
+export function createSubagentListCommand(): Command {
+  const cmd = new Command("list");
+
+  cmd
+    .description("列出当前 workspace 的子代理任务")
+    .option("--workspace <id|path>", "工作目录（默认当前 cwd）")
+    .option("--client <client>", "按执行臂过滤：codex | claude-code")
+    .option("--status <status>", "按任务状态过滤：running|completed|failed|stopped")
+    .option("--json", "JSON 格式输出")
+    .action(async (options) => {
+      const startTime = Date.now();
+      const command = "msgcode subagent list";
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      try {
+        const result = await listSubagentTasks({
+          workspace: options.workspace,
+          client: options.client,
+          status: options.status,
+        });
+        const data = {
+          workspacePath: result.workspacePath,
+          tasks: result.tasks.map((task) => ({
+            taskId: task.taskId,
+            client: task.client,
+            status: task.status,
+            updatedAt: task.updatedAt,
+            taskFile: task.taskFile,
+            goal: task.goal,
+          })),
+        };
+        const envelope = createEnvelope(command, startTime, "pass", data, warnings, errors);
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.log(formatListText(data));
+        }
+        process.exit(0);
+      } catch (error) {
+        const message = resolveErrorMessage(error);
+        const code = resolveErrorCode(error, SUBAGENT_ERROR_CODES.INVALID_CLIENT);
+        errors.push(createSubagentDiagnostic(code, message, {
+          workspace: options.workspace ?? process.cwd(),
+          client: options.client,
+          status: options.status,
+        }));
+        const envelope = createEnvelope(command, startTime, "error", {}, warnings, errors);
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.error(`${code}: ${message}`);
+        }
+        process.exit(1);
+      }
+    });
+
+  return cmd;
+}
+
 export function createSubagentStopCommand(): Command {
   const cmd = new Command("stop");
 
@@ -266,6 +353,7 @@ export function createSubagentCommand(): Command {
 
   cmd.description("子代理执行臂（codex / claude-code）");
   cmd.addCommand(createSubagentRunCommand());
+  cmd.addCommand(createSubagentListCommand());
   cmd.addCommand(createSubagentStatusCommand());
   cmd.addCommand(createSubagentStopCommand());
 
@@ -312,6 +400,24 @@ export function getSubagentStatusContract() {
     },
     errorCodes: [
       SUBAGENT_ERROR_CODES.TASK_NOT_FOUND,
+    ],
+  };
+}
+
+export function getSubagentListContract() {
+  return {
+    name: "msgcode subagent list",
+    description: "列出当前 workspace 的子代理任务",
+    options: {
+      optional: {
+        "--workspace": "工作目录（默认当前 cwd）",
+        "--client": "按执行臂过滤：codex | claude-code",
+        "--status": "按状态过滤：running|completed|failed|stopped",
+        "--json": "JSON 格式输出",
+      },
+    },
+    errorCodes: [
+      SUBAGENT_ERROR_CODES.INVALID_CLIENT,
     ],
   };
 }

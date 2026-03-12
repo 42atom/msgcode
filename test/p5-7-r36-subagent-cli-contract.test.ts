@@ -7,9 +7,10 @@ describe("P5.7-R36: subagent CLI 合同", () => {
     expect(out).toContain("subagent");
   });
 
-  it("subagent --help 应只公开 run/status/stop", () => {
+  it("subagent --help 应只公开 run/list/status/stop", () => {
     const out = execCliStdoutIsolated(["subagent", "--help"]);
     expect(out).toContain("run");
+    expect(out).toContain("list");
     expect(out).toContain("status");
     expect(out).toContain("stop");
     expect(out).not.toContain("queue");
@@ -24,6 +25,7 @@ describe("P5.7-R36: subagent CLI 合同", () => {
     };
     const names = parsed.data.commands.map((item) => item.name);
     expect(names).toContain("msgcode subagent run");
+    expect(names).toContain("msgcode subagent list");
     expect(names).toContain("msgcode subagent status");
     expect(names).toContain("msgcode subagent stop");
   });

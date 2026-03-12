@@ -34,6 +34,7 @@ mock.module("../src/tmux/responder.js", () => ({
 
 const {
   runSubagentTask,
+  listSubagentTasks,
   getSubagentTaskStatus,
   stopSubagentTask,
 } = await import("../src/runtime/subagent.js");
@@ -141,6 +142,29 @@ describe("P5.7-R37: subagent runtime", () => {
     expect(sendMessageMock).toHaveBeenCalled();
     expect(statusResult.task.status).toBe("completed");
     expect(statusResult.paneTail).toContain(runResult.task.doneMarker);
+  });
+
+  it("list 应返回当前 workspace 下任务，并支持 client 过滤", async () => {
+    await runSubagentTask({
+      client: "codex",
+      goal: "创建一个最小 html 页面",
+      workspace: workspacePath,
+      watch: false,
+    });
+    await runSubagentTask({
+      client: "claude-code",
+      goal: "整理一个简短报告",
+      workspace: workspacePath,
+      watch: false,
+    });
+
+    const all = await listSubagentTasks({ workspace: workspacePath });
+    const codexOnly = await listSubagentTasks({ workspace: workspacePath, client: "codex" });
+
+    expect(all.workspacePath).toBe(workspacePath);
+    expect(all.tasks.length).toBe(2);
+    expect(codexOnly.tasks.length).toBe(1);
+    expect(codexOnly.tasks[0]?.client).toBe("codex");
   });
 
   it("stop 应发送 ESC 并把任务标记为 stopped", async () => {

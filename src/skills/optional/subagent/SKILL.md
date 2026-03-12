@@ -50,8 +50,15 @@ msgcode 现在已有最小正式 `subagent` CLI 主链：
 
 - `msgcode subagent run codex --goal '...' --watch`
 - `msgcode subagent run claude-code --goal '...' --watch`
+- `msgcode subagent list`
 - `msgcode subagent status <task-id>`
 - `msgcode subagent stop <task-id>`
+
+这里要特别看清：
+
+- `subagent list` = 列出**当前 workspace 下已有的子代理任务**
+- 不是列出“可安装的执行臂”
+- 不是列出“系统支持哪些 client”
 
 注意：
 
@@ -67,6 +74,7 @@ msgcode 现在已有最小正式 `subagent` CLI 主链：
    - canonical：
      - `msgcode subagent run codex --goal '...' --watch`
      - `msgcode subagent run claude-code --goal '...' --watch`
+     - `msgcode subagent list`
      - `msgcode subagent status <task-id>`
      - `msgcode subagent stop <task-id>`
 2. **当前已接线的原生工具/命令**
@@ -84,8 +92,15 @@ msgcode 现在已有最小正式 `subagent` CLI 主链：
 先用 `help_docs` 查当前程序里是否已经存在 `subagent`：
 
 - 看是否有 `subagent run`
+- 看是否有 `subagent list`
 - 看是否有 `subagent status`
 - 看参数名是不是 `--goal` / `--watch`
+
+其中：
+
+- `subagent list` 用来列当前 workspace 下已有任务
+- `subagent status <task-id>` 用来继续观察某个任务
+- 不要把 `list` 误读成“查看有哪些执行臂可安装/可用”
 
 如果没有，就说明当前程序版本还没带上这条正式主链。
 
@@ -164,9 +179,20 @@ token:
 至少要做这些检查：
 
 1. 看任务是否仍在运行
-2. 看输出里是否出现唯一 token
-3. 看产物文件是否真实存在
-4. 必要时再自己读产物、跑测试、做抽查
+2. 若忘了 `taskId`，先用 `msgcode subagent list`
+3. 看输出里是否出现唯一 token
+4. 看产物文件是否真实存在
+5. 必要时再自己读产物、跑测试、做抽查
+
+`subagent list` 的正确用途是：
+
+- 找回当前 workspace 里的 `taskId`
+- 看有哪些任务仍在 `running / completed / failed / stopped`
+
+不是：
+
+- 枚举支持哪些 client
+- 枚举安装说明
 
 不要只因为子代理说“完成了”，就向用户宣布完成。
 

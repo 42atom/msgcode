@@ -87,6 +87,11 @@ export interface SubagentStatusResult {
   paneTail: string;
 }
 
+export interface ListSubagentTasksResult {
+  workspacePath: string;
+  tasks: SubagentTaskRecord[];
+}
+
 function assertClient(client: string): SubagentClient {
   if (client === "codex" || client === "claude-code") {
     return client;
@@ -179,6 +184,17 @@ async function listTaskFiles(workspacePath: string): Promise<string[]> {
   } catch {
     return [];
   }
+}
+
+async function loadTaskRecords(workspacePath: string): Promise<SubagentTaskRecord[]> {
+  const files = await listTaskFiles(workspacePath);
+  const records = await Promise.all(files.map((file) => readTaskRecord(file)));
+  records.sort((a, b) => {
+    const lhs = Date.parse(b.updatedAt || b.createdAt || "");
+    const rhs = Date.parse(a.updatedAt || a.createdAt || "");
+    return lhs - rhs;
+  });
+  return records;
 }
 
 async function findRunningTask(workspacePath: string, client: SubagentClient): Promise<SubagentTaskRecord | null> {
@@ -402,6 +418,26 @@ export async function getSubagentTaskStatus(input: {
   return {
     task: next,
     paneTail,
+  };
+}
+
+export async function listSubagentTasks(input?: {
+  workspace?: string;
+  client?: string;
+  status?: SubagentTaskStatus;
+}): Promise<ListSubagentTasksResult> {
+  const workspacePath = resolveWorkspacePath(input?.workspace);
+  const client = input?.client ? assertClient(input.client) : null;
+  const records = await loadTaskRecords(workspacePath);
+  const tasks = records.filter((record) => {
+    if (client && record.client !== client) return false;
+    if (input?.status && record.status !== input.status) return false;
+    return true;
+  });
+
+  return {
+    workspacePath,
+    tasks,
   };
 }
 

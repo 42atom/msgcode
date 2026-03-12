@@ -250,6 +250,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - browser/runtime: `browser tabs.text` 现在会把正文全文落盘到 `artifacts/browser/`，并通过 `textPath + textBytes + textPreview` 暴露给模型，网页转写主链不再只有标题/URL 预览 (Issue: 0131, Plan: docs/design/plan-260312-browser-text-artifact-and-skill-contract.md) [risk: medium] [rollback: revert 0131 browser text artifact commit]
   - browser/skill: `patchright-browser` 说明书改为优先复用 `tabs.text` 返回的 `textPath`，长文网页原文/结果文件改成按任务生成唯一文件名，避免多任务覆盖 (Issue: 0131, Plan: docs/design/plan-260312-browser-text-artifact-and-skill-contract.md) [risk: low] [rollback: revert 0131 browser skill contract commit]
   - subagent/runtime: 新增最小正式 `subagent` CLI 主链，提供 `run/status/stop`，直接复用 tmux 执行臂并把任务状态收口到 workspace/.msgcode/subagents/*.json (Issue: 0137, Plan: docs/design/plan-260312-subagent-cli-runtime-mvp.md) [risk: medium] [rollback: revert 0137 subagent runtime commits]
+  - subagent/observability: 新增 `msgcode subagent list` 作为最小观测原语；继续坚持 `run/list/status/stop` 四原语，不新增 queue/orchestrator，真实 Feishu 验收确认主脑已正确理解 list=当前 workspace 任务清单 (Issue: 0141, Plan: docs/design/plan-260312-subagent-list-observability-mvp.md) [risk: low] [rollback: revert 0141 subagent list commit]
 
 [2.3.0]: https://github.com/yourorg/msgcode/releases/tag/v2.3.0
 [1.0.0]: https://github.com/yourorg/msgcode/releases/tag/v1.0.0
