@@ -11,23 +11,13 @@ import { exec } from "node:child_process";
 import { promisify } from "node:util";
 import { logger } from "./logger/index.js";
 import { config } from "./config.js";
-import type { InboundMessage } from "./channels/types.js";
+import type { ChannelSendClient, InboundMessage } from "./channels/types.js";
 import crypto from "node:crypto";
 import { getVersion } from "./version.js";
 
 const execAsync = promisify(exec);
 
-type OutboundSendParams = {
-  chat_guid: string;
-  text: string;
-  file?: string;
-};
-
-type OutboundSendClient = {
-  send(params: OutboundSendParams): Promise<{ ok?: boolean }>;
-};
-
-let sendClient: OutboundSendClient | null = null;
+let sendClient: ChannelSendClient | null = null;
 let feishuTransport: import("./feishu/transport.js").FeishuTransport | null = null;
 let jobScheduler: import("./jobs/scheduler.js").JobScheduler | null = null;
 let heartbeatRunner: import("./runtime/heartbeat.js").HeartbeatRunner | null = null;
@@ -115,7 +105,7 @@ async function handleControlCommandInFastLane(message: InboundMessage): Promise<
   return handleControlCommandInFastLaneWithClient(message, sendClient ?? undefined);
 }
 
-type FastLaneSendClient = OutboundSendClient;
+type FastLaneSendClient = ChannelSendClient;
 
 async function handleControlCommandInFastLaneWithClient(
   message: InboundMessage,
@@ -156,7 +146,7 @@ async function handleControlCommandInFastLaneWithClient(
       const route = routeByChatId(message.chatId);
       if (!route) {
         const errorMsg = "未绑定工作区，请先发送 /bind <工作区路径>";
-        await client.send({ chat_guid: message.chatId, text: errorMsg });
+        await client.send({ chatId: message.chatId, text: errorMsg });
         sendSuccessful = true;
         sentText = errorMsg;
         return;
@@ -193,7 +183,7 @@ async function handleControlCommandInFastLaneWithClient(
     }
 
     // 发送回复
-      await client.send({ chat_guid: message.chatId, text: responseText });
+      await client.send({ chatId: message.chatId, text: responseText });
       sendSuccessful = true;
       sentText = responseText;
 
@@ -206,7 +196,7 @@ async function handleControlCommandInFastLaneWithClient(
     });
     // 出错时也尝试回复用户
     const errorMsg = `命令执行出错: ${error instanceof Error ? error.message : String(error)}`;
-    await client.send({ chat_guid: message.chatId, text: errorMsg });
+    await client.send({ chatId: message.chatId, text: errorMsg });
     sendSuccessful = true;
     sentText = errorMsg;
   } finally {
@@ -435,17 +425,17 @@ export async function startBot(): Promise<void> {
   const transports = config.transports;
   const activeTransports: RuntimeTransport[] = [];
 
-  // 统一发送口径：当前正式主链只允许 Feishu chat_guid。
+  // 统一发送口径：当前正式主链只允许 Feishu chatId（feishu:oc_xxx）。
   sendClient = {
-    send: async (params: OutboundSendParams) => {
-      const chatGuid = params.chat_guid;
+    send: async (params) => {
+      const chatId = params.chatId;
       const text = typeof params.text === "string" ? params.text : String(params.text ?? "");
       const file = params.file ? String(params.file) : undefined;
 
       if (!feishuTransport) {
         throw new Error("feishu transport 未初始化");
       }
-      return await feishuTransport.send({ chat_guid: chatGuid, text, file });
+      return await feishuTransport.send({ chatId, text, file });
     },
   };
 
@@ -479,11 +469,11 @@ export async function startBot(): Promise<void> {
       // 使用 lane queue 串行化同一 chatGuid 的执行
       return enqueueLane(job.route.chatGuid, () => executeJob(job, {
         delivery: true,
-        sendReply: async (chatGuid, text) => {
+        sendReply: async (chatId, text) => {
           if (!sendClient) {
             throw new Error("sendClient 未初始化");
           }
-          await sendClient.send({ chat_guid: chatGuid, text });
+          await sendClient.send({ chatId, text });
         },
       }));
     },

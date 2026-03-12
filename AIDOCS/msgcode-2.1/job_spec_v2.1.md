@@ -289,7 +289,7 @@
 - `TMUX_MISSING`：本机无 tmux
 - `TMUX_SESSION_START_FAILED`：main session 不存在且尝试 start 失败
 - `TMUX_SESSION_DEAD`：session 存在但不可用（send/capture 失败）
-- `IMSG_SEND_FAILED`：回发失败（若 bestEffort=false 则计为 error）
+- `DELIVERY_FAILED`：回发失败（若 bestEffort=false 则计为 error）
 - `DELIVERY_TRUNCATED`：输出被截断（不是错误，建议作为 warning 或 runLog 字段）
 - `JOB_STUCK_CLEARED`：发现卡死标记并清理
 

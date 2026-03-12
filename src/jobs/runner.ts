@@ -183,7 +183,7 @@ export async function executeJob(
             status: "error",
             durationMs: Date.now() - startTime,
             error: `回发失败: ${msg}`,
-            errorCode: "IMSG_SEND_FAILED",
+            errorCode: "DELIVERY_FAILED",
             details: { originalResponse: tmuxResult.response },
           });
         }
@@ -293,7 +293,7 @@ async function executeChatMessageJob(
           status: "error",
           durationMs: Date.now() - startTime,
           error: "sendReply 未提供",
-          errorCode: "IMSG_SEND_FAILED",
+          errorCode: "DELIVERY_FAILED",
         };
       }
     } catch (err) {
@@ -304,7 +304,7 @@ async function executeChatMessageJob(
           status: "error",
           durationMs: Date.now() - startTime,
           error: `发送失败: ${msg}`,
-          errorCode: "IMSG_SEND_FAILED",
+          errorCode: "DELIVERY_FAILED",
         };
       }
       // bestEffort 模式：记录错误但继续

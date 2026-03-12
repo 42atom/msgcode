@@ -2,14 +2,14 @@
 
 ## 背景
 
-msgcode 项目包含 iMessage 协议层的参考实现（`AIDOCS/refs/imessage-kit`），其测试套件在 msgcode 运行时环境中存在预期失败。
+msgcode 项目保留了一份 iMessage 协议层的**历史参考实现**（`AIDOCS/refs/imessage-kit`），其测试套件在 msgcode 当前运行时环境中存在预期失败。
 
 ## 白名单策略
 
 ### imessage-kit 测试（4 个预期失败）
 
 **失败原因**：
-- imessage-kit 是 iMessage 协议的参考实现
+- imessage-kit 是历史 iMessage 协议参考实现，不是 msgcode 现役 runtime
 - 测试用例设计假设独立的 imessage-kit 运行时环境
 - msgcode 集成后，部分环境配置不满足测试预期
 - 这些失败不影响 msgcode 核心功能
@@ -23,7 +23,7 @@ msgcode 项目包含 iMessage 协议层的参考实现（`AIDOCS/refs/imessage-k
 ### 白名单固定规则
 
 1. **msgcode 核心测试**：必须全部通过
-2. **imessage-kit 测试**：4 个预期失败（白名单）
+2. **imessage-kit 历史参考测试**：4 个预期失败（白名单）
 3. **门禁通过条件**：
    - 总失败数 = imessage-kit 预期失败数
    - msgcode 测试全部通过
@@ -53,7 +53,7 @@ node scripts/test-gate.js
 ## 团队口径
 
 **统一认知**：
-- imessage-kit 测试失败是预期行为，不是 bug
+- imessage-kit 历史参考测试失败是预期行为，不是 msgcode 主链 bug
 - msgcode 核心测试必须全部通过
 - 新增测试失败时，需要明确区分是 msgcode 还是 imessage-kit
 
@@ -71,12 +71,12 @@ node scripts/test-gate.js
 
 - 门禁脚本：`scripts/test-gate.js`
 - 测试套件：`test/**/*.test.ts`
-- imessage-kit：`AIDOCS/refs/imessage-kit/`
+- imessage-kit（历史参考）：`AIDOCS/refs/imessage-kit/`
 
 ## FAQ
 
 **Q: 为什么不修复 imessage-kit 测试？**
-A: imessage-kit 是参考实现，其测试设计假设独立环境。msgcode 集成后，环境差异导致测试失败，但功能正常。
+A: imessage-kit 是历史参考实现，其测试设计假设独立环境。msgcode 当前主链不会依赖它运行，因此这些失败不影响正式 runtime。
 
 **Q: 如何验证 msgcode 核心功能？**
 A: 查看 msgcode 自己的测试套件（`test/` 目录），这些测试必须全部通过。

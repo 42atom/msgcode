@@ -14,7 +14,7 @@
 import { Client, EventDispatcher, LoggerLevel, WSClient } from "@larksuiteoapi/node-sdk";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import type { InboundMessage } from "../channels/types.js";
+import type { ChannelSendResult, InboundMessage, OutboundMessage } from "../channels/types.js";
 import { logger } from "../logger/index.js";
 
 export const FEISHU_CHAT_GUID_PREFIX = "feishu:";
@@ -282,13 +282,7 @@ export interface FeishuTransportConfig {
 export interface FeishuTransport {
   start: () => Promise<void>;
   stop: () => Promise<void>;
-  send: (params: { chat_guid: string; text: string; file?: string }) => Promise<{
-    ok: boolean;
-    error?: string;
-    attachmentType?: "file" | "image";
-    attachmentKey?: string;
-    fallbackTextSent?: boolean;
-  }>;
+  send: (params: OutboundMessage) => Promise<ChannelSendResult>;
 }
 
 function resolveFeishuFileType(filePath: string): "opus" | "mp4" | "pdf" | "doc" | "xls" | "ppt" | "stream" {
@@ -635,14 +629,8 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
     }
   }
 
-  async function send(params: { chat_guid: string; text: string; file?: string }): Promise<{
-    ok: boolean;
-    error?: string;
-    attachmentType?: "file" | "image";
-    attachmentKey?: string;
-    fallbackTextSent?: boolean;
-  }> {
-    const chatGuid = params.chat_guid;
+  async function send(params: OutboundMessage): Promise<ChannelSendResult> {
+    const chatGuid = params.chatId;
     if (!isFeishuChatGuid(chatGuid)) {
       throw new Error(`Feishu send 收到非 feishu chatGuid: ${chatGuid}`);
     }

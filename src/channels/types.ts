@@ -53,3 +53,34 @@ export interface InboundMessage {
   /** 消息类型（如 text/image/audio/file） */
   messageType?: string;
 }
+
+/**
+ * 出站消息接口（当前统一发送主链实际消费的字段）
+ *
+ * 注意：
+ * - `chatId` 在当前 Feishu-only 主链里是完整的通道 chatId（如 `feishu:oc_xxx`）
+ * - 不再沿用 iMessage 时代的 `chat_guid` 命名
+ */
+export interface OutboundMessage {
+  chatId: string;
+  text: string;
+  file?: string;
+}
+
+/**
+ * 统一发送结果
+ */
+export interface ChannelSendResult {
+  ok: boolean;
+  error?: string;
+  attachmentType?: "file" | "image";
+  attachmentKey?: string;
+  fallbackTextSent?: boolean;
+}
+
+/**
+ * 出站发送客户端
+ */
+export interface ChannelSendClient {
+  send(params: OutboundMessage): Promise<ChannelSendResult>;
+}

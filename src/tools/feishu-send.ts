@@ -8,6 +8,7 @@
  */
 
 import { logger } from "../logger/index.js";
+import type { ChannelSendResult, OutboundMessage } from "../channels/types.js";
 
 export interface FeishuSendFileArgs {
     filePath: string;
@@ -42,12 +43,7 @@ export async function feishuSendFile(
             appSecret: string;
             onInbound: () => void;
         }) => {
-            send: (params: { chat_guid: string; text: string; file?: string }) => Promise<{
-                ok: boolean;
-                error?: string;
-                attachmentType?: "file" | "image";
-                attachmentKey?: string;
-            }>;
+            send: (params: OutboundMessage) => Promise<ChannelSendResult>;
         };
     }
 ): Promise<FeishuSendFileResult> {
@@ -75,7 +71,7 @@ export async function feishuSendFile(
 
         // 3. 使用 transport 的 send 方法发送文件
         const result = await transport.send({
-            chat_guid: `feishu:${args.chatId}`,
+            chatId: `feishu:${args.chatId}`,
             text: args.message || "",
             file: args.filePath,
         });

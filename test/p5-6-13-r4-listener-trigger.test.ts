@@ -5,7 +5,7 @@ import path from "node:path";
 function runIsolatedListenerCase(mode: "search" | "fail-open"): {
   vectorAvailable?: boolean;
   requestBody?: Record<string, unknown>;
-  sent?: Array<{ chat_guid: string; text: string }>;
+  sent?: Array<{ chatId: string; text: string }>;
   debugLogs?: Array<[string, Record<string, unknown>]>;
   warnLogs?: Array<[string, Record<string, unknown>]>;
 } {
@@ -113,7 +113,7 @@ function runIsolatedListenerCase(mode: "search" | "fail-open"): {
     class FakeSendClient {
       sent = [];
       async send(params) {
-        this.sent.push({ chat_guid: params.chat_guid, text: params.text || "" });
+        this.sent.push({ chatId: params.chatId, text: params.text || "" });
         return { ok: true };
       }
     }

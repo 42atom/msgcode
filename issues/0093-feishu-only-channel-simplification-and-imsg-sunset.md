@@ -103,10 +103,10 @@ links:
     - `src/tmux/remote_hint.ts` 默认提示词不再写死 iMessage
     - `README.md` / `.env.example` 已清掉过时的 IndexTTS 主叙事，并把 iMessage 标成 legacy
   - Phase B 已完成：
-    - `src/imsg/` 已迁入 `.trash/2026-03-12-imsg-sunset/src/imsg/`
-    - `vendor/imsg/` 已迁入 `.trash/2026-03-12-imsg-sunset/vendor/imsg/`
-    - `test/imsg.adapter.test.ts` 与 `test/commands.startup-guard.test.ts` 已迁入同一归档目录
-    - `.trash/2026-03-12-imsg-sunset/README.md` 已记录 sunset 原因与归档边界
+    - `src/imsg/` 的最小 runtime 快照已版本化归档到 `docs/archive/retired-imsg-runtime/src/imsg/`
+    - `vendor/imsg/` 的最小快照已版本化归档到 `docs/archive/retired-imsg-runtime/vendor/imsg/`
+    - `test/imsg.adapter.test.ts` 与 `test/commands.startup-guard.test.ts` 已版本化归档到 `docs/archive/retired-imsg-runtime/test/`
+    - `.trash/2026-03-12-imsg-sunset/` 仅保留为本地迁移中转，不再作为正式 archive 真相源
   - 最终验证：
     - `PATH="$HOME/.bun/bin:$PATH" bun test` -> `1492 pass / 0 fail`
     - `npx tsc --noEmit` -> 通过

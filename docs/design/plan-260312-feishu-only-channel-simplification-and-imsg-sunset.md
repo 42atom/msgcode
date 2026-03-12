@@ -118,10 +118,10 @@ Issue: 0093
   - `listener` / `commands` / `jobs` 的回发接口命名已收口为 channel-neutral，不再继续扩散 `imsgSend`
   - 黑盒测试已锁定：即使显式配置 legacy imsg，probe 正式输出面也不得再回显上述 legacy 字段
 - 已完成 Phase B：
-  - `src/imsg/` 已迁入 `.trash/2026-03-12-imsg-sunset/src/imsg/`
-  - `vendor/imsg/` 已迁入 `.trash/2026-03-12-imsg-sunset/vendor/imsg/`
-  - `test/imsg.adapter.test.ts` 与 `test/commands.startup-guard.test.ts` 已迁入同一归档目录
-  - `.trash/2026-03-12-imsg-sunset/README.md` 已记录 sunset 原因与归档边界
+  - `src/imsg/` 的最小 runtime 快照已版本化归档到 `docs/archive/retired-imsg-runtime/src/imsg/`
+  - `vendor/imsg/` 的最小快照已版本化归档到 `docs/archive/retired-imsg-runtime/vendor/imsg/`
+  - `test/imsg.adapter.test.ts` 与 `test/commands.startup-guard.test.ts` 已版本化归档到 `docs/archive/retired-imsg-runtime/test/`
+  - `.trash/2026-03-12-imsg-sunset/` 仅作为迁移中转，不再充当正式 archive 真相源
   - `src/index.ts` / `src/daemon.ts` 会在真实运行入口先设置 `MSGCODE_ENV_BOOTSTRAPPED=1`，再动态导入 `commands.js`
 - 当前收尾：
   - 补全 `tsc + bun test` 最终验证

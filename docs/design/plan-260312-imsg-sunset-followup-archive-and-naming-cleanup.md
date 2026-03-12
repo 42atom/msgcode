@@ -1,0 +1,124 @@
+# imsg Sunset 后续收口：archive 与命名清理
+
+Issue: 0095
+
+## Problem
+
+`0093` 已经把正式消息主链收口为 Feishu-only，但从开源审查视角看，还留着三类不够干净的尾巴：
+
+1. retired runtime archive 只有 `.trash/2026-03-12-imsg-sunset/`
+   - `.trash/` 被 `.gitignore` 忽略
+   - 这意味着版本库里没有真正可审查的 runtime archive 真相源
+2. 现役契约仍有 iMessage 特化命名
+   - `IMSG_SEND_FAILED`
+   - `chat_guid`
+3. 历史参考资料还缺少足够明确的 legacy 标识
+   - `AIDOCS/refs/imessage-kit`
+   - `AIDOCS/refs/advanced-imessage-kit`
+   - `AIDOCS/refs/深入 iMessage 底层：一个 Agent 是如何诞生的.md`
+
+这些点不会立即让主链坏掉，但会让仓库在审查时出现三个问题：
+
+- “退役 archive 其实不在版本库里”
+- “现役代码还在说 iMessage 的语言”
+- “历史资料仍像现役参考”
+
+## Occam Check
+
+1. 不加它，系统具体坏在哪？
+   - 主链虽已 Feishu-only，但 archive 真相源缺失、命名残影和资料误导会继续制造认知漂移，影响后续维护、review 和开源审查。
+2. 用更少的层能不能解决？
+   - 能。直接补版本化 archive、就地改名、给参考目录加明确标识，不需要引入新层。
+3. 这个改动让主链数量变多了还是变少了？
+   - 变少了。它清掉的是 legacy 旁路和错误叙事，不新增控制面。
+
+## Decision
+
+本轮采取 **“薄收尾”** 方案，只做四件事：
+
+1. 把 retired `imsg` runtime 的最小可审查快照放回 Git 内 archive
+2. 把 `IMSG_SEND_FAILED` 改成 channel-neutral 错误码
+3. 把现役发送合同 `chat_guid` 改成 `chatId`
+4. 给 iMessage 参考资料加明确的 legacy/archive 标识
+
+明确不做：
+
+- 不恢复 `src/imsg/`
+- 不做 route/store/workspace 的全量命名迁移
+- 不重写历史研究文档正文
+
+## Alternatives
+
+### 方案 A：只修 archive，其他不动
+
+- 优点：最小改动
+- 缺点：命名残影仍继续污染现役主链
+
+### 方案 B：一次性全仓把 `chat_guid/current_chat_guid/imsg` 全量改名
+
+- 优点：理论上更彻底
+- 缺点：会把收尾清理升级成跨协议大迁移，超出本轮需要
+
+### 方案 C：版本化 archive + 现役薄命名收口 + refs 标识（推荐）
+
+- 优点：问题对准 review 核心，改动仍可控
+
+## Plan
+
+1. 版本化 archive
+   - 新建 `docs/archive/retired-imsg-runtime/`
+   - 收录：
+     - `src/imsg/{adapter,rpc-client,types}.ts`
+     - `test/{imsg.adapter.test.ts,commands.startup-guard.test.ts}`
+     - `vendor/imsg/v0.4.0/imsg`
+     - 归档说明 README
+2. 真相源更新
+   - 更新 `issues/0093...`
+   - 更新 `docs/design/plan-260312-feishu-only-channel-simplification-and-imsg-sunset.md`
+   - 更新 `docs/CHANGELOG.md`
+   - 更新 `docs/archive/README.md`
+3. Error code 收口
+   - `IMSG_SEND_FAILED` -> `DELIVERY_FAILED`
+   - 同步 `src/jobs/*` 与相关 spec 文档
+4. send 合同命名收口
+   - 现役发送接口统一用 `chatId`
+   - 覆盖 `commands/listener/feishu transport/tools` 及相关测试
+5. refs 标识
+   - 给 `AIDOCS/refs` 下 iMessage 资料加 README/标识说明
+   - 更新 `docs/testing/TEST_GATE_WHITELIST.md` 与 `scripts/test-gate.js` 的表述，明确它们是历史参考实现，不是现役主链
+6. 验证
+   - targeted tests
+   - `npx tsc --noEmit`
+
+## Risks
+
+1. send 合同重命名改动面比预期大
+   - 缓解：只改现役内部合同，不顺手扩到 workspace 路由存储字段
+2. archive 快照放回 Git 后体积增加
+   - 缓解：只收最小 retired runtime 快照，不把整个 `.trash` 打包回仓库
+3. 文档口径与代码不同步
+   - 缓解：本轮强制同步 issue/plan/changelog/archive 索引
+
+## Test Plan
+
+1. 发送主链
+   - `listener`、`commands`、`feishu send file` 相关测试
+2. Jobs
+   - 错误码回归测试
+3. Docs
+   - `test-gate` 白名单文档测试
+4. 工程门槛
+   - `npx tsc --noEmit`
+
+## Progress
+
+当前已完成实现并验证：
+
+- 已新增 `docs/archive/retired-imsg-runtime/`
+- 已将 `0093` issue / plan / changelog 的 archive 真相源从 `.trash` 收口到版本化 archive
+- 已把 `IMSG_SEND_FAILED` 改为 `DELIVERY_FAILED`
+- 已把现役发送合同 `chat_guid` 改为 `chatId`
+- 已为 `AIDOCS/refs` 与 `imessage-kit` 白名单文档补上“历史参考”标识
+- 已通过 targeted tests 与 `npx tsc --noEmit`
+
+（章节级）评审意见：[留空,用户将给出反馈]

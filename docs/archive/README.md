@@ -9,6 +9,8 @@ docs/archive/
 ├── deep-dive-into-imessage.md
 ├── review-report.md
 ├── PRD.md
+├── retired-imsg-runtime/
+│   └── README.md
 ├── retired-imsg-cli/
 │   └── README.md
 └── protocol-migration/
@@ -37,6 +39,8 @@ docs/archive/
    - `docs/archive/indextts-runtime/`
 6. 2026-03-12 起，已退役的 iMessage-only `file send` 任务单统一迁入：
    - `docs/archive/retired-imsg-cli/`
+7. 2026-03-12 起，已退役的 legacy `imsg` 运行时最小快照统一版本化归档到：
+   - `docs/archive/retired-imsg-runtime/`
 
 ## 变更日志
 
@@ -45,3 +49,4 @@ docs/archive/
 3. 2026-03-11：收入口径收窄后，将 IndexTTS 专项优化备忘移入归档。
 4. 2026-03-11：剩余 IndexTTS CLI/worker 脚本从 `scripts/` 迁入 `docs/archive/indextts-runtime/`。
 5. 2026-03-12：iMessage-only `file send` 历史任务单从 `docs/tasks/` 迁入 `docs/archive/retired-imsg-cli/`。
+6. 2026-03-12：补录 `retired-imsg-runtime/`，将 `.trash` 中转快照升级为版本化 archive 真相源。

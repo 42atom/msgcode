@@ -4,10 +4,10 @@
  *
  * 验证测试结果符合预期：
  * - msgcode 测试：必须全部通过
- * - imessage-kit 测试：4 个预期失败（白名单）
+ * - imessage-kit 历史参考测试：4 个预期失败（白名单）
  *
  * 白名单策略说明（P5.6.8-R4c）：
- * - imessage-kit 是 iMessage 协议层的参考实现
+ * - imessage-kit 是历史 iMessage 协议参考实现，不是 msgcode 现役 runtime
  * - 其测试失败不影响 msgcode 核心功能
  * - 失败原因：测试用例设计不符合 msgcode 运行时环境
  * - 固定预期：4 个失败（白名单固定）
@@ -43,7 +43,7 @@ try {
 
     console.log(`📊 测试结果: ${passCount} pass, ${failCount} fail\n`);
 
-    // 检查 imessage-kit 白名单（通过特定错误模式识别）
+    // 检查 imessage-kit 历史参考测试白名单（通过特定错误模式识别）
     const hasImessageKitFailures = output.includes('AIDOCS/refs/imessage-kit/__tests__/');
 
     if (hasImessageKitFailures) {

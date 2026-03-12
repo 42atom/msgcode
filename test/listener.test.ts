@@ -17,9 +17,9 @@ const TEST_ROUTES_FILE = path.join(os.tmpdir(), ".config/msgcode/routes-listener
 const TEST_WORKSPACE_ROOT = path.join(os.tmpdir(), "msgcode-workspaces-listener.test");
 
 class FakeSendClient {
-  public sent: Array<{ chat_guid: string; text: string }> = [];
-  async send(params: { chat_guid: string; text: string }): Promise<{ ok: boolean }> {
-    this.sent.push({ chat_guid: params.chat_guid, text: params.text });
+  public sent: Array<{ chatId: string; text: string }> = [];
+  async send(params: { chatId: string; text: string }): Promise<{ ok: boolean }> {
+    this.sent.push({ chatId: params.chatId, text: params.text });
     return { ok: true };
   }
 }

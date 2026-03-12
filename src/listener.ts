@@ -6,7 +6,7 @@
  * - 只做转发、路由、会话控制（不做内容理解/ASR/TTS）
  */
 
-import type { InboundMessage } from "./channels/types.js";
+import type { ChannelSendClient, InboundMessage } from "./channels/types.js";
 import { checkWhitelist, formatSender } from "./security.js";
 import { routeByChatId } from "./router.js";
 import { getHandler } from "./handlers.js";
@@ -20,10 +20,6 @@ import { updateLastSeen } from "./state/store.js";
 import { getMemoryInjectConfig, saveCurrentSessionContext } from "./config/workspace.js";
 import { AutoTtsLane } from "./runners/tts/auto-lane.js";
 import crypto from "node:crypto";
-
-export interface ChannelSendClient {
-  send(params: { chat_guid: string; text: string; file?: string }): Promise<{ ok?: boolean }>;
-}
 
 export interface ListenerConfig {
   // 统一发送口径：按 chatId 前缀路由到具体 transport
@@ -52,7 +48,7 @@ function getAutoTtsLane(sendClient: SendClient): AutoTtsLane {
       await sendText(sendClient, chatId, text);
     },
     sendFile: async (chatId, filePath) => {
-      await sendClient.send({ chat_guid: chatId, text: "", file: filePath });
+      await sendClient.send({ chatId, text: "", file: filePath });
     },
   });
 
@@ -79,28 +75,28 @@ function pruneByTtl(map: Map<string, number>, now: number, ttlMs: number): void 
 
 async function sendText(
   sendClient: SendClient,
-  chatGuid: string,
+  chatId: string,
   text: string
 ): Promise<void> {
   try {
     const digest = crypto.createHash("sha256").update(text).digest("hex").slice(0, 12);
     logger.debug("发送回复", {
       module: "listener",
-      chatId: chatGuid,
+      chatId,
       textLength: text.length,
       textDigest: digest,
       ...(process.env.DEBUG_TRACE_TEXT === "1" ? { textPreview: text.slice(0, 80) } : {}),
     });
-    const result = await sendClient.send({ chat_guid: chatGuid, text });
+    const result = await sendClient.send({ chatId, text });
     logger.debug("回复已发送", {
       module: "listener",
-      chatId: chatGuid,
+      chatId,
       ok: result.ok,
     });
   } catch (error) {
     logger.error("回复发送失败", {
       module: "listener",
-      chatId: chatGuid,
+      chatId,
       error: error instanceof Error ? error.message : String(error),
     });
     throw error;
@@ -947,7 +943,7 @@ export async function handleMessage(
     let didSend = false;
     if (result.file?.path) {
       const text = result.response ? result.response : "";
-      await ctx.sendClient.send({ chat_guid: message.chatId, text, file: result.file.path });
+      await ctx.sendClient.send({ chatId: message.chatId, text, file: result.file.path });
       didSend = true;
     } else if (result.response) {
       await sendText(ctx.sendClient, message.chatId, result.response);
