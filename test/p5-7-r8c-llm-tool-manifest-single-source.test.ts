@@ -157,7 +157,6 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
 
     expect(tools).toContain("bash");
     expect(tools).toContain("read_file");
-    expect(tools).toContain("help_docs");
     expect(tools).toContain("write_file");
     expect(tools).toContain("edit_file");
   });
@@ -180,7 +179,6 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     expect(tools).not.toContain("vision");
     expect(tools).toContain("bash");
     expect(tools).toContain("read_file");
-    expect(tools).toContain("help_docs");
   });
 
   it("旧工作区即使 allow 包含 mem，getToolsForLlm() 也不应再暴露它", async () => {
@@ -201,7 +199,6 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     expect(tools).not.toContain("mem");
     expect(tools).toContain("bash");
     expect(tools).toContain("read_file");
-    expect(tools).toContain("help_docs");
   });
 
   it("workspace tooling.allow 不包含 browser 时，getToolsForLlm() 不应返回 browser", async () => {
@@ -223,11 +220,11 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     expect(tools).not.toContain("browser");
   });
 
-  it("workspace 未显式放开 browser 时，getToolsForLlm() 仍应保留 read_file + bash + help_docs 基线", async () => {
+  it("workspace 显式工具面不应再被执行核偷偷补齐隐藏基线", async () => {
     const workspacePath = await createTempWorkspace();
     const configPath = join(workspacePath, ".msgcode", "config.json");
 
-    // 写入配置：仅允许 browser + bash，read_file 基线应由执行核补齐
+    // 写入配置：仅允许 browser + bash，执行核不应再偷偷补 read_file/help_docs
     await writeFile(
       configPath,
       JSON.stringify({
@@ -239,9 +236,10 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     const toolLoopModule = await import("../src/agent-backend/tool-loop.js");
     const tools = await toolLoopModule.getToolsForLlm(workspacePath);
 
-    expect(tools).toContain("read_file");
+    expect(tools).toContain("browser");
     expect(tools).toContain("bash");
-    expect(tools).toContain("help_docs");
+    expect(tools).not.toContain("read_file");
+    expect(tools).not.toContain("help_docs");
   });
 
   it("allow 包含 feishu_send_file 时，getToolsForLlm() 应暴露它", async () => {
@@ -259,10 +257,7 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     const toolLoopModule = await import("../src/agent-backend/tool-loop.js");
     const tools = await toolLoopModule.getToolsForLlm(workspacePath);
 
-    expect(tools).toContain("read_file");
-    expect(tools).toContain("bash");
-    expect(tools).toContain("help_docs");
-    expect(tools).toContain("feishu_send_file");
+    expect(tools).toEqual(["feishu_send_file"]);
   });
 
   it("无 workspace 时，getToolsForLlm() 应读取默认配置真相源而不是旧硬编码名单", async () => {
@@ -397,6 +392,6 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     expect(compatModule.getToolsForLlm).toBe(toolLoopModule.getToolsForLlm);
 
     const tools = await compatModule.getToolsForLlm(workspacePath);
-    expect(tools).toEqual(["read_file", "bash", "help_docs", "browser"]);
+    expect(tools).toEqual(["browser"]);
   });
 });

@@ -667,9 +667,7 @@ export async function getToolsForLlm(workspacePath?: string): Promise<ToolName[]
         const configuredTools = Array.isArray(DEFAULT_WORKSPACE_CONFIG["tooling.allow"])
             ? (DEFAULT_WORKSPACE_CONFIG["tooling.allow"] as ToolName[])
             : [];
-        const allowedTools = filterDefaultLlmTools(
-            Array.from(new Set<ToolName>(["read_file", "bash", "help_docs", ...configuredTools]))
-        );
+        const allowedTools = filterDefaultLlmTools(configuredTools);
         const exposure = resolveLlmToolExposure(allowedTools);
         return exposure.exposedTools;
     }
@@ -677,13 +675,10 @@ export async function getToolsForLlm(workspacePath?: string): Promise<ToolName[]
         const { loadWorkspaceConfig, DEFAULT_WORKSPACE_CONFIG } = await import("../config/workspace.js");
         const cfg = await loadWorkspaceConfig(workspacePath);
         // 单一真相源：workspace 缺少 tooling.allow 时，回退到 DEFAULT_WORKSPACE_CONFIG。
-        // 不再偷偷退回旧的 [read_file, bash, help_docs] 极小基线，否则会把 write/edit 等第一公民工具吃掉。
         const configuredTools = Array.isArray(cfg["tooling.allow"])
             ? (cfg["tooling.allow"] as ToolName[])
             : (DEFAULT_WORKSPACE_CONFIG["tooling.allow"] as ToolName[]);
-        const allowedTools = filterDefaultLlmTools(
-            Array.from(new Set<ToolName>(["read_file", "bash", "help_docs", ...configuredTools]))
-        );
+        const allowedTools = filterDefaultLlmTools(configuredTools);
 
         // 解析 LLM 工具暴露结果，返回 exposedTools
         const exposure = resolveLlmToolExposure(allowedTools);

@@ -39,7 +39,7 @@ describe("P5.7-R6 HOTFIX: gen 入口 + tools 缺省值", () => {
     }
   });
 
-  it("getToolsForLlm: workspace 显式 allow 只放开 feishu_send_file 时，应保留最小探索基线并暴露它", async () => {
+  it("getToolsForLlm: workspace 显式 allow 只放开 feishu_send_file 时，应只暴露真实配置工具面", async () => {
     const { getToolsForLlm } = await import("../src/lmstudio.js");
 
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "msgcode-ws-r6-feishu-tools-"));
@@ -53,12 +53,7 @@ describe("P5.7-R6 HOTFIX: gen 入口 + tools 缺省值", () => {
     try {
       const tools = await getToolsForLlm(ws);
       const toolNames = tools as string[];
-      expect(toolNames).toContain("read_file");
-      expect(toolNames).toContain("bash");
-      expect(toolNames).toContain("help_docs");
-      expect(toolNames).toContain("feishu_send_file");
-      expect(toolNames).not.toContain("write_file");
-      expect(toolNames).not.toContain("edit_file");
+      expect(toolNames).toEqual(["feishu_send_file"]);
     } finally {
       fs.rmSync(ws, { recursive: true, force: true });
     }
