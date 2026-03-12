@@ -123,7 +123,7 @@ describe("Responder Runner 守卫测试", () => {
 	        });
 	    });
 
-	    describe("守卫 #3: runnerOld 名称对应关系", () => {
+    describe("守卫 #3: runnerOld 名称对应关系", () => {
         test("runnerOld='codex' → Codex CLI", () => {
             const runnerOld = "codex";
             const runnerName = runnerOld === "codex" ? "Codex" : "Claude";

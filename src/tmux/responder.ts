@@ -32,6 +32,8 @@ const SLOW_INTERVAL = 3000;     // 首次交付后
 const MAX_WAIT_MS_CLAUDE = 300000; // Claude 默认最大等待 5 分钟
 const MAX_WAIT_MS_CODEX = 600000;  // Codex 偶尔会更慢，默认给到 10 分钟避免误判超时
 const STABLE_COUNT = 3;         // 稳定计数（连续 N 次无变化视为完成）
+const CODEX_JSONL_READY_WAIT_MS = 15000;
+const CODEX_JSONL_READY_POLL_MS = 500;
 
 /**
  * 响应选项
@@ -68,6 +70,31 @@ async function sleepMs(ms: number, signal?: AbortSignal): Promise<void> {
         return;
     }
     await sleep(ms, undefined, { signal });
+}
+
+async function waitForCodexJsonlPath(
+    reader: CodexOutputReader,
+    projectDir: string,
+    signal?: AbortSignal,
+): Promise<string | null> {
+    const deadline = Date.now() + CODEX_JSONL_READY_WAIT_MS;
+
+    while (Date.now() < deadline) {
+        if (signal?.aborted) {
+            return null;
+        }
+        const filePath = await reader.findLatestJsonlForWorkspace(projectDir);
+        if (filePath) {
+            return filePath;
+        }
+        const remainingMs = deadline - Date.now();
+        if (remainingMs <= 0) {
+            break;
+        }
+        await sleepMs(Math.min(CODEX_JSONL_READY_POLL_MS, remainingMs), signal);
+    }
+
+    return null;
 }
 
 /**
@@ -156,7 +183,7 @@ export async function handleTmuxSend(
         if (!options.projectDir) {
             return { success: false, error: "缺少工作区路径（projectDir），无法定位 Coder CLI 会话日志。请先 /bind 绑定工作区。" };
         }
-        coderJsonlPath = await coderReader.findLatestJsonlForWorkspace(options.projectDir);
+        coderJsonlPath = await waitForCodexJsonlPath(coderReader, options.projectDir, signal);
         if (!coderJsonlPath) {
             return { success: false, error: "未找到 Coder CLI 会话日志（~/.codex/sessions/**/rollout-*.jsonl）。请先 /start 启动会话，日志生成后再试。" };
         }
