@@ -161,6 +161,16 @@ describe("Tool Bus", () => {
       expect(gate.ok).toBe(true);
     });
 
+    test("autonomous 模式下 allow 显式包含 vision 时，llm-tool-call 应允许执行它", async () => {
+      const gate = canExecuteTool(
+        { mode: "autonomous", allow: ["vision", "bash"], requireConfirm: [] },
+        "vision",
+        "llm-tool-call"
+      );
+
+      expect(gate.ok).toBe(true);
+    });
+
     test("autonomous 模式下 allow 包含 edit_file 时，llm-tool-call 应允许执行它", async () => {
       const gate = canExecuteTool(
         { mode: "autonomous", allow: ["bash", "read_file", "edit_file"], requireConfirm: [] },
@@ -178,7 +188,6 @@ describe("Tool Bus", () => {
       expect(policy.mode).toBe("autonomous");
       expect(policy.allow).toContain("tts");
       expect(policy.allow).toContain("asr");
-      expect(policy.allow).toContain("vision");
       // 默认工具策略与 workspace 默认配置保持一致（文件主链恢复为第一公民 read/write/edit + bash）
       expect(policy.allow).toContain("bash");
       expect(policy.allow).toContain("browser");
@@ -960,7 +969,6 @@ describe("Tool Bus", () => {
       // 默认 allowlist 与 workspace 默认配置对齐
       expect(policy.allow).toContain("tts");
       expect(policy.allow).toContain("asr");
-      expect(policy.allow).toContain("vision");
       expect(policy.allow).toContain("bash");
       expect(policy.allow).toContain("browser");
       expect(policy.allow).toContain("read_file");

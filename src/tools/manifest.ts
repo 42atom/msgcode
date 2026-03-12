@@ -62,10 +62,9 @@ export interface LlmToolExposureResult {
 /**
  * 默认不再暴露给 LLM 的工具。
  * 保留执行实现，但退出默认模型主链：
- * - vision：系统仅保留图片预览摘要；详细视觉任务改走 skill
  * - mem：当前无 P0 执行实现；长期记忆通过自动注入与 /mem slash 控制，不作为默认 LLM tool
  */
-export const LLM_DEFAULT_SUPPRESSED_TOOLS: ToolName[] = ["vision", "mem"];
+export const LLM_DEFAULT_SUPPRESSED_TOOLS: ToolName[] = ["mem"];
 
 export function filterDefaultLlmTools(toolNames: ToolName[]): ToolName[] {
   return toolNames.filter((tool) => !LLM_DEFAULT_SUPPRESSED_TOOLS.includes(tool));
@@ -520,7 +519,7 @@ export function resolveLlmToolExposure(allowedTools: ToolName[]): LlmToolExposur
   // 已注册说明书的工具列表
   const registeredTools = Object.keys(TOOL_MANIFESTS) as ToolName[];
 
-  // 真实暴露给 LLM 的工具列表（默认抑制项会在这里退出主链）
+  // 真实暴露给 LLM 的工具列表（仅保留仍需 suppress 的工具）
   const exposedTools = filterDefaultLlmTools(allowedTools).filter((tool) => tool in TOOL_MANIFESTS);
 
   // 允许但未注册说明书的工具列表

@@ -61,13 +61,13 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     expect(TOOL_MANIFESTS.edit_file).toBeDefined();
   });
 
-  it("vision 应保留内部说明书，但默认不再暴露给 LLM", async () => {
+  it("vision 应保留内部说明书，显式 allow 时应真实暴露给 LLM", async () => {
     const { TOOL_MANIFESTS, resolveLlmToolExposure } = await import("../src/tools/manifest.js");
 
     expect(TOOL_MANIFESTS.vision).toBeDefined();
     const result = resolveLlmToolExposure(["vision", "bash", "read_file"]);
     expect(result.allowedTools).toEqual(["vision", "bash", "read_file"]);
-    expect(result.exposedTools).not.toContain("vision");
+    expect(result.exposedTools).toContain("vision");
     expect(result.exposedTools).toContain("bash");
     expect(result.exposedTools).toContain("read_file");
   });
@@ -161,7 +161,7 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     expect(tools).toContain("edit_file");
   });
 
-  it("旧工作区即使 allow 包含 vision，getToolsForLlm() 也不应再暴露它", async () => {
+  it("workspace 显式 allow vision 时，getToolsForLlm() 应真实暴露它", async () => {
     const workspacePath = await createTempWorkspace();
     const configPath = join(workspacePath, ".msgcode", "config.json");
 
@@ -176,7 +176,7 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     const toolLoopModule = await import("../src/agent-backend/tool-loop.js");
     const tools = await toolLoopModule.getToolsForLlm(workspacePath);
 
-    expect(tools).not.toContain("vision");
+    expect(tools).toContain("vision");
     expect(tools).toContain("bash");
     expect(tools).toContain("read_file");
   });
