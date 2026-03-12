@@ -111,6 +111,34 @@ describe("P5.7-R4-1: Memory 命令合同", () => {
       expect(searchFailedIndex).not.toBe(-1);
     });
 
+    it("getMemoryIndexContract 应该返回正确的合同结构", async () => {
+      const { getMemoryIndexContract } = await import("../src/cli/memory.js");
+      const contract = getMemoryIndexContract();
+
+      expect(contract.name).toBe("msgcode memory index");
+      expect(contract.description).toContain("索引");
+      expect(contract.options?.required).toHaveProperty("--workspace");
+      expect(contract.options?.optional).toHaveProperty("--force");
+      expect(contract.options?.optional).toHaveProperty("--json");
+      expect(contract.errorCodes).toContain("MEMORY_INDEX_FAILED");
+    });
+
+    it("getMemoryGetContract 应该返回正确的合同结构", async () => {
+      const { getMemoryGetContract } = await import("../src/cli/memory.js");
+      const contract = getMemoryGetContract();
+
+      expect(contract.name).toBe("msgcode memory get");
+      expect(contract.description).toContain("读取");
+      expect(contract.options?.required).toHaveProperty("--workspace");
+      expect(contract.options?.required).toHaveProperty("--path");
+      expect(contract.options?.optional).toHaveProperty("--from");
+      expect(contract.options?.optional).toHaveProperty("--lines");
+      expect(contract.options?.optional).toHaveProperty("--json");
+      expect(contract.errorCodes).toContain("MEMORY_FILE_NOT_FOUND");
+      expect(contract.errorCodes).toContain("MEMORY_PATH_TRAVERSAL");
+      expect(contract.errorCodes).toContain("MEMORY_READ_FAILED");
+    });
+
     it("getMemoryStatsContract 应该返回正确的合同结构", async () => {
       const { getMemoryStatsContract } = await import("../src/cli/memory.js");
       const contract = getMemoryStatsContract();

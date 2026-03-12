@@ -86,3 +86,4 @@ links: []
 
 - Plan: /Users/admin/GitProjects/msgcode/docs/design/plan-260312-cli-command-surface-unification.md
 - Reference: /Users/admin/GitProjects/msgcode/docs/design/plan-260312-cli-is-all-agents-need-reference.md
+- Follow-up: /Users/admin/GitProjects/msgcode/issues/0133-help-docs-memory-canonical-coverage.md

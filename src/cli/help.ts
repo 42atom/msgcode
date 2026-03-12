@@ -12,7 +12,7 @@ import type { Envelope, Diagnostic } from "../memory/types.js";
 import { getFileFindContract, getFileReadContract, getFileWriteContract, getFileDeleteContract, getFileMoveContract, getFileCopyContract } from "./file.js";
 import { getWebCommandContract } from "./web.js";
 import { getSystemCommandContract } from "./system.js";
-import { getMemoryAddContract, getMemorySearchContract, getMemoryStatsContract } from "./memory.js";
+import { getMemoryAddContract, getMemoryIndexContract, getMemorySearchContract, getMemoryGetContract, getMemoryStatsContract } from "./memory.js";
 import { getThreadListContract, getThreadMessagesContract, getThreadActiveContract, getThreadSwitchContract } from "./thread.js";
 import { getTodoAddContract, getTodoListContract, getTodoDoneContract } from "./todo.js";
 import { getScheduleAddContract, getScheduleListContract, getScheduleRemoveContract, getScheduleEnableContract, getScheduleDisableContract } from "./schedule.js";
@@ -206,7 +206,9 @@ function getAllHelpCommandContracts(): Record<string, unknown>[] {
     ...(getSystemCommandContract() as Record<string, unknown>[]),
     // Memory 命令组（P5.7-R4-1）
     getMemoryAddContract() as Record<string, unknown>,
+    getMemoryIndexContract() as Record<string, unknown>,
     getMemorySearchContract() as Record<string, unknown>,
+    getMemoryGetContract() as Record<string, unknown>,
     getMemoryStatsContract() as Record<string, unknown>,
     // Thread 命令组（P5.7-R4-2）
     getThreadListContract() as Record<string, unknown>,

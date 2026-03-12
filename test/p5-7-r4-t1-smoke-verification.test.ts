@@ -164,14 +164,31 @@ describe("P5.7-R4-T1: help-docs 集成验证", () => {
   it("help-docs 应该导出所有 memory 命令合同", async () => {
     const {
       getMemoryAddContract,
+      getMemoryIndexContract,
       getMemorySearchContract,
+      getMemoryGetContract,
       getMemoryStatsContract,
     } = await import("../src/cli/memory.js");
 
     // 验证所有 memory 合同导出
     expect(getMemoryAddContract().name).toBe("msgcode memory add");
+    expect(getMemoryIndexContract().name).toBe("msgcode memory index");
     expect(getMemorySearchContract().name).toBe("msgcode memory search");
+    expect(getMemoryGetContract().name).toBe("msgcode memory get");
     expect(getMemoryStatsContract().name).toBe("msgcode memory stats");
+  });
+
+  it("help-docs --json 应包含所有 memory canonical 命令", async () => {
+    const { execCliStdoutIsolated } = await import("./helpers/cli-process.js");
+    const output = execCliStdoutIsolated(["help-docs", "--json"]);
+    const envelope = JSON.parse(output);
+    const commands = envelope.data.commands.map((item: { name: string }) => item.name);
+
+    expect(commands).toContain("msgcode memory add");
+    expect(commands).toContain("msgcode memory index");
+    expect(commands).toContain("msgcode memory search");
+    expect(commands).toContain("msgcode memory get");
+    expect(commands).toContain("msgcode memory stats");
   });
 
   it("help-docs 应该导出所有 thread 命令合同", async () => {

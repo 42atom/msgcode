@@ -916,6 +916,34 @@ export function getMemoryAddContract() {
 }
 
 /**
+ * 获取 memory index 命令合同
+ */
+export function getMemoryIndexContract() {
+  return {
+    name: "msgcode memory index",
+    description: "索引 workspace 的 memory 文件",
+    options: {
+      required: {
+        "--workspace": "Workspace ID、相对路径或绝对路径",
+      },
+      optional: {
+        "--force": "强制重新索引（忽略 mtime/sha256）",
+        "--json": "JSON 格式输出",
+      },
+    },
+    output: {
+      workspaceId: "workspace 标识",
+      workspacePath: "workspace 绝对路径",
+      indexedFiles: "已索引文件数量",
+      indexPath: "索引库路径",
+    },
+    errorCodes: [
+      "MEMORY_INDEX_FAILED",
+    ],
+  };
+}
+
+/**
  * 获取 memory search 命令合同
  */
 export function getMemorySearchContract() {
@@ -940,6 +968,40 @@ export function getMemorySearchContract() {
       "MEMORY_EMPTY_QUERY",
       "MEMORY_WORKSPACE_NOT_FOUND",
       "MEMORY_SEARCH_FAILED",
+    ],
+  };
+}
+
+/**
+ * 获取 memory get 命令合同
+ */
+export function getMemoryGetContract() {
+  return {
+    name: "msgcode memory get",
+    description: "读取 memory 文件片段",
+    options: {
+      required: {
+        "--workspace": "Workspace ID、相对路径或绝对路径",
+        "--path": "文件相对路径（如 memory/2026-02-01.md）",
+      },
+      optional: {
+        "--from": "起始行（1-based，默认 1）",
+        "--lines": `读取行数（默认 ${DEFAULT_GET_LINES}，最大 ${MAX_GET_LINES}）`,
+        "--json": "JSON 格式输出",
+      },
+    },
+    output: {
+      path: "文件相对路径",
+      absolutePath: "文件绝对路径",
+      fromLine: "起始行号",
+      lines: "实际返回行数",
+      totalLines: "文件总行数",
+      text: "返回文本",
+    },
+    errorCodes: [
+      "MEMORY_FILE_NOT_FOUND",
+      "MEMORY_PATH_TRAVERSAL",
+      "MEMORY_READ_FAILED",
     ],
   };
 }

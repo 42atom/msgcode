@@ -1,0 +1,59 @@
+---
+id: 0133
+title: help-docs 与 memory canonical 命令覆盖对齐
+status: done
+owner: agent
+labels: [architecture, cli, docs, refactor]
+risk: low
+scope: help-docs 机器可读合同与 memory canonical 子命令一致性
+plan_doc: docs/design/plan-260312-help-docs-memory-canonical-coverage.md
+links: []
+---
+
+## Context
+
+`help-docs --json` 已被冻结为 agent-facing 操作命令真相源，但当前 `memory` 子命令面仍有一处真实分叉：
+
+- `msgcode memory --help` 公开了 `index/get/add/search/stats`
+- `msgcode help-docs --json` 只导出了 `add/search/stats`
+
+这会导致：
+
+- LLM 通过 `help_docs` 探索时看不到完整的 canonical memory 面
+- 程序公开面与机器可读合同再次分叉
+
+## Goal / Non-Goals
+
+- Goal: 让 `help-docs --json` 覆盖 `memory` 全部 canonical 子命令
+- Goal: 为 `memory index/get` 补上正式合同导出与回归锁
+- Non-Goals: 本轮不重写 `memory` 命令实现
+- Non-Goals: 本轮不扩展到其他 domain 的全面对齐扫描
+
+## Plan
+
+- [x] 确认分叉证据：`memory --help` 与 `help-docs --json` 当前不一致
+- [x] 为 `memory index/get` 补充正式合同导出
+- [x] 将 `help-docs` 接到完整 memory canonical 面
+- [x] 补回归锁，验证 `help-docs` 与 `memory --help` 主子命令一致
+
+## Acceptance Criteria
+
+1. `help-docs --json` 包含 `msgcode memory index`
+2. `help-docs --json` 包含 `msgcode memory get`
+3. 相关测试锁住 `memory` canonical 子命令与 `help-docs` 导出一致
+
+## Notes
+
+- 证据：
+  - `node --import tsx src/cli.ts memory --help`
+  - `node --import tsx src/cli.ts help-docs --json`
+  - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r4-1-memory-contract.test.ts test/p5-7-r4-t1-smoke-verification.test.ts`
+  - `npx tsc --noEmit`
+  - `npm run docs:check`
+- 代码入口：
+  - `src/cli/memory.ts`
+  - `src/cli/help.ts`
+
+## Links
+
+- Plan: /Users/admin/GitProjects/msgcode/docs/design/plan-260312-help-docs-memory-canonical-coverage.md
