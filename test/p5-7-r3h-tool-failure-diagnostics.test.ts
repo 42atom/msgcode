@@ -162,29 +162,46 @@ describe("P5.7-R3h: Tool Failure Diagnostics (Behavior Lock)", () => {
             }
         });
 
-        it("工具执行失败时应返回 TOOL_EXEC_FAILED 且保留退出码", async () => {
+        it("工具执行失败时应先回灌模型，再由模型输出任务层结果", async () => {
             const originalFetch = globalThis.fetch;
             const workspacePath = await createToolEnabledWorkspace();
+            let callCount = 0;
 
-            globalThis.fetch = (async () => asJsonResponse({
-                choices: [{
-                    message: {
-                        role: "assistant",
-                        content: "",
-                        tool_calls: [{
-                            id: "call_exec_fail",
-                            type: "function",
-                            function: {
-                                name: "bash",
-                                arguments: JSON.stringify({
-                                    command: "sh -c \"echo boom >&2; exit 5\"",
-                                }),
+            globalThis.fetch = (async () => {
+                callCount += 1;
+
+                if (callCount === 1) {
+                    return asJsonResponse({
+                        choices: [{
+                            message: {
+                                role: "assistant",
+                                content: "",
+                                tool_calls: [{
+                                    id: "call_exec_fail",
+                                    type: "function",
+                                    function: {
+                                        name: "bash",
+                                        arguments: JSON.stringify({
+                                            command: "sh -c \"echo boom >&2; exit 5\"",
+                                        }),
+                                    },
+                                }],
                             },
+                            finish_reason: "tool_calls",
                         }],
-                    },
-                    finish_reason: "tool_calls",
-                }],
-            })) as typeof fetch;
+                    });
+                }
+
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: "这次命令没有执行成功，我先停在这里，错误我已经记录下来了。",
+                        },
+                        finish_reason: "stop",
+                    }],
+                });
+            }) as typeof fetch;
 
             try {
                 const result = await runLmStudioToolLoop({
@@ -196,12 +213,16 @@ describe("P5.7-R3h: Tool Failure Diagnostics (Behavior Lock)", () => {
                     backendRuntime: localOpenAiRuntime,
                 });
 
-                expect(result.answer).toContain("TOOL_EXEC_FAILED");
-                expect(result.answer).toContain("退出码");
-                expect(result.actionJournal.length).toBe(1);
+                expect(callCount).toBe(2);
+                expect(result.answer).toContain("没有执行成功");
+                expect(result.answer).not.toContain("TOOL_EXEC_FAILED");
+                expect(result.actionJournal.length).toBe(2);
                 expect(result.actionJournal[0].ok).toBe(false);
                 expect(result.actionJournal[0].errorCode).toBe("TOOL_EXEC_FAILED");
                 expect(result.actionJournal[0].exitCode).toBe(5);
+                expect(result.actionJournal[1].phase).toBe("verify");
+                expect(result.verifyResult?.ok).toBe(false);
+                expect(result.verifyResult?.errorCode).toBe("TOOL_VERIFY_FAILED");
             } finally {
                 globalThis.fetch = originalFetch;
                 await rm(workspacePath, { recursive: true, force: true });

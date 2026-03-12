@@ -26,6 +26,7 @@ import {
   handleSoulUseCommand,
   handleSoulCurrentCommand,
   isRouteCommand,
+  looksLikeSlashCommand,
   parseRouteCommand,
   type CommandHandlerOptions,
 } from "../src/routes/commands.js";
@@ -77,6 +78,13 @@ describe("路由命令处理器", () => {
   });
 
   describe("isRouteCommand", () => {
+    it("绝对路径文本不应被误判成 slash 命令", () => {
+      const text = "/Users/admin/msgcode-workspaces/default/.msgcode/SOUL.md 这个呢";
+      expect(looksLikeSlashCommand(text)).toBe(false);
+      expect(isRouteCommand(text)).toBe(false);
+      expect(parseRouteCommand(text)).toBeNull();
+    });
+
     it("识别 /bind 命令", () => {
       expect(isRouteCommand("/bind acme/ops")).toBe(true);
       expect(isRouteCommand("/bind")).toBe(true);

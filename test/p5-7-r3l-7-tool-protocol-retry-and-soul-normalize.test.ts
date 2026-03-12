@@ -4,6 +4,7 @@
  * 覆盖：
  * 1) 首轮无 tool_calls 时，二次 required 重试可恢复工具调用
  * 2) read_file 命中 workspace/SOUL.md 时，可自动纠偏到 .msgcode/SOUL.md
+ * 3) 用户显式给出的其他绝对 SOUL 路径不得被改写
  */
 
 import { describe, it, expect } from "bun:test";
@@ -204,6 +205,70 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
         } finally {
             globalThis.fetch = originalFetch;
             await rm(workspacePath, { recursive: true, force: true });
+        }
+    });
+
+    it("用户显式给出的其他 workspace 绝对 SOUL 路径不应被改写", async () => {
+        const originalFetch = globalThis.fetch;
+        const workspacePath = await createToolEnabledWorkspace();
+        const otherWorkspacePath = await createToolEnabledWorkspace();
+        const otherSoulPath = join(otherWorkspacePath, ".msgcode", "SOUL.md");
+        await writeFile(otherSoulPath, "other-soul-ok", "utf-8");
+        let callCount = 0;
+
+        globalThis.fetch = (async () => {
+            callCount += 1;
+
+            if (callCount === 1) {
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: "",
+                            tool_calls: [{
+                                id: "call_other_soul_1",
+                                type: "function",
+                                function: {
+                                    name: "read_file",
+                                    arguments: JSON.stringify({ path: otherSoulPath }),
+                                },
+                            }],
+                        },
+                        finish_reason: "tool_calls",
+                    }],
+                });
+            }
+
+            return asJsonResponse({
+                choices: [{
+                    message: {
+                        role: "assistant",
+                        content: "other-soul-read-ok",
+                    },
+                    finish_reason: "stop",
+                }],
+            });
+        }) as typeof fetch;
+
+        try {
+            const result = await runLmStudioToolLoop({
+                baseUrl: "http://127.0.0.1:1234",
+                model: "test-model",
+                prompt: "读取另一个 workspace 的 SOUL 文件",
+                workspacePath,
+                timeoutMs: 10_000,
+                backendRuntime: localOpenAiRuntime,
+            });
+
+            expect(callCount).toBe(2);
+            expect(result.answer).toContain("other-soul-read-ok");
+            expect(result.actionJournal.length).toBe(2);
+            expect(result.actionJournal[0].tool).toBe("read_file");
+            expect(result.actionJournal[0].ok).toBe(true);
+        } finally {
+            globalThis.fetch = originalFetch;
+            await rm(workspacePath, { recursive: true, force: true });
+            await rm(otherWorkspacePath, { recursive: true, force: true });
         }
     });
 
@@ -487,32 +552,44 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
         }
     });
 
-    it("模型若调用本轮未暴露工具，应在执行前直接拒绝", async () => {
+    it("模型若调用本轮未暴露工具，应把 TOOL_NOT_ALLOWED 回灌模型，而不是直接替模型结案", async () => {
         const originalFetch = globalThis.fetch;
         const workspacePath = await createToolEnabledWorkspace();
         let callCount = 0;
 
         globalThis.fetch = (async () => {
             callCount += 1;
+            if (callCount === 1) {
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: "",
+                            tool_calls: [{
+                                id: "call_unexpected_edit",
+                                type: "function",
+                                function: {
+                                    name: "edit_file",
+                                    arguments: JSON.stringify({
+                                        path: ".msgcode/toolcheck.txt",
+                                        oldText: "alpha",
+                                        newText: "beta",
+                                    }),
+                                },
+                            }],
+                        },
+                        finish_reason: "tool_calls",
+                    }],
+                });
+            }
+
             return asJsonResponse({
                 choices: [{
                     message: {
                         role: "assistant",
-                        content: "",
-                        tool_calls: [{
-                            id: "call_unexpected_edit",
-                            type: "function",
-                            function: {
-                                name: "edit_file",
-                                arguments: JSON.stringify({
-                                    path: ".msgcode/toolcheck.txt",
-                                    oldText: "alpha",
-                                    newText: "beta",
-                                }),
-                            },
-                        }],
+                        content: "当前这轮没有暴露 edit_file，我先停下，不对用户谎称已经改成功。",
                     },
-                    finish_reason: "tool_calls",
+                    finish_reason: "stop",
                 }],
             });
         }) as typeof fetch;
@@ -527,12 +604,15 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
                 backendRuntime: localOpenAiRuntime,
             });
 
-            expect(callCount).toBe(1);
-            expect(result.answer).toContain("TOOL_NOT_ALLOWED");
-            expect(result.answer).toContain("edit_file");
-            expect(result.actionJournal).toHaveLength(1);
+            expect(callCount).toBe(2);
+            expect(result.answer).toContain("没有暴露 edit_file");
+            expect(result.answer).not.toContain("TOOL_NOT_ALLOWED");
+            expect(result.actionJournal).toHaveLength(2);
             expect(result.actionJournal[0]?.ok).toBe(false);
             expect(result.actionJournal[0]?.errorCode).toBe("TOOL_NOT_ALLOWED");
+            expect(result.actionJournal[1]?.phase).toBe("verify");
+            expect(result.verifyResult?.ok).toBe(false);
+            expect(result.verifyResult?.errorCode).toBe("TOOL_VERIFY_FAILED");
         } finally {
             globalThis.fetch = originalFetch;
             await rm(workspacePath, { recursive: true, force: true });

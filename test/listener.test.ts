@@ -56,6 +56,25 @@ describe("listener (2.0)", () => {
     cleanTestData();
   });
 
+  it("非 owner 的 slash 命令应静默忽略", async () => {
+    const client = new FakeSendClient();
+    config.ownerIdentifiers = ["owner@example.com"];
+
+    await handleMessage(
+      {
+        id: "m-owner-gate",
+        chatId: "any;+;chat-guid-owner",
+        text: "/where",
+        isFromMe: false,
+        sender: "test@example.com",
+        handle: "test@example.com",
+      },
+      { sendClient: client as unknown as any }
+    );
+
+    expect(client.sent.length).toBe(0);
+  });
+
   it("未绑定时，/where 会显示默认工作目录，并提示可 /bind 覆盖", async () => {
     const client = new FakeSendClient();
     await handleMessage(

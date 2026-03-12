@@ -107,6 +107,12 @@ export const handleSteerCommand = handleSteerCommandImpl;
 export const handleNextCommand = handleNextCommandImpl;
 export const handleTaskCommand = handleTaskCommandImpl;
 
+const SLASH_COMMAND_SHAPE = /^\/[A-Za-z][A-Za-z0-9-]*(?:\s|$)/;
+
+export function looksLikeSlashCommand(text: string): boolean {
+  return SLASH_COMMAND_SHAPE.test(text.trim());
+}
+
 export async function handleRouteCommand(
   command: string,
   options: CommandHandlerOptions
@@ -202,6 +208,9 @@ export async function handleRouteCommand(
 
 export function isRouteCommand(text: string): boolean {
   const trimmed = text.trim();
+  if (!looksLikeSlashCommand(trimmed)) {
+    return false;
+  }
   return (
     trimmed.startsWith("/bind ") ||
     trimmed === "/bind" ||
@@ -264,6 +273,9 @@ export function isRouteCommand(text: string): boolean {
 
 export function parseRouteCommand(text: string): { command: string; args: string[] } | null {
   const trimmed = text.trim();
+  if (!looksLikeSlashCommand(trimmed)) {
+    return null;
+  }
 
   if (trimmed.startsWith("/bind ")) {
     const parts = trimmed.split(/\s+/);

@@ -7,12 +7,14 @@
  */
 
 import type { ChannelSendClient, InboundMessage } from "./channels/types.js";
-import { checkWhitelist, formatSender } from "./security.js";
+import { checkWhitelist, formatSender, isOwnerMessage } from "./security.js";
+import { config } from "./config.js";
 import { routeByChatId } from "./router.js";
 import { getHandler } from "./handlers.js";
 import {
   handleRouteCommand,
   isRouteCommand,
+  looksLikeSlashCommand,
   parseRouteCommand,
 } from "./routes/commands.js";
 import { logger } from "./logger/index.js";
@@ -192,8 +194,8 @@ function getAcknowledgementDelayMs(): number {
  */
 function shouldSendAcknowledgement(content: string): boolean {
   const trimmed = content.trim();
-  // 不是 slash 命令才需要回执
-  return !trimmed.startsWith("/");
+  // 不是 slash 命令才需要回执；绝对路径文本不应被误判成命令。
+  return !looksLikeSlashCommand(trimmed);
 }
 
 /**
@@ -612,9 +614,20 @@ export async function handleMessage(
     sender: formatSender(message),
     textLength: text.length,
     textDigest,
-    isCommand: text.startsWith("/"),
+    isCommand: looksLikeSlashCommand(text),
     ...(process.env.MSGCODE_LOG_PLAINTEXT_INPUT === "1" ? { inboundText: text } : {}),
   });
+
+  if (looksLikeSlashCommand(text) && config.ownerIdentifiers.length > 0 && !isOwnerMessage(message)) {
+    logger.info("非 owner slash 命令已静默忽略", {
+      module: "listener",
+      chatId: message.chatId,
+      sender: formatSender(message),
+      textDigest,
+    });
+    shouldAdvanceCursor = true;
+    return;
+  }
 
   // 路由控制面命令：/bind /where /unbind（必须在未绑定时也能用）
   if (isRouteCommand(text)) {
@@ -647,7 +660,7 @@ export async function handleMessage(
 
   if (!route) {
     // 只在用户发"命令类消息"时提示绑定（避免对普通聊天刷屏）
-    if (text.startsWith("/")) {
+    if (looksLikeSlashCommand(text)) {
       const last = unboundHintAt.get(message.chatId) ?? 0;
       if (now - last > UNBOUND_HINT_COOLDOWN_MS) {
         unboundHintAt.set(message.chatId, now);

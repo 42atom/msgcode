@@ -568,7 +568,6 @@ export async function startBot(): Promise<void> {
     const text = (message.text ?? "").trim();
     const textLength = text.length;
     const textDigest = text ? crypto.createHash("sha256").update(text).digest("hex").slice(0, 12) : "";
-    const isSlashCommand = text.startsWith("/");
 
     // P0：控制面命令抢占（远程手机端必须能随时 /status /stop /esc）
     // 规则：只有中断命令才抢占当前任务（/esc /stop /clear）

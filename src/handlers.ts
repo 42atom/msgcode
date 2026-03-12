@@ -31,6 +31,7 @@ import { appendWindow } from "./session-window.js";
 // P5.6.13-R2: 导入线程存储
 import { ensureThread, appendTurn, getThreadInfo } from "./runtime/thread-store.js";
 import { renderUnknownCommandHint } from "./routes/cmd-info.js";
+import { looksLikeSlashCommand } from "./routes/commands.js";
 import { assembleAgentContext } from "./runtime/context-policy.js";
 import { resolveSessionChannel } from "./runtime/session-key.js";
 import { beginRun } from "./runtime/run-store.js";
@@ -180,7 +181,7 @@ export abstract class BaseHandler implements CommandHandler {
         }
 
         // === 非命令消息：转发给 Claude（请求-响应模式）===
-        if (!trimmed.startsWith("/")) {
+        if (!looksLikeSlashCommand(trimmed)) {
             // P5.5: 关键词主触发已禁用，自然语言由 LLM tool_calls 自主决策
             // const autoSkill = await tryHandleAutoSkill(trimmed, context);
             // if (autoSkill) {
@@ -492,7 +493,7 @@ export class RuntimeRouterHandler implements CommandHandler {
         }
 
         // === slash 命令：委托给 DefaultHandler（使用 BaseHandler 的统一逻辑）===
-        if (trimmed.startsWith("/")) {
+        if (looksLikeSlashCommand(trimmed)) {
             return new DefaultHandler().handle(message, context);
         }
 

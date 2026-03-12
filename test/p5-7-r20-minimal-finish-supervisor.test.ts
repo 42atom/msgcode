@@ -550,14 +550,15 @@ describe("P5.7-R20: minimal finish supervisor", () => {
                 timeoutMs: 10_000,
             });
 
-            expect(callCount).toBe(3);
-            expect(result.answer).toContain("TOOL_EXEC_FAILED");
-            expect(result.answer).toContain("退出码：7");
+            expect(callCount).toBe(4);
+            expect(result.answer).toContain("PASS");
+            expect(result.answer).not.toContain("TOOL_EXEC_FAILED");
             expect(result.verifyResult?.ok).toBe(false);
-            expect(result.verifyResult?.errorCode).toBe("TOOL_EXEC_FAILED");
+            expect(result.verifyResult?.errorCode).toBe("TOOL_VERIFY_FAILED");
             expect(result.actionJournal.map((entry) => `${entry.phase}:${entry.tool}:${entry.ok}`)).toEqual([
                 "act:read_file:true",
                 "act:bash:false",
+                "verify:bash:false",
                 "report:finish-supervisor:true",
             ]);
         } finally {
@@ -635,10 +636,11 @@ describe("P5.7-R20: minimal finish supervisor", () => {
                 timeoutMs: 10_000,
             });
 
-            expect(callCount).toBe(6);
+            expect(callCount).toBe(7);
             expect(result.answer).toContain("FINISH_SUPERVISOR_BLOCKED");
             expect(result.answer).toContain("第三次失败仍未解释清楚");
             expect(result.verifyResult?.ok).toBe(false);
+            expect(result.verifyResult?.errorCode).toBe("TOOL_VERIFY_FAILED");
             expect(result.actionJournal.filter((entry) => entry.tool === "finish-supervisor").length).toBe(3);
             expect(result.actionJournal[0]?.tool).toBe("bash");
             expect(result.actionJournal[0]?.ok).toBe(false);

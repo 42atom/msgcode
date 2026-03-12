@@ -1039,33 +1039,19 @@ function buildToolLoopFallbackAnswer(
     return `工具执行成功：${toolName}`;
 }
 
-function buildToolFailureAnswer(toolName: string, toolResult: ToolRunResult): string {
-    const toolErrorCode = toolResult.errorCode || "TOOL_EXEC_FAILED";
-    const toolErrorMessage = toolResult.error || "工具执行失败";
-    let answerText = `工具执行失败\n- 工具：${toolName}\n- 错误码：${toolErrorCode}\n- 错误：${toolErrorMessage}`;
-    if (toolResult.exitCode !== undefined && toolResult.exitCode !== null) {
-        answerText += `\n- 退出码：${toolResult.exitCode}`;
+function buildConversationToolResult(toolResult: ToolRunResult): unknown {
+    if (!toolResult.error) {
+        return toolResult.data || { success: true };
     }
-    if (toolResult.stderrTail) {
-        answerText += `\n- stderr 尾部：${toolResult.stderrTail.slice(-200)}`;
-    }
-    if (toolResult.fullOutputPath) {
-        answerText += `\n- 完整日志：${toolResult.fullOutputPath}`;
-    }
-    return answerText;
-}
 
-function buildToolFailureVerifyResult(toolName: string, toolResult: ToolRunResult): VerifyResult {
     return {
         ok: false,
-        evidence: JSON.stringify({
-            tool: toolName,
-            exitCode: toolResult.exitCode ?? null,
-            stderrTail: toolResult.stderrTail ?? "",
-            fullOutputPath: toolResult.fullOutputPath ?? null,
-        }),
-        failureReason: toolResult.error || "工具执行失败",
+        error: toolResult.error,
         errorCode: toolResult.errorCode || "TOOL_EXEC_FAILED",
+        exitCode: toolResult.exitCode ?? null,
+        stderrTail: toolResult.stderrTail ?? "",
+        stdoutTail: toolResult.stdoutTail ?? "",
+        fullOutputPath: toolResult.fullOutputPath ?? null,
     };
 }
 
@@ -1125,11 +1111,10 @@ function normalizeSoulPathArgs(toolName: string, args: Record<string, unknown>, 
     const lower = normalizedInput.toLowerCase();
     const workspaceLower = workspaceNorm.toLowerCase();
 
-    // 纠偏：<workspace>/SOUL.md 或 ./SOUL.md -> .msgcode/SOUL.md
+    // 只纠偏当前 workspace 根目录下的误写 SOUL.md，避免篡改用户显式给出的其他绝对路径。
     const shouldFix =
         lower === "soul.md" ||
         lower === "./soul.md" ||
-        lower.endsWith("/soul.md") ||
         lower === `${workspaceLower}/soul.md`;
 
     if (!shouldFix) return args;
@@ -1476,7 +1461,6 @@ async function runMiniMaxAnthropicToolLoop(params: {
 
         if (currentToolCalls.length > 0) {
             const roundExecutedToolCalls: ExecutedToolCall[] = [];
-            let toolFailureTriggered = false;
 
             for (const tc of currentToolCalls) {
                 let args: Record<string, unknown> = {};
@@ -1501,6 +1485,8 @@ async function runMiniMaxAnthropicToolLoop(params: {
                     };
                 }
 
+                const executed: ExecutedToolCall = { tc, args, result: buildConversationToolResult(toolResult) };
+
                 if (toolResult.error) {
                     const toolErrorCode = toolResult.errorCode || "TOOL_EXEC_FAILED";
 
@@ -1520,18 +1506,37 @@ async function runMiniMaxAnthropicToolLoop(params: {
                         fullOutputPath: toolResult.fullOutputPath ?? undefined,
                         durationMs: toolResult.durationMs,
                     });
+                    executedToolCalls.push(executed);
+                    roundExecutedToolCalls.push(executed);
 
-                    forcedFinalState = {
-                        answer: buildToolFailureAnswer(tc.function.name, toolResult),
-                        toolCall: { name: tc.function.name, args, result: toolResult },
-                        verifyResult: buildToolFailureVerifyResult(tc.function.name, toolResult),
-                    };
-                    lastFailureState = forcedFinalState;
-                    toolFailureTriggered = true;
+                    if (executedToolCalls.length > params.perTurnToolStepLimit) {
+                        const isHardCapExceeded = executedToolCalls.length > HARD_CAP_TOOL_STEPS;
+                        const lastExecutedCall = executedToolCalls[executedToolCalls.length - 1];
+
+                        return {
+                            answer: isHardCapExceeded
+                                ? `本轮工具步骤总数达到单轮硬上限\n- 本轮步骤数：${executedToolCalls.length}\n- 单轮硬上限：${HARD_CAP_TOOL_STEPS}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n任务将在下一轮 heartbeat 继续执行。`
+                                : `本轮工具步骤总数达到档位上限\n- 总步骤数：${executedToolCalls.length}\n- 档位上限：${params.perTurnToolStepLimit}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n任务将在下一轮 heartbeat 继续执行。`,
+                            actionJournal,
+                            continuable: true,
+                            quotaProfile: params.quotaProfile,
+                            perTurnToolCallLimit: params.perTurnToolCallLimit,
+                            perTurnToolStepLimit: params.perTurnToolStepLimit,
+                            remainingToolCalls: params.perTurnToolCallLimit - currentToolCalls.length,
+                            remainingSteps: 0,
+                            continuationReason: isHardCapExceeded
+                                ? `exceeded_hard_cap_tool_steps_${executedToolCalls.length}_limit_${HARD_CAP_TOOL_STEPS}`
+                                : `reached_profile_limit_tool_steps_${executedToolCalls.length}_limit_${params.perTurnToolStepLimit}`,
+                            toolCall: lastExecutedCall ? {
+                                name: lastExecutedCall.tc.function.name,
+                                args: lastExecutedCall.args,
+                                result: lastExecutedCall.result,
+                            } : undefined,
+                        };
+                    }
                     break;
                 }
 
-                const executed: ExecutedToolCall = { tc, args, result: toolResult.data };
                 executedToolCalls.push(executed);
                 roundExecutedToolCalls.push(executed);
 
@@ -1575,9 +1580,7 @@ async function runMiniMaxAnthropicToolLoop(params: {
                 }
             }
 
-            if (toolFailureTriggered) {
-                currentToolCalls = [];
-            } else {
+            if (roundExecutedToolCalls.length > 0) {
                 const assistantMessage: MiniMaxAnthropicMessage = {
                     role: "assistant",
                     content: currentResponse.contentBlocks,
@@ -2064,7 +2067,6 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
 
         if (currentToolCalls.length > 0) {
             const roundExecutedToolCalls: ExecutedToolCall[] = [];
-            let toolFailureTriggered = false;
 
             for (const tc of currentToolCalls) {
                 let args: Record<string, unknown> = {};
@@ -2089,6 +2091,8 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                     };
                 }
 
+                const executed: ExecutedToolCall = { tc, args, result: buildConversationToolResult(toolResult) };
+
                 if (toolResult.error) {
                     const toolErrorCode = toolResult.errorCode || "TOOL_EXEC_FAILED";
 
@@ -2108,20 +2112,36 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                         fullOutputPath: toolResult.fullOutputPath ?? undefined,
                         durationMs: toolResult.durationMs,
                     });
+                    executedToolCalls.push(executed);
+                    roundExecutedToolCalls.push(executed);
 
-                    forcedFinalState = {
-                        answer: buildToolFailureAnswer(tc.function.name, toolResult),
-                        toolCall: { name: tc.function.name, args, result: toolResult },
-                        verifyResult: buildToolFailureVerifyResult(tc.function.name, toolResult),
-                    };
-                    lastFailureState = forcedFinalState;
-                    currentAssistantRole = "assistant";
-                    currentAssistantContent = forcedFinalState.answer;
-                    toolFailureTriggered = true;
+                    if (executedToolCalls.length > perTurnToolStepLimit) {
+                        const isHardCapExceeded = executedToolCalls.length > HARD_CAP_TOOL_STEPS;
+                        const lastExecutedCall = executedToolCalls[executedToolCalls.length - 1];
+                        return {
+                            answer: isHardCapExceeded
+                                ? `本轮工具步骤总数达到单轮硬上限\n- 本轮步骤数：${executedToolCalls.length}\n- 单轮硬上限：${HARD_CAP_TOOL_STEPS}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n任务将在下一轮 heartbeat 继续执行。`
+                                : `本轮工具步骤总数达到档位上限\n- 总步骤数：${executedToolCalls.length}\n- 档位上限：${perTurnToolStepLimit}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n任务将在下一轮 heartbeat 继续执行。`,
+                            actionJournal,
+                            continuable: true,
+                            quotaProfile,
+                            perTurnToolCallLimit,
+                            perTurnToolStepLimit,
+                            remainingToolCalls: perTurnToolCallLimit - currentToolCalls.length,
+                            remainingSteps: 0,
+                            continuationReason: isHardCapExceeded
+                                ? `exceeded_hard_cap_tool_steps_${executedToolCalls.length}_limit_${HARD_CAP_TOOL_STEPS}`
+                                : `reached_profile_limit_tool_steps_${executedToolCalls.length}_limit_${perTurnToolStepLimit}`,
+                            toolCall: lastExecutedCall ? {
+                                name: lastExecutedCall.tc.function.name,
+                                args: lastExecutedCall.args,
+                                result: lastExecutedCall.result,
+                            } : undefined,
+                        };
+                    }
                     break;
                 }
 
-                const executed: ExecutedToolCall = { tc, args, result: toolResult.data };
                 executedToolCalls.push(executed);
                 roundExecutedToolCalls.push(executed);
 
@@ -2187,9 +2207,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                 }
             }
 
-            if (toolFailureTriggered) {
-                currentToolCalls = [];
-            } else {
+            if (roundExecutedToolCalls.length > 0) {
                 const assistantMsg: { role: string; content?: string; tool_calls?: ToolCall[] } = {
                     role: currentAssistantRole,
                     tool_calls: currentToolCalls,

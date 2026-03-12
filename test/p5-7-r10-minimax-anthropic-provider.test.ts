@@ -315,13 +315,14 @@ describe("P5.7-R10: MiniMax Anthropic provider", () => {
                 timeoutMs: 10_000,
             });
 
-            expect(callCount).toBe(2);
-            expect(result.answer).toContain("TOOL_EXEC_FAILED");
-            expect(result.answer).toContain("退出码：6");
+            expect(callCount).toBe(3);
+            expect(result.answer).toContain("PASS");
+            expect(result.answer).not.toContain("TOOL_EXEC_FAILED");
             expect(result.verifyResult?.ok).toBe(false);
-            expect(result.verifyResult?.errorCode).toBe("TOOL_EXEC_FAILED");
+            expect(result.verifyResult?.errorCode).toBe("TOOL_VERIFY_FAILED");
             expect(result.actionJournal.map((entry) => `${entry.phase}:${entry.tool}:${entry.ok}`)).toEqual([
                 "act:bash:false",
+                "verify:bash:false",
                 "report:finish-supervisor:true",
             ]);
         } finally {

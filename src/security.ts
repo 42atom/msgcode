@@ -46,6 +46,15 @@ function isOwnerIdentifier(identifier: string): boolean {
     return false;
 }
 
+export function isOwnerMessage(message: InboundMessage): boolean {
+    if (message.isFromMe) {
+        return true;
+    }
+
+    const sender = message.sender || message.handle || "unknown";
+    return isOwnerIdentifier(sender);
+}
+
 /**
  * 检查消息发送者是否在白名单中
  */

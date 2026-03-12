@@ -293,7 +293,7 @@ describe("P5.7-R3g: Tool Loop Multi-Tool (Behavior Lock)", () => {
         }
     });
 
-    it("工具执行失败时应短路并保留诊断信息", async () => {
+    it("工具执行失败时应回灌模型，而不是直接把底层错误回给用户", async () => {
         const originalFetch = globalThis.fetch;
         const workspacePath = await createToolEnabledWorkspace();
         let callCount = 0;
@@ -301,21 +301,33 @@ describe("P5.7-R3g: Tool Loop Multi-Tool (Behavior Lock)", () => {
         globalThis.fetch = (async () => {
             callCount += 1;
 
+            if (callCount === 1) {
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: "",
+                            tool_calls: [{
+                                id: "call_fail_1",
+                                type: "function",
+                                function: {
+                                    name: "bash",
+                                    arguments: JSON.stringify({ command: "this_command_should_not_exist_12345" }),
+                                },
+                            }],
+                        },
+                        finish_reason: "tool_calls",
+                    }],
+                });
+            }
+
             return asJsonResponse({
                 choices: [{
                     message: {
                         role: "assistant",
-                        content: "",
-                        tool_calls: [{
-                            id: "call_fail_1",
-                            type: "function",
-                            function: {
-                                name: "bash",
-                                arguments: JSON.stringify({ command: "this_command_should_not_exist_12345" }),
-                            },
-                        }],
+                        content: "这个命令没跑通，我需要换一种做法。",
                     },
-                    finish_reason: "tool_calls",
+                    finish_reason: "stop",
                 }],
             });
         }) as typeof fetch;
@@ -330,11 +342,15 @@ describe("P5.7-R3g: Tool Loop Multi-Tool (Behavior Lock)", () => {
                 backendRuntime: localOpenAiRuntime,
             });
 
-            expect(callCount).toBe(1);
-            expect(result.answer).toContain("TOOL_EXEC_FAILED");
-            expect(result.actionJournal.length).toBe(1);
+            expect(callCount).toBe(2);
+            expect(result.answer).toContain("没跑通");
+            expect(result.answer).not.toContain("TOOL_EXEC_FAILED");
+            expect(result.actionJournal.length).toBe(2);
             expect(result.actionJournal[0].ok).toBe(false);
             expect(result.actionJournal[0].errorCode).toBe("TOOL_EXEC_FAILED");
+            expect(result.actionJournal[1].phase).toBe("verify");
+            expect(result.verifyResult?.ok).toBe(false);
+            expect(result.verifyResult?.errorCode).toBe("TOOL_VERIFY_FAILED");
         } finally {
             globalThis.fetch = originalFetch;
             await rm(workspacePath, { recursive: true, force: true });
