@@ -14,6 +14,7 @@
 import type {
   ToolName, ToolSource, ToolPolicy, ToolContext, ToolResult, SideEffectLevel
 } from "./types.js";
+import { isUtf8 } from "node:buffer";
 import { resolve as resolvePath, sep as pathSep } from "node:path";
 import { getFsScope, getToolPolicy } from "../config/workspace.js";
 import { runTts } from "../runners/tts.js";
@@ -50,6 +51,10 @@ const TOOL_META: Record<ToolName, { sideEffect: SideEffectLevel }> = {
 };
 
 const MEDIA_PIPELINE_ALLOWED: ToolName[] = ["asr", "vision"];
+const TOOL_PREVIEW_MAX_CHARS = 4000;
+const READ_FILE_BINARY_SNIFF_BYTES = 4096;
+const READ_FILE_INLINE_BYTE_LIMIT = 64 * 1024;
+const READ_FILE_PREVIEW_BYTES = 16 * 1024;
 
 export { getToolPolicy } from "../config/workspace.js";
 
@@ -296,6 +301,108 @@ async function withTimeout<T>(p: Promise<T>, ms = 120000): Promise<T> {
   ]);
 }
 
+function clipPreviewText(text: string, maxChars = TOOL_PREVIEW_MAX_CHARS): string {
+  if (text.length <= maxChars) return text;
+  if (maxChars <= 3) return text.slice(0, maxChars);
+  return `${text.slice(0, maxChars - 3)}...`;
+}
+
+function buildBashPreviewText(params: {
+  exitCode: number;
+  stdoutTail: string;
+  stderrTail: string;
+  fullOutputPath?: string;
+}): string {
+  const lines: string[] = [`[bash] exitCode=${params.exitCode}`];
+
+  if (params.stdoutTail) {
+    lines.push("[stdout]");
+    lines.push(params.stdoutTail);
+  }
+
+  if (params.stderrTail) {
+    lines.push("[stderr]");
+    lines.push(params.stderrTail);
+  }
+
+  if (params.fullOutputPath) {
+    lines.push(`[fullOutputPath] ${params.fullOutputPath}`);
+  }
+
+  return clipPreviewText(lines.join("\n"));
+}
+
+function detectBinaryKind(sample: Buffer): string | undefined {
+  if (sample.length >= 8 && sample.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return "PNG 图片";
+  }
+  if (sample.length >= 3 && sample[0] === 0xff && sample[1] === 0xd8 && sample[2] === 0xff) {
+    return "JPEG 图片";
+  }
+  if (sample.length >= 6) {
+    const header6 = sample.subarray(0, 6).toString("ascii");
+    if (header6 === "GIF87a" || header6 === "GIF89a") {
+      return "GIF 图片";
+    }
+  }
+  if (sample.length >= 12) {
+    const riff = sample.subarray(0, 4).toString("ascii");
+    const webp = sample.subarray(8, 12).toString("ascii");
+    if (riff === "RIFF" && webp === "WEBP") {
+      return "WEBP 图片";
+    }
+  }
+  if (sample.length >= 4 && sample.subarray(0, 4).toString("ascii") === "%PDF") {
+    return "PDF 文件";
+  }
+  if (sample.length >= 4 && sample[0] === 0x50 && sample[1] === 0x4b && sample[2] === 0x03 && sample[3] === 0x04) {
+    return "ZIP 压缩包";
+  }
+  if (sample.includes(0)) {
+    return "二进制文件";
+  }
+  let utf8Like = false;
+  for (let trim = 0; trim <= 3 && trim < sample.length; trim += 1) {
+    const candidate = trim === 0 ? sample : sample.subarray(0, sample.length - trim);
+    if (candidate.length > 0 && isUtf8(candidate)) {
+      utf8Like = true;
+      break;
+    }
+  }
+  if (!utf8Like) {
+    return "二进制文件";
+  }
+  return undefined;
+}
+
+function buildReadFileBinaryMessage(filePath: string, kind: string): string {
+  return [
+    `read_file 无法直接按 UTF-8 读取该文件：${kind}`,
+    `path: ${filePath}`,
+    "下一步建议：如果只是确认文件类型或抽样内容，改用 bash 执行 file、strings、head、xxd 这类命令；不要继续用 read_file 硬读二进制。",
+  ].join("\n");
+}
+
+function buildReadFilePreviewText(params: {
+  filePath: string;
+  content: string;
+  byteLength: number;
+  truncated: boolean;
+  guidance?: string;
+}): string {
+  const lines = [
+    `[read_file] path=${params.filePath}`,
+    `[bytes] ${params.byteLength}`,
+    params.truncated ? "[status] truncated-preview" : "[status] inline-full",
+    "[content]",
+    params.content,
+  ];
+  if (params.guidance) {
+    lines.push(`[guidance] ${params.guidance}`);
+  }
+  return clipPreviewText(lines.join("\n"));
+}
+
 export async function executeTool<TTool extends ToolName>(
   tool: TTool,
   args: Record<string, unknown>,
@@ -463,6 +570,12 @@ export async function executeTool(
           stdoutTail: out.stdoutTail,
           stderrTail: out.stderrTail,
           fullOutputPath: out.fullOutputPath,
+          previewText: buildBashPreviewText({
+            exitCode: out.exitCode,
+            stdoutTail: out.stdoutTail,
+            stderrTail: out.stderrTail,
+            fullOutputPath: out.fullOutputPath,
+          }),
           durationMs: Date.now() - started,
         };
         break;
@@ -812,18 +925,133 @@ export async function executeTool(
           }
         }
 
-        const content = await withTimeout(
-          (await import("node:fs/promises")).readFile(filePath, "utf-8"),
-          ctx.timeoutMs ?? 30000
-        );
+        try {
+          const fsPromises = await import("node:fs/promises");
+          const stat = await withTimeout(fsPromises.stat(filePath), ctx.timeoutMs ?? 30000);
+          if (!stat.isFile()) {
+            result = {
+              ok: false,
+              tool,
+              error: {
+                code: "TOOL_EXEC_FAILED",
+                message: `read_file 只能读取普通文件，当前路径不是文件：${filePath}\n下一步建议：先用 bash 执行 ls、find 或 file 确认路径类型。`,
+              },
+              previewText: `read_file 无法读取：${filePath}\n原因：目标不是普通文件。`,
+              durationMs: Date.now() - started,
+            };
+            break;
+          }
 
-        result = {
-          ok: true,
-          tool,
-          data: { content },
-          durationMs: Date.now() - started,
-        };
-        break;
+          let largeFilePreview: string | undefined;
+          const handle = await withTimeout(fsPromises.open(filePath, "r"), ctx.timeoutMs ?? 30000);
+          try {
+            const sampleBuffer = Buffer.alloc(Math.min(READ_FILE_BINARY_SNIFF_BYTES, Math.max(stat.size, 1)));
+            const { bytesRead } = await withTimeout(
+              handle.read(sampleBuffer, 0, sampleBuffer.length, 0),
+              ctx.timeoutMs ?? 30000
+            );
+            const sample = sampleBuffer.subarray(0, bytesRead);
+            const binaryKind = detectBinaryKind(sample);
+            if (binaryKind) {
+              const message = buildReadFileBinaryMessage(filePath, binaryKind);
+              result = {
+                ok: false,
+                tool,
+                error: {
+                  code: "TOOL_EXEC_FAILED",
+                  message,
+                },
+                previewText: message,
+                durationMs: Date.now() - started,
+              };
+              break;
+            }
+
+            if (stat.size > READ_FILE_INLINE_BYTE_LIMIT) {
+              const previewBuffer = Buffer.alloc(Math.min(READ_FILE_PREVIEW_BYTES, stat.size));
+              const previewRead = await withTimeout(
+                handle.read(previewBuffer, 0, previewBuffer.length, 0),
+                ctx.timeoutMs ?? 30000
+              );
+              largeFilePreview = previewBuffer.subarray(0, previewRead.bytesRead).toString("utf-8");
+            }
+          } finally {
+            await handle.close();
+          }
+
+          const isLargeFile = stat.size > READ_FILE_INLINE_BYTE_LIMIT;
+          if (isLargeFile) {
+            const content = largeFilePreview ?? "";
+            const guidance = "文件较大，只返回预览。若需继续，请改用 bash 配合 rg、head、tail、sed 分段读取。";
+            result = {
+              ok: true,
+              tool,
+              data: {
+                content,
+                path: filePath,
+                truncated: true,
+                byteLength: stat.size,
+                guidance,
+              },
+              previewText: buildReadFilePreviewText({
+                filePath,
+                content,
+                byteLength: stat.size,
+                truncated: true,
+                guidance,
+              }),
+              durationMs: Date.now() - started,
+            };
+            break;
+          }
+
+          const content = await withTimeout(
+            fsPromises.readFile(filePath, "utf-8"),
+            ctx.timeoutMs ?? 30000
+          );
+
+          result = {
+            ok: true,
+            tool,
+            data: {
+              content,
+              path: filePath,
+              byteLength: stat.size,
+            },
+            previewText: buildReadFilePreviewText({
+              filePath,
+              content,
+              byteLength: stat.size,
+              truncated: false,
+            }),
+            durationMs: Date.now() - started,
+          };
+          break;
+        } catch (error) {
+          if (error instanceof Error && error.message === "TOOL_TIMEOUT") {
+            throw error;
+          }
+
+          const nodeError = error as NodeJS.ErrnoException;
+          let message = nodeError?.message || String(error);
+          if (nodeError?.code === "ENOENT") {
+            message = `文件不存在：${filePath}\n下一步建议：先用 bash 执行 ls、find 或 rg 确认路径，再继续读取。`;
+          } else if (nodeError?.code === "EISDIR") {
+            message = `目标是目录不是文件：${filePath}\n下一步建议：先用 bash 执行 ls 查看目录内容，再决定读取哪个文件。`;
+          }
+
+          result = {
+            ok: false,
+            tool,
+            error: {
+              code: "TOOL_EXEC_FAILED",
+              message,
+            },
+            previewText: message,
+            durationMs: Date.now() - started,
+          };
+          break;
+        }
       }
       case "write_file": {
         // P5.6.8-R3: 整文件写入

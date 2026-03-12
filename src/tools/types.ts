@@ -37,7 +37,13 @@ export type ToolDataMap = {
   desktop: { exitCode: number | null; stdout: string; stderr: string };
   // P5.6.13-R1A-EXEC: run_skill 已退役
   // P5.6.8-R3: PI 四基础工具 data
-  read_file: { content: string };
+  read_file: {
+    content: string;
+    path: string;
+    truncated?: boolean;
+    byteLength?: number;
+    guidance?: string;
+  };
   write_file: { path: string };
   edit_file: { path: string; editsApplied: number };
   feishu_list_members: {
@@ -138,6 +144,8 @@ export interface ToolResult<TTool extends ToolName = ToolName> {
   stdoutTail?: string;
   /** P5.7-R3h: 诊断字段 - 完整输出文件路径（超阈值时） */
   fullOutputPath?: string;
+  /** 给模型看的稳定预览（执行层生成，呈现层直接转发） */
+  previewText?: string;
   /** artifacts（可选） */
   artifacts?: Array<{
     kind: "tts" | "asr" | "vision" | "log" | "desktop";

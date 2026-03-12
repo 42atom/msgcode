@@ -92,6 +92,7 @@ type ToolRunResult = {
     stderrTail?: string;
     stdoutTail?: string;
     fullOutputPath?: string;
+    previewText?: string;
     durationMs: number;
 };
 
@@ -405,6 +406,12 @@ const RAW_TOOL_FAILURE_PATTERNS = [
  * 回灌给模型的 tool_result 只保留可用预览，避免单次 read_file/big JSON 直接顶爆上下文。
  */
 function serializeToolResultForConversation(result: unknown): string {
+    if (result && typeof result === "object") {
+        const previewText = (result as { previewText?: unknown }).previewText;
+        if (typeof previewText === "string" && previewText.trim()) {
+            return previewText;
+        }
+    }
     const raw = typeof result === "string" ? result : JSON.stringify(result);
     return clipToolPreviewText(raw, TOOL_RESULT_CONTEXT_MAX_CHARS);
 }
@@ -442,7 +449,12 @@ function hasToolProtocolArtifacts(text: string): boolean {
 
 function buildConversationToolResult(toolResult: ToolRunResult): unknown {
     if (!toolResult.error) {
-        return toolResult.data || { success: true };
+        return {
+            ...(toolResult.data && typeof toolResult.data === "object"
+                ? toolResult.data as Record<string, unknown>
+                : { success: true }),
+            previewText: toolResult.previewText,
+        };
     }
 
     return {
@@ -453,6 +465,7 @@ function buildConversationToolResult(toolResult: ToolRunResult): unknown {
         stderrTail: toolResult.stderrTail ?? "",
         stdoutTail: toolResult.stdoutTail ?? "",
         fullOutputPath: toolResult.fullOutputPath ?? null,
+        previewText: toolResult.previewText,
     };
 }
 
@@ -639,12 +652,14 @@ async function runTool(
             stderrTail: result.stderrTail ?? "",
             stdoutTail: result.stdoutTail ?? "",
             fullOutputPath: result.fullOutputPath,
+            previewText: result.previewText,
             durationMs: result.durationMs,
         };
     }
 
     return {
         data: result.data || { success: true },
+        previewText: result.previewText,
         durationMs: result.durationMs,
     };
 }

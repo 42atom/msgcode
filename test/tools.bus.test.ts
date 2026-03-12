@@ -501,6 +501,8 @@ describe("Tool Bus", () => {
       expect(result.tool).toBe("bash");
       expect(result.data?.exitCode).toBe(0);
       expect(result.data?.stdout).toContain("hello world");
+      expect(result.previewText).toContain("[bash] exitCode=0");
+      expect(result.previewText).toContain("[stdout]");
     });
 
     test("应该记录 bash 执行到 telemetry", async () => {
@@ -604,6 +606,57 @@ describe("Tool Bus", () => {
       expect(result.ok).toBe(true);
       const data = result.data as { content: string };
       expect(data.content).toBe("primary soul file");
+    });
+
+    test("read_file 读取大文本时应返回预览与 guidance", async () => {
+      const targetPath = join(tempWorkspace, "large.txt");
+      writeFileSync(targetPath, "A".repeat(80 * 1024), "utf-8");
+
+      const result = await executeTool(
+        "read_file",
+        { path: targetPath },
+        {
+          workspacePath: tempWorkspace,
+          source: "slash-command",
+          requestId: randomUUID(),
+        }
+      );
+
+      expect(result.ok).toBe(true);
+      const data = result.data as {
+        content: string;
+        path: string;
+        truncated?: boolean;
+        byteLength?: number;
+        guidance?: string;
+      };
+      expect(data.path).toBe(targetPath);
+      expect(data.truncated).toBe(true);
+      expect(data.byteLength).toBeGreaterThan(64 * 1024);
+      expect(data.guidance).toContain("bash");
+      expect(data.content.length).toBeLessThan(80 * 1024);
+      expect(result.previewText).toContain("[status] truncated-preview");
+    });
+
+    test("read_file 遇到二进制文件时应返回带下一步建议的失败", async () => {
+      const targetPath = join(tempWorkspace, "binary.png");
+      writeFileSync(targetPath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]));
+
+      const result = await executeTool(
+        "read_file",
+        { path: targetPath },
+        {
+          workspacePath: tempWorkspace,
+          source: "slash-command",
+          requestId: randomUUID(),
+        }
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error?.code).toBe("TOOL_EXEC_FAILED");
+      expect(result.error?.message).toContain("PNG 图片");
+      expect(result.error?.message).toContain("bash");
+      expect(result.previewText).toContain("无法直接按 UTF-8 读取");
     });
   });
 
