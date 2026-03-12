@@ -388,6 +388,18 @@ function clipText(text: string, maxChars: number): string {
 }
 
 const TOOL_RESULT_CONTEXT_MAX_CHARS = 4000;
+const MAX_FAILURE_RECOVERY_NUDGES = 2;
+const RAW_TOOL_FAILURE_PATTERNS = [
+    /\bTOOL_[A-Z_]+\b/,
+    /工具执行失败/,
+    /退出码[:：]/,
+    /\bstderr\b/i,
+    /\bstdout\b/i,
+    /No such file or directory/i,
+    /unknown command/i,
+    /\berror:\b/i,
+    /not found/i,
+];
 
 /**
  * 回灌给模型的 tool_result 只保留可用预览，避免单次 read_file/big JSON 直接顶爆上下文。
@@ -442,6 +454,44 @@ function buildConversationToolResult(toolResult: ToolRunResult): unknown {
         stdoutTail: toolResult.stdoutTail ?? "",
         fullOutputPath: toolResult.fullOutputPath ?? null,
     };
+}
+
+function looksLikeRawToolFailureAnswer(text: string): boolean {
+    const normalized = (text || "").trim();
+    if (!normalized) return true;
+    return RAW_TOOL_FAILURE_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+function buildToolFailureRecoveryNudge(toolNames: ToolName[]): string {
+    const lines = [
+        "上一轮工具调用失败，用户任务还没有完成。",
+        "先阅读刚才 tool_result 里的真实错误、退出码和 stderrTail，再继续尝试其他可行路径。",
+        "不要把原始工具错误直接转述给用户，也不要停在“工具执行失败”。",
+    ];
+
+    if (toolNames.includes("browser")) {
+        lines.push("如果当前任务是网页访问、页面读取、点击或截图，优先改用 browser 原生工具，不要回退到 bash 猜旧 CLI。");
+    }
+
+    if (toolNames.includes("feishu_send_file")) {
+        lines.push("如果目标是把文件发回飞书，优先调用 feishu_send_file，不要用 bash 假装发送。");
+    }
+
+    lines.push("只有在明确耗尽可用路径或达到预算边界时，才用任务层语言告诉用户暂时无法完成。");
+    return lines.join("\n");
+}
+
+function shouldRequestFailureRecovery(params: {
+    hadFailedTool: boolean;
+    answer: string;
+    recoveryNudges: number;
+    executedToolSteps: number;
+    perTurnToolStepLimit: number;
+}): boolean {
+    if (!params.hadFailedTool) return false;
+    if (params.recoveryNudges >= MAX_FAILURE_RECOVERY_NUDGES) return false;
+    if (params.executedToolSteps >= params.perTurnToolStepLimit) return false;
+    return looksLikeRawToolFailureAnswer(params.answer);
 }
 
 /**
@@ -793,6 +843,8 @@ async function runMiniMaxAnthropicToolLoop(params: {
     const executedToolCalls: ExecutedToolCall[] = [];
     let currentResponse = response;
     let currentToolCalls = toolCalls;
+    let lastRoundHadFailedTool = false;
+    let failureRecoveryNudges = 0;
 
     while (true) {
         if (currentToolCalls.length > params.perTurnToolCallLimit) {
@@ -823,6 +875,7 @@ async function runMiniMaxAnthropicToolLoop(params: {
 
         if (currentToolCalls.length > 0) {
             const roundExecutedToolCalls: ExecutedToolCall[] = [];
+            let roundHadFailedTool = false;
 
             for (const tc of currentToolCalls) {
                 let args: Record<string, unknown> = {};
@@ -849,6 +902,7 @@ async function runMiniMaxAnthropicToolLoop(params: {
 
                 if (toolResult.error) {
                     const toolErrorCode = toolResult.errorCode || "TOOL_EXEC_FAILED";
+                    roundHadFailedTool = true;
 
                     stepId++;
                     actionJournal.push({
@@ -971,13 +1025,63 @@ async function runMiniMaxAnthropicToolLoop(params: {
                 });
 
                 currentToolCalls = currentResponse.toolCalls;
+                lastRoundHadFailedTool = roundHadFailedTool;
             }
         }
         if (currentToolCalls.length > 0) {
+            failureRecoveryNudges = 0;
             continue;
         }
 
         const finalAnswer = currentResponse.content || "";
+
+        if (shouldRequestFailureRecovery({
+            hadFailedTool: lastRoundHadFailedTool,
+            answer: finalAnswer,
+            recoveryNudges: failureRecoveryNudges,
+            executedToolSteps: executedToolCalls.length,
+            perTurnToolStepLimit: params.perTurnToolStepLimit,
+        })) {
+            failureRecoveryNudges += 1;
+            logger.info("tool failure recovery nudge triggered", {
+                module: "agent-backend/tool-loop",
+                traceId: params.traceId,
+                provider: "minimax",
+                recoveryNudges: failureRecoveryNudges,
+                executedToolSteps: executedToolCalls.length,
+            });
+
+            conversationMessages = [
+                ...conversationMessages,
+                {
+                    role: "assistant",
+                    content: currentResponse.contentBlocks.length > 0
+                        ? currentResponse.contentBlocks
+                        : (currentResponse.content || ""),
+                },
+                {
+                    role: "user",
+                    content: buildToolFailureRecoveryNudge(await getToolsForLlm(params.workspacePath)),
+                },
+            ];
+
+            currentResponse = await callMiniMaxAnthropicRaw({
+                baseUrl: params.baseUrl,
+                model: params.model,
+                messages: conversationMessages,
+                system: anthropicContext.system,
+                tools: params.activeToolSchemas,
+                toolChoice: { type: "auto" },
+                temperature: 0,
+                maxTokens: MAIN_AGENT_MAX_TOKENS,
+                timeoutMs: params.timeoutMs,
+                apiKey: params.apiKey,
+            });
+
+            currentToolCalls = currentResponse.toolCalls;
+            lastRoundHadFailedTool = false;
+            continue;
+        }
 
         const firstCall = executedToolCalls[0]
             ? { name: executedToolCalls[0].tc.function.name, args: executedToolCalls[0].args, result: executedToolCalls[0].result }
@@ -1229,6 +1333,8 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     let currentAssistantContent = msg1?.content;
     let currentToolCalls = toolCalls;
     let conversationMessages = [...messages];
+    let lastRoundHadFailedTool = false;
+    let failureRecoveryNudges = 0;
 
     while (true) {
         // P5.7-R12-T8: 单轮工具调用数检查
@@ -1281,6 +1387,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
 
         if (currentToolCalls.length > 0) {
             const roundExecutedToolCalls: ExecutedToolCall[] = [];
+            let roundHadFailedTool = false;
 
             for (const tc of currentToolCalls) {
                 let args: Record<string, unknown> = {};
@@ -1307,6 +1414,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
 
                 if (toolResult.error) {
                     const toolErrorCode = toolResult.errorCode || "TOOL_EXEC_FAILED";
+                    roundHadFailedTool = true;
 
                     stepId++;
                     actionJournal.push({
@@ -1453,14 +1561,65 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                 currentAssistantContent = nextMsg?.content;
                 currentToolCalls = nextMsg?.tool_calls ?? [];
                 currentFinishReason = nextRound.finishReason ?? null;
+                lastRoundHadFailedTool = roundHadFailedTool;
             }
         }
 
         if (currentToolCalls.length > 0) {
+            failureRecoveryNudges = 0;
             continue;
         }
 
         const finalAnswer = currentAssistantContent ?? "";
+
+        if (shouldRequestFailureRecovery({
+            hadFailedTool: lastRoundHadFailedTool,
+            answer: finalAnswer,
+            recoveryNudges: failureRecoveryNudges,
+            executedToolSteps: executedToolCalls.length,
+            perTurnToolStepLimit,
+        })) {
+            failureRecoveryNudges += 1;
+            logger.info("tool failure recovery nudge triggered", {
+                module: "agent-backend/tool-loop",
+                traceId,
+                provider: backendRuntime.id,
+                recoveryNudges: failureRecoveryNudges,
+                executedToolSteps: executedToolCalls.length,
+            });
+
+            conversationMessages = [
+                ...conversationMessages,
+                {
+                    role: currentAssistantRole,
+                    content: currentAssistantContent ?? "",
+                },
+                {
+                    role: "user",
+                    content: buildToolFailureRecoveryNudge(activeToolNames),
+                },
+            ];
+
+            const nextRound = await callChatCompletionsRaw({
+                baseUrl,
+                model: usedModel,
+                messages: conversationMessages,
+                tools: activeToolSchemas,
+                toolChoice: preferredToolChoice ?? "auto",
+                temperature: 0,
+                maxTokens: MAIN_AGENT_MAX_TOKENS,
+                timeoutMs,
+                apiKey: backendRuntime.apiKey,
+            });
+
+            const nextMsg = nextRound.choices[0]?.message;
+            currentAssistantRole = nextMsg?.role || "assistant";
+            currentAssistantContent = nextMsg?.content;
+            currentToolCalls = nextMsg?.tool_calls ?? [];
+            currentFinishReason = nextRound.finishReason ?? null;
+            lastRoundHadFailedTool = false;
+            continue;
+        }
 
         const firstCall = executedToolCalls[0]
             ? { name: executedToolCalls[0].tc.function.name, args: executedToolCalls[0].args, result: executedToolCalls[0].result }

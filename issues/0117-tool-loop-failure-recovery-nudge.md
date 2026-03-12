@@ -1,0 +1,70 @@
+---
+id: 0117
+title: tool-loop 工具失败后继续尝试而非直接交回错误
+status: done
+owner: agent
+labels: [refactor, feature]
+risk: high
+scope: agent-backend tool-loop 失败恢复主链与执行提示
+plan_doc: docs/design/plan-260312-tool-loop-failure-recovery-nudge.md
+links: []
+---
+
+## Context
+
+真实 Feishu smoke 群日志已经证明，当前 `tool-loop` 虽然会把失败 `tool_result` 回灌给模型，但如果模型下一轮没有继续发出新的 `tool_call`，系统仍会立刻结束，把原始工具错误或近似错误的答复直接交给用户。用户实际体验仍然是“失败一次就停”，loop 没有真正跑起来。
+
+## Goal / Non-Goals
+
+### Goal
+
+- 工具失败后，默认继续推动同一个模型在同一轮内尝试恢复
+- 只有在真实预算边界耗尽时，才允许失败停住
+- 优先通过提示词和最小 loop 收口恢复，不新增新的控制层
+
+### Non-Goals
+
+- 本轮不重写整个 quota / heartbeat 续跑体系
+- 本轮不新增新的 supervisor、queue、recovery manager
+- 本轮不顺手改 live smoke 之外的 skill 目录结构
+
+## Plan
+
+- [x] 收口 `tool-loop`：当工具失败后模型只返回空答复或原始错误诊断时，补一个最小恢复提示，继续让同一模型尝试
+- [x] OpenAI 与 MiniMax 两条 loop 保持同口径
+- [x] 更新执行提示词，明确“工具失败先读错误并继续尝试，不要把原始错误直接甩给用户”
+- [x] 补测试：锁“失败诊断会触发继续尝试，直到模型给出新 tool_call 或真实完成”
+- [x] 跑定向测试、类型检查、docs 校验，并补一条 live smoke
+
+## Acceptance Criteria
+
+- 工具失败后，若模型只回空答复或原始错误诊断，不再直接结束
+- 同一轮内可继续发起新的工具调用，直到成功或触达预算边界
+- 用户默认不再看到 `/bin/sh: ... msgcode: No such file or directory`、`unknown command 'open'` 这类原始 bash 诊断作为最终答复
+
+## Notes
+
+- 真实证据：
+  - `/Users/admin/.config/msgcode/log/msgcode.log`
+  - `runId=c667b05a-d9b6-4fc0-bc33-bef7d9caa224`
+  - `runId=8120e2aa-5160-40c1-b094-50bddbf7904a`
+- 两轮都表现为 `fail:bash` 后直接把原始工具错误交还给用户，只有用户再次追问才开启下一轮恢复。
+- 代码收口：
+  - `src/agent-backend/tool-loop.ts`
+  - `prompts/agents-prompt.md`
+  - `prompts/fragments/exec-tool-protocol-constraint.md`
+- 定向验证：
+  - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r3h-tool-failure-diagnostics.test.ts test/p5-7-r10-minimax-anthropic-provider.test.ts test/p5-7-r3g-multi-tool-loop.test.ts`
+  - `npx tsc --noEmit`
+  - `npm run docs:check`
+- 真实 Feishu smoke：
+  - 群：`smoke/ws-a` (`oc_84740a3aa0a5aebbb0b23a847c023ca4`)
+  - case：`recover-live-force-1773299959`
+  - 日志证据：`Tool Bus: FAILURE read_file -> SUCCESS bash -> SUCCESS read_file`
+  - 群回执：`已处理。文件原本不存在，我已成功创建 recover-live-force-1773299959.txt...`
+  - 落盘证据：`/Users/admin/msgcode-workspaces/smoke/ws-a/recover-live-force-1773299959.txt`
+
+## Links
+
+- /Users/admin/.config/msgcode/log/msgcode.log
+- /Users/admin/GitProjects/msgcode/AIDOCS/prompts/feishu-live-bdd-acceptance-suite-v1.md

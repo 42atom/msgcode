@@ -322,6 +322,95 @@ describe("P5.7-R10: MiniMax Anthropic provider", () => {
         }
     });
 
+    it("runLmStudioToolLoop 在 minimax 下工具失败后若模型先复述错误，再继续 tool_use，应在同一轮恢复完成", async () => {
+        const originalFetch = globalThis.fetch;
+        const workspacePath = await createToolEnabledWorkspace();
+        await writeFile(join(workspacePath, ".msgcode", "recover-minimax.txt"), "hello-minimax-recover", "utf-8");
+        let callCount = 0;
+        const capturedBodies: Array<Record<string, unknown>> = [];
+
+        globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+            callCount += 1;
+            const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
+            capturedBodies.push(body);
+
+            if (callCount === 1) {
+                return asJsonResponse({
+                    role: "assistant",
+                    content: [
+                        {
+                            type: "tool_use",
+                            id: "toolu_recover_bash_fail_1",
+                            name: "bash",
+                            input: { command: "sh -c \"echo minimax-recover >&2; exit 9\"" },
+                        },
+                    ],
+                    stop_reason: "tool_use",
+                } satisfies MiniMaxMessagesResponse);
+            }
+
+            if (callCount === 2) {
+                return asJsonResponse({
+                    role: "assistant",
+                    content: [
+                        {
+                            type: "text",
+                            text: "工具执行失败\n- 工具：bash\n- 错误码：TOOL_EXEC_FAILED\n- 退出码：9\n- stderr 尾部：minimax-recover",
+                        },
+                    ],
+                    stop_reason: "end_turn",
+                } satisfies MiniMaxMessagesResponse);
+            }
+
+            if (callCount === 3) {
+                return asJsonResponse({
+                    role: "assistant",
+                    content: [
+                        {
+                            type: "tool_use",
+                            id: "toolu_recover_read_2",
+                            name: "read_file",
+                            input: { path: ".msgcode/recover-minimax.txt" },
+                        },
+                    ],
+                    stop_reason: "tool_use",
+                } satisfies MiniMaxMessagesResponse);
+            }
+
+            return asJsonResponse({
+                role: "assistant",
+                content: [
+                    { type: "text", text: "恢复完成：hello-minimax-recover" },
+                ],
+                stop_reason: "end_turn",
+            } satisfies MiniMaxMessagesResponse);
+        }) as typeof fetch;
+
+        try {
+            const result = await runLmStudioToolLoop({
+                prompt: "第一次失败后继续尝试，直到读出 minimax recover 文件",
+                workspacePath,
+                backendRuntime: minimaxRuntime,
+                timeoutMs: 10_000,
+            });
+
+            expect(callCount).toBe(4);
+            expect(result.answer).toBe("恢复完成：hello-minimax-recover");
+            expect(result.actionJournal.map((entry) => `${entry.phase}:${entry.tool}:${entry.ok}`)).toEqual([
+                "act:bash:false",
+                "act:read_file:true",
+            ]);
+
+            const thirdRequestMessages = capturedBodies[2]?.messages as Array<Record<string, unknown>>;
+            const recoveryPrompt = thirdRequestMessages[thirdRequestMessages.length - 1];
+            expect(recoveryPrompt.role).toBe("user");
+            expect(String(recoveryPrompt.content)).toContain("上一轮工具调用失败");
+        } finally {
+            globalThis.fetch = originalFetch;
+            await rm(workspacePath, { recursive: true, force: true });
+        }
+    });
+
     it("minimax 成功任务现在只保留工具与 verify 证据", async () => {
         const originalFetch = globalThis.fetch;
         const workspacePath = await createToolEnabledWorkspace();

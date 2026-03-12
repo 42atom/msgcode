@@ -227,6 +227,110 @@ describe("P5.7-R3h: Tool Failure Diagnostics (Behavior Lock)", () => {
             }
         });
 
+        it("工具失败后若模型先复述原始错误，再下一轮继续调用工具，应在同一轮恢复完成", async () => {
+            const originalFetch = globalThis.fetch;
+            const workspacePath = await createToolEnabledWorkspace();
+            await writeFile(join(workspacePath, ".msgcode", "recover.txt"), "hello-recover", "utf-8");
+            let callCount = 0;
+            const capturedBodies: Array<Record<string, unknown>> = [];
+
+            globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+                callCount += 1;
+                const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
+                capturedBodies.push(body);
+
+                if (callCount === 1) {
+                    return asJsonResponse({
+                        choices: [{
+                            message: {
+                                role: "assistant",
+                                content: "",
+                                tool_calls: [{
+                                    id: "call_recover_bash_fail",
+                                    type: "function",
+                                    function: {
+                                        name: "bash",
+                                        arguments: JSON.stringify({
+                                            command: "sh -c \"echo recover-boom >&2; exit 7\"",
+                                        }),
+                                    },
+                                }],
+                            },
+                            finish_reason: "tool_calls",
+                        }],
+                    });
+                }
+
+                if (callCount === 2) {
+                    return asJsonResponse({
+                        choices: [{
+                            message: {
+                                role: "assistant",
+                                content: "工具执行失败\n- 工具：bash\n- 错误码：TOOL_EXEC_FAILED\n- 退出码：7\n- stderr 尾部：recover-boom",
+                            },
+                            finish_reason: "stop",
+                        }],
+                    });
+                }
+
+                if (callCount === 3) {
+                    return asJsonResponse({
+                        choices: [{
+                            message: {
+                                role: "assistant",
+                                content: "",
+                                tool_calls: [{
+                                    id: "call_recover_read_file",
+                                    type: "function",
+                                    function: {
+                                        name: "read_file",
+                                        arguments: JSON.stringify({ path: ".msgcode/recover.txt" }),
+                                    },
+                                }],
+                            },
+                            finish_reason: "tool_calls",
+                        }],
+                    });
+                }
+
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: "恢复完成：hello-recover",
+                        },
+                        finish_reason: "stop",
+                    }],
+                });
+            }) as typeof fetch;
+
+            try {
+                const result = await runLmStudioToolLoop({
+                    baseUrl: "http://127.0.0.1:1234",
+                    model: "test-model",
+                    prompt: "如果第一次失败就继续尝试，直到把 recover 文件读出来",
+                    workspacePath,
+                    timeoutMs: 10_000,
+                    backendRuntime: localOpenAiRuntime,
+                });
+
+                expect(callCount).toBe(4);
+                expect(result.answer).toBe("恢复完成：hello-recover");
+                expect(result.actionJournal.map((entry) => `${entry.phase}:${entry.tool}:${entry.ok}`)).toEqual([
+                    "act:bash:false",
+                    "act:read_file:true",
+                ]);
+
+                const thirdRequestMessages = capturedBodies[2]?.messages as Array<Record<string, unknown>>;
+                const recoveryPrompt = thirdRequestMessages[thirdRequestMessages.length - 1];
+                expect(recoveryPrompt.role).toBe("user");
+                expect(String(recoveryPrompt.content)).toContain("上一轮工具调用失败");
+            } finally {
+                globalThis.fetch = originalFetch;
+                await rm(workspacePath, { recursive: true, force: true });
+            }
+        });
+
         it("工具轮后若模型没有给出最终答复，不应再由系统内部补打一轮", async () => {
             const originalFetch = globalThis.fetch;
             const workspacePath = await createToolEnabledWorkspace();
