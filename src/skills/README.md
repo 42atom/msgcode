@@ -78,20 +78,16 @@ src/skills/
     │   ├── SKILL.md
     │   └── main.sh
     ├── file/
-    │   ├── SKILL.md
-    │   └── main.sh
+    │   └── SKILL.md
     ├── thread/
-    │   ├── SKILL.md
-    │   └── main.sh
+    │   └── SKILL.md
     ├── todo/
     │   ├── SKILL.md
     │   └── main.sh
     ├── media/
-    │   ├── SKILL.md
-    │   └── main.sh
+    │   └── SKILL.md
     ├── gen/
-    │   ├── SKILL.md
-    │   └── main.sh
+    │   └── SKILL.md
     ├── banana-pro-image-gen/
     │   ├── SKILL.md
     │   ├── main.sh
@@ -99,16 +95,14 @@ src/skills/
     │   ├── scripts/
     │   └── templates/
     ├── vision-index/
-    │   ├── SKILL.md
-    │   └── main.sh
+    │   └── SKILL.md
     ├── local-vision-lmstudio/
     │   ├── SKILL.md
     │   ├── main.sh
     │   └── scripts/
     │       └── analyze_image.py
     └── patchright-browser/
-        ├── SKILL.md
-        └── main.sh
+        └── SKILL.md
 ```
 
 ## 职责边界
