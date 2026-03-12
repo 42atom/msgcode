@@ -40,10 +40,12 @@
 
 1. **二进制程序是正式合同**
    - 真实可运行入口是 `msgcode ...`
-   - 机器可读正式合同是 `msgcode help-docs --json`
+   - root lifecycle/admin 命令的正式人工合同是 `msgcode --help`
+   - agent/LLM 侧操作命令的机器可读正式合同是 `msgcode help-docs --json`
 
 2. **`help_docs` 是 LLM 主探索路径**
-   - 当模型不确定命令合同，应先查 `help_docs`
+   - 当模型不确定**操作类**命令合同，应先查 `help_docs`
+   - `help_docs` 不负责 daemon/lifecycle/admin 根命令
    - 不再让 skill 承担“命令契约真相源”职责
 
 3. **`SKILL.md` 是说明书，不是真合同**
@@ -120,6 +122,67 @@
 
 验收：
 - 每个 domain 有一张 canonical/alias/retired 对照表
+
+### 当前审计快照（2026-03-12）
+
+#### Root operator/admin canonical
+
+- `start`
+- `stop`
+- `restart`
+- `allstop`
+- `init`
+- `status`
+- `probe`
+- `doctor`
+- `about`
+
+说明：
+- 这些命令继续通过 `msgcode --help` 暴露
+- 它们属于操作员/运维入口，不进入 `help-docs` 的 agent-facing 合同
+
+#### Agent-facing canonical
+
+- `file find|read|write|delete|move|copy`
+- `web search|fetch`
+- `system info|env`
+- `memory add|search|stats`
+- `thread list|messages|active|switch`
+- `todo add|list|done`
+- `schedule add|list|remove|enable|disable`
+- `media screen`
+- `gen image|selfie|tts|music`
+- `browser root|profiles list|instances list|instances launch|instances stop|tabs open|tabs list|snapshot|text|action|eval`
+- `help-docs`
+
+#### Canonical but operator/internal-facing
+
+- `job add|list|status|enable|disable|delete`
+- `preflight`
+- `run`
+
+说明：
+- 这些命令是真实主链的一部分，但不属于当前 LLM 首选探索面
+- 因此保留在程序里，不进入 `help-docs` 的 agent-facing 合同
+
+#### Aliases
+
+- `jobs -> job`
+- `skills -> skill`
+- `memory remember -> memory add`
+- `memory status -> memory stats`
+- `browser gmail-readonly -> browser-gmail-readonly`
+
+#### Retired
+
+- `file send`
+
+#### Internal compat
+
+- `skill`
+- `browser-gmail-readonly`
+- `gen-image`
+- `gen-audio`
 
 ### Phase 2：统一命令语言
 
