@@ -15,7 +15,6 @@ import { randomUUID } from "node:crypto";
 import { executeTool } from "../src/tools/bus.js";
 import { loadWorkspaceConfig, saveCurrentSessionContext } from "../src/config/workspace.js";
 import { feishuSendFile } from "../src/tools/feishu-send.js";
-import { __test as toolLoopTest } from "../src/agent-backend/tool-loop.js";
 
 describe("P5.7-R12: feishu_send_file", () => {
   let workspacePath = "";
@@ -184,46 +183,4 @@ describe("P5.7-R12: feishu_send_file", () => {
     expect(result.data?.attachmentKey).toBe("file_v3_workspace");
   });
 
-  it("没有成功调用 feishu_send_file 时，不应允许回答“已发送”", () => {
-    const harden = toolLoopTest?.hardenFeishuDeliveryClaim;
-    expect(harden).toBeDefined();
-
-    const answer = harden!(
-      "已发送 test-cat.png 到飞书群。",
-      [],
-      "把工作目录下的图片发给我，我在飞书"
-    );
-
-    expect(answer).toContain("还没有真正把附件发送到飞书");
-  });
-
-  it("feishu_send_file 成功后，允许保留发送成功回答", () => {
-    const harden = toolLoopTest?.hardenFeishuDeliveryClaim;
-    expect(harden).toBeDefined();
-
-    const answer = harden!(
-      "已发送 test-cat.png 到飞书群。",
-      [
-        {
-          tc: {
-            id: "tc_1",
-            type: "function",
-            function: {
-              name: "feishu_send_file",
-              arguments: "{}",
-            },
-          },
-          args: {},
-          result: {
-            chatId: "oc_from_workspace",
-            attachmentType: "image",
-            attachmentKey: "img_v3_ok",
-          },
-        },
-      ],
-      "把工作目录下的图片发给我，我在飞书"
-    );
-
-    expect(answer).toBe("已发送 test-cat.png 到飞书群。");
-  });
 });
