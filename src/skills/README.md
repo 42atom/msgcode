@@ -141,15 +141,19 @@ src/skills/
 ### R1c 边界原则
 
 - `builtin/*` 只描述能力，**不含执行副作用**
-- 实际执行统一走 CLI 命令合同（如 `msgcode file read`）
-- Skill 层只做：检测 → 路由 → CLI 调用 → 结果返回
+- skill 默认主体是 `SKILL.md`
+- 实际执行优先走 canonical 入口：
+  - 直接工具
+  - 直接 CLI 命令合同（如 `msgcode file read`）
+  - 少数真实桥接脚本
+- 不要为了 CLI 再额外包一层 alias `main.sh`
 
 ## 开发规范
 
 ### 新增 runtime skill 流程
 
 1. 在 `src/skills/runtime/<skill-id>/` 新增 `SKILL.md`
-2. 只有当 skill 的真实 canonical 入口就是稳定脚本 / CLI wrapper 时，才额外提供 `main.sh`
+2. 只有当 skill 的真实 canonical 入口就是稳定脚本 / 跨语言桥接时，才额外提供 `main.sh`
 3. 更新 `src/skills/runtime/index.json`
 4. 如有安装/同步逻辑变化，更新 `runtime-sync.ts`
 5. 通过 `msgcode init` 或 `msgcode start` 触发同步

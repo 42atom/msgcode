@@ -1,0 +1,89 @@
+---
+id: 0097
+title: runtime skill wrapper 瘦身与边界收口
+status: doing
+owner: agent
+labels: [refactor, docs]
+risk: medium
+scope: src/skills/runtime 的 SKILL.md/main.sh 边界、runtime index 入口与 wrapper 保留策略
+plan_doc: docs/design/plan-260312-runtime-skill-wrapper-slimming.md
+links:
+  - AIDOCS/reviews/gemini-linus-review.md
+---
+
+## Context
+
+当前 `msgcode` 的 runtime skills 同时混着三种完全不同的入口形态：
+
+1. 纯说明书 skill
+   - 例如 `plan-files`、`character-identity`
+2. 真正的脚本桥接 skill
+   - 例如 `banana-pro-image-gen`、`local-vision-lmstudio`
+3. 只是把 `msgcode xxx` 再包一层的 CLI alias wrapper
+   - 例如 `memory`、`file`、`thread`、`todo`、`media`、`gen`、`patchright-browser`
+
+这导致当前 runtime skill 层存在几个明显问题：
+
+- `main.sh` 被过度使用，很多 wrapper 只是 `exec msgcode ...`
+- `src/skills/runtime/index.json` 和 `SKILL.md` 描述把 wrapper 当主入口，掩盖了“skill 主要是说明书”的事实
+- 部分 wrapper 只做很薄的参数归一化，但这层归一化并不一定值得长期保留
+- `vision-index/main.sh` 这类“打印说明再让模型回去读 SKILL.md”的壳，属于纯噪音层
+
+同时，当前仓库的技能体系真相源已经明确写了：
+
+- `main.sh` 不是必选项
+- 纯文档型 skill 可以只暴露 `SKILL.md`
+- 只有 canonical 入口本来就是稳定脚本/CLI wrapper 时，才额外提供 `main.sh`
+
+所以这次工作不该继续讨论“是否要再造内部短路匹配层”，而应先把 runtime skill 层自己的边界收干净。
+
+## Goal / Non-Goals
+
+- Goal: 冻结 runtime skills 的三类边界：纯说明书、脚本桥接、CLI alias wrapper
+- Goal: 明确哪些 wrapper 应保留，哪些应退化为纯 `SKILL.md`
+- Goal: 让 `runtime/index.json` 的入口语义与真实设计对齐
+- Goal: 为后续 CLI 去事务化提供一个更干净的 skill 层前提
+- Non-Goals: 本轮不删除人类用户 CLI 主入口
+- Non-Goals: 本轮不实现“Node 内部短路匹配”
+- Non-Goals: 本轮不直接重写 `src/cli/*.ts` 的内部业务逻辑
+- Non-Goals: 本轮不改工具总线/manifest 协议
+
+## Plan
+
+- [x] 盘点所有 runtime skill，按“纯说明书 / 脚本桥接 / CLI alias wrapper”分组
+- [x] 冻结 wrapper 保留标准，并逐个给出保留或退役建议
+- [x] 明确 Phase 1 只处理最没有价值的 wrapper：`vision-index` 以及一批纯 `exec msgcode ...` 壳
+- [x] 明确 `scheduler`、`memory`、`todo` 这类带少量参数归一化的 wrapper 是否暂缓，避免一步删过头
+- [x] 明确 `banana-pro-image-gen`、`local-vision-lmstudio` 这类跨语言/外部脚本桥接继续保留
+- [x] 明确 `feishu-send-file` 的定位：主入口是工具，不是 `msgcode file send`
+
+## Acceptance Criteria
+
+1. 有一份正式 plan 文档明确 runtime skill 的三类分类和保留标准。
+2. 计划明确指出哪些 wrapper 应进入 Phase 1 退役清单，哪些必须保留。
+3. 计划明确“skill 默认是说明书，不默认是 wrapper”的仓库级口径。
+4. 计划明确本轮不做 Node 内部短路匹配，不新增第二条调用链。
+5. 计划明确后续 CLI 去事务化是下游工作，不和本轮 skill/wrapper 收口混做。
+
+## Notes
+
+- 现状样本：
+  - `memory/main.sh`、`file/main.sh`、`thread/main.sh`、`todo/main.sh`、`media/main.sh`、`gen/main.sh`、`patchright-browser/main.sh` 基本都只是 `exec msgcode ...`
+  - `scheduler/main.sh` 额外做了 scheduleId/tz 的归一化
+  - `banana-pro-image-gen/main.sh` 与 `local-vision-lmstudio/main.sh` 是真实脚本桥接
+  - `vision-index/main.sh` 只是打印说明，属于典型可删壳
+- 现有仓库口径：
+  - `src/skills/README.md` 已明确 `main.sh` 不是必选项；纯文档型 skill 可以只暴露 `SKILL.md`
+- Phase 1 已落地：
+  - 已退役 `vision-index/file/gen/media/thread/patchright-browser` 的低价值 alias wrapper
+  - `runtime-sync` 现会主动清退已安装目录里的上述 retired wrapper，避免“源里删了、用户目录还留着”
+  - `scripts/smoke-skill-tool-send.sh` 已归档到 `docs/archive/retired-imsg-cli/`，不再继续引用历史 `msgcode file send`
+- 验证：
+  - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r13-runtime-skill-sync.test.ts test/p5-7-r17-scheduler-pointer-only.test.ts test/p5-7-r24-vision-skill-first.test.ts test/p5-7-r9-t2-skill-global-single-source.test.ts`
+  - `npx tsc --noEmit`
+  - `npm run docs:check`
+
+## Links
+
+- [Plan](/Users/admin/GitProjects/msgcode/docs/design/plan-260312-runtime-skill-wrapper-slimming.md)
+- [Review Input](/Users/admin/GitProjects/msgcode/AIDOCS/reviews/gemini-linus-review.md)

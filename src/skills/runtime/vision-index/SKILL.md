@@ -26,6 +26,8 @@ description: This skill should be used when the model needs detailed image under
 
 先读 `~/.config/msgcode/skills/index.json`，再读本 skill。真正执行时，以 provider-specific skill 里的真实调用合同为准，不要假设所有 skill 都统一走 `main.sh` wrapper。
 
+不要调用 `vision-index/main.sh` 这类额外壳；`vision-index` 自身就是说明书，不是执行入口。
+
 ## 核心规则
 
 - 不要把详细视觉任务再塞回系统内部 `vision` 预览摘要能力。

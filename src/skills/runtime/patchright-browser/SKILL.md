@@ -1,13 +1,13 @@
 ---
 name: patchright-browser
-description: This skill should be used when the model needs to inspect or drive the Patchright browser CLI wrapper, verify Chrome root state, or diagnose browser instances and tabs in msgcode.
+description: This skill should be used when the model needs to inspect or drive the Patchright browser CLI, verify Chrome root state, or diagnose browser instances and tabs in msgcode.
 ---
 
 # patchright-browser skill
 
 ## 能力
 
-本 skill 是 Patchright 浏览器能力说明书，用来说明 `msgcode browser` CLI wrapper 的正确入口和参数合同。
+本 skill 是 Patchright 浏览器能力说明书，用来说明 `msgcode browser` CLI 的正确入口和参数合同。
 
 - 正式浏览器通道：`browser` 工具（Patchright + Chrome-as-State）
 - 本 skill 作用：提供 CLI 合同、状态检查路径、最小命令模板
@@ -20,18 +20,18 @@ description: This skill should be used when the model needs to inspect or drive 
 - 浏览器自动化排障
 - Patchright browser CLI 合同确认
 - Chrome root / profiles / instances / tabs 状态检查
-- 需要显式通过 bash 调 `msgcode browser` CLI wrapper
+- 需要显式通过 `msgcode browser` 检查或执行浏览器命令
 
 ## 唯一入口
 
-优先入口：`~/.config/msgcode/skills/patchright-browser/main.sh`
+优先入口：`msgcode browser ...`
 
-先把 Patchright 当成唯一正式浏览器底座，不要使用 `agent-browser`。先读 `~/.config/msgcode/skills/index.json`，再读本 skill，再走 wrapper。
+先把 Patchright 当成唯一正式浏览器底座，不要使用 `agent-browser`。先读 `~/.config/msgcode/skills/index.json`，再读本 skill，再直接调用 `msgcode browser ...`。
 
 ## 核心规则
 
 - 共享工作 Chrome 根目录信息时，先执行：
-  - `bash ~/.config/msgcode/skills/patchright-browser/main.sh root --ensure --json`
+  - `msgcode browser root --ensure --json`
 - 需要查看 roots / instances / tabs 时，显式调用对应子命令，不猜默认 instance / tab。
 - `instances stop` 和 `tabs list` 不是无参命令，必须传真实 `instanceId`。
 - `instanceId` 不是人工编号，必须来自真实返回值，通常来自 `instances launch --json`、`instances list --json`、`tabs open --json` 等结构化结果。
@@ -42,15 +42,15 @@ description: This skill should be used when the model needs to inspect or drive 
 ## 常用模板
 
 ```bash
-bash ~/.config/msgcode/skills/patchright-browser/main.sh root --ensure --json
-bash ~/.config/msgcode/skills/patchright-browser/main.sh profiles list --json
-bash ~/.config/msgcode/skills/patchright-browser/main.sh instances list --json
-bash ~/.config/msgcode/skills/patchright-browser/main.sh instances launch --mode headed --root-name work-default --json
-bash ~/.config/msgcode/skills/patchright-browser/main.sh tabs open --url https://example.com --json
-bash ~/.config/msgcode/skills/patchright-browser/main.sh tabs list --instance-id <real-instance-id> --json
-bash ~/.config/msgcode/skills/patchright-browser/main.sh instances stop --instance-id <real-instance-id> --json
-bash ~/.config/msgcode/skills/patchright-browser/main.sh snapshot --tab-id <real-tab-id> --compact --json
-bash ~/.config/msgcode/skills/patchright-browser/main.sh action --tab-id <real-tab-id> --kind click --ref '{"role":"link","name":"More info","index":0}' --json
+msgcode browser root --ensure --json
+msgcode browser profiles list --json
+msgcode browser instances list --json
+msgcode browser instances launch --mode headed --root-name work-default --json
+msgcode browser tabs open --url https://example.com --json
+msgcode browser tabs list --instance-id <real-instance-id> --json
+msgcode browser instances stop --instance-id <real-instance-id> --json
+msgcode browser snapshot --tab-id <real-tab-id> --compact --json
+msgcode browser action --tab-id <real-tab-id> --kind click --ref '{"role":"link","name":"More info","index":0}' --json
 ```
 
 正确示例：

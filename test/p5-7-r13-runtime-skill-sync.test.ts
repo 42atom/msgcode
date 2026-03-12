@@ -125,7 +125,6 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(result.indexUpdated).toBe(true);
 
     const visionIndexDoc = await readFile(join(userSkillsDir, "vision-index", "SKILL.md"), "utf-8");
-    const visionIndexSh = await readFile(join(userSkillsDir, "vision-index", "main.sh"), "utf-8");
     const localVisionDoc = await readFile(join(userSkillsDir, "local-vision-lmstudio", "SKILL.md"), "utf-8");
     const localVisionSh = await readFile(join(userSkillsDir, "local-vision-lmstudio", "main.sh"), "utf-8");
     const localVisionScript = await readFile(
@@ -139,15 +138,11 @@ describe("P5.7-R13: runtime skill sync", () => {
     const memoryDoc = await readFile(join(userSkillsDir, "memory", "SKILL.md"), "utf-8");
     const memorySh = await readFile(join(userSkillsDir, "memory", "main.sh"), "utf-8");
     const fileDoc = await readFile(join(userSkillsDir, "file", "SKILL.md"), "utf-8");
-    const fileSh = await readFile(join(userSkillsDir, "file", "main.sh"), "utf-8");
     const threadDoc = await readFile(join(userSkillsDir, "thread", "SKILL.md"), "utf-8");
-    const threadSh = await readFile(join(userSkillsDir, "thread", "main.sh"), "utf-8");
     const todoDoc = await readFile(join(userSkillsDir, "todo", "SKILL.md"), "utf-8");
     const todoSh = await readFile(join(userSkillsDir, "todo", "main.sh"), "utf-8");
     const mediaDoc = await readFile(join(userSkillsDir, "media", "SKILL.md"), "utf-8");
-    const mediaSh = await readFile(join(userSkillsDir, "media", "main.sh"), "utf-8");
     const genDoc = await readFile(join(userSkillsDir, "gen", "SKILL.md"), "utf-8");
-    const genSh = await readFile(join(userSkillsDir, "gen", "main.sh"), "utf-8");
     const bananaDoc = await readFile(join(userSkillsDir, "banana-pro-image-gen", "SKILL.md"), "utf-8");
     const bananaSh = await readFile(join(userSkillsDir, "banana-pro-image-gen", "main.sh"), "utf-8");
     const bananaScript = await readFile(
@@ -155,7 +150,6 @@ describe("P5.7-R13: runtime skill sync", () => {
       "utf-8",
     );
     const skillDoc = await readFile(join(userSkillsDir, "patchright-browser", "SKILL.md"), "utf-8");
-    const mainSh = await readFile(join(userSkillsDir, "patchright-browser", "main.sh"), "utf-8");
     const schedulerDoc = await readFile(join(userSkillsDir, "scheduler", "SKILL.md"), "utf-8");
     const schedulerSh = await readFile(join(userSkillsDir, "scheduler", "main.sh"), "utf-8");
     const optionalIndex = JSON.parse(await readFile(join(userSkillsDir, "optional", "index.json"), "utf-8")) as {
@@ -166,16 +160,10 @@ describe("P5.7-R13: runtime skill sync", () => {
     const mergedIndex = JSON.parse(await readFile(join(userSkillsDir, "index.json"), "utf-8")) as {
       skills: Array<{ id: string; entry?: string; description?: string }>;
     };
-    const visionIndexStat = await stat(join(userSkillsDir, "vision-index", "main.sh"));
     const localVisionStat = await stat(join(userSkillsDir, "local-vision-lmstudio", "main.sh"));
     const memoryStat = await stat(join(userSkillsDir, "memory", "main.sh"));
-    const fileStat = await stat(join(userSkillsDir, "file", "main.sh"));
-    const threadStat = await stat(join(userSkillsDir, "thread", "main.sh"));
     const todoStat = await stat(join(userSkillsDir, "todo", "main.sh"));
-    const mediaStat = await stat(join(userSkillsDir, "media", "main.sh"));
-    const genStat = await stat(join(userSkillsDir, "gen", "main.sh"));
     const bananaStat = await stat(join(userSkillsDir, "banana-pro-image-gen", "main.sh"));
-    const mainStat = await stat(join(userSkillsDir, "patchright-browser", "main.sh"));
     const schedulerStat = await stat(join(userSkillsDir, "scheduler", "main.sh"));
 
     expect(visionIndexDoc).toContain("vision-index skill");
@@ -183,9 +171,9 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(visionIndexDoc).toContain("真实调用合同");
     expect(visionIndexDoc).toContain("~/.config/msgcode/skills/local-vision-lmstudio/SKILL.md");
     expect(visionIndexDoc).toContain("不要再去外部 skills 目录找实现");
+    expect(visionIndexDoc).toContain("不要调用 `vision-index/main.sh`");
     expect(visionIndexDoc).not.toContain("zai-vision-mcp");
-    expect(visionIndexSh).toContain("系统只负责图片预览摘要");
-    expect(visionIndexSh).not.toContain("ZAI / GLM Vision MCP");
+    expect(existsSync(join(userSkillsDir, "vision-index", "main.sh"))).toBe(false);
     expect(localVisionDoc).toContain("local-vision-lmstudio skill");
     expect(localVisionDoc).toContain("bash ~/.config/msgcode/skills/local-vision-lmstudio/main.sh --print-models");
     expect(localVisionDoc).toContain("python3 ~/.config/msgcode/skills/local-vision-lmstudio/scripts/analyze_image.py --model <model-key>");
@@ -222,21 +210,26 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(memorySh).toContain('exec msgcode memory "$sub"');
     expect(memorySh).toContain('--workspace "$PWD"');
     expect(fileDoc).toContain("# file skill");
-    expect(fileDoc).toContain("发送文件");
-    expect(fileSh).toContain('exec msgcode file "$sub"');
+    expect(fileDoc).toContain("移动/复制文件");
+    expect(fileDoc).toContain("msgcode file find");
+    expect(fileDoc).toContain("feishu_send_file");
+    expect(existsSync(join(userSkillsDir, "file", "main.sh"))).toBe(false);
     expect(threadDoc).toContain("# thread skill");
     expect(threadDoc).toContain("切换会话线程");
-    expect(threadSh).toContain('exec msgcode thread "$sub"');
+    expect(threadDoc).toContain("msgcode thread list");
+    expect(existsSync(join(userSkillsDir, "thread", "main.sh"))).toBe(false);
     expect(todoDoc).toContain("# todo skill");
     expect(todoDoc).toContain("任务记录");
     expect(todoSh).toContain('exec msgcode todo "$sub"');
     expect(todoSh).toContain('--workspace "$PWD"');
     expect(mediaDoc).toContain("# media skill");
     expect(mediaDoc).toContain("截图");
-    expect(mediaSh).toContain('exec msgcode media screen');
+    expect(mediaDoc).toContain("msgcode media screen");
+    expect(existsSync(join(userSkillsDir, "media", "main.sh"))).toBe(false);
     expect(genDoc).toContain("# gen skill");
     expect(genDoc).toContain("图片生成");
-    expect(genSh).toContain('exec msgcode gen "$sub"');
+    expect(genDoc).toContain("msgcode gen image");
+    expect(existsSync(join(userSkillsDir, "gen", "main.sh"))).toBe(false);
     expect(bananaDoc).toContain("AIDOCS");
     expect(bananaDoc).toContain("编辑已有图片时必须用 `edit --input");
     expect(bananaSh).toContain('skill_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"');
@@ -248,13 +241,15 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(skillDoc).toContain("name: patchright-browser");
     expect(skillDoc).toContain("## 能力");
     expect(skillDoc).toContain("## 唯一入口");
+    expect(skillDoc).toContain("优先入口：`msgcode browser ...`");
     expect(skillDoc).toContain("instances stop` 和 `tabs list` 不是无参命令");
     expect(skillDoc).toContain("`instanceId` 不是人工编号");
     expect(skillDoc).toContain("不要直接写死 `tabId=1`");
     expect(skillDoc).toContain("`tabId` 必须来自真实返回值");
     expect(skillDoc).toContain("tabs list --instance-id <real-instance-id> --json");
     expect(skillDoc).toContain("instances stop --instance-id <real-instance-id> --json");
-    expect(mainSh).toContain('exec msgcode browser "$@"');
+    expect(skillDoc).toContain("msgcode browser root --ensure --json");
+    expect(existsSync(join(userSkillsDir, "patchright-browser", "main.sh"))).toBe(false);
     expect(schedulerDoc).toContain("scheduler skill");
     expect(schedulerDoc).toContain("name: scheduler");
     expect(schedulerDoc).toContain("## 能力");
@@ -308,16 +303,13 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(mergedIndex.skills.find((skill) => skill.id === "media")?.entry).toBe("~/.config/msgcode/skills/media/SKILL.md");
     expect(mergedIndex.skills.find((skill) => skill.id === "gen")?.entry).toBe("~/.config/msgcode/skills/gen/SKILL.md");
     expect(mergedIndex.skills.find((skill) => skill.id === "banana-pro-image-gen")?.entry).toBe("~/.config/msgcode/skills/banana-pro-image-gen/SKILL.md");
-    expect(visionIndexStat.mode & 0o111).toBeGreaterThan(0);
+    expect(mergedIndex.skills.find((skill) => skill.id === "patchright-browser")?.entry).toBe(
+      "~/.config/msgcode/skills/patchright-browser/SKILL.md",
+    );
     expect(localVisionStat.mode & 0o111).toBeGreaterThan(0);
     expect(memoryStat.mode & 0o111).toBeGreaterThan(0);
-    expect(fileStat.mode & 0o111).toBeGreaterThan(0);
-    expect(threadStat.mode & 0o111).toBeGreaterThan(0);
     expect(todoStat.mode & 0o111).toBeGreaterThan(0);
-    expect(mediaStat.mode & 0o111).toBeGreaterThan(0);
-    expect(genStat.mode & 0o111).toBeGreaterThan(0);
     expect(bananaStat.mode & 0o111).toBeGreaterThan(0);
-    expect(mainStat.mode & 0o111).toBeGreaterThan(0);
     expect(schedulerStat.mode & 0o111).toBeGreaterThan(0);
   });
 
@@ -325,9 +317,9 @@ describe("P5.7-R13: runtime skill sync", () => {
     const userSkillsDir = await mkdtemp(join(tmpdir(), "msgcode-runtime-skills-existing-"));
     tempDirs.push(userSkillsDir);
 
-    await mkdir(join(userSkillsDir, "patchright-browser"), { recursive: true });
+    await mkdir(join(userSkillsDir, "scheduler"), { recursive: true });
     await writeFile(
-      join(userSkillsDir, "patchright-browser", "main.sh"),
+      join(userSkillsDir, "scheduler", "main.sh"),
       "#!/usr/bin/env bash\necho existing\n",
       "utf-8",
     );
@@ -338,9 +330,36 @@ describe("P5.7-R13: runtime skill sync", () => {
       overwrite: false,
     });
 
-    const mainSh = await readFile(join(userSkillsDir, "patchright-browser", "main.sh"), "utf-8");
+    const mainSh = await readFile(join(userSkillsDir, "scheduler", "main.sh"), "utf-8");
 
     expect(result.skippedFiles).toBeGreaterThanOrEqual(1);
     expect(mainSh).toContain("echo existing");
+  });
+
+  it("应清退已退役的 runtime skill alias wrapper", async () => {
+    const userSkillsDir = await mkdtemp(join(tmpdir(), "msgcode-runtime-skills-retired-"));
+    tempDirs.push(userSkillsDir);
+
+    await mkdir(join(userSkillsDir, "patchright-browser"), { recursive: true });
+    await writeFile(
+      join(userSkillsDir, "patchright-browser", "main.sh"),
+      "#!/usr/bin/env bash\necho legacy-wrapper\n",
+      "utf-8",
+    );
+    await mkdir(join(userSkillsDir, "vision-index"), { recursive: true });
+    await writeFile(
+      join(userSkillsDir, "vision-index", "main.sh"),
+      "#!/usr/bin/env bash\necho legacy-vision\n",
+      "utf-8",
+    );
+
+    await syncRuntimeSkills({
+      sourceDir: runtimeSourceDir,
+      userSkillsDir,
+      overwrite: false,
+    });
+
+    expect(existsSync(join(userSkillsDir, "patchright-browser", "main.sh"))).toBe(false);
+    expect(existsSync(join(userSkillsDir, "vision-index", "main.sh"))).toBe(false);
   });
 });

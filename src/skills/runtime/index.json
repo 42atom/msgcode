@@ -48,13 +48,13 @@
       "id": "file",
       "name": "File",
       "entry": "~/.config/msgcode/skills/file/SKILL.md",
-      "description": "文件能力说明书。优先通过 file wrapper 调用 msgcode file CLI，做查找、读取、写入、复制和发送文件。"
+      "description": "文件能力说明书。优先直接调用 msgcode file CLI，做查找、读取、写入、复制和移动；需要回传飞书时改用 feishu_send_file。"
     },
     {
       "id": "thread",
       "name": "Thread",
       "entry": "~/.config/msgcode/skills/thread/SKILL.md",
-      "description": "线程能力说明书。优先通过 thread wrapper 调用 msgcode thread CLI，查看线程、读取消息和切换 active thread。"
+      "description": "线程能力说明书。优先直接调用 msgcode thread CLI，查看线程、读取消息和切换 active thread。"
     },
     {
       "id": "todo",
@@ -66,13 +66,13 @@
       "id": "media",
       "name": "Media",
       "entry": "~/.config/msgcode/skills/media/SKILL.md",
-      "description": "媒体能力说明书。优先通过 media wrapper 调用 msgcode media CLI 获取当前屏幕截图，并默认把产物落到 AIDOCS。"
+      "description": "媒体能力说明书。优先直接调用 msgcode media CLI 获取当前屏幕截图，并默认把产物落到 AIDOCS。"
     },
     {
       "id": "gen",
       "name": "Gen",
       "entry": "~/.config/msgcode/skills/gen/SKILL.md",
-      "description": "统一生成能力说明书。优先通过 gen wrapper 调用 msgcode gen CLI，执行图片、自拍、TTS 和音乐生成。"
+      "description": "统一生成能力说明书。优先直接调用 msgcode gen CLI，执行图片、自拍、TTS 和音乐生成。"
     },
     {
       "id": "banana-pro-image-gen",
@@ -83,8 +83,8 @@
     {
       "id": "patchright-browser",
       "name": "Patchright Browser",
-      "entry": "~/.config/msgcode/skills/patchright-browser/main.sh",
-      "description": "Patchright 浏览器能力说明书。先读本 skill，再通过 wrapper 调用 msgcode browser CLI 检查 root、instances、tabs；tabId 必须使用真实返回值，不能猜 1、2、3"
+      "entry": "~/.config/msgcode/skills/patchright-browser/SKILL.md",
+      "description": "Patchright 浏览器能力说明书。先读本 skill，再直接调用 msgcode browser CLI 检查 root、instances、tabs；tabId 必须使用真实返回值，不能猜 1、2、3"
     }
   ]
 }

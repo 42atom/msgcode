@@ -9,8 +9,10 @@
 
 1. `p5-7-r1-cli-first-file-send.md`
 2. `p5-7-r1b-file-send-real-delivery.md`
+3. `smoke-skill-tool-send.archived.sh`
 
 ## 归档原因
 
 1. `msgcode file send` 只服务历史 iMessage 文件发送链路。
 2. `0093 Feishu-only 通道简化与 iMessage Sunset` 已把该命令降为 retired 行为，不再进入 `help-docs --json` 正式能力面。
+3. runtime skill Phase 1 已移除 `file/main.sh send` 这类 alias wrapper，旧 smoke 脚本不再属于现役验证路径。

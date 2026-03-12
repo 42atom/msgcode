@@ -8,7 +8,7 @@
  */
 
 import { existsSync } from "node:fs";
-import { chmod, copyFile, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -31,6 +31,14 @@ interface SkillIndexFile {
 }
 
 const RETIRED_RUNTIME_SKILL_IDS = new Set(["pinchtab-browser", "zai-vision-mcp"]);
+const RETIRED_RUNTIME_SKILL_PATHS = [
+  ["vision-index", "main.sh"],
+  ["file", "main.sh"],
+  ["gen", "main.sh"],
+  ["media", "main.sh"],
+  ["thread", "main.sh"],
+  ["patchright-browser", "main.sh"],
+] as const;
 
 export interface RuntimeSkillSyncOptions {
   overwrite?: boolean;
@@ -127,6 +135,12 @@ async function copyDirectoryRecursive(
   }
 
   return { copiedFiles, skippedFiles };
+}
+
+async function removeRetiredRuntimeFiles(userSkillsDir: string): Promise<void> {
+  for (const parts of RETIRED_RUNTIME_SKILL_PATHS) {
+    await rm(join(userSkillsDir, ...parts), { force: true });
+  }
 }
 
 async function loadSkillIndex(filePath: string): Promise<SkillIndexFile | null> {
@@ -235,6 +249,7 @@ export async function syncRuntimeSkills(
   }
 
   const { copiedFiles, skippedFiles } = await copyDirectoryRecursive(sourceDir, userSkillsDir, overwrite);
+  await removeRetiredRuntimeFiles(userSkillsDir);
   const existingIndex = await loadSkillIndex(join(userSkillsDir, "index.json"));
   const mergedIndex = mergeSkillIndexes(existingIndex, runtimeIndex);
   await writeFile(join(userSkillsDir, "index.json"), `${JSON.stringify(mergedIndex, null, 2)}\n`, "utf-8");
