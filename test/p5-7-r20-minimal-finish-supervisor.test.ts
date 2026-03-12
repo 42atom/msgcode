@@ -3,8 +3,8 @@
  *
  * 验收：
  * 1. 只读/摘要任务不应触发 supervisor
- * 2. 假完成会被 supervisor 拦下并推动继续执行
- * 3. 连续 3 次 CONTINUE 后停止并返回阻塞原因
+ * 2. mutating 任务会记录 supervisor 审计，但不再改变控制流
+ * 3. CONTINUE 只做日志/审计，不再阻塞完成
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
@@ -208,7 +208,7 @@ describe("P5.7-R20: minimal finish supervisor", () => {
         }
     });
 
-    it("假完成应被拦下并继续执行到有证据再结束", async () => {
+    it("假完成只记录 supervisor CONTINUE 审计，不再强制继续执行", async () => {
         const workspacePath = await createToolEnabledWorkspace();
         let callCount = 0;
 
@@ -259,43 +259,11 @@ describe("P5.7-R20: minimal finish supervisor", () => {
                 });
             }
 
-            if (callCount === 4) {
-                return asJsonResponse({
-                    choices: [{
-                        message: {
-                            role: "assistant",
-                            content: "",
-                            tool_calls: [{
-                                id: "call_read_2",
-                                type: "function",
-                                function: {
-                                    name: "read_file",
-                                    arguments: JSON.stringify({ path: ".msgcode/evidence.txt" }),
-                                },
-                            }],
-                        },
-                        finish_reason: "tool_calls",
-                    }],
-                });
-            }
-
-            if (callCount === 5) {
-                return asJsonResponse({
-                    choices: [{
-                        message: {
-                            role: "assistant",
-                            content: "已补充验证，证据为 verified-evidence。",
-                        },
-                        finish_reason: "stop",
-                    }],
-                });
-            }
-
             return asJsonResponse({
                 choices: [{
                     message: {
                         role: "assistant",
-                        content: "PASS",
+                        content: "CONTINUE: 缺少真实文件证据",
                     },
                     finish_reason: "stop",
                 }],
@@ -310,11 +278,11 @@ describe("P5.7-R20: minimal finish supervisor", () => {
                 timeoutMs: 10_000,
             });
 
-            expect(callCount).toBe(6);
-            expect(result.answer).toContain("verified-evidence");
-            expect(result.actionJournal.filter((entry) => entry.tool === "finish-supervisor").length).toBe(2);
-            expect(result.actionJournal.some((entry) => entry.tool === "read_file" && entry.phase === "act")).toBe(true);
-            expect(result.actionJournal[result.actionJournal.length - 1]?.ok).toBe(true);
+            expect(callCount).toBe(3);
+            expect(result.answer).toBe("已完成。");
+            expect(result.answer).not.toContain("FINISH_SUPERVISOR_BLOCKED");
+            expect(result.actionJournal.filter((entry) => entry.tool === "finish-supervisor").length).toBe(1);
+            expect(result.actionJournal.some((entry) => entry.tool === "finish-supervisor" && entry.ok === false)).toBe(true);
         } finally {
             await rm(workspacePath, { recursive: true, force: true });
         }
@@ -391,7 +359,7 @@ describe("P5.7-R20: minimal finish supervisor", () => {
         }
     });
 
-    it("连续 3 次 CONTINUE 后应停止并返回阻塞原因", async () => {
+    it("连续 CONTINUE 现在只做审计，不再阻塞完成", async () => {
         const workspacePath = await createToolEnabledWorkspace();
         let callCount = 0;
 
@@ -418,36 +386,12 @@ describe("P5.7-R20: minimal finish supervisor", () => {
                 });
             }
 
-            if (callCount === 2 || callCount === 4 || callCount === 6) {
+            if (callCount === 2) {
                 return asJsonResponse({
                     choices: [{
                         message: {
                             role: "assistant",
-                            content: `仍然认为可以结束-${callCount}`,
-                        },
-                        finish_reason: "stop",
-                    }],
-                });
-            }
-
-            if (callCount === 3) {
-                return asJsonResponse({
-                    choices: [{
-                        message: {
-                            role: "assistant",
-                            content: "CONTINUE: 第一次仍缺证据",
-                        },
-                        finish_reason: "stop",
-                    }],
-                });
-            }
-
-            if (callCount === 5) {
-                return asJsonResponse({
-                    choices: [{
-                        message: {
-                            role: "assistant",
-                            content: "CONTINUE: 第二次仍缺证据",
+                            content: "仍然认为可以结束",
                         },
                         finish_reason: "stop",
                     }],
@@ -458,7 +402,7 @@ describe("P5.7-R20: minimal finish supervisor", () => {
                 choices: [{
                     message: {
                         role: "assistant",
-                        content: "CONTINUE: 第三次仍缺证据",
+                        content: "CONTINUE: 仍缺证据",
                     },
                     finish_reason: "stop",
                 }],
@@ -473,10 +417,10 @@ describe("P5.7-R20: minimal finish supervisor", () => {
                 timeoutMs: 10_000,
             });
 
-            expect(callCount).toBe(7);
-            expect(result.answer).toContain("FINISH_SUPERVISOR_BLOCKED");
-            expect(result.answer).toContain("第三次仍缺证据");
-            expect(result.actionJournal.filter((entry) => entry.tool === "finish-supervisor").length).toBe(3);
+            expect(callCount).toBe(3);
+            expect(result.answer).toBe("仍然认为可以结束");
+            expect(result.answer).not.toContain("FINISH_SUPERVISOR_BLOCKED");
+            expect(result.actionJournal.filter((entry) => entry.tool === "finish-supervisor").length).toBe(1);
             expect(result.actionJournal[result.actionJournal.length - 1]?.ok).toBe(false);
         } finally {
             await rm(workspacePath, { recursive: true, force: true });
@@ -566,7 +510,7 @@ describe("P5.7-R20: minimal finish supervisor", () => {
         }
     });
 
-    it("工具失败后若 supervisor 连续 3 次 CONTINUE 应阻塞退出", async () => {
+    it("工具失败后 supervisor 的 CONTINUE 只做审计，不再阻塞退出", async () => {
         const workspacePath = await createToolEnabledWorkspace();
         let callCount = 0;
 
@@ -593,19 +537,7 @@ describe("P5.7-R20: minimal finish supervisor", () => {
                 });
             }
 
-            if (callCount === 2 || callCount === 4) {
-                return asJsonResponse({
-                    choices: [{
-                        message: {
-                            role: "assistant",
-                            content: `CONTINUE: 第 ${callCount === 2 ? "一" : "二"} 次失败仍未解释清楚`,
-                        },
-                        finish_reason: "stop",
-                    }],
-                });
-            }
-
-            if (callCount === 3 || callCount === 5) {
+            if (callCount === 2) {
                 return asJsonResponse({
                     choices: [{
                         message: {
@@ -621,7 +553,7 @@ describe("P5.7-R20: minimal finish supervisor", () => {
                 choices: [{
                     message: {
                         role: "assistant",
-                        content: "CONTINUE: 第三次失败仍未解释清楚",
+                        content: "CONTINUE: 失败仍未解释清楚",
                     },
                     finish_reason: "stop",
                 }],
@@ -636,12 +568,12 @@ describe("P5.7-R20: minimal finish supervisor", () => {
                 timeoutMs: 10_000,
             });
 
-            expect(callCount).toBe(7);
-            expect(result.answer).toContain("FINISH_SUPERVISOR_BLOCKED");
-            expect(result.answer).toContain("第三次失败仍未解释清楚");
+            expect(callCount).toBe(3);
+            expect(result.answer).toBe("已删除，我还是直接结束。");
+            expect(result.answer).not.toContain("FINISH_SUPERVISOR_BLOCKED");
             expect(result.verifyResult?.ok).toBe(false);
             expect(result.verifyResult?.errorCode).toBe("TOOL_VERIFY_FAILED");
-            expect(result.actionJournal.filter((entry) => entry.tool === "finish-supervisor").length).toBe(3);
+            expect(result.actionJournal.filter((entry) => entry.tool === "finish-supervisor").length).toBe(1);
             expect(result.actionJournal[0]?.tool).toBe("bash");
             expect(result.actionJournal[0]?.ok).toBe(false);
         } finally {

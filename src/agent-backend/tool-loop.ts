@@ -238,7 +238,6 @@ type ChatResponse = {
 };
 
 const AIDOCS_ROOT = process.env.AIDOCS_ROOT || "AIDOCS";
-const FINISH_SUPERVISOR_MAX_CONTINUES = 3;
 const MAIN_AGENT_MAX_TOKENS = 8192;
 let cachedLocalModel: { baseUrl: string; id: string } | undefined;
 const FINISH_SUPERVISOR_MUTATING_TOOLS = new Set<ToolName>([
@@ -526,7 +525,6 @@ function getFinishSupervisorSettings(): {
     enabled: boolean;
     temperature: number;
     maxTokens: number;
-    maxContinues: number;
 } {
     const temperature = Number.isFinite(config.supervisor.temperature)
         ? Math.max(0, config.supervisor.temperature)
@@ -539,7 +537,6 @@ function getFinishSupervisorSettings(): {
         enabled: config.supervisor.enabled !== false,
         temperature,
         maxTokens,
-        maxContinues: FINISH_SUPERVISOR_MAX_CONTINUES,
     };
 }
 
@@ -749,23 +746,6 @@ function parseFinishSupervisorDecision(rawInput: string, durationMs: number): Fi
         durationMs,
         source: "invalid",
     };
-}
-
-function buildFinishSupervisorContinuationMessage(reason: string, continueCount: number, maxContinues: number): string {
-    return [
-        `结束前复核未通过（${continueCount}/${maxContinues}）：${reason}`,
-        "你还不能结束。",
-        "请继续完成缺失动作，必要时调用工具拿到证据；准备结束时再给出最终结果。",
-    ].join("\n");
-}
-
-function buildFinishSupervisorBlockedAnswer(reason: string, continueCount: number): string {
-    return [
-        "任务已停止：结束前监督连续要求继续，未能通过。",
-        `- 连续 CONTINUE 次数：${continueCount}`,
-        `- 阻塞原因：${reason}`,
-        "- 错误码：FINISH_SUPERVISOR_BLOCKED",
-    ].join("\n");
 }
 
 function appendFinishSupervisorJournalEntry(params: {
@@ -1387,7 +1367,6 @@ async function runMiniMaxAnthropicToolLoop(params: {
 
     const executedToolCalls: ExecutedToolCall[] = [];
     const supervisorSettings = getFinishSupervisorSettings();
-    let supervisorContinueCount = 0;
     let currentResponse = response;
     let currentToolCalls = toolCalls;
     let forcedFinalState: ForcedFinalState | undefined;
@@ -1649,7 +1628,7 @@ async function runMiniMaxAnthropicToolLoop(params: {
                 actionJournal,
                 executedToolCalls,
                 verifyResult,
-                continueCount: supervisorContinueCount,
+                continueCount: 0,
             });
             appendFinishSupervisorJournalEntry({
                 actionJournal,
@@ -1665,73 +1644,10 @@ async function runMiniMaxAnthropicToolLoop(params: {
                 provider: "minimax",
                 decision: supervisorDecision.decision,
                 source: supervisorDecision.source,
-                continueCount: supervisorContinueCount,
+                continueCount: 0,
                 reason: supervisorDecision.reason,
                 rawPreview: clipText(supervisorDecision.raw, 120),
             });
-
-            if (supervisorDecision.decision === "CONTINUE") {
-                supervisorContinueCount += 1;
-                const continueReason = supervisorDecision.reason || "结束前证据不足";
-                if (supervisorContinueCount >= supervisorSettings.maxContinues) {
-                    logger.warn("finish supervisor blocked completion", {
-                        module: "agent-backend/tool-loop",
-                        traceId: params.traceId,
-                        route: params.route,
-                        provider: "minimax",
-                        continueCount: supervisorContinueCount,
-                        reason: continueReason,
-                    });
-                    const firstBlockedCall = forcedFinalState?.toolCall
-                        ?? lastFailureState?.toolCall
-                        ?? (executedToolCalls[0]
-                            ? { name: executedToolCalls[0].tc.function.name, args: executedToolCalls[0].args, result: executedToolCalls[0].result }
-                            : undefined);
-                    return {
-                        answer: buildFinishSupervisorBlockedAnswer(continueReason, supervisorContinueCount),
-                        toolCall: firstBlockedCall,
-                        actionJournal,
-                        verifyResult: verifyResult ?? lastFailureState?.verifyResult,
-                        decisionSource: executedToolCalls.length === 0 ? "model" : undefined,
-                        quotaProfile: params.quotaProfile,
-                        perTurnToolCallLimit: params.perTurnToolCallLimit,
-                        perTurnToolStepLimit: params.perTurnToolStepLimit,
-                        remainingToolCalls: params.perTurnToolCallLimit,
-                        remainingSteps: params.perTurnToolStepLimit - executedToolCalls.length,
-                    };
-                }
-
-                const assistantMessage: MiniMaxAnthropicMessage = {
-                    role: "assistant",
-                    content: forcedFinalState?.answer
-                        ?? (currentResponse.contentBlocks.length > 0 ? currentResponse.contentBlocks : currentResponse.content || ""),
-                };
-                const supervisorFeedback: MiniMaxAnthropicMessage = {
-                    role: "user",
-                    content: buildFinishSupervisorContinuationMessage(
-                        continueReason,
-                        supervisorContinueCount,
-                        supervisorSettings.maxContinues
-                    ),
-                };
-
-                conversationMessages = [...conversationMessages, assistantMessage, supervisorFeedback];
-                forcedFinalState = undefined;
-                currentResponse = await callMiniMaxAnthropicRaw({
-                    baseUrl: params.baseUrl,
-                    model: params.model,
-                    messages: conversationMessages,
-                    system: anthropicContext.system,
-                    tools: params.activeToolSchemas,
-                    toolChoice: { type: "auto" },
-                    temperature: 0,
-                    maxTokens: MAIN_AGENT_MAX_TOKENS,
-                    timeoutMs: params.timeoutMs,
-                    apiKey: params.apiKey,
-                });
-                currentToolCalls = currentResponse.toolCalls;
-                continue;
-            }
         }
 
         const firstCall = forcedFinalState?.toolCall
@@ -1983,7 +1899,6 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
 
     const executedToolCalls: ExecutedToolCall[] = [];
     const supervisorSettings = getFinishSupervisorSettings();
-    let supervisorContinueCount = 0;
     let currentAssistantRole = msg1?.role || "assistant";
     let currentAssistantContent = msg1?.content;
     let currentToolCalls = toolCalls;
@@ -2294,7 +2209,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                 actionJournal,
                 executedToolCalls,
                 verifyResult,
-                continueCount: supervisorContinueCount,
+                continueCount: 0,
             });
             appendFinishSupervisorJournalEntry({
                 actionJournal,
@@ -2310,80 +2225,10 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                 provider: backendRuntime.id,
                 decision: supervisorDecision.decision,
                 source: supervisorDecision.source,
-                continueCount: supervisorContinueCount,
+                continueCount: 0,
                 reason: supervisorDecision.reason,
                 rawPreview: clipText(supervisorDecision.raw, 120),
             });
-
-            if (supervisorDecision.decision === "CONTINUE") {
-                supervisorContinueCount += 1;
-                const continueReason = supervisorDecision.reason || "结束前证据不足";
-                if (supervisorContinueCount >= supervisorSettings.maxContinues) {
-                    logger.warn("finish supervisor blocked completion", {
-                        module: "agent-backend/tool-loop",
-                        traceId,
-                        route,
-                        provider: backendRuntime.id,
-                        continueCount: supervisorContinueCount,
-                        reason: continueReason,
-                    });
-                    const firstBlockedCall = forcedFinalState?.toolCall
-                        ?? lastFailureState?.toolCall
-                        ?? (executedToolCalls[0]
-                            ? { name: executedToolCalls[0].tc.function.name, args: executedToolCalls[0].args, result: executedToolCalls[0].result }
-                            : undefined);
-                    return {
-                        answer: buildFinishSupervisorBlockedAnswer(continueReason, supervisorContinueCount),
-                        toolCall: firstBlockedCall,
-                        actionJournal,
-                        verifyResult: verifyResult ?? lastFailureState?.verifyResult,
-                        decisionSource: executedToolCalls.length === 0 ? "model" : undefined,
-                        quotaProfile,
-                        perTurnToolCallLimit,
-                        perTurnToolStepLimit,
-                        remainingToolCalls: perTurnToolCallLimit,
-                        remainingSteps: perTurnToolStepLimit - executedToolCalls.length,
-                    };
-                }
-
-                const supervisorFeedback = {
-                    role: "user" as const,
-                    content: buildFinishSupervisorContinuationMessage(
-                        continueReason,
-                        supervisorContinueCount,
-                        supervisorSettings.maxContinues
-                    ),
-                };
-                if ((currentAssistantContent || "").trim()) {
-                    conversationMessages = [
-                        ...conversationMessages,
-                        { role: currentAssistantRole, content: currentAssistantContent },
-                        supervisorFeedback,
-                    ];
-                } else {
-                    conversationMessages = [...conversationMessages, supervisorFeedback];
-                }
-                forcedFinalState = undefined;
-
-                const nextRound = await callChatCompletionsRaw({
-                    baseUrl,
-                    model: usedModel,
-                    messages: conversationMessages,
-                    tools: activeToolSchemas,
-                    toolChoice: preferredToolChoice ?? "auto",
-                    temperature: 0,
-                    maxTokens: MAIN_AGENT_MAX_TOKENS,
-                    timeoutMs,
-                    apiKey: backendRuntime.apiKey,
-                });
-
-                const nextMsg = nextRound.choices[0]?.message;
-                currentAssistantRole = nextMsg?.role || "assistant";
-                currentAssistantContent = nextMsg?.content;
-                currentToolCalls = nextMsg?.tool_calls ?? [];
-                currentFinishReason = nextRound.finishReason ?? null;
-                continue;
-            }
         }
 
         const firstCall = forcedFinalState?.toolCall
