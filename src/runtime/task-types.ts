@@ -78,7 +78,7 @@ export function isLegalTransition(from: TaskStatus, to: TaskStatus): boolean {
  * - lastErrorCode: 上次错误码
  * - blockedReason: 阻塞原因
  * - nextWakeAtMs: 下次唤醒时间戳
- * - verifyEvidence: verify 证据（completed 必须有）
+ * - verifyEvidence: verify 证据（可选）
  * - createdAt/updatedAt: 时间戳
  */
 export interface TaskRecord {
@@ -117,7 +117,7 @@ export interface TaskRecord {
     checkpoint?: TaskCheckpoint;
     /** 下次唤醒时间戳（毫秒） */
     nextWakeAtMs?: number;
-    /** verify 证据（completed 状态时必须有） */
+    /** verify 证据（可选） */
     verifyEvidence?: string;
     /** 创建时间戳 */
     createdAt: number;

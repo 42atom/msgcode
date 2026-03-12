@@ -239,14 +239,14 @@ describe("Phase 4: Run Events", () => {
     expect(startSources).toEqual(new Set(["message", "task", "heartbeat", "schedule"]));
   });
 
-  it("tool-loop 事件应统一发 run:tool / run:assistant / run:block", async () => {
+  it("tool-loop 事件应统一发 run:tool / run:assistant，verify 失败不再冒充 run:block", async () => {
     const { emitToolLoopRunEvents } = await import("../src/runtime/run-events.js");
 
     emitToolLoopRunEvents({
       runId: "run-phase4-tool-loop",
       sessionKey: "session:v1:test:tool-loop",
       source: "task",
-      answer: "工具执行完毕，但 verify 要求人工复核。",
+      answer: "工具执行完毕，但 verify 证据不足。",
       route: "tool",
       actionJournal: [
         {
@@ -284,11 +284,7 @@ describe("Phase 4: Run Events", () => {
       "run:tool",
       "run:tool",
       "run:assistant",
-      "run:block",
     ]);
-
-    const blockEvent = readJsonlRecords(eventsPath).find((record) => record.type === "run:block");
-    expect(blockEvent?.errorCode).toBe("TOOL_VERIFY_FAILED");
   });
 
   it("handlers.ts 与 commands.ts 必须把 runContext 透传给 executeAgentTurn", () => {

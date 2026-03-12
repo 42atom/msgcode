@@ -222,17 +222,6 @@ export function emitToolLoopRunEvents(params: {
         });
     }
 
-    if (params.verifyResult && !params.verifyResult.ok) {
-        emitRunEvent({
-            runId: params.runId,
-            sessionKey: params.sessionKey,
-            source: params.source,
-            type: "run:block",
-            message: params.verifyResult.failureReason || "verify blocked completion",
-            errorCode: params.verifyResult.errorCode,
-            route: params.route,
-        });
-    }
 }
 
 export function resetRunEventStoreForTest(): void {

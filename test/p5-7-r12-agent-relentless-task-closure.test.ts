@@ -347,7 +347,7 @@ describe("P5.7-R12: Agent Relentless Task Closure", () => {
             await supervisor.stop();
         });
 
-        it("verify gate：无 verify 证据不得 completed", async () => {
+        it("无 verify 证据也允许直接 completed", async () => {
             const createResult = await supervisor.createTask(
                 "test-chat-8",
                 "/tmp/workspace",
@@ -356,20 +356,24 @@ describe("P5.7-R12: Agent Relentless Task Closure", () => {
 
             expect(createResult.ok).toBe(true);
 
-            // 尝试标记为完成，但没有 verify 证据
+            const runningResult = await supervisor.updateTaskResult(createResult.task!.taskId, {
+                ok: true,
+                status: "running",
+            });
+
+            expect(runningResult.ok).toBe(true);
+
             const updateResult = await supervisor.updateTaskResult(createResult.task!.taskId, {
                 ok: true,
                 status: "completed",
             });
 
             expect(updateResult.ok).toBe(true);
-            // 由于没有 verify 证据，状态应该是 running 而不是 completed
-            expect(updateResult.task?.status).toBe("running");
-            expect(updateResult.task?.checkpoint?.currentPhase).toBe("running");
-            expect(updateResult.task?.checkpoint?.nextAction).toBe("补充验证证据后再结束任务");
+            expect(updateResult.task?.status).toBe("completed");
+            expect(updateResult.task?.checkpoint?.currentPhase).toBe("completed");
         });
 
-        it("verify gate：有 verify 证据可 completed", async () => {
+        it("有 verify 证据时应继续保留证据后完成", async () => {
             const createResult = await supervisor.createTask(
                 "test-chat-9",
                 "/tmp/workspace",

@@ -267,11 +267,8 @@ export class TaskSupervisor {
 
         switch (result.status) {
             case "completed":
-                // completed 必须带 verify 证据；否则继续保持 running，等待下一轮补证据
                 if (result.verifyEvidence) {
                     updates.verifyEvidence = result.verifyEvidence;
-                } else {
-                    newStatus = "running";
                 }
                 break;
             case "blocked":
@@ -302,10 +299,6 @@ export class TaskSupervisor {
                 currentPhase: newStatus,
                 updatedAt: Date.now(),
             };
-
-            if (result.status === "completed" && newStatus === "running" && !result.verifyEvidence) {
-                alignedCheckpoint.nextAction = "补充验证证据后再结束任务";
-            }
 
             updates.checkpoint = alignedCheckpoint;
         }
@@ -546,15 +539,6 @@ export class TaskSupervisor {
                 checkpoint: this.buildCheckpointFromTurn(task, result, "completed"),
             };
 
-            // 如果有 verify 结果且失败，标记为 blocked
-            if (result.verifyResult && !result.verifyResult.ok) {
-                executionResult.ok = false;
-                executionResult.status = "blocked";
-                executionResult.blockedReason = result.verifyResult.failureReason;
-                executionResult.errorCode = result.verifyResult.errorCode;
-                executionResult.checkpoint = this.buildCheckpointFromTurn(task, result, "blocked");
-            }
-
             // P5.7-R12-T8: 更新错误码计数（不可续跑分支）
             const errorUpdates: Partial<TaskRecord> = {};
             if (result.actionJournal.length > 0) {
@@ -582,10 +566,7 @@ export class TaskSupervisor {
 
             await this.updateTaskResult(task.taskId, executionResult);
 
-            if (
-                executionResult.status === "blocked" &&
-                (!result.verifyResult || result.verifyResult.ok)
-            ) {
+            if (executionResult.status === "blocked") {
                 emitRunEvent({
                     runId: run.runId,
                     sessionKey: run.sessionKey,
