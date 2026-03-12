@@ -589,13 +589,13 @@ export async function getToolsForLlm(workspacePath?: string): Promise<ToolName[]
         return exposure.exposedTools;
     }
     try {
-        const { loadWorkspaceConfig } = await import("../config/workspace.js");
+        const { loadWorkspaceConfig, DEFAULT_WORKSPACE_CONFIG } = await import("../config/workspace.js");
         const cfg = await loadWorkspaceConfig(workspacePath);
-        // 单一真相源：LLM 工具暴露只看 tooling.allow，再补 skill + help 自发现最小基线。
-        // 不再依赖任何历史开关决定“有没有工具”，否则会吞掉 feishu_send_file 等已允许工具。
+        // 单一真相源：workspace 缺少 tooling.allow 时，回退到 DEFAULT_WORKSPACE_CONFIG。
+        // 不再偷偷退回旧的 [read_file, bash, help_docs] 极小基线，否则会把 write/edit 等第一公民工具吃掉。
         const configuredTools = Array.isArray(cfg["tooling.allow"])
             ? (cfg["tooling.allow"] as ToolName[])
-            : [];
+            : (DEFAULT_WORKSPACE_CONFIG["tooling.allow"] as ToolName[]);
         const allowedTools = filterDefaultLlmTools(
             Array.from(new Set<ToolName>(["read_file", "bash", "help_docs", ...configuredTools]))
         );
@@ -673,6 +673,11 @@ function buildNativeToolPriorityHint(toolNames: ToolName[]): string {
         lines.push("发送文件回飞书群时，唯一正式发送入口是 feishu_send_file。");
         lines.push("不要先用 bash 调 msgcode CLI 假装发送文件；只有 feishu_send_file 成功后，才可回答“已发送”。");
         lines.push("如果用户明确要求“把当前工作目录里的某个文件发回当前群/当前会话”，这就是必须执行的动作题；没有真实 feishu_send_file 回执前，不要直接结束。");
+    }
+
+    if (toolNames.includes("write_file") || toolNames.includes("edit_file")) {
+        lines.push("文件写入或补丁修改默认优先原生 write_file / edit_file。");
+        lines.push("只有在需要复杂 shell 管道、批处理或系统级命令时，才退回 bash。");
     }
 
     if (toolNames.includes("browser")) {

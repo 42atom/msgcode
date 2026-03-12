@@ -45,7 +45,7 @@ describe("P5.6.8-R3d: 彻底去耦回归锁", () => {
     });
 
     describe("工具默认基线验证", () => {
-        it("未显式 allow 时应保留 read_file + bash + help_docs 基线", async () => {
+        it("未显式 allow 时应保留第一公民文件工具基线", async () => {
             const { getToolsForLlm } = await import("../src/lmstudio.js");
 
             // 创建临时工作区
@@ -64,9 +64,9 @@ describe("P5.6.8-R3d: 彻底去耦回归锁", () => {
 
                 expect(toolNames.length).toBeGreaterThan(0);
                 expect(toolNames).toContain("read_file");
+                expect(toolNames).toContain("write_file");
+                expect(toolNames).toContain("edit_file");
                 expect(toolNames).toContain("help_docs");
-                expect(toolNames).not.toContain("write_file");
-                expect(toolNames).not.toContain("edit_file");
                 expect(toolNames).toContain("bash");
                 expect(toolNames).not.toContain("run_skill");
             } finally {
@@ -93,6 +93,8 @@ describe("P5.6.8-R3d: 彻底去耦回归锁", () => {
 
                 expect(toolNames.length).toBeGreaterThan(0);
                 expect(toolNames).toContain("read_file");
+                expect(toolNames).toContain("write_file");
+                expect(toolNames).toContain("edit_file");
                 expect(toolNames).toContain("bash");
                 expect(toolNames).toContain("help_docs");
             } finally {

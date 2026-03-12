@@ -13,7 +13,7 @@ import path from "node:path";
 import { execCliStdoutIsolated, runCliIsolated } from "./helpers/cli-process.js";
 
 describe("P5.7-R6 HOTFIX: gen 入口 + tools 缺省值", () => {
-  it("getToolsForLlm: config 缺少 tooling.allow 时应返回 read_file + bash + help_docs 基线", async () => {
+  it("getToolsForLlm: config 缺少 tooling.allow 时应返回第一公民文件工具基线", async () => {
     const { getToolsForLlm } = await import("../src/lmstudio.js");
 
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "msgcode-ws-r6-hotfix-"));
@@ -30,6 +30,8 @@ describe("P5.7-R6 HOTFIX: gen 入口 + tools 缺省值", () => {
 
       expect(toolNames.length).toBeGreaterThan(0);
       expect(toolNames).toContain("read_file");
+      expect(toolNames).toContain("write_file");
+      expect(toolNames).toContain("edit_file");
       expect(toolNames).toContain("bash");
       expect(toolNames).toContain("help_docs");
     } finally {
@@ -37,7 +39,7 @@ describe("P5.7-R6 HOTFIX: gen 入口 + tools 缺省值", () => {
     }
   });
 
-  it("getToolsForLlm: config 缺少 tooling.allow 默认项时，allow 包含 feishu_send_file 仍应暴露它", async () => {
+  it("getToolsForLlm: workspace 显式 allow 只放开 feishu_send_file 时，应保留最小探索基线并暴露它", async () => {
     const { getToolsForLlm } = await import("../src/lmstudio.js");
 
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), "msgcode-ws-r6-feishu-tools-"));
@@ -55,6 +57,8 @@ describe("P5.7-R6 HOTFIX: gen 入口 + tools 缺省值", () => {
       expect(toolNames).toContain("bash");
       expect(toolNames).toContain("help_docs");
       expect(toolNames).toContain("feishu_send_file");
+      expect(toolNames).not.toContain("write_file");
+      expect(toolNames).not.toContain("edit_file");
     } finally {
       fs.rmSync(ws, { recursive: true, force: true });
     }
@@ -67,6 +71,8 @@ describe("P5.7-R6 HOTFIX: gen 入口 + tools 缺省值", () => {
     const toolNames = tools as string[];
 
     expect(toolNames).toContain("read_file");
+    expect(toolNames).toContain("write_file");
+    expect(toolNames).toContain("edit_file");
     expect(toolNames).toContain("bash");
     expect(toolNames).toContain("help_docs");
     expect(toolNames).toContain("feishu_send_file");

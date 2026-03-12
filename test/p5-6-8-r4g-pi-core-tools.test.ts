@@ -3,7 +3,7 @@
  *
  * 验证：
  * 1. bash 命名统一（无 shell 漂移）
- * 2. 默认最小文件主链保留 read_file + bash + help_docs
+ * 2. 默认最小文件主链保留 read/write/edit + bash + help_docs
  * 3. 工具可执行（无 TOOL_NOT_ALLOWED）
  */
 
@@ -28,10 +28,12 @@ describe("P5.6.8-R4g: 命名收口", () => {
     expect(validTools).not.toContain("run_skill");
   });
 
-  it("R4g-2: 默认 tooling.allow 包含最小文件主链与 help_docs", async () => {
+  it("R4g-2: 默认 tooling.allow 包含第一公民文件工具与 help_docs", async () => {
     const { DEFAULT_WORKSPACE_CONFIG } = await import("../src/config/workspace.js");
 
     expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).toContain("read_file");
+    expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).toContain("write_file");
+    expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).toContain("edit_file");
     expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).toContain("help_docs");
     expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).toContain("bash");
     expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).toContain("feishu_list_members");
@@ -39,8 +41,6 @@ describe("P5.6.8-R4g: 命名收口", () => {
     expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).toContain("feishu_reply_message");
     expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).toContain("feishu_react_message");
     expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).not.toContain("mem");
-    expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).not.toContain("write_file");
-    expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).not.toContain("edit_file");
   });
 
   it("R4g-3: 默认 tooling.allow 不包含 shell", async () => {
@@ -92,11 +92,11 @@ describe("P5.6.8-R4g: 门禁测试", () => {
   it("R4g-7: 最小文件主链工具在 allow 列表中可执行", () => {
     const policy: ToolPolicy = {
       mode: "autonomous",
-      allow: ["read_file", "bash", "help_docs"],
+      allow: ["read_file", "write_file", "edit_file", "bash", "help_docs"],
       requireConfirm: [],
     };
 
-    const piTools = ["read_file", "bash", "help_docs"] as const;
+    const piTools = ["read_file", "write_file", "edit_file", "bash", "help_docs"] as const;
 
     for (const tool of piTools) {
       const result = canExecuteTool(policy, tool, "llm-tool-call");
@@ -119,8 +119,8 @@ describe("P5.6.8-R4g: 集成测试", () => {
     expect(cmdToolingContent).toContain("bash");
     expect(cmdToolingContent).toContain("help_docs");
     expect(cmdToolingContent).not.toContain("可用工具: tts, asr, vision");
-    expect(cmdToolingContent).not.toContain("write_file");
-    expect(cmdToolingContent).not.toContain("edit_file");
+    expect(cmdToolingContent).toContain("write_file");
+    expect(cmdToolingContent).toContain("edit_file");
   });
 
   it("R4g-9: Tool Bus TOOL_META 定义 bash", async () => {

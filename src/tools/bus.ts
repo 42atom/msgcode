@@ -436,6 +436,28 @@ function buildHelpDocsPreviewText(params: {
   return clipPreviewText(lines.join("\n"));
 }
 
+function buildWriteFilePreviewText(params: {
+  filePath: string;
+  bytesWritten: number;
+}): string {
+  return clipPreviewText([
+    `[write_file] path=${params.filePath}`,
+    `[bytesWritten] ${params.bytesWritten}`,
+    "文件已写入。",
+  ].join("\n"));
+}
+
+function buildEditFilePreviewText(params: {
+  filePath: string;
+  editsApplied: number;
+}): string {
+  return clipPreviewText([
+    `[edit_file] path=${params.filePath}`,
+    `[editsApplied] ${params.editsApplied}`,
+    "文件补丁已应用。",
+  ].join("\n"));
+}
+
 export async function executeTool<TTool extends ToolName>(
   tool: TTool,
   args: Record<string, unknown>,
@@ -1170,10 +1192,18 @@ export async function executeTool(
           ctx.timeoutMs ?? 30000
         );
 
+        const bytesWritten = Buffer.byteLength(content, "utf-8");
         result = {
           ok: true,
           tool,
-          data: { path: args.path as string },
+          data: {
+            path: args.path as string,
+            bytesWritten,
+          },
+          previewText: buildWriteFilePreviewText({
+            filePath,
+            bytesWritten,
+          }),
           durationMs: Date.now() - started,
         };
         break;
@@ -1258,6 +1288,10 @@ export async function executeTool(
           ok: true,
           tool,
           data: { path: args.path as string, editsApplied },
+          previewText: buildEditFilePreviewText({
+            filePath,
+            editsApplied,
+          }),
           durationMs: Date.now() - started,
         };
         break;

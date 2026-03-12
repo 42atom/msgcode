@@ -161,15 +161,14 @@ describe("Tool Bus", () => {
       expect(gate.ok).toBe(true);
     });
 
-    test("旧工作区即使 allow 包含 edit_file，llm-tool-call 也不应允许执行它", async () => {
+    test("autonomous 模式下 allow 包含 edit_file 时，llm-tool-call 应允许执行它", async () => {
       const gate = canExecuteTool(
         { mode: "autonomous", allow: ["bash", "read_file", "edit_file"], requireConfirm: [] },
         "edit_file",
         "llm-tool-call"
       );
 
-      expect(gate.ok).toBe(false);
-      expect(gate.code).toBe("TOOL_NOT_ALLOWED");
+      expect(gate.ok).toBe(true);
     });
 
     test("应该读取默认配置为 autonomous（P5.5 测试期）", async () => {
@@ -180,17 +179,17 @@ describe("Tool Bus", () => {
       expect(policy.allow).toContain("tts");
       expect(policy.allow).toContain("asr");
       expect(policy.allow).toContain("vision");
-      // 默认工具策略与 workspace 默认配置保持一致（文件主链收口为 read_file + bash）
+      // 默认工具策略与 workspace 默认配置保持一致（文件主链恢复为第一公民 read/write/edit + bash）
       expect(policy.allow).toContain("bash");
       expect(policy.allow).toContain("browser");
       expect(policy.allow).toContain("read_file");
+      expect(policy.allow).toContain("write_file");
+      expect(policy.allow).toContain("edit_file");
       expect(policy.allow).toContain("help_docs");
       expect(policy.allow).toContain("feishu_list_members");
       expect(policy.allow).toContain("feishu_list_recent_messages");
       expect(policy.allow).toContain("feishu_reply_message");
       expect(policy.allow).toContain("feishu_react_message");
-      expect(policy.allow).not.toContain("write_file");
-      expect(policy.allow).not.toContain("edit_file");
     });
 
     test("应该从 workspace config.json 读取配置", () => {
@@ -701,6 +700,55 @@ describe("Tool Bus", () => {
     });
   });
 
+  describe("Scenario E4: write/edit 文件预览下沉", () => {
+    beforeEach(() => {
+      const configDir = join(tempWorkspace, ".msgcode");
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, "config.json"), JSON.stringify({
+        "tooling.mode": "autonomous",
+        "tooling.allow": ["write_file", "edit_file"],
+        "tooling.require_confirm": [],
+      }));
+    });
+
+    test("write_file 应返回执行层 previewText", async () => {
+      const targetPath = join(tempWorkspace, "preview-write.txt");
+      const result = await executeTool(
+        "write_file",
+        { path: targetPath, content: "hello preview" },
+        {
+          workspacePath: tempWorkspace,
+          source: "llm-tool-call",
+          requestId: randomUUID(),
+        }
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.previewText).toContain("[write_file]");
+      expect(result.previewText).toContain("文件已写入");
+      expect((result.data as { bytesWritten: number }).bytesWritten).toBeGreaterThan(0);
+    });
+
+    test("edit_file 应返回执行层 previewText", async () => {
+      const targetPath = join(tempWorkspace, "preview-edit.txt");
+      writeFileSync(targetPath, "alpha", "utf-8");
+      const result = await executeTool(
+        "edit_file",
+        { path: targetPath, oldText: "alpha", newText: "beta" },
+        {
+          workspacePath: tempWorkspace,
+          source: "llm-tool-call",
+          requestId: randomUUID(),
+        }
+      );
+
+      expect(result.ok).toBe(true);
+      expect(result.previewText).toContain("[edit_file]");
+      expect(result.previewText).toContain("文件补丁已应用");
+      expect((result.data as { editsApplied: number }).editsApplied).toBe(1);
+    });
+  });
+
   describe("Scenario F: allowlist 仍生效", () => {
     test("allowlist 中没有的工具应该被拒绝", () => {
       const policy: ToolPolicy = {
@@ -774,9 +822,9 @@ describe("Tool Bus", () => {
       expect(policy.allow).toContain("bash");
       expect(policy.allow).toContain("browser");
       expect(policy.allow).toContain("read_file");
+      expect(policy.allow).toContain("write_file");
+      expect(policy.allow).toContain("edit_file");
       expect(policy.allow).toContain("help_docs");
-      expect(policy.allow).not.toContain("write_file");
-      expect(policy.allow).not.toContain("edit_file");
     });
 
     test("autonomous 模式下应该允许 llm-tool-call 来源", async () => {

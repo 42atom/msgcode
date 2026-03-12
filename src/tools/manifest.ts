@@ -62,11 +62,10 @@ export interface LlmToolExposureResult {
 /**
  * 默认不再暴露给 LLM 的工具。
  * 保留执行实现，但退出默认模型主链：
- * - write_file/edit_file：避免默认文件写主链过宽
  * - vision：系统仅保留图片预览摘要；详细视觉任务改走 skill
  * - mem：当前无 P0 执行实现；长期记忆通过自动注入与 /mem slash 控制，不作为默认 LLM tool
  */
-export const LLM_DEFAULT_SUPPRESSED_TOOLS: ToolName[] = ["write_file", "edit_file", "vision", "mem"];
+export const LLM_DEFAULT_SUPPRESSED_TOOLS: ToolName[] = ["vision", "mem"];
 
 export function filterDefaultLlmTools(toolNames: ToolName[]): ToolName[] {
   return toolNames.filter((tool) => !LLM_DEFAULT_SUPPRESSED_TOOLS.includes(tool));

@@ -52,7 +52,7 @@ export type ToolDataMap = {
     query?: string;
     commands: Array<Record<string, unknown>>;
   };
-  write_file: { path: string };
+  write_file: { path: string; bytesWritten: number };
   edit_file: { path: string; editsApplied: number };
   feishu_list_members: {
     chatId: string;

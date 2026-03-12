@@ -183,7 +183,7 @@ describe("P5.6.8-R3b: edit_file 补丁语义回归锁", () => {
             expect(code).not.toContain('name: "run_skill"');
         });
 
-        it("getToolsForLlm 在未显式 allow 时应保留 read_file + bash + help_docs 基线", async () => {
+        it("getToolsForLlm 在未显式 allow 时应保留第一公民文件工具基线", async () => {
             const { getToolsForLlm } = await import("../src/lmstudio.js");
 
             // 创建临时工作区
@@ -200,10 +200,10 @@ describe("P5.6.8-R3b: edit_file 补丁语义回归锁", () => {
                 const tools = await getToolsForLlm(tmpDir);
                 const toolNames = tools as string[];
                 expect(toolNames).toContain("read_file");
+                expect(toolNames).toContain("write_file");
+                expect(toolNames).toContain("edit_file");
                 expect(toolNames).toContain("bash");
                 expect(toolNames).toContain("help_docs");
-                expect(toolNames).not.toContain("write_file");
-                expect(toolNames).not.toContain("edit_file");
                 expect(toolNames).not.toContain("vision");
             } finally {
                 fs.rmSync(tmpDir, { recursive: true, force: true });
@@ -227,6 +227,8 @@ describe("P5.6.8-R3b: edit_file 补丁语义回归锁", () => {
                 const tools = await getToolsForLlm(tmpDir);
                 const toolNames = tools as string[];
                 expect(toolNames).toContain("read_file");
+                expect(toolNames).toContain("write_file");
+                expect(toolNames).toContain("edit_file");
                 expect(toolNames).toContain("bash");
                 expect(toolNames).toContain("help_docs");
             } finally {

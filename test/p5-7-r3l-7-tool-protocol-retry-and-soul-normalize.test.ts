@@ -43,14 +43,16 @@ function asJsonResponse(payload: ChatCompletionPayload): Response {
     });
 }
 
-async function createToolEnabledWorkspace(): Promise<string> {
+async function createWorkspaceWithTools(
+    allowed: string[] = ["bash", "read_file", "write_file", "edit_file"]
+): Promise<string> {
     const workspacePath = await mkdtemp(join(tmpdir(), "msgcode-r3l7-tool-retry-"));
     await mkdir(join(workspacePath, ".msgcode"), { recursive: true });
     await writeFile(
         join(workspacePath, ".msgcode", "config.json"),
         JSON.stringify({
             "tooling.mode": "autonomous",
-            "tooling.allow": ["bash", "read_file"],
+            "tooling.allow": allowed,
             "tooling.require_confirm": [],
         }, null, 2),
         "utf-8"
@@ -61,7 +63,7 @@ async function createToolEnabledWorkspace(): Promise<string> {
 describe("P5.7-R3l-7: tool protocol retry + SOUL path transparency", () => {
     it("首轮无 tool_calls 时应直接接受模型 no-tool 决策，不再强制 required 重试", async () => {
         const originalFetch = globalThis.fetch;
-        const workspacePath = await createToolEnabledWorkspace();
+        const workspacePath = await createWorkspaceWithTools();
         let callCount = 0;
         let sawRetryChoice = false;
 
@@ -148,7 +150,7 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path transparency", () => {
 
     it("read_file 的错误 SOUL 路径应保留原生失败并回灌模型", async () => {
         const originalFetch = globalThis.fetch;
-        const workspacePath = await createToolEnabledWorkspace();
+        const workspacePath = await createWorkspaceWithTools();
         await writeFile(join(workspacePath, ".msgcode", "SOUL.md"), "soul-ok", "utf-8");
         let callCount = 0;
 
@@ -222,8 +224,8 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path transparency", () => {
 
     it("用户显式给出的其他 workspace 绝对 SOUL 路径不应被改写", async () => {
         const originalFetch = globalThis.fetch;
-        const workspacePath = await createToolEnabledWorkspace();
-        const otherWorkspacePath = await createToolEnabledWorkspace();
+        const workspacePath = await createWorkspaceWithTools();
+        const otherWorkspacePath = await createWorkspaceWithTools();
         const otherSoulPath = join(otherWorkspacePath, ".msgcode", "SOUL.md");
         await writeFile(otherSoulPath, "other-soul-ok", "utf-8");
         let callCount = 0;
@@ -284,9 +286,9 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path transparency", () => {
         }
     });
 
-    it("即使用户点名 edit_file，也不应再向模型暴露该工具，最终应改走 bash", async () => {
+    it("用户点名 edit_file 时，应继续向模型暴露该工具并允许原生执行", async () => {
         const originalFetch = globalThis.fetch;
-        const workspacePath = await createToolEnabledWorkspace();
+        const workspacePath = await createWorkspaceWithTools();
         const targetFile = join(workspacePath, ".msgcode", "toolcheck.txt");
         await writeFile(targetFile, "alpha\n", "utf-8");
         let callCount = 0;
@@ -303,19 +305,21 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path transparency", () => {
                     : [];
                 expect(toolNames).toContain("bash");
                 expect(toolNames).toContain("read_file");
-                expect(toolNames).not.toContain("edit_file");
+                expect(toolNames).toContain("edit_file");
                 return asJsonResponse({
                     choices: [{
                         message: {
                             role: "assistant",
                             content: "",
                             tool_calls: [{
-                                id: "call_bash_fallback",
+                                id: "call_edit_native_1",
                                 type: "function",
                                 function: {
-                                    name: "bash",
+                                    name: "edit_file",
                                     arguments: JSON.stringify({
-                                        command: `perl -0pi -e 's/alpha/beta/g' "${targetFile}"`,
+                                        path: targetFile,
+                                        oldText: "alpha",
+                                        newText: "beta",
                                     }),
                                 },
                             }],
@@ -347,7 +351,7 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path transparency", () => {
             });
 
             expect(callCount).toBe(2);
-            expect(result.toolCall?.name).toBe("bash");
+            expect(result.toolCall?.name).toBe("edit_file");
             expect(result.answer).toContain("ok");
             const updated = await Bun.file(targetFile).text();
             expect(updated).toContain("beta");
@@ -359,7 +363,7 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path transparency", () => {
 
     it("总结阶段返回 minimax tool_call 协议片段时，不应再由系统内部补打一轮修正", async () => {
         const originalFetch = globalThis.fetch;
-        const workspacePath = await createToolEnabledWorkspace();
+        const workspacePath = await createWorkspaceWithTools();
         const soulContent = [
             "# Soul",
             "line-1",
@@ -427,9 +431,9 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path transparency", () => {
         }
     });
 
-    it("用户显式指定 edit_file 工具时，首轮不应再绑定 edit_file，而应改走 bash", async () => {
+    it("用户显式指定 edit_file 工具时，首轮应保留 edit_file 为第一公民工具", async () => {
         const originalFetch = globalThis.fetch;
-        const workspacePath = await createToolEnabledWorkspace();
+        const workspacePath = await createWorkspaceWithTools();
         await writeFile(join(workspacePath, ".msgcode", "toolcheck.txt"), "alpha", "utf-8");
         let callCount = 0;
         let firstTools: unknown[] = [];
@@ -450,9 +454,11 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path transparency", () => {
                                 id: "call_edit_preferred_1",
                                 type: "function",
                                 function: {
-                                    name: "bash",
+                                    name: "edit_file",
                                     arguments: JSON.stringify({
-                                        command: `perl -0pi -e 's/alpha/beta/g' "${join(workspacePath, ".msgcode", "toolcheck.txt")}"`,
+                                        path: join(workspacePath, ".msgcode", "toolcheck.txt"),
+                                        oldText: "alpha",
+                                        newText: "beta",
                                     }),
                                 },
                             }],
@@ -489,9 +495,9 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path transparency", () => {
                 .filter((name): name is string => typeof name === "string");
             expect(firstToolNames).toContain("bash");
             expect(firstToolNames).toContain("read_file");
-            expect(firstToolNames).not.toContain("edit_file");
+            expect(firstToolNames).toContain("edit_file");
             expect(firstToolChoice === "required" || firstToolChoice === "auto" || firstToolChoice === undefined).toBe(true);
-            expect(result.toolCall?.name).toBe("bash");
+            expect(result.toolCall?.name).toBe("edit_file");
 
             const content = await (await import("node:fs/promises")).readFile(
                 join(workspacePath, ".msgcode", "toolcheck.txt"),
@@ -506,7 +512,7 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path transparency", () => {
 
     it("显式要求 read_file 但模型持续调用允许的 bash 时，不应新增前置拒绝层", async () => {
         const originalFetch = globalThis.fetch;
-        const workspacePath = await createToolEnabledWorkspace();
+        const workspacePath = await createWorkspaceWithTools();
         let callCount = 0;
 
         globalThis.fetch = (async () => {
@@ -562,7 +568,7 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path transparency", () => {
 
     it("模型若调用本轮未暴露工具，应把 TOOL_NOT_ALLOWED 回灌模型，而不是直接替模型结案", async () => {
         const originalFetch = globalThis.fetch;
-        const workspacePath = await createToolEnabledWorkspace();
+        const workspacePath = await createWorkspaceWithTools(["bash", "read_file"]);
         let callCount = 0;
 
         globalThis.fetch = (async () => {

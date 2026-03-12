@@ -140,7 +140,7 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     expect(tools).toContain("browser");
   });
 
-  it("旧工作区即使 allow 包含 write_file/edit_file，getToolsForLlm() 也不应再暴露它们", async () => {
+  it("workspace allow 包含 write_file/edit_file 时，getToolsForLlm() 应暴露它们", async () => {
     const workspacePath = await createTempWorkspace();
     const configPath = join(workspacePath, ".msgcode", "config.json");
 
@@ -158,8 +158,8 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     expect(tools).toContain("bash");
     expect(tools).toContain("read_file");
     expect(tools).toContain("help_docs");
-    expect(tools).not.toContain("write_file");
-    expect(tools).not.toContain("edit_file");
+    expect(tools).toContain("write_file");
+    expect(tools).toContain("edit_file");
   });
 
   it("旧工作区即使 allow 包含 vision，getToolsForLlm() 也不应再暴露它", async () => {
