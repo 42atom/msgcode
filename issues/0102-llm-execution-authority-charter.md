@@ -1,0 +1,58 @@
+---
+id: 0102
+title: 把 AI 主执行权写成仓库级硬约束
+status: done
+owner: agent
+labels: [docs, refactor]
+risk: medium
+scope: 仓库级协作守则与公开产品叙事对齐 AI 主执行权原则
+plan_doc: docs/design/plan-260312-llm-execution-authority-charter.md
+links: []
+---
+
+## Context
+
+近期 `tool-loop`、slash 命令抢占、wrapper 过度包装等问题都暴露出同一个结构性偏差：系统口头上说“服务 LLM”，实际却仍在很多关键点替模型做主。用户已经明确要求把“赋予 AI 最大权限，让它完整使用这台电脑”的理念固化成仓库骨架，避免后续实现再次回到前置裁判、失败即终态、隐藏旁路和系统代答。
+
+## Goal / Non-Goals
+
+### Goal
+
+- 把“AI 是唯一主执行者”写成仓库级硬约束
+- 统一 `AGENTS.md` 与 `README.md` 的口径，避免内外叙事分裂
+- 明确允许保留的边界只剩安全、预算、物理三类硬边界
+
+### Non-Goals
+
+- 本轮不修改运行时代码
+- 本轮不删除现存 supervisor / fallback / degrade 代码
+- 本轮不新建额外 manifesto 子系统或控制面
+
+## Plan
+
+- [x] 新建 `0102` issue 与对应 plan，冻结本轮文档边界
+- [x] 更新本地 `AGENTS.md` 与仓库级 `CLAUDE.md`，把 AI 主执行权、工具失败回灌、skill/wrapper 边界、系统不得代答等规则写成硬约束
+- [x] 更新 `README.md`，让公开产品叙事与仓库守则一致
+- [x] 视需要补 `docs/CHANGELOG.md` 记录这次仓库协议收口
+- [x] 运行 `npm run docs:check`，确认文档协议通过
+
+## Acceptance Criteria
+
+- `CLAUDE.md` 与 `README.md` 明确写出“AI 是主执行者，系统只保留硬边界”的仓库约束
+- `README.md` 明确写出 `msgcode` 是把电脑真实暴露给 AI 的薄 runtime，而不是替 AI 做主的平台
+- 文档中明确区分：`skill = 说明书`、`wrapper = 少数桥接例外`、`CLI/工具 = 第一公民能力边界`
+
+## Notes
+
+- 已实现：
+  - 本地 `AGENTS.md` 与版本库中的 `CLAUDE.md` 已同步新增“AI 主执行权（仓库级硬约束）”段落，明确 AI 是唯一主执行者、默认工具结果先回给模型、只保留安全/预算/物理三类硬边界、`skill=说明书`、`wrapper=少数桥接例外`
+  - `README.md` 新增对外产品定位与 `Skill 与工具边界` 章节，明确 `msgcode` 是把电脑真实暴露给 AI 的薄 runtime，而不是替 AI 做主的平台
+  - `docs/CHANGELOG.md` 已记录这次仓库协议收口
+- 验证：
+  - `npm run docs:check`
+    - `✓ 文档同步检查通过`
+
+## Links
+
+- /Users/admin/GitProjects/msgcode/issues/0101-tool-loop-failure-feedback-to-model.md
+- /Users/admin/GitProjects/msgcode/AIDOCS/reviews/260312-execution-authority-audit.md
