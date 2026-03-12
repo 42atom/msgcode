@@ -1,0 +1,80 @@
+---
+id: 0136
+title: 新增 subagent optional skill，教主脑拆任务并提示安装子代理执行臂
+status: done
+owner: agent
+labels: [architecture, docs, feature, skills]
+risk: low
+scope: 增加一个诚实的 optional skill，指导主脑如何委派给 codex/claude-code，并在能力缺失时提示安装
+plan_doc: docs/design/plan-260312-subagent-skill-guidance-and-install-hint.md
+links: []
+---
+
+## Context
+
+当前仓库已经有 tmux 执行臂骨架：
+
+- `runtime.kind = tmux`
+- `tmux.client = codex | claude-code`
+- `TmuxSession` 能启动并管理 `codex` / `claude --dangerously-skip-permissions`
+
+但还没有正式的 `msgcode subagent ...` 命令或原生 tool 合同。用户又明确希望：
+
+- 主脑通过 skill 学会拆任务、委派给子代理
+- 子代理优先是 `codex` / `claude-code`
+- 若当前机器未安装这些执行臂，要明确提示用户安装以获得更强能力
+
+因此这轮先补一个 **诚实的 optional skill**：
+
+- 教主脑如何判断何时委派
+- 教主脑如何写子任务卡与验收标准
+- 教主脑在没有正式 `subagent` 合同时，不得假装已委派成功
+
+## Goal / Non-Goals
+
+- Goal: 新增一个简单易识别的 optional skill：`subagent`
+- Goal: skill 中明确 codex / claude-code 的安装提示与能力边界
+- Goal: 更新 optional skill 索引、README、runtime sync 回归锁
+- Goal: 补一条 skill 合同测试，锁住“诚实说明书”语义
+
+- Non-Goals: 本轮不实现真正的 `msgcode subagent` 命令
+- Non-Goals: 本轮不新增 `subagent_*` tool
+- Non-Goals: 本轮不改 tmux runtime 主链
+
+## Plan
+
+- [x] 新增 `0136` issue 与 Plan 文档，冻结 skill 边界
+- [x] 新增 `src/skills/optional/subagent/SKILL.md`
+- [x] 更新 `src/skills/optional/index.json` 与 `src/skills/README.md`
+- [x] 更新 runtime sync 回归锁，确保 optional skill 会随仓库分发
+- [x] 新增 `subagent` skill 合同测试
+- [x] 运行 targeted tests、`tsc` 与 `docs:check`
+- [x] 分批提交：文档基线一笔，skill/测试一笔
+
+## Acceptance Criteria
+
+1. `subagent` skill 出现在 `src/skills/optional/index.json`
+2. `SKILL.md` 必须明确：
+   - 先查正式合同是否存在
+   - 当前若无正式 `subagent` 命令/tool，不得假装已委派
+   - 未安装 `codex` / `claude-code` 时，要提示安装
+3. runtime sync 测试必须锁住 `subagent` optional skill 的同步与索引
+4. skill 合同测试必须锁住：
+   - `subagent` 名称
+   - `msgcode subagent run ...` 作为未来正式合同
+   - 贪吃蛇 HTML 游戏 BDD 示例
+
+## Notes
+
+- 参考：
+  - Hermes `delegate_task` 工具与 `subagent-driven-development` skill
+  - msgcode 当前 tmux 执行臂：`src/tmux/session.ts`
+- 这轮采取“诚实说明书优先”，避免 skill 比程序合同先撒谎
+- 验证：
+  - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r13-runtime-skill-sync.test.ts test/p5-7-r35-subagent-skill-contract.test.ts`
+  - `npx tsc --noEmit`
+  - `npm run docs:check`
+
+## Links
+
+- Plan: /Users/admin/GitProjects/msgcode/docs/design/plan-260312-subagent-skill-guidance-and-install-hint.md
