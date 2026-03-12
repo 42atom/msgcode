@@ -143,7 +143,7 @@ async function handleControlCommandInFastLaneWithClient(
       const { routeByChatId } = await import("./router.js");
       const { getHandler } = await import("./handlers.js");
 
-      const route = routeByChatId(message.chatId);
+      const route = routeByChatId(message.chatId, { allowDefaultFallback: false });
       if (!route) {
         const errorMsg = "未绑定工作区，请先发送 /bind <工作区路径>";
         await client.send({ chatId: message.chatId, text: errorMsg });

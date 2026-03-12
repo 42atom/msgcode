@@ -95,6 +95,46 @@ describe("listener (2.0)", () => {
     expect(client.sent[0].text).toContain("/bind");
   });
 
+  it("未绑定时，普通消息应 fail-closed 并提示先 /bind", async () => {
+    const client = new FakeSendClient();
+
+    await handleMessage(
+      {
+        id: "m-unbound-normal",
+        chatId: "any;+;chat-guid-unbound-normal",
+        text: "你好，帮我看看当前目录",
+        isFromMe: false,
+        sender: "test@example.com",
+        handle: "test@example.com",
+      },
+      { sendClient: client as unknown as any }
+    );
+
+    expect(client.sent.length).toBe(1);
+    expect(client.sent[0].text).toContain("本群尚未绑定工作目录");
+    expect(client.sent[0].text).toContain("/bind");
+  });
+
+  it("未绑定时，/status 不应偷偷落到 default workspace，而应提示先绑定", async () => {
+    const client = new FakeSendClient();
+
+    await handleMessage(
+      {
+        id: "m-unbound-status",
+        chatId: "any;+;chat-guid-unbound-status",
+        text: "/status",
+        isFromMe: false,
+        sender: "test@example.com",
+        handle: "test@example.com",
+      },
+      { sendClient: client as unknown as any }
+    );
+
+    expect(client.sent.length).toBe(1);
+    expect(client.sent[0].text).toContain("本群尚未绑定工作目录");
+    expect(client.sent[0].text).toContain("/bind");
+  });
+
   it("/bind 会写入 RouteStore，并且 /where 可查询", async () => {
     const client = new FakeSendClient();
     const chatId = "any;+;chat-guid-2";

@@ -71,6 +71,13 @@ describe("P5.7-R13: default workspace command fallback", () => {
     expect(persisted).toBeNull();
   });
 
+  it("未显式绑定时，主聊天链路不应再把 default workspace 当成真实 route", () => {
+    const chatId = "feishu:oc_unbound_chat_mainline";
+
+    const routed = routeByChatId(chatId, { allowDefaultFallback: false });
+    expect(routed).toBeNull();
+  });
+
   it("显式绑定存在时，应优先使用显式 workspace", async () => {
     const chatId = "feishu:oc_explicit_binding";
     const explicitWorkspace = path.join(TEST_ROOT, "acme", "ops");

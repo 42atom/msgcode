@@ -44,12 +44,18 @@ export interface Route {
     botType?: BotType;
 }
 
+export interface RouteByChatIdOptions {
+    allowDefaultFallback?: boolean;
+}
+
 /**
  * 根据 chatId 查找对应的群组配置
  *
  * E08: 优先使用 RouteStore（动态绑定），fallback 到 GROUP_* 配置（静态配置）
  */
-export function routeByChatId(chatId: string): Route | null {
+export function routeByChatId(chatId: string, options: RouteByChatIdOptions = {}): Route | null {
+    const allowDefaultFallback = options.allowDefaultFallback ?? true;
+
     // 优先查询 RouteStore（动态绑定）
     const storeRoute = getRouteFromStore(chatId);
     if (storeRoute && storeRoute.status === "active") {
@@ -73,6 +79,10 @@ export function routeByChatId(chatId: string): Route | null {
                 botType: (groupConfig.botType as BotType) || "default",
             };
         }
+    }
+
+    if (!allowDefaultFallback) {
+        return null;
     }
 
     // 未绑定：fallback 到默认工作目录（可配置），提升开箱即用体验
@@ -122,5 +132,5 @@ export function getAllRoutes(): Route[] {
  * 检查 chatId 是否已配置
  */
 export function isConfiguredChatId(chatId: string): boolean {
-    return routeByChatId(chatId) !== null;
+    return routeByChatId(chatId, { allowDefaultFallback: false }) !== null;
 }

@@ -646,7 +646,7 @@ export async function handleMessage(
   }
 
   // 业务路由：群 -> workspace
-  const route = routeByChatId(message.chatId);
+  const route = routeByChatId(message.chatId, { allowDefaultFallback: false });
 
   // DEBUG: 路由追踪（需 DEBUG_TRACE=1 启用）
   if (process.env.DEBUG_TRACE === "1") {
@@ -659,17 +659,14 @@ export async function handleMessage(
   }
 
   if (!route) {
-    // 只在用户发"命令类消息"时提示绑定（避免对普通聊天刷屏）
-    if (looksLikeSlashCommand(text)) {
-      const last = unboundHintAt.get(message.chatId) ?? 0;
-      if (now - last > UNBOUND_HINT_COOLDOWN_MS) {
-        unboundHintAt.set(message.chatId, now);
-        await sendText(
-          ctx.sendClient,
-          message.chatId,
-          "本群尚未绑定工作目录。\n先发送: /bind <dir>\n例如: /bind acme/ops"
-        );
-      }
+    const last = unboundHintAt.get(message.chatId) ?? 0;
+    if (now - last > UNBOUND_HINT_COOLDOWN_MS) {
+      unboundHintAt.set(message.chatId, now);
+      await sendText(
+        ctx.sendClient,
+        message.chatId,
+        "本群尚未绑定工作目录。\n先发送: /bind <dir>\n例如: /bind acme/ops"
+      );
     }
     shouldAdvanceCursor = true;
     return;
