@@ -10,6 +10,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import { getWorkspacePath } from "../cli/command-runner.js";
 import { logger } from "../logger/index.js";
 import { handleTmuxSend } from "../tmux/responder.js";
@@ -26,9 +27,12 @@ export const SUBAGENT_ERROR_CODES = {
   START_FAILED: "SUBAGENT_START_FAILED",
   DELEGATE_FAILED: "SUBAGENT_DELEGATE_FAILED",
   STOP_FAILED: "SUBAGENT_STOP_FAILED",
+  WATCH_TIMEOUT: "SUBAGENT_WATCH_TIMEOUT",
+  TASK_FAILED: "SUBAGENT_TASK_FAILED",
 } as const;
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
+const WATCH_POLL_INTERVAL_MS = 1500;
 
 export interface SubagentTaskRecord {
   taskId: string;
@@ -207,6 +211,38 @@ function detectTaskCompletion(record: SubagentTaskRecord, text: string): Subagen
   return null;
 }
 
+function isHardWatchTransportError(error?: string): boolean {
+  if (!error) return false;
+  return !error.includes("响应超时") && error !== "__CANCELLED__";
+}
+
+async function waitForTaskMarker(
+  record: SubagentTaskRecord,
+  deadlineMs: number,
+  seedText: string,
+): Promise<{ status: SubagentTaskStatus | null; paneTail: string }> {
+  let paneTail = "";
+  const initialStatus = detectTaskCompletion(record, seedText);
+  if (initialStatus) {
+    return { status: initialStatus, paneTail };
+  }
+
+  while (Date.now() < deadlineMs) {
+    paneTail = await TmuxSession.capturePane(record.sessionName, 160);
+    const status = detectTaskCompletion(record, `${seedText}\n${paneTail}`);
+    if (status) {
+      return { status, paneTail };
+    }
+    const remainingMs = deadlineMs - Date.now();
+    if (remainingMs <= 0) {
+      break;
+    }
+    await sleep(Math.min(WATCH_POLL_INTERVAL_MS, remainingMs));
+  }
+
+  return { status: null, paneTail };
+}
+
 function buildInstallHint(client: SubagentClient): string {
   if (client === "codex") {
     return "请先确保本机 `codex --version` 可用，然后重试。";
@@ -262,30 +298,69 @@ export async function runSubagentTask(input: RunSubagentInput): Promise<RunSubag
   }
 
   if (input.watch) {
+    const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const deadlineMs = Date.now() + timeoutMs;
     const result = await handleTmuxSend(groupName, prompt, {
       projectDir: workspacePath,
       runnerType: "tmux",
       runnerOld: client,
-      timeout: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+      timeout: timeoutMs,
     });
-    const paneTail = await TmuxSession.capturePane(sessionName, 120);
-    const detectedStatus = detectTaskCompletion(record, `${result.response ?? ""}\n${paneTail}`);
-    const finalStatus: SubagentTaskStatus = detectedStatus ?? (result.success ? "completed" : "failed");
+    const seedText = [result.response, result.error].filter(Boolean).join("\n");
+    const markerResult = await waitForTaskMarker(record, deadlineMs, seedText);
+
+    if (markerResult.status === "completed") {
+      const saved = await updateTaskStatus(record, {
+        status: "completed",
+        completedAt: new Date().toISOString(),
+        resultText: result.response ?? result.error,
+        lastPaneTail: markerResult.paneTail,
+      });
+      return {
+        task: saved,
+        startupMessage,
+        watchResult: {
+          success: true,
+          response: result.response,
+        },
+      };
+    }
+
+    if (markerResult.status === "failed") {
+      const saved = await updateTaskStatus(record, {
+        status: "failed",
+        completedAt: new Date().toISOString(),
+        resultText: result.response ?? result.error,
+        lastPaneTail: markerResult.paneTail,
+      });
+      throw new SubagentRuntimeError(
+        SUBAGENT_ERROR_CODES.TASK_FAILED,
+        `子代理任务失败: ${saved.taskId}`,
+      );
+    }
+
+    if (isHardWatchTransportError(result.error)) {
+      await updateTaskStatus(record, {
+        status: "failed",
+        completedAt: new Date().toISOString(),
+        resultText: result.error,
+        lastPaneTail: markerResult.paneTail,
+      });
+      throw new SubagentRuntimeError(
+        SUBAGENT_ERROR_CODES.DELEGATE_FAILED,
+        result.error || "子代理任务委派失败",
+      );
+    }
+
     const saved = await updateTaskStatus(record, {
-      status: finalStatus,
-      completedAt: new Date().toISOString(),
+      status: "running",
       resultText: result.response ?? result.error,
-      lastPaneTail: paneTail,
+      lastPaneTail: markerResult.paneTail,
     });
-    return {
-      task: saved,
-      startupMessage,
-      watchResult: {
-        success: result.success,
-        response: result.response,
-        error: result.error,
-      },
-    };
+    throw new SubagentRuntimeError(
+      SUBAGENT_ERROR_CODES.WATCH_TIMEOUT,
+      `子代理 watch 超时，任务仍在运行: ${saved.taskId}。请用 msgcode subagent status ${saved.taskId} --workspace ${saved.workspacePath} 继续查看。`,
+    );
   }
 
   const sendResult = await sendMessage(groupName, prompt);
