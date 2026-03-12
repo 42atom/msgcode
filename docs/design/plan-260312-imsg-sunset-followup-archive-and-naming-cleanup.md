@@ -115,6 +115,7 @@ Issue: 0095
 当前已完成实现并验证：
 
 - 已新增 `docs/archive/retired-imsg-runtime/`
+- 为避免污染主回归，归档测试快照已改为 `*.archived.ts`
 - 已将 `0093` issue / plan / changelog 的 archive 真相源从 `.trash` 收口到版本化 archive
 - 已把 `IMSG_SEND_FAILED` 改为 `DELIVERY_FAILED`
 - 已把现役发送合同 `chat_guid` 改为 `chatId`

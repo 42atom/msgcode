@@ -105,7 +105,7 @@ links:
   - Phase B 已完成：
     - `src/imsg/` 的最小 runtime 快照已版本化归档到 `docs/archive/retired-imsg-runtime/src/imsg/`
     - `vendor/imsg/` 的最小快照已版本化归档到 `docs/archive/retired-imsg-runtime/vendor/imsg/`
-    - `test/imsg.adapter.test.ts` 与 `test/commands.startup-guard.test.ts` 已版本化归档到 `docs/archive/retired-imsg-runtime/test/`
+    - `test/imsg.adapter.test.ts` 与 `test/commands.startup-guard.test.ts` 的归档快照已重命名并版本化保存在 `docs/archive/retired-imsg-runtime/test/*.archived.ts`
     - `.trash/2026-03-12-imsg-sunset/` 仅保留为本地迁移中转，不再作为正式 archive 真相源
   - 最终验证：
     - `PATH="$HOME/.bun/bin:$PATH" bun test` -> `1492 pass / 0 fail`

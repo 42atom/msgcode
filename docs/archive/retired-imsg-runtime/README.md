@@ -16,8 +16,8 @@
   - `rpc-client.ts`
   - `types.ts`
 - `test/`
-  - `imsg.adapter.test.ts`
-  - `commands.startup-guard.test.ts`
+  - `imsg.adapter.archived.ts`
+  - `commands.startup-guard.archived.ts`
 - `vendor/imsg/v0.4.0/imsg`
   - legacy 二进制快照
 

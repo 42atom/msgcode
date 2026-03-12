@@ -120,7 +120,7 @@ Issue: 0093
 - 已完成 Phase B：
   - `src/imsg/` 的最小 runtime 快照已版本化归档到 `docs/archive/retired-imsg-runtime/src/imsg/`
   - `vendor/imsg/` 的最小快照已版本化归档到 `docs/archive/retired-imsg-runtime/vendor/imsg/`
-  - `test/imsg.adapter.test.ts` 与 `test/commands.startup-guard.test.ts` 已版本化归档到 `docs/archive/retired-imsg-runtime/test/`
+  - `test/imsg.adapter.test.ts` 与 `test/commands.startup-guard.test.ts` 的归档快照已重命名并版本化保存在 `docs/archive/retired-imsg-runtime/test/*.archived.ts`
   - `.trash/2026-03-12-imsg-sunset/` 仅作为迁移中转，不再充当正式 archive 真相源
   - `src/index.ts` / `src/daemon.ts` 会在真实运行入口先设置 `MSGCODE_ENV_BOOTSTRAPPED=1`，再动态导入 `commands.js`
 - 当前收尾：
