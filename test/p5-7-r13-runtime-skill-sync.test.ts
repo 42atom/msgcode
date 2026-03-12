@@ -241,7 +241,8 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(skillDoc).toContain("name: patchright-browser");
     expect(skillDoc).toContain("## 能力");
     expect(skillDoc).toContain("## 唯一入口");
-    expect(skillDoc).toContain("优先入口：`msgcode browser ...`");
+    expect(skillDoc).toContain("优先入口：`browser` 原生工具");
+    expect(skillDoc).toContain("`tabs.text` 已返回 `textPath`");
     expect(skillDoc).toContain("instances stop` 和 `tabs list` 不是无参命令");
     expect(skillDoc).toContain("`instanceId` 不是人工编号");
     expect(skillDoc).toContain("不要直接写死 `tabId=1`");

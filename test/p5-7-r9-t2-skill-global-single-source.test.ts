@@ -220,7 +220,7 @@ describe("P5.7-R9-T2: Skills global-only single source", () => {
       expect(observedSystemPrompt).toContain("不要自造 wrapper，不要猜 main.sh");
       expect(observedSystemPrompt).toContain("skill 是说明书，不是默认执行入口");
       expect(observedSystemPrompt).toContain("只有当前能力没有原生工具，或需要额外 CLI / 脚本合同知识时");
-      expect(observedSystemPrompt).toContain("只有当 help_docs 仍不足以覆盖具体能力边界或步骤时");
+      expect(observedSystemPrompt).toContain("只有 help_docs 仍不足以覆盖具体能力边界或操作步骤时");
       expect(observedSystemPrompt).toContain("不要复述上一轮失败");
       expect(observedSystemPrompt).toContain("缺少当前附件或路径");
       expect(observedSystemPrompt).not.toContain("<workspace>/.msgcode/skills");

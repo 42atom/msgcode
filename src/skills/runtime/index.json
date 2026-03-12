@@ -84,7 +84,7 @@
       "id": "patchright-browser",
       "name": "Patchright Browser",
       "entry": "~/.config/msgcode/skills/patchright-browser/SKILL.md",
-      "description": "Patchright 浏览器能力说明书。真实网页任务默认优先走 browser 原生工具；只有排障或查 CLI 合同时，再看 msgcode browser 路径。"
+      "description": "Patchright 浏览器能力说明书。真实网页任务默认优先走 browser 原生工具；长文网页正文提取优先复用 tabs.text 返回的 textPath，再按唯一文件名分段处理；只有排障或查 CLI 合同时，再看 msgcode browser 路径。"
     }
   ]
 }

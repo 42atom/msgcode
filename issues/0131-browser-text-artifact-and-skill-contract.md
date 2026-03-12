@@ -59,8 +59,12 @@ links: []
   - `browser tabs.text` 成功时落盘到 `<workspace>/artifacts/browser/tabs-text-*.txt`
   - ToolResult 暴露 `textPath/textBytes/textTruncated`
   - `previewText` 暴露 `textPath` 与短正文预览，不再只给标题/URL
+- Skill 合同：
+  - `patchright-browser` 长文网页主链优先复用 `tabs.text` 返回的 `textPath`
+  - 原文文件和结果文件改成“按任务生成唯一文件名”，不再写死 `article.raw.txt/article.md`
 - 验证：
   - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r7a-browser-tool-bus.test.ts test/tools.bus.test.ts test/p5-7-r15-agent-read-skill-bridge.test.ts`
+  - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r33-patchright-browser-skill-contract.test.ts test/p5-7-r13-runtime-skill-sync.test.ts test/p5-7-r9-t2-skill-global-single-source.test.ts`
   - `npx tsc --noEmit`
   - `npm run docs:check`
 
