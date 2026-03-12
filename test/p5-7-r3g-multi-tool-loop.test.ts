@@ -60,7 +60,7 @@ async function createToolEnabledWorkspace(): Promise<string> {
 }
 
 describe("P5.7-R3g: Tool Loop Multi-Tool (Behavior Lock)", () => {
-    it("allowNoTool 直答路径应清理 <think> 标签", async () => {
+    it("allowNoTool 直答路径应直接返回模型原始输出，不再清理 <think> 标签", async () => {
         const originalFetch = globalThis.fetch;
         const workspacePath = await createToolEnabledWorkspace();
         let callCount = 0;
@@ -91,8 +91,7 @@ describe("P5.7-R3g: Tool Loop Multi-Tool (Behavior Lock)", () => {
 
             expect(callCount).toBe(1);
             expect(result.decisionSource).toBe("model");
-            expect(result.answer).toBe("最终答案");
-            expect(result.answer).not.toContain("<think>");
+            expect(result.answer).toBe("<think>先想一下内部步骤</think>\n最终答案");
             expect(result.actionJournal).toEqual([]);
         } finally {
             globalThis.fetch = originalFetch;

@@ -419,7 +419,8 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path transparency", () => {
             });
 
             expect(callCount).toBe(2);
-            expect(result.answer).toBe("");
+            expect(result.answer).toContain("<minimax:tool_call>");
+            expect(result.answer).toContain("<invoke name=\"read_file\">");
         } finally {
             globalThis.fetch = originalFetch;
             await rm(workspacePath, { recursive: true, force: true });

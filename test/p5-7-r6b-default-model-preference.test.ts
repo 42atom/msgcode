@@ -115,6 +115,53 @@ describe("P5.7-R6b: 默认模型优先级", () => {
     expect(chatBody.model).toBe(AGENT_BACKEND_DEFAULT_CHAT_MODEL);
   });
 
+  it("runAgentChat 直答时应返回模型原始输出，不再清理 <think> 标签", async () => {
+    const backendRuntime: AgentBackendRuntime = {
+      id: "local-openai",
+      baseUrl: "http://127.0.0.1:12431",
+      timeoutMs: 10_000,
+      nativeApiEnabled: true,
+      localBackendId: "lmstudio",
+      supportsModelLifecycle: true,
+      modelsListPath: "/api/v1/models",
+    };
+
+    globalThis.fetch = (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/api/v1/models")) {
+        return new Response(JSON.stringify({
+          models: [
+            {
+              type: "llm",
+              key: AGENT_BACKEND_DEFAULT_CHAT_MODEL,
+              loaded_instances: [{ id: "loaded" }],
+            },
+          ],
+        }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+
+      return new Response(JSON.stringify({
+        output: [{
+          type: "message",
+          content: [{ type: "text", text: "<think>内部推理</think>\n最终答案" }],
+        }],
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    const answer = await runAgentChat({
+      prompt: "直接回答",
+      backendRuntime,
+    });
+
+    expect(answer).toBe("<think>内部推理</think>\n最终答案");
+  });
+
   it("视觉链路未显式配置时，应回退稳定默认视觉模型", () => {
     expect(resolveLocalVisionModel({
       id: "lmstudio",

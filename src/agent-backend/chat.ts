@@ -757,7 +757,7 @@ export async function runAgentChat(options: AgentChatOptions): Promise<string> {
             temperature,
             allowLocalModelReload,
         });
-        return sanitizeLmStudioOutput(native);
+        return native;
     }
 
     async function runNativeOnce(maxOutputTokens: number): Promise<string> {
@@ -772,7 +772,7 @@ export async function runAgentChat(options: AgentChatOptions): Promise<string> {
             temperature,
             allowLocalModelReload,
         });
-        return sanitizeLmStudioOutput(native);
+        return native;
     }
 
     async function runCompatOnce(maxOutputTokens: number): Promise<string> {
@@ -787,7 +787,7 @@ export async function runAgentChat(options: AgentChatOptions): Promise<string> {
             temperature,
             allowLocalModelReload,
         });
-        return sanitizeLmStudioOutput(text);
+        return text;
     }
 
     async function runMiniMaxOnce(maxOutputTokens: number): Promise<string> {
@@ -801,7 +801,7 @@ export async function runAgentChat(options: AgentChatOptions): Promise<string> {
             apiKey: backendRuntime.apiKey,
             temperature,
         });
-        return sanitizeLmStudioOutput(text);
+        return text;
     }
 
     if (backendRuntime.id === "minimax") {

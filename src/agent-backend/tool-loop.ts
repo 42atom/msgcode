@@ -1466,7 +1466,7 @@ async function runMiniMaxAnthropicToolLoop(params: {
             continue;
         }
 
-        const finalAnswer = sanitizeLmStudioOutput(currentResponse.content || "");
+        const finalAnswer = currentResponse.content || "";
         const verifyOutcome = await runVerifyPhase(
             executedToolCalls,
             actionJournal,
@@ -2008,7 +2008,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
             continue;
         }
 
-        const finalAnswer = sanitizeLmStudioOutput(currentAssistantContent ?? "");
+        const finalAnswer = currentAssistantContent ?? "";
 
         // P5.7-R12-T3: 在返回前执行 verify phase
         const verifyOutcome = await runVerifyPhase(
