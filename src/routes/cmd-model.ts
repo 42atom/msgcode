@@ -181,6 +181,12 @@ function formatBranchModelValue(backend: BackendLane, model: string | undefined)
   return model || "auto";
 }
 
+function formatVisionModelValue(backend: BackendLane, model: string | undefined): string {
+  if (backend === "tmux") return "n/a (tmux)";
+  if (backend === "api") return `local-only (${model || "auto"})`;
+  return model || "auto";
+}
+
 function getTmuxClientLabel(client: TmuxClient | "none"): TmuxClient {
   return client === "none" ? DEFAULT_TMUX_CLIENT : client;
 }
@@ -204,13 +210,16 @@ function renderModelStatusMessage(params: {
     `tmux-client: ${params.tmuxClient}`,
     "",
     `text-model: ${formatBranchModelValue(params.backend, params.textModel)}`,
-    `vision-model: ${formatBranchModelValue(params.backend, params.visionModel)}`,
+    `vision-model: ${formatVisionModelValue(params.backend, params.visionModel)}`,
     `tts-model: ${formatBranchModelValue(params.backend, params.ttsModel)}`,
     `embedding-model: ${formatBranchModelValue(params.backend, params.embeddingModel)}`,
   ].join("\n");
 }
 
 function renderModelFieldMessage(slot: ModelSlot, backend: BackendLane, value?: string): string {
+  if (slot === "vision") {
+    return `${slot}-model: ${formatVisionModelValue(backend, value)}`;
+  }
   return `${slot}-model: ${formatBranchModelValue(backend, value)}`;
 }
 
@@ -250,7 +259,9 @@ async function buildModelStatus(projectDir: string): Promise<string> {
 
   const lane = backend === "tmux" ? null : backend;
   const textModel = lane ? await getBranchModel(projectDir, lane, "text") : undefined;
-  const visionModel = lane ? await getBranchModel(projectDir, lane, "vision") : undefined;
+  const visionModel = backend === "tmux"
+    ? undefined
+    : await getBranchModel(projectDir, "local", "vision");
   const ttsModel = lane ? await getBranchModel(projectDir, lane, "tts") : undefined;
   const embeddingModel = lane ? await getBranchModel(projectDir, lane, "embedding") : undefined;
 
@@ -299,7 +310,11 @@ async function handleModelFieldCommand(
     if (backend === "tmux") {
       return { success: true, message: renderModelFieldMessage(slot, backend) };
     }
-    const currentValue = await getBranchModel(bound.projectDir, backend, slot);
+    const currentValue = await getBranchModel(
+      bound.projectDir,
+      slot === "vision" ? "local" : backend,
+      slot
+    );
     return {
       success: true,
       message: renderModelFieldMessage(slot, backend, currentValue),
@@ -328,8 +343,9 @@ async function handleModelFieldCommand(
     };
   }
 
-  await setBranchModel(bound.projectDir, backend as ModelLane, slot, normalized);
-  const savedValue = await getBranchModel(bound.projectDir, backend as ModelLane, slot);
+  const effectiveLane: ModelLane = slot === "vision" ? "local" : backend;
+  await setBranchModel(bound.projectDir, effectiveLane, slot, normalized);
+  const savedValue = await getBranchModel(bound.projectDir, effectiveLane, slot);
 
   return {
     success: true,
@@ -337,6 +353,9 @@ async function handleModelFieldCommand(
       `已更新 ${slot}-model`,
       "",
       `backend: ${backend}`,
+      ...(slot === "vision" && backend === "api"
+        ? ["说明：视觉能力固定走本地模型，图片不会上传到 API provider。"]
+        : []),
       renderModelFieldMessage(slot, backend, savedValue),
     ].join("\n"),
   };

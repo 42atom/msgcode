@@ -237,6 +237,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - tools/read_file: 移除 `read_file` 对 `soul/soul.md` 的静默路径改写，路径错误按原生合同失败并回灌模型 (Issue: 0125, Plan: docs/design/plan-260312-remove-read-file-soul-alias-remap.md) [risk: medium] [rollback: revert 0125 soul alias removal commit]
   - tool-surface: `getToolsForLlm()` 不再偷偷补 `[read_file, bash, help_docs]` 隐藏基线，workspace 显式 `tooling.allow` 成为唯一 LLM 工具暴露真相源 (Issue: 0127, Plan: docs/design/plan-260312-remove-hidden-tool-baseline-from-get-tools-for-llm.md) [risk: medium] [rollback: revert 0127 hidden baseline removal commit]
   - tool-surface/vision: `vision` 不再靠运行时隐藏 suppress 退出主链；默认是否暴露改由默认 `tooling.allow` 决定，workspace 显式 allow 时 LLM 真实看到并可执行它 (Issue: 0129, Plan: docs/design/plan-260312-vision-tool-surface-single-truth.md) [risk: medium] [rollback: revert 0129 vision single-truth commit]
+  - vision/privacy: `backend=api` 时视觉能力明确冻结为 local-only；`/vision-model` 继续配置本地视觉模型，`/model status` 显式回显 `local-only (...)`，避免误判图片会上传云端 API (Issue: 0130, Plan: docs/design/plan-260312-api-backend-local-vision-policy.md) [risk: medium] [rollback: revert 0130 local-only vision policy commit]
 
 [2.3.0]: https://github.com/yourorg/msgcode/releases/tag/v2.3.0
 [1.0.0]: https://github.com/yourorg/msgcode/releases/tag/v1.0.0

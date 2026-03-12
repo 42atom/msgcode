@@ -103,22 +103,26 @@ describe("P5.7-R24: backend lanes 命令协议", () => {
     expect(status.message).toContain("backend: api");
     expect(status.message).toContain("api-provider: deepseek");
     expect(status.message).toContain("text-model: auto");
-    expect(status.message).toContain("vision-model: auto");
+    expect(status.message).toContain("vision-model: local-only (local-vision-model)");
 
     await handleTextModelCommand({ chatId: CHAT_ID, args: ["api-text-model"] });
     await handleEmbeddingModelCommand({ chatId: CHAT_ID, args: ["api-embedding-model"] });
+    const visionSet = await handleVisionModelCommand({ chatId: CHAT_ID, args: ["privacy-local-vlm"] });
+    expect(visionSet.success).toBe(true);
+    expect(visionSet.message).toContain("说明：视觉能力固定走本地模型");
+    expect(visionSet.message).toContain("vision-model: local-only (privacy-local-vlm)");
 
     status = await handleModelCommand({ chatId: CHAT_ID, args: ["status"] });
     expect(status.message).toContain("backend: api");
     expect(status.message).toContain("text-model: api-text-model");
     expect(status.message).toContain("embedding-model: api-embedding-model");
-    expect(status.message).toContain("vision-model: auto");
+    expect(status.message).toContain("vision-model: local-only (privacy-local-vlm)");
 
     await handleBackendCommand({ chatId: CHAT_ID, args: ["local"] });
     status = await handleModelCommand({ chatId: CHAT_ID, args: ["status"] });
     expect(status.message).toContain("backend: local");
     expect(status.message).toContain("text-model: local-text-model");
-    expect(status.message).toContain("vision-model: local-vision-model");
+    expect(status.message).toContain("vision-model: privacy-local-vlm");
     expect(status.message).toContain("embedding-model: auto");
   });
 
