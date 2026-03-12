@@ -1,11 +1,11 @@
 ---
 id: 0116
-title: 冻结 Feishu 真实通道 BDD 验收集并记录文件发送缺口
+title: 冻结 Feishu 真实通道 BDD 验收集
 status: done
 owner: agent
 labels: [docs, testing, bdd]
 risk: medium
-scope: 把 Feishu live smoke 收口为真实通道 BDD 验收集，并记录当前自然语言文件发送缺口
+scope: 把 Feishu live smoke 收口为真实通道 BDD 验收集，并持续回写真实场景验收结果
 plan_doc: docs/design/plan-260312-feishu-live-bdd-acceptance-suite.md
 links:
   - issues/0098-feishu-live-verification-loop.md
@@ -25,7 +25,7 @@ links:
 - live smoke 已证明真实群、真实工具、真实 workspace 更接近最终验收
 - 但目前还没有一份正式、可复用、可挂结果的 Feishu 自然语言验收集
 
-本轮真实 smoke 也已经测出一个关键缺口：
+最初建立验收集时，真实 smoke 测出了一个关键缺口：
 
 - 自然语言浏览器信息收集：通过
 - 自然语言文件回传：失败
@@ -33,7 +33,13 @@ links:
   - 日志显示 `toolCallCount=0 route=no-tool`
   - 最近消息回读没有新的 `file` 类型消息
 
-这说明“真实通道 BDD 验收集”不仅需要存在，还必须能挂出当前失败项。
+随后修复复测已证明：
+
+- 自然语言文件回传：修复后通过
+  - 日志显示 `Tool Bus: SUCCESS feishu_send_file`
+  - 真实文件消息已发回群里
+
+这说明“真实通道 BDD 验收集”不仅需要存在，还必须持续回写从失败到通过的状态演进。
 
 ## Goal / Non-Goals
 
@@ -41,19 +47,19 @@ links:
 
 - 冻结一份 `Feishu live BDD acceptance suite v1`
 - 明确它是主链能力改动的最终验收标准
-- 把当前 `feishu_send_file` 自然语言失败写入正式验收缺口
+- 把真实 Feishu 场景中的失败基线与修复复测都写进正式验收集
 
 ### Non-Goals
 
 - 本轮不新增自动化平台
-- 本轮不直接修 `feishu_send_file` 自然语言失败
+- 本轮不直接实现 live 验收自动化平台
 - 本轮不替换现有仓库内 `features/` Cucumber 集
 
 ## Plan
 
 - [x] 新建 `0116` issue 与对应 plan，冻结边界
 - [x] 形成一份 `AIDOCS` 下的 Feishu 真实通道 BDD 验收集
-- [x] 把当前浏览器通过 / 文件发送失败的真实结果写进去
+- [x] 把浏览器通过 / 文件发送失败基线 / 文件发送修复复测 / 失败恢复证据写进去
 - [x] 明确它与现有 `0098/0099` 的关系和分工
 - [x] 运行 `npm run bdd` 与 `docs:check`，确认仓库内 BDD 现状和文档门槛
 
@@ -64,7 +70,7 @@ links:
 3. 文档明确区分：
    - 仓库内 Cucumber BDD
    - 真实 Feishu 通道 BDD
-4. 当前 `feishu_send_file` 自然语言失败已作为正式缺口写入。
+4. 当前真实通道场景的失败基线与修复通过态都已作为正式证据写入。
 5. 运行口径与证据口径已固定，不再靠聊天记忆传递。
 
 ## Notes
@@ -74,10 +80,12 @@ links:
   - `10 scenarios (10 passed), 64 steps (64 passed)`
 - 已确认真实 Feishu 通道自然语言 smoke 结果：
   - 浏览器自然语言场景通过
-  - 文件回传自然语言场景失败（口头完成，无真实文件发送）
-- 当前失败证据：
-  - 最近消息回读中，`nl-file-1773297850426` 只有文本回复，无新 `file` 类型消息
-  - 日志中该轮 `toolCallCount=0 route=no-tool`
+  - 文件回传自然语言场景：失败基线已复现，修复后通过
+  - 失败恢复场景：已拿到同轮 `fail -> recover -> complete` 证据
+- 当前关键证据：
+  - 失败基线：`file-bdd-serial-1773300512`，日志 `toolCallCount=0 route=no-tool`
+  - 修复复测：`file-bdd-fix-1773300671`，日志 `Tool Bus: SUCCESS feishu_send_file`
+  - 失败恢复：`recover-live-force-1773299959`，日志 `FAILURE read_file -> SUCCESS bash -> SUCCESS read_file`
 
 ## Links
 

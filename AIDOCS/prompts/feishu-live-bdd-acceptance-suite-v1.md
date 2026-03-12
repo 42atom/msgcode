@@ -138,15 +138,26 @@
 
 ### 本轮结果
 
-- 状态：**部分通过**
-- token：`skill-recover-bash-1773297284818`
-- 群里真实回复：
-  - `RECOVERED-BASH oc_ecf4af10504190a8fde7a684225430ae skill-recover-bash-1773297284818`
-- 说明：
-  - 最终结果是对的
-  - 用户没有直接看到底层错误
-  - 但当前证据还没有明确坐实“先失败再继续恢复”的完整 tool trace
-  - 后续需要专门设计更强约束 case 补足这条证据
+- 状态：**通过**
+- 早期结果：
+  - token：`skill-recover-bash-1773297284818`
+  - 群里真实回复：
+    - `RECOVERED-BASH oc_ecf4af10504190a8fde7a684225430ae skill-recover-bash-1773297284818`
+  - 当时说明：
+    - 最终结果是对的
+    - 但还没有明确坐实“先失败再继续恢复”的完整 tool trace
+- 补强复测：
+  - token：`recover-live-force-1773299959`
+  - runId：`596be888-7906-4114-9df9-294c29d08179`
+  - 日志证据：
+    - `Tool Bus: FAILURE read_file`
+    - `Tool Bus: SUCCESS bash`
+    - `Tool Bus: SUCCESS read_file`
+  - 落盘证据：
+    - `/Users/admin/msgcode-workspaces/smoke/ws-a/recover-live-force-1773299959.txt`
+- 结论：
+  - 失败恢复主链已拿到同轮 `fail -> recover -> complete` 的真实证据
+  - 当前这条验收标准已达标
 
 ---
 
@@ -154,11 +165,11 @@
 
 - 浏览器自然语言主链：**通过**
 - 文件发送自然语言主链：**通过**
-- 失败后恢复主链：**方向正确，但证据仍需补强**
+- 失败后恢复主链：**通过**
 
 所以 v1 当前的最准结论是：
 
-**真实通道 BDD 已经证明浏览器链和自然语言文件回传链都已达标；接下来更值得继续补强的是“失败后恢复”的极限证据。**
+**真实通道 BDD 已经证明浏览器链、自然语言文件回传链和失败后恢复链都已达标。**
 
 ---
 
