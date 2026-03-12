@@ -120,6 +120,6 @@ Issue: 0095
 - 已把 `IMSG_SEND_FAILED` 改为 `DELIVERY_FAILED`
 - 已把现役发送合同 `chat_guid` 改为 `chatId`
 - 已为 `AIDOCS/refs` 与 `imessage-kit` 白名单文档补上“历史参考”标识
-- 已通过 targeted tests 与 `npx tsc --noEmit`
+- 已通过 targeted tests、全量 `bun test`、`npx tsc --noEmit` 与 `npm run docs:check`
 
 （章节级）评审意见：[留空,用户将给出反馈]

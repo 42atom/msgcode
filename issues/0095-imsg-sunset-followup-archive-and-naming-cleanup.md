@@ -75,7 +75,9 @@ links:
 - 验证：
   - `PATH="$HOME/.bun/bin:$PATH" bun test test/listener.test.ts test/p5-6-13-r4-listener-trigger.test.ts test/p5-7-r12-feishu-send-file.test.ts test/p5-6-8-r4c-test-gate-whitelist.test.ts`
   - `PATH="$HOME/.bun/bin:$PATH" bun test test/p6-agent-run-core-phase1.test.ts test/p6-agent-run-core-phase2-session-key.test.ts test/p6-agent-run-core-phase4-run-events.test.ts`
+  - `PATH="$HOME/.bun/bin:$PATH" bun test` -> `1492 pass / 0 fail`
   - `npx tsc --noEmit`
+  - `npm run docs:check`
 
 ## Links
 
