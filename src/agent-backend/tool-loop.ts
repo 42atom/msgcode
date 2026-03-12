@@ -991,29 +991,6 @@ export async function getToolsForLlm(workspacePath?: string): Promise<ToolName[]
     }
 }
 
-function normalizeSoulPathArgs(toolName: string, args: Record<string, unknown>, workspacePath?: string): Record<string, unknown> {
-    if (toolName !== "read_file") return args;
-    const rawPath = typeof args.path === "string" ? args.path : "";
-    if (!rawPath || !workspacePath) return args;
-
-    const normalizedInput = rawPath.replace(/\\/g, "/").trim();
-    const workspaceNorm = workspacePath.replace(/\\/g, "/").replace(/\/+$/, "");
-    const lower = normalizedInput.toLowerCase();
-    const workspaceLower = workspaceNorm.toLowerCase();
-
-    // 只纠偏当前 workspace 根目录下的误写 SOUL.md，避免篡改用户显式给出的其他绝对路径。
-    const shouldFix =
-        lower === "soul.md" ||
-        lower === "./soul.md" ||
-        lower === `${workspaceLower}/soul.md`;
-
-    if (!shouldFix) return args;
-    return {
-        ...args,
-        path: ".msgcode/SOUL.md",
-    };
-}
-
 function buildWorkspacePathHint(workspacePath?: string): string {
     const normalized = (workspacePath || "").trim();
     if (!normalized) return "";
@@ -1356,8 +1333,6 @@ async function runMiniMaxAnthropicToolLoop(params: {
                 } catch {
                     args = {};
                 }
-                args = normalizeSoulPathArgs(tc.function.name, args, params.workspacePath);
-
                 let toolResult: ToolRunResult;
                 try {
                     toolResult = await runTool(tc.function.name, args, params.workspacePath, {
@@ -1899,8 +1874,6 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                 } catch {
                     args = {};
                 }
-                args = normalizeSoulPathArgs(tc.function.name, args, workspacePath);
-
                 let toolResult: ToolRunResult;
                 try {
                     toolResult = await runTool(tc.function.name, args, workspacePath, {

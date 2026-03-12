@@ -3,7 +3,7 @@
  *
  * 覆盖：
  * 1) 首轮无 tool_calls 时，二次 required 重试可恢复工具调用
- * 2) read_file 命中 workspace/SOUL.md 时，可自动纠偏到 .msgcode/SOUL.md
+ * 2) read_file 命中错误 SOUL 路径时，应保留原生失败并回灌模型
  * 3) 用户显式给出的其他绝对 SOUL 路径不得被改写
  */
 
@@ -58,7 +58,7 @@ async function createToolEnabledWorkspace(): Promise<string> {
     return workspacePath;
 }
 
-describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
+describe("P5.7-R3l-7: tool protocol retry + SOUL path transparency", () => {
     it("首轮无 tool_calls 时应直接接受模型 no-tool 决策，不再强制 required 重试", async () => {
         const originalFetch = globalThis.fetch;
         const workspacePath = await createToolEnabledWorkspace();
@@ -146,7 +146,7 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
         }
     });
 
-    it("read_file 的 SOUL 路径应自动纠偏到 .msgcode/SOUL.md", async () => {
+    it("read_file 的错误 SOUL 路径应保留原生失败并回灌模型", async () => {
         const originalFetch = globalThis.fetch;
         const workspacePath = await createToolEnabledWorkspace();
         await writeFile(join(workspacePath, ".msgcode", "SOUL.md"), "soul-ok", "utf-8");
@@ -175,11 +175,23 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
                 });
             }
 
+            if (callCount === 2) {
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: "刚才读取的是错误路径，当前工作区里并没有这个文件；正确的 soul 文件在 .msgcode/SOUL.md。",
+                        },
+                        finish_reason: "stop",
+                    }],
+                });
+            }
+
             return asJsonResponse({
                 choices: [{
                     message: {
                         role: "assistant",
-                        content: "soul-read-ok",
+                        content: "unexpected",
                     },
                     finish_reason: "stop",
                 }],
@@ -197,11 +209,11 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
             });
 
             expect(callCount).toBe(2);
-            expect(result.answer).toContain("soul-read-ok");
-            // P5.7-R12-T3: verify phase 增加了一条 journal entry
+            expect(result.answer).toContain("错误路径");
             expect(result.actionJournal.length).toBe(2);
             expect(result.actionJournal[0].tool).toBe("read_file");
-            expect(result.actionJournal[0].ok).toBe(true);
+            expect(result.actionJournal[0].ok).toBe(false);
+            expect(result.actionJournal[0].errorCode).toBe("TOOL_EXEC_FAILED");
         } finally {
             globalThis.fetch = originalFetch;
             await rm(workspacePath, { recursive: true, force: true });
@@ -381,15 +393,27 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
                 });
             }
 
-            return asJsonResponse({
-                choices: [{
-                    message: {
-                        role: "assistant",
-                        content: `<minimax:tool_call>
+            if (callCount === 2) {
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: `<minimax:tool_call>
 <invoke name="read_file">
 <parameter name="path">/home/user/.msgcode/SOUL.md</parameter>
 </invoke>
 </minimax:tool_call>`,
+                        },
+                        finish_reason: "stop",
+                    }],
+                });
+            }
+
+            return asJsonResponse({
+                choices: [{
+                    message: {
+                        role: "assistant",
+                        content: "前 3 行如下：\n# Soul\nline-1\nline-2",
                     },
                     finish_reason: "stop",
                 }],
@@ -406,7 +430,7 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path normalize", () => {
                 backendRuntime: localOpenAiRuntime,
             });
 
-            expect(callCount).toBe(2);
+            expect(callCount).toBe(3);
             expect(result.answer).toMatch(/前\s*3\s*行如下/);
             expect(result.answer).toContain("# Soul");
             expect(result.answer).toContain("line-1");
