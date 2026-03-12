@@ -24,6 +24,7 @@ describe("P5.7-R4-T1: Memory 合同冒烟验证", () => {
 
       expect(contract.name).toBe("msgcode memory add");
       expect(contract.description).toContain("记忆");
+      expect(contract.aliases).toContain("msgcode memory remember");
       expect(contract.options?.required).toHaveProperty("--workspace");
       expect(contract.errorCodes).toContain("MEMORY_WORKSPACE_NOT_FOUND");
       expect(contract.output).toHaveProperty("path");
@@ -49,6 +50,7 @@ describe("P5.7-R4-T1: Memory 合同冒烟验证", () => {
 
       expect(contract.name).toBe("msgcode memory stats");
       expect(contract.description).toContain("统计");
+      expect(contract.aliases).toContain("msgcode memory status");
       expect(contract.output).toHaveProperty("store");
       expect(contract.output).toHaveProperty("dirty");
     });

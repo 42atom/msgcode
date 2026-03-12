@@ -28,6 +28,7 @@ import { getBrowserCommandContracts } from "./browser.js";
 export interface HelpCommandContract {
   name: string;
   description: string;
+  aliases?: string[];
   options?: {
     required?: Record<string, string>;
     optional?: Record<string, string>;
@@ -149,6 +150,10 @@ export function createHelpDocsCommand(): Command {
 
             if (command.errorCodes) {
               console.log(`    错误码：${command.errorCodes.join(", ")}`);
+            }
+
+            if (Array.isArray((command as { aliases?: string[] }).aliases) && (command as { aliases?: string[] }).aliases!.length > 0) {
+              console.log(`    兼容别名：${(command as { aliases?: string[] }).aliases!.join(", ")}`);
             }
 
             console.log("");

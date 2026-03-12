@@ -5,11 +5,15 @@
  * CLI Contract: AIDOCS/msgcode-2.1/cli_contract_v2.1.md
  *
  * 命令：
- * - msgcode memory remember "<text>" --workspace <id|path>
+ * - msgcode memory add "<text>" --workspace <id|path>
  * - msgcode memory index --workspace <id|path> [--force]
  * - msgcode memory search "<query>" --workspace <id|path> [--limit N]
  * - msgcode memory get --workspace <id|path> --path <rel> --from <line> --lines <n>
- * - msgcode memory status --json
+ * - msgcode memory stats --json
+ *
+ * 兼容别名：
+ * - remember -> add
+ * - status -> stats
  */
 
 import { Command } from "commander";
@@ -641,12 +645,9 @@ export function createMemoryCommand(): Command {
 
   cmd.description("Memory 管理（Markdown + FTS5 索引）");
 
-  cmd.addCommand(createMemoryRememberCommand());
   cmd.addCommand(createMemoryIndexCommand());
   cmd.addCommand(createMemorySearchCommand());
   cmd.addCommand(createMemoryGetCommand());
-  cmd.addCommand(createMemoryStatusCommand());
-  // P5.7-R4-1: 新增主命令（add/stats 作为主合同命令）
   cmd.addCommand(createMemoryAddCommand());
   cmd.addCommand(createMemoryStatsCommand());
 
@@ -891,6 +892,7 @@ export function getMemoryAddContract() {
   return {
     name: "msgcode memory add",
     description: "添加记忆到 workspace 的 memory/YYYY-MM-DD.md",
+    aliases: ["msgcode memory remember"],
     options: {
       required: {
         "--workspace": "Workspace ID、相对路径或绝对路径",
@@ -949,6 +951,7 @@ export function getMemoryStatsContract() {
   return {
     name: "msgcode memory stats",
     description: "查看 Memory 索引统计信息",
+    aliases: ["msgcode memory status"],
     options: {
       optional: {
         "--json": "JSON 格式输出",

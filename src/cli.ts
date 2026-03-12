@@ -71,6 +71,20 @@ const program = new Command();
 
 program.name("msgcode").description("msgcode - personal agent runtime on macOS").version(getVersion());
 
+function normalizeLegacyCliArgs(argv: string[]): string[] {
+  if (argv.length < 2) return argv;
+
+  const [top, subcommand, ...rest] = argv;
+  if (top === "memory" && subcommand === "remember") {
+    return [top, "add", ...rest];
+  }
+  if (top === "memory" && subcommand === "status") {
+    return [top, "stats", ...rest];
+  }
+
+  return argv;
+}
+
 program
   .command("start [mode]")
   .description("启动 msgcode（debug 模式前台运行，否则后台 daemon；支持 -d 调试全开）")
@@ -360,7 +374,7 @@ async function loadGenCommands() {
 async function main() {
   // P0: 仅按需加载子命令，避免在"未初始化配置"时也强制 import 导致 CLI 直接崩溃。
   // 例：用户首次使用时需要能运行 `msgcode init` 来生成 ~/.config/msgcode/.env。
-  const argv = process.argv.slice(2);
+  const argv = normalizeLegacyCliArgs(process.argv.slice(2));
   const top = (argv[0] ?? "").toLowerCase();
 
   if (top === "memory") {
@@ -434,7 +448,7 @@ async function main() {
     await loadBrowserCommands();
     await loadHelpDocsCommand();
   }
-  program.parse();
+  program.parse([process.argv[0], process.argv[1], ...argv]);
 }
 
 main().catch((err) => {

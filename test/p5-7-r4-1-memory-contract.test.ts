@@ -13,6 +13,7 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import { mkdirSync, rmSync, existsSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { execCliStdoutIsolated, runCliIsolated } from "./helpers/cli-process.js";
 
 // ============================================
 // 辅助函数
@@ -81,6 +82,7 @@ describe("P5.7-R4-1: Memory 命令合同", () => {
 
       expect(contract.name).toBe("msgcode memory add");
       expect(contract.description).toContain("记忆");
+      expect(contract.aliases).toContain("msgcode memory remember");
       expect(contract.options?.required).toHaveProperty("--workspace");
       expect(contract.options?.optional).toHaveProperty("--dry-run");
       expect(contract.options?.optional).toHaveProperty("--json");
@@ -115,6 +117,7 @@ describe("P5.7-R4-1: Memory 命令合同", () => {
 
       expect(contract.name).toBe("msgcode memory stats");
       expect(contract.description).toContain("统计");
+      expect(contract.aliases).toContain("msgcode memory status");
       expect(contract.options?.optional).toHaveProperty("--json");
       expect(contract.errorCodes).toContain("MEMORY_STATUS_FAILED");
     });
@@ -151,13 +154,13 @@ describe("P5.7-R4-1: Memory 命令合同", () => {
 
       expect(cmd.name()).toBe("memory");
       const subCommands = cmd.commands.map(c => c.name());
-      expect(subCommands).toContain("remember");
       expect(subCommands).toContain("add");
       expect(subCommands).toContain("search");
       expect(subCommands).toContain("stats");
-      expect(subCommands).toContain("status");
       expect(subCommands).toContain("index");
       expect(subCommands).toContain("get");
+      expect(subCommands).not.toContain("remember");
+      expect(subCommands).not.toContain("status");
     });
   });
 
@@ -249,20 +252,39 @@ describe("P5.7-R4-1: Memory 命令合同", () => {
   });
 
   describe("向后兼容验证", () => {
-    it("remember 命令应该仍然存在（兼容别名）", async () => {
-      const { createMemoryCommand } = await import("../src/cli/memory.js");
-      const cmd = createMemoryCommand();
-
-      const subCommands = cmd.commands.map(c => c.name());
-      expect(subCommands).toContain("remember");
+    it("memory --help 只应展示 canonical 子命令", () => {
+      const output = execCliStdoutIsolated(["memory", "--help"]);
+      expect(output).toContain("add");
+      expect(output).toContain("stats");
+      expect(output).not.toContain("remember");
+      expect(output).not.toContain("status");
     });
 
-    it("status 命令应该仍然存在（兼容别名）", async () => {
-      const { createMemoryCommand } = await import("../src/cli/memory.js");
-      const cmd = createMemoryCommand();
+    it("remember 应该兼容映射到 add 主链", () => {
+      const workspace = path.join(tempDir, "ws-remember");
+      mkdirSync(workspace, { recursive: true });
 
-      const subCommands = cmd.commands.map(c => c.name());
-      expect(subCommands).toContain("status");
+      const result = runCliIsolated([
+        "memory",
+        "remember",
+        "compat memory",
+        "--workspace",
+        workspace,
+        "--json",
+      ]);
+
+      expect(result.status).toBe(0);
+      const envelope = JSON.parse(result.stdout);
+      expect(envelope.command).toBe("msgcode memory add");
+      expect(envelope.status).toBe("pass");
+    });
+
+    it("status 应该兼容映射到 stats 主链", () => {
+      const result = runCliIsolated(["memory", "status", "--json"]);
+      expect(result.status).toBe(0);
+      const envelope = JSON.parse(result.stdout);
+      expect(envelope.command).toBe("msgcode memory stats");
+      expect(envelope.status).toBe("pass");
     });
   });
 });

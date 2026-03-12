@@ -1,7 +1,7 @@
 ---
 id: 0132
 title: 二进制命令面统一化与消费口径冻结
-status: open
+status: doing
 owner: agent
 labels: [architecture, cli, docs, refactor]
 risk: medium
@@ -34,10 +34,10 @@ links: []
 
 ## Plan
 
-- [ ] 冻结命令消费口径：二进制程序与 `help-docs` 为正式合同，`SKILL.md` 为使用说明
+- [x] 冻结命令消费口径：二进制程序与 `help-docs` 为正式合同，`SKILL.md` 为使用说明
 - [ ] 审计现有命令面，区分 canonical / alias / retired / internal
 - [ ] 设计统一语法目标：`msgcode <domain> <verb>`
-- [ ] 规划分阶段收口：优先 `memory`、`browser`、历史 retired 命令
+- [x] 规划分阶段收口：优先 `memory`、`browser`、历史 retired 命令
 - [ ] 规划回归锁：`help-docs`、真实可执行面、LLM 探索路径三者一致
 
 ## Acceptance Criteria
@@ -56,6 +56,15 @@ links: []
   - `src/routes/cmd-model.ts`
 - 参考资料：
   - `docs/design/plan-260312-cli-is-all-agents-need-reference.md`
+- 2026-03-12:
+  - 已冻结消费口径：程序/`help-docs` 为正式合同，`SKILL.md` 为说明书
+  - 已完成第一刀收口：`memory` 命令面只公开 `add/search/index/get/stats`
+  - 兼容别名 `remember/status` 不再出现在 `memory --help`，但会在 CLI 解析前映射到 canonical 主链
+  - `help-docs` 合同现显式暴露 `aliases`
+  - 验证：
+    - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r4-1-memory-contract.test.ts test/p5-7-r4-t1-smoke-verification.test.ts`
+    - `npx tsc --noEmit`
+    - `npm run docs:check`
 
 ## Links
 
