@@ -1,0 +1,195 @@
+# AI 基础操作系统主线路线图
+
+## Problem
+
+`msgcode` 现在已经明确不是聊天应用，而是 AI-first 基建层。但仓库仍处于“理念已对、母路线未冻”的状态：局部 issue 在修 execution authority、skill、channel、验证循环和 admission，却缺一份能统摄这些工作的主线 plan。没有母路线时，系统容易再次滑回“边修边长层、边放权边抢权、边说基建边写半应用逻辑”的老路。
+
+## Occam Check
+
+- 不加它，系统具体坏在哪？
+  - 后续工作会继续分散在 `tool-loop`、skills、CLI、channel、probe、runtime` 各线独立推进，容易再次出现局部最优、全局发胖、边界漂移和重复修同类结构错误。
+- 用更少的层能不能解决？
+  - 能。只冻结一份母路线图，复用现有 issue/plan 真相源，不再新建控制面、治理平台或总调度系统。
+- 这个改动让主链数量变多了还是变少了？
+  - 变少了。它把分散的改造目标收口为一条清晰主线：薄内核 -> 真实能力 -> 说明书型 skill -> live verification -> channel-neutral client seam。
+
+## Decision
+
+选定方案：以 **“基建三层 + 生长两环”** 作为 `msgcode` 的主线结构模型，并把现有独立 issue 吸纳进 5 个连续阶段，而不是继续按零散问题单推进。
+
+关键理由：
+
+1. 它直接对应用户确认过的产品定义：`msgcode` 是基建，用户与模型的互动是长在其上的应用
+2. 它不要求新增任何运行时大层，只要求后续改动持续删层、收口、做薄
+3. 它能把 execution authority、skill slimming、live verification、heavy resource admission、channel seam 统一到一条可执行路线
+
+## Structure Model
+
+### 基建三层
+
+1. 薄内核
+   - 主链：`channel -> listener -> model -> tools -> results -> model -> user`
+   - 职责：最小状态真相源、运行日志、硬边界、生命周期管理
+   - 禁止：系统代答、前置裁判、猜测式纠偏、为弥补旧设计而新增 recover 层
+
+2. 第一公民能力层
+   - 对象：文件系统、shell、browser、desktop、memory、schedule、channel send、network
+   - 原则：原生工具/CLI 为正式边界；wrapper 只保留桥接价值
+   - 目标：让 AI 直接面对真实能力，而不是被壳层和旁路遮挡
+
+3. 通道与客户端层
+   - 对象：Feishu、未来 app、未来 web client、未来其他 channel
+   - 原则：transport 只负责收发，不承载应用逻辑
+   - 目标：让用户与模型的互动自然长成应用，而不是把应用逻辑硬编码进 runtime
+
+### 生长两环
+
+1. 能力生长环
+   - AI 发现缺口 -> 写工具/skill -> 运行验证 -> 修正 -> 固化
+   - 依赖：强日志、真实验证循环、明确 artifact 和 workspace 落盘
+
+2. 应用生长环
+   - 用户与模型在 workspace / channel / skill 组合上长出具体应用
+   - 依赖：channel-neutral seam、薄 transport、稳定 CLI/tool/skill 合同
+
+## Alternatives
+
+### 方案 A：继续按现有问题单逐个修
+
+- 优点：灵活、快
+- 缺点：容易失去全局方向，局部修复再次长出新层
+
+### 方案 B：设计完整 “agent OS” / 控制平台
+
+- 优点：看起来体系化
+- 缺点：过度设计，违背“做薄”和奥卡姆剃刀
+
+### 方案 C：冻结一份轻量母路线图，后续 issue 归并其下
+
+- 优点：最少层、最可持续、最适合当前阶段
+- 缺点：需要纪律，不能一边有母单一边继续野生加层
+
+推荐：方案 C
+
+## Plan
+
+### Phase 1：删掉剩余抢执行权层
+
+目标：
+- 让 AI 真正成为唯一主执行者
+
+范围：
+- 延续 [Issue 0101](/Users/admin/GitProjects/msgcode/issues/0101-tool-loop-failure-feedback-to-model.md)
+- 重点继续收口：
+  - `buildToolLoopFallbackAnswer()` 一类系统代答
+  - `finish supervisor` 的二次裁判权
+  - 仍在改写用户显式输入的猜测式纠偏
+  - 未绑定即自动持久化 default workspace 之类的系统代路由
+
+验收：
+- 默认用户答复来自模型
+- 默认工具失败/真实结果都先回灌模型
+- 主链上剩余的系统裁判只保留硬边界
+
+### Phase 2：把工具与 CLI 收口为第一公民能力边界
+
+目标：
+- 让 `msgcode` 二进制和原生工具重新变得有价值
+
+范围：
+- 延续 [Issue 0097](/Users/admin/GitProjects/msgcode/issues/0097-runtime-skill-wrapper-slimming.md)
+- 逐步把 CLI 中过厚事务逻辑下沉到共享 service/domain
+- 不做“内部短路魔法”，只做共享实现
+- wrapper 只保留真桥接场景
+
+验收：
+- CLI 更薄
+- tool / CLI / service 三者语义一致
+- skill 不再默认依赖 `main.sh -> msgcode ...` 自套壳
+
+### Phase 3：把 skill 彻底收口为说明书体系
+
+目标：
+- 让 skill 成为能力放大器，而不是控制器
+
+范围：
+- 延续 [Issue 0099](/Users/admin/GitProjects/msgcode/issues/0099-skill-live-prompt-corpus-v1.md)
+- 延续 [Issue 0100](/Users/admin/GitProjects/msgcode/issues/0100-skill-guidance-fixes-from-live-batch1.md)
+- 继续收 `memory / todo / scheduler` 的 wrapper 价值判断
+- 固定 prompt corpus + live run 成为 skill 改造默认验证法
+
+验收：
+- `SKILL.md` 是 canonical 说明书
+- wrapper 数量继续下降
+- 每次 skill 改造都能用真实 prompt + live loop 验证
+
+### Phase 4：补强真实验证循环与重资源闸门
+
+目标：
+- 让大权限系统在真实环境下可验证、可收敛、不过载
+
+范围：
+- 延续 [Issue 0098](/Users/admin/GitProjects/msgcode/issues/0098-feishu-live-verification-loop.md)
+- 延续 [Issue 0094](/Users/admin/GitProjects/msgcode/issues/0094-heavy-resource-admission-mvp.md)
+- 固定 live verification loop 为默认真实测试基座
+- 对 `local-model / desktop` 做最薄 admission：`run / queued / busy`
+
+验收：
+- 有真实用户级 live loop
+- 有最小并发/繁忙反馈
+- 没有新的总控调度层
+
+### Phase 5：为 app/web client 冻结更薄的 channel seam
+
+目标：
+- 让未来 app/web client 长在基建上，而不是变成另一套 runtime
+
+范围：
+- 延续 iMessage sunset 与 channel-neutral 清理的后续线
+- 继续收口 message/chat/session/workspace seam
+- 保持 transport 只负责 transport
+
+验收：
+- 未来 client 能复用同一基建主链
+- channel 层不再泄漏半应用逻辑
+
+## Dependency Order
+
+1. 先做 Phase 1
+   - 因为不先删裁判层，后面的 skill、tool、验证都会持续受假主链干扰
+
+2. 再做 Phase 2 和 Phase 3
+   - 工具边界与说明书体系要一起变薄
+
+3. 然后做 Phase 4
+   - 有了真实工具边界和说明书，live verification 与 admission 才不会测偏
+
+4. 最后做 Phase 5
+   - client seam 应建立在稳定基建之上，而不是反过来定义内核
+
+## Non-Goals
+
+- 不做新的控制面、编排平台、agent OS 子系统
+- 不把 app/web client 先做成新 runtime
+- 不把“给 AI 大权限”误解成“不要日志、不要证据、不要硬边界”
+
+## Risks
+
+- 若只写路线不继续按它执行，这份 plan 会沦为空文
+- 若后续实现仍继续加裁判/恢复/猜测层，会直接违背这份母单
+- 若把“基础设施”误做成“半应用平台”，未来 app/web client 仍会长在错误边界上
+
+回滚策略：
+
+- 本轮只是路线冻结，无运行时回滚成本
+- 若后续阶段发现判断失真，应调整具体 phase 顺序，不回到“无母单自由漂移”状态
+
+## Test Plan
+
+- 计划文档能明确回答：
+  - 为什么这是基建而不是应用
+  - 先做什么，后做什么
+  - 哪些方向明确不做
+- 后续相关 issue 至少能被映射到 5 个 phase 之一
+
+评审意见：[留空,用户将给出反馈]
