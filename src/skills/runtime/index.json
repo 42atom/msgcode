@@ -36,7 +36,7 @@
       "id": "feishu-send-file",
       "name": "Feishu Send File",
       "entry": "~/.config/msgcode/skills/feishu-send-file/SKILL.md",
-      "description": "把当前 workspace 里的文件回传到飞书会话。优先直接调用 feishu_send_file，并让工具从 .msgcode/config.json 读取 runtime.current_chat_id。"
+      "description": "把当前 workspace 里的文件回传到飞书会话。唯一正式发送入口是 feishu_send_file；不要绕回 bash/CLI 伪造发送路径。"
     },
     {
       "id": "memory",
@@ -84,7 +84,7 @@
       "id": "patchright-browser",
       "name": "Patchright Browser",
       "entry": "~/.config/msgcode/skills/patchright-browser/SKILL.md",
-      "description": "Patchright 浏览器能力说明书。先读本 skill，再直接调用 msgcode browser CLI 检查 root、instances、tabs；tabId 必须使用真实返回值，不能猜 1、2、3"
+      "description": "Patchright 浏览器能力说明书。真实网页任务默认优先走 browser 原生工具；只有排障或查 CLI 合同时，再看 msgcode browser 路径。"
     }
   ]
 }

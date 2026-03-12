@@ -54,10 +54,29 @@ async function createToolEnabledWorkspace(root: string): Promise<string> {
   await mkdir(join(workspacePath, ".msgcode"), { recursive: true });
   await writeFile(
     join(workspacePath, ".msgcode", "config.json"),
-        JSON.stringify(
+    JSON.stringify(
       {
         "tooling.mode": "autonomous",
         "tooling.allow": ["bash", "read_file"],
+        "tooling.require_confirm": [],
+      },
+      null,
+      2,
+    ),
+    "utf-8",
+  );
+  return workspacePath;
+}
+
+async function createFeishuSendToolEnabledWorkspace(root: string): Promise<string> {
+  const workspacePath = join(root, "workspace");
+  await mkdir(join(workspacePath, ".msgcode"), { recursive: true });
+  await writeFile(
+    join(workspacePath, ".msgcode", "config.json"),
+    JSON.stringify(
+      {
+        "tooling.mode": "autonomous",
+        "tooling.allow": ["feishu_send_file", "bash", "read_file"],
         "tooling.require_confirm": [],
       },
       null,
@@ -202,6 +221,8 @@ describe("P5.7-R9-T2: Skills global-only single source", () => {
       expect(observedSystemPrompt).toContain("不要复述上一轮失败");
       expect(observedSystemPrompt).toContain("缺少当前附件或路径");
       expect(observedSystemPrompt).not.toContain("<workspace>/.msgcode/skills");
+      expect(observedSystemPrompt).toContain("[原生工具优先]");
+      expect(observedSystemPrompt).toContain("如果当前能力已经作为原生工具暴露，就优先调用原生工具，不要先走 bash 包一层 CLI。");
     } finally {
       globalThis.fetch = originalFetch;
       await rm(tmpRoot, { recursive: true, force: true });
@@ -290,6 +311,76 @@ describe("P5.7-R9-T2: Skills global-only single source", () => {
       expect(observedSystemPrompt).toContain("只有拿到本轮真实工具回执后");
       expect(observedSystemPrompt).toContain("缺少当前附件或路径");
       expect(observedSystemPrompt).not.toContain("<workspace>/.msgcode/skills");
+    } finally {
+      globalThis.fetch = originalFetch;
+      await rm(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("应只在 feishu_send_file 暴露时注入文件发送原生工具提示", async () => {
+    const originalFetch = globalThis.fetch;
+    const tmpRoot = await mkdtemp(join(tmpdir(), "msgcode-r9-t2-feishu-send-hint-"));
+    let observedSystemPrompt = "";
+    let callCount = 0;
+
+    try {
+      const workspacePath = await createFeishuSendToolEnabledWorkspace(tmpRoot);
+
+      globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+        callCount += 1;
+
+        if (callCount === 1) {
+          observedSystemPrompt = getSystemPromptFromRequest(init);
+          return asJsonResponse({
+            choices: [
+              {
+                message: {
+                  role: "assistant",
+                  content: "",
+                  tool_calls: [
+                    {
+                      id: "call_feishu_send_hint_1",
+                      type: "function",
+                      function: {
+                        name: "bash",
+                        arguments: JSON.stringify({ command: "pwd" }),
+                      },
+                    },
+                  ],
+                },
+                finish_reason: "tool_calls",
+              },
+            ],
+          });
+        }
+
+        return asJsonResponse({
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content: "ok",
+              },
+              finish_reason: "stop",
+            },
+          ],
+        });
+      }) as typeof fetch;
+
+      const result = await runLmStudioToolLoop({
+        baseUrl: "http://127.0.0.1:1234",
+        model: "test-model",
+        prompt: "把 smoke-a.txt 发回飞书群",
+        workspacePath,
+        timeoutMs: 10_000,
+        backendRuntime: localOpenAiRuntime,
+      });
+
+      expect(result.answer).toContain("ok");
+      expect(observedSystemPrompt).toContain("[原生工具优先]");
+      expect(observedSystemPrompt).toContain("如果当前能力已经作为原生工具暴露，就优先调用原生工具，不要先走 bash 包一层 CLI。");
+      expect(observedSystemPrompt).toContain("发送文件回飞书群时，唯一正式发送入口是 feishu_send_file。");
+      expect(observedSystemPrompt).toContain("不要先用 bash 调 msgcode CLI 假装发送文件；只有 feishu_send_file 成功后，才可回答“已发送”。");
     } finally {
       globalThis.fetch = originalFetch;
       await rm(tmpRoot, { recursive: true, force: true });
@@ -441,6 +532,8 @@ describe("P5.7-R9-T2: Skills global-only single source", () => {
       expect(observedSystemPrompt).toContain("不要使用 agent-browser 作为正式浏览器通道");
       expect(observedSystemPrompt).toContain("patchright-browser/SKILL.md");
       expect(observedSystemPrompt).toContain("--remote-debugging-port=9222");
+      expect(observedSystemPrompt).toContain("浏览器真实任务（打开网页、读标题、点击、截图）默认优先 browser 工具。");
+      expect(observedSystemPrompt).toContain("只有在排障、查 root/instances/tabs 状态、或确认 CLI 合同时，才转向 msgcode browser CLI。");
       expect(observedSystemPrompt).toContain("instances.stop 和 tabs.list 必须传真实 instanceId");
       expect(observedSystemPrompt).toContain("instanceId 只能来自 instances.launch、instances.list、tabs.open 等真实返回值");
       expect(observedSystemPrompt).toContain("tabId 只能来自 tabs.open、tabs.list、snapshot、text 的真实返回值");

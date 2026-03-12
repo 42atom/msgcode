@@ -24,12 +24,20 @@ description: This skill should be used when the model needs to inspect or drive 
 
 ## 唯一入口
 
-优先入口：`msgcode browser ...`
+优先入口：`browser` 原生工具
 
-先把 Patchright 当成唯一正式浏览器底座，不要使用 `agent-browser`。先读 `~/.config/msgcode/skills/index.json`，再读本 skill，再直接调用 `msgcode browser ...`。
+- 做真实网页访问、截图、点击、读取标题/正文时，**先用 `browser` 工具**
+- `msgcode browser ...` 主要用于：
+  - 查 CLI 合同
+  - 排障
+  - 明确检查 root / instances / tabs 状态
+
+先把 Patchright 当成唯一正式浏览器底座，不要使用 `agent-browser`。
 
 ## 核心规则
 
+- **浏览器任务默认优先走 `browser` 原生工具，不要先走 `bash` 包 CLI。**
+- **只有当你需要排障、查状态、确认参数合同，才转向 `msgcode browser ...`。**
 - 共享工作 Chrome 根目录信息时，先执行：
   - `msgcode browser root --ensure --json`
 - 需要查看 roots / instances / tabs 时，显式调用对应子命令，不猜默认 instance / tab。
@@ -38,6 +46,22 @@ description: This skill should be used when the model needs to inspect or drive 
 - `tabId` 不是人工编号，不是 1、2、3 这种顺序号。`tabId` 必须来自真实返回值，通常来自 `tabs open --json`、`tabs list --json`、`snapshot --json`、`text --json` 等结构化结果里的 `tabId`。
 - 读取页面内容、截图、点击或执行脚本前，先确认当前真实 `tabId`。不要猜旧页签，更不要直接写死 `tabId=1`。
 - 需要真实网页交互时，优先走正式 `browser` 工具；需要排障、查看状态或验证 CLI 合同时，再走本 skill。
+
+## 快速决策
+
+### 直接用 `browser` 工具的场景
+
+- 打开网页
+- 读取页面标题或正文
+- 点击、输入、截图
+- 正常网页任务执行
+
+### 读本 skill / 用 `msgcode browser ...` 的场景
+
+- 浏览器任务失败，需要排障
+- 需要 root / profiles / instances / tabs 的真实状态
+- 需要确认 `instanceId` / `tabId` 合同
+- 需要手工重现某个 CLI 路径
 
 ## 常用模板
 
@@ -92,3 +116,9 @@ msgcode browser action --tab-id <real-tab-id> --kind click --ref '{"role":"link"
 5. `snapshot` / `action`
 
 需要排障时，先看 root、instances、tabs 的结构化 JSON，不要直接猜当前浏览器状态，不要猜 `tabId`。
+
+## 非目标
+
+- 不要把普通网页任务默认降级成 `bash` + `msgcode browser ...`
+- 不要先猜一个 CLI 命令再去试错
+- 不要使用 `agent-browser` 作为正式浏览器通道
