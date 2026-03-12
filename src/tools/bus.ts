@@ -15,7 +15,9 @@ import type {
   ToolName, ToolSource, ToolPolicy, ToolContext, ToolResult, SideEffectLevel
 } from "./types.js";
 import { isUtf8 } from "node:buffer";
-import { resolve as resolvePath, sep as pathSep } from "node:path";
+import { randomUUID } from "node:crypto";
+import { mkdir as mkdirFs, writeFile as writeFileFs } from "node:fs/promises";
+import { join as joinPath, resolve as resolvePath, sep as pathSep } from "node:path";
 import { getFsScope, getToolPolicy } from "../config/workspace.js";
 import { getHelpDocsData } from "../cli/help.js";
 import { runTts } from "../runners/tts.js";
@@ -57,6 +59,7 @@ const TOOL_PREVIEW_MAX_CHARS = 4000;
 const READ_FILE_BINARY_SNIFF_BYTES = 4096;
 const READ_FILE_INLINE_BYTE_LIMIT = 64 * 1024;
 const READ_FILE_PREVIEW_BYTES = 16 * 1024;
+const BROWSER_TEXT_PREVIEW_CHARS = 1200;
 
 export { getToolPolicy } from "../config/workspace.js";
 
@@ -502,6 +505,10 @@ function buildVisionPreviewText(textPath: string): string {
 function buildBrowserPreviewText(params: {
   operation: string;
   data: Record<string, unknown>;
+  textPath?: string;
+  textBytes?: number;
+  textPreview?: string;
+  textTruncated?: boolean;
 }): string {
   const lines = [`[browser] operation=${params.operation}`];
   if (typeof params.data.title === "string" && params.data.title.trim()) {
@@ -516,11 +523,65 @@ function buildBrowserPreviewText(params: {
   if (typeof params.data.tabId === "string" && params.data.tabId.trim()) {
     lines.push(`[tabId] ${params.data.tabId.trim()}`);
   }
+  if (params.textPath) {
+    lines.push(`[textPath] ${params.textPath}`);
+  }
+  if (typeof params.textBytes === "number" && Number.isFinite(params.textBytes)) {
+    lines.push(`[textBytes] ${params.textBytes}`);
+  }
+  if (params.textPreview) {
+    lines.push(params.textTruncated ? "[status] truncated-text-preview" : "[status] inline-text-preview");
+    lines.push("[textPreview]");
+    lines.push(params.textPreview);
+  }
   if (lines.length === 1) {
     const keys = Object.keys(params.data).slice(0, 6);
     lines.push(keys.length > 0 ? `[keys] ${keys.join(", ")}` : "[status] ok");
   }
   return clipPreviewText(lines.join("\n"));
+}
+
+function buildBrowserTextSnippet(text: string): {
+  preview: string;
+  truncated: boolean;
+  textBytes: number;
+} {
+  const normalized = text.trim();
+  const textBytes = Buffer.byteLength(normalized, "utf-8");
+  if (normalized.length <= BROWSER_TEXT_PREVIEW_CHARS) {
+    return {
+      preview: normalized,
+      truncated: false,
+      textBytes,
+    };
+  }
+  return {
+    preview: `${normalized.slice(0, BROWSER_TEXT_PREVIEW_CHARS)}...`,
+    truncated: true,
+    textBytes,
+  };
+}
+
+async function persistBrowserTextArtifact(params: {
+  workspacePath: string;
+  text: string;
+}): Promise<{
+  textPath: string;
+  textBytes: number;
+  textPreview: string;
+  textTruncated: boolean;
+}> {
+  const browserDir = joinPath(params.workspacePath, "artifacts", "browser");
+  await mkdirFs(browserDir, { recursive: true });
+  const textPath = joinPath(browserDir, `tabs-text-${randomUUID()}.txt`);
+  await writeFileFs(textPath, params.text, "utf-8");
+  const snippet = buildBrowserTextSnippet(params.text);
+  return {
+    textPath,
+    textBytes: snippet.textBytes,
+    textPreview: snippet.preview,
+    textTruncated: snippet.truncated,
+  };
 }
 
 function buildDesktopPreviewText(params: {
@@ -828,16 +889,51 @@ export async function executeTool(
             ctx.timeoutMs ?? 120000
           );
 
+          const browserData = {
+            ...browser.data,
+          } as Record<string, unknown>;
+          let browserTextArtifact: {
+            textPath: string;
+            textBytes: number;
+            textPreview: string;
+            textTruncated: boolean;
+          } | null = null;
+
+          if (
+            browser.operation === "tabs.text"
+            && typeof browserData.text === "string"
+            && browserData.text.trim()
+          ) {
+            browserTextArtifact = await persistBrowserTextArtifact({
+              workspacePath: ctx.workspacePath,
+              text: browserData.text,
+            });
+            delete browserData.text;
+            browserData.textPath = browserTextArtifact.textPath;
+            browserData.textBytes = browserTextArtifact.textBytes;
+            browserData.textTruncated = browserTextArtifact.textTruncated;
+          }
+
           result = {
             ok: true,
             tool,
             data: {
               operation: browser.operation,
-              result: browser.data,
+              result: browserData,
+              textPath: browserTextArtifact?.textPath,
+              textBytes: browserTextArtifact?.textBytes,
+              textTruncated: browserTextArtifact?.textTruncated,
             },
+            artifacts: browserTextArtifact
+              ? [{ kind: "browser", path: browserTextArtifact.textPath }]
+              : undefined,
             previewText: buildBrowserPreviewText({
               operation: browser.operation,
-              data: browser.data,
+              data: browserData,
+              textPath: browserTextArtifact?.textPath,
+              textBytes: browserTextArtifact?.textBytes,
+              textPreview: browserTextArtifact?.textPreview,
+              textTruncated: browserTextArtifact?.textTruncated,
             }),
             durationMs: Date.now() - started,
           };

@@ -3,7 +3,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -136,6 +136,77 @@ describe("P5.7-R7A: browser tool bus", () => {
     expect(result.ok).toBe(false);
     expect(result.error?.code).toBe("TOOL_TIMEOUT");
     expect(result.error?.message).toBe("TOOL_TIMEOUT");
+  });
+
+  it("tabs.text 应把正文落盘为 browser artifact，并在 preview 里暴露 textPath", async () => {
+    const stateDir = join(chromeProfilesRoot, ".browser");
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(
+      join(stateDir, "work-default-9222.json"),
+      JSON.stringify({
+        id: "chrome:work-default:9222",
+        rootName: "work-default",
+        chromeRoot: join(chromeProfilesRoot, "work-default"),
+        port: "9222",
+        headless: false,
+        status: "running",
+        mode: "headed",
+      }),
+      "utf-8"
+    );
+
+    const pageText = "第一段正文。\n\n第二段正文，应该被完整落盘。";
+    const fakePage = {
+      title: async () => "Example Article",
+      url: () => "https://example.com/article",
+      locator: () => ({
+        innerText: async () => pageText,
+      }),
+      context: () => ({
+        newCDPSession: async () => ({
+          send: async () => ({ targetInfo: { targetId: "tab_live_text" } }),
+          detach: async () => undefined,
+        }),
+      }),
+    };
+
+    __setBrowserPatchrightTestDeps({
+      fetchImpl: (async () => new Response(
+        JSON.stringify({ webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/mock" }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      )) as typeof globalThis.fetch,
+      resolvePatchright: () => ({
+        connectOverCDP: async () => ({
+          contexts: () => [{
+            pages: () => [fakePage],
+            newPage: async () => fakePage,
+          }],
+          close: async () => undefined,
+        }),
+      }),
+    });
+
+    const result = await executeTool(
+      "browser",
+      { operation: "tabs.text", tabId: "tab_live_text" },
+      {
+        workspacePath,
+        source: "llm-tool-call",
+        requestId: randomUUID(),
+      }
+    );
+
+    expect(result.ok).toBe(true);
+    expect((result.data as { textPath?: string }).textPath).toBeDefined();
+    expect(result.previewText).toContain("[textPath]");
+    expect(result.previewText).toContain("[textPreview]");
+    expect(result.previewText).toContain("第一段正文");
+    expect(result.artifacts?.[0]?.path).toBe((result.data as { textPath?: string }).textPath);
+    expect(readFileSync((result.data as { textPath: string }).textPath, "utf-8")).toBe(pageText);
+    expect(((result.data as { result: Record<string, unknown> }).result).text).toBeUndefined();
   });
 
   it("profiles.list 不应依赖旧 orchestrator/baseUrl，也不应发起网络请求", async () => {

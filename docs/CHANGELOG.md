@@ -238,6 +238,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - tool-surface: `getToolsForLlm()` 不再偷偷补 `[read_file, bash, help_docs]` 隐藏基线，workspace 显式 `tooling.allow` 成为唯一 LLM 工具暴露真相源 (Issue: 0127, Plan: docs/design/plan-260312-remove-hidden-tool-baseline-from-get-tools-for-llm.md) [risk: medium] [rollback: revert 0127 hidden baseline removal commit]
   - tool-surface/vision: `vision` 不再靠运行时隐藏 suppress 退出主链；默认是否暴露改由默认 `tooling.allow` 决定，workspace 显式 allow 时 LLM 真实看到并可执行它 (Issue: 0129, Plan: docs/design/plan-260312-vision-tool-surface-single-truth.md) [risk: medium] [rollback: revert 0129 vision single-truth commit]
   - vision/privacy: `backend=api` 时视觉能力明确冻结为 local-only；`/vision-model` 继续配置本地视觉模型，`/model status` 显式回显 `local-only (...)`，避免误判图片会上传云端 API (Issue: 0130, Plan: docs/design/plan-260312-api-backend-local-vision-policy.md) [risk: medium] [rollback: revert 0130 local-only vision policy commit]
+  - browser/runtime: `browser tabs.text` 现在会把正文全文落盘到 `artifacts/browser/`，并通过 `textPath + textBytes + textPreview` 暴露给模型，网页转写主链不再只有标题/URL 预览 (Issue: 0131, Plan: docs/design/plan-260312-browser-text-artifact-and-skill-contract.md) [risk: medium] [rollback: revert 0131 browser text artifact commit]
 
 [2.3.0]: https://github.com/yourorg/msgcode/releases/tag/v2.3.0
 [1.0.0]: https://github.com/yourorg/msgcode/releases/tag/v1.0.0

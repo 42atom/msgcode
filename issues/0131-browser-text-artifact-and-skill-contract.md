@@ -1,0 +1,69 @@
+---
+id: 0131
+title: browser 正文 artifact 主链与网页转写 skill 合同收口
+status: doing
+owner: agent
+labels: [refactor, feature, docs]
+risk: medium
+scope: browser tool bus、tool-loop 回灌合同、patchright-browser skill
+plan_doc: docs/design/plan-260312-browser-text-artifact-and-skill-contract.md
+links: []
+---
+
+## Context
+
+当前 `patchright-browser` skill 已经把“长文网页先读正文，再落盘，再分段处理”写成正式说明书，但运行时主链还没有把 `browser tabs.text` 的正文作为第一公民 artifact 暴露给模型。
+
+现状问题：
+
+- `tabs.text` 底层能拿到 `document.body.innerText`
+- Tool Bus 只把 `title/url` 之类做成 preview，正文没有 artifact 落盘
+- `tool-loop` 回灌模型时只看 `previewText`
+- 结果是 skill 已经按正确方向写了，运行时合同却还偏薄
+
+## Goal / Non-Goals
+
+### Goal
+
+- 让 `browser tabs.text` 像 `vision/asr` 一样，把全文落到 workspace artifact
+- 让模型在同一主链里拿到 `textPath` 与稳定 preview
+- 微调 `patchright-browser` skill，去掉固定文件名假设，避免多任务覆盖
+
+### Non-Goals
+
+- 不新增新的 tool
+- 不新增新的 preview/control layer
+- 不把 browser 全量结果直接塞回模型上下文
+- 不顺手重写整个 browser skill 体系
+
+## Plan
+
+- [ ] 新增 Plan 文档，冻结最小方案与验收
+- [ ] 扩展 browser tool data/artifacts 合同，支持 `tabs.text` 全文落盘
+- [ ] 让 browser preview 在 `tabs.text` 场景下暴露 `textPath/textBytes/status`
+- [ ] 微调 `patchright-browser` skill，改掉 `article.raw.txt/article.md` 的固定命名假设
+- [ ] 添加/调整测试，验证 artifact 落盘与 skill 文案收口
+- [ ] 分批提交并更新变更日志
+
+## Acceptance Criteria
+
+- `browser tabs.text` 成功执行时，ToolResult 中包含可用 `textPath`
+- 全文落盘到 `<workspace>/artifacts/browser/`
+- 模型回灌能看到 `textPath` 与稳定 preview，而不是只有标题/URL
+- `patchright-browser` skill 不再把 `article.raw.txt/article.md` 写死成唯一文件名
+- 定向测试、`tsc`、`docs:check` 通过
+
+## Notes
+
+- Runtime 主链：
+  - `browser tabs.text` 成功时落盘到 `<workspace>/artifacts/browser/tabs-text-*.txt`
+  - ToolResult 暴露 `textPath/textBytes/textTruncated`
+  - `previewText` 暴露 `textPath` 与短正文预览，不再只给标题/URL
+- 验证：
+  - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r7a-browser-tool-bus.test.ts test/tools.bus.test.ts test/p5-7-r15-agent-read-skill-bridge.test.ts`
+  - `npx tsc --noEmit`
+  - `npm run docs:check`
+
+## Links
+
+- docs/design/plan-260312-browser-text-artifact-and-skill-contract.md

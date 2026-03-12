@@ -33,7 +33,13 @@ export type ToolDataMap = {
   mem: Record<string, unknown>;
   // P5.7-R3f/R3h: bash 工具数据（含诊断字段）
   bash: { exitCode: number; stdout: string; stderr: string; fullOutputPath?: string };
-  browser: { operation: string; result: Record<string, unknown> };
+  browser: {
+    operation: string;
+    result: Record<string, unknown>;
+    textPath?: string;
+    textBytes?: number;
+    textTruncated?: boolean;
+  };
   // T6.1: Desktop tool data (exitCode + stdout + stderr from desktopctl)
   desktop: { exitCode: number | null; stdout: string; stderr: string };
   // P5.6.13-R1A-EXEC: run_skill 已退役
@@ -156,7 +162,7 @@ export interface ToolResult<TTool extends ToolName = ToolName> {
   previewText?: string;
   /** artifacts（可选） */
   artifacts?: Array<{
-    kind: "tts" | "asr" | "vision" | "log" | "desktop";
+    kind: "tts" | "asr" | "vision" | "browser" | "log" | "desktop";
     path: string;
     digest?: string;
   }>;
