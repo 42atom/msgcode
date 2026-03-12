@@ -3,6 +3,7 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-12
+  - subagent/runtime: `msgcode subagent run --watch` 的成功条件已收窄为“必须检测到 `MSGCODE_SUBAGENT_DONE/FAILED` 标记”；同步响应不再被误判成完成，超时时 task 保持 `running` 并返回 `SUBAGENT_WATCH_TIMEOUT`，已用真实 `claude-code` 贪吃蛇 HTML 项目验收校对 (Issue: 0138, Plan: docs/design/plan-260312-subagent-watch-must-require-completion-marker.md) [risk: medium] [rollback: 回退 `src/runtime/subagent.ts`、`test/p5-7-r37-subagent-runtime.test.ts` 与 `issues/0138...` / `docs/design/plan-260312-subagent-watch-must-require-completion-marker.md`]
   - skills/optional: 新增 `subagent` optional skill，专门教主脑何时把复杂任务委派给 `codex` / `claude-code`、如何写子任务卡、如何监控与验收；同时明确当前若无正式 `subagent` 合同或未安装执行臂，不得假装已委派成功，并提示用户安装以获得更强能力 (Issue: 0136, Plan: docs/design/plan-260312-subagent-skill-guidance-and-install-hint.md) [risk: low] [rollback: 移除 `src/skills/optional/subagent/`、还原 optional 索引/README/测试与本条 changelog]
   - cli/file: retired `file send` 已退出 `file --help` 公开命令面，只保留 direct invoke compat 壳；人类公开 help 与 `help-docs` 现在在 retired 口径上重新一致 (Issue: 0135, Plan: docs/design/plan-260312-hide-retired-file-send-from-public-file-surface.md) [risk: low] [rollback: 恢复 `src/cli/file.ts` 中的 `send` 子命令并移除 `file-send` compat 映射]
   - cli/skills: 占位式 `msgcode skill` 已降为显式 retired compat shell；它不再伪装成可运行的正式命令合同，直接执行会返回迁移提示并引导到 `help-docs` / `SKILL.md`，避免假合同继续污染二进制公开面 (Issue: 0134, Plan: docs/design/plan-260312-retire-placeholder-skill-cli-surface.md) [risk: low] [rollback: 恢复 `src/cli/skills.ts` 中原占位 list/run 子命令]
