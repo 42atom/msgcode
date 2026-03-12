@@ -3,7 +3,7 @@
  *
  * 验证：
  * 1. bash 命名统一（无 shell 漂移）
- * 2. 默认最小文件主链只保留 read_file + bash
+ * 2. 默认最小文件主链保留 read_file + bash + help_docs
  * 3. 工具可执行（无 TOOL_NOT_ALLOWED）
  */
 
@@ -21,17 +21,18 @@ describe("P5.6.8-R4g: 命名收口", () => {
 
     // 通过类型系统验证：shell 已从 ToolName 中删除
     // P5.6.13-R1A-EXEC: run_skill 已退役
-    const validTools = ["tts", "asr", "vision", "bash", "browser", "desktop", "read_file", "feishu_list_members", "feishu_list_recent_messages", "feishu_reply_message", "feishu_react_message", "feishu_send_file"];
+    const validTools = ["tts", "asr", "vision", "bash", "browser", "desktop", "read_file", "help_docs", "feishu_list_members", "feishu_list_recent_messages", "feishu_reply_message", "feishu_react_message", "feishu_send_file"];
 
     expect(validTools).toContain("bash");
     expect(validTools).not.toContain("shell");
     expect(validTools).not.toContain("run_skill");
   });
 
-  it("R4g-2: 默认 tooling.allow 仅包含最小文件主链工具", async () => {
+  it("R4g-2: 默认 tooling.allow 包含最小文件主链与 help_docs", async () => {
     const { DEFAULT_WORKSPACE_CONFIG } = await import("../src/config/workspace.js");
 
     expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).toContain("read_file");
+    expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).toContain("help_docs");
     expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).toContain("bash");
     expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).toContain("feishu_list_members");
     expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).toContain("feishu_list_recent_messages");
@@ -91,11 +92,11 @@ describe("P5.6.8-R4g: 门禁测试", () => {
   it("R4g-7: 最小文件主链工具在 allow 列表中可执行", () => {
     const policy: ToolPolicy = {
       mode: "autonomous",
-      allow: ["read_file", "bash"],
+      allow: ["read_file", "bash", "help_docs"],
       requireConfirm: [],
     };
 
-    const piTools = ["read_file", "bash"] as const;
+    const piTools = ["read_file", "bash", "help_docs"] as const;
 
     for (const tool of piTools) {
       const result = canExecuteTool(policy, tool, "llm-tool-call");
@@ -116,6 +117,7 @@ describe("P5.6.8-R4g: 集成测试", () => {
 
     expect(cmdToolingContent).toContain("read_file");
     expect(cmdToolingContent).toContain("bash");
+    expect(cmdToolingContent).toContain("help_docs");
     expect(cmdToolingContent).not.toContain("可用工具: tts, asr, vision");
     expect(cmdToolingContent).not.toContain("write_file");
     expect(cmdToolingContent).not.toContain("edit_file");

@@ -5,7 +5,7 @@
 import type { CommandHandlerOptions, CommandResult } from "./cmd-types.js";
 import { resolveCommandRoute } from "./workspace-resolver.js";
 
-const USER_VISIBLE_TOOLS = ["tts", "asr", "bash", "browser", "desktop", "read_file", "feishu_list_members", "feishu_list_recent_messages", "feishu_reply_message", "feishu_react_message", "feishu_send_file"] as const;
+const USER_VISIBLE_TOOLS = ["tts", "asr", "bash", "browser", "desktop", "read_file", "help_docs", "feishu_list_members", "feishu_list_recent_messages", "feishu_reply_message", "feishu_react_message", "feishu_send_file"] as const;
 const USER_VISIBLE_TOOLS_TEXT = USER_VISIBLE_TOOLS.join(", ");
 
 export async function handleToolstatsCommand(_options: CommandHandlerOptions): Promise<CommandResult> {

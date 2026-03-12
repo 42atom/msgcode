@@ -179,6 +179,15 @@ export interface VerifyResult {
     errorCode?: string;
 }
 
+export interface ToolLoopQuotaSignal {
+    code: "TOOL_LOOP_LIMIT_EXCEEDED";
+    kind: "tool_calls" | "tool_steps";
+    scope: "profile" | "hard_cap";
+    observed: number;
+    limit: number;
+    continuation: "heartbeat";
+}
+
 /**
  * Tool Loop 结果
  * P5.7-R3l-4: 必有 actionJournal（无工具时为空数组）
@@ -198,6 +207,7 @@ export interface AgentToolLoopResult {
     remainingToolCalls?: number;  // 剩余工具调用数
     remainingSteps?: number;  // 剩余步骤数
     continuationReason?: string;  // 续跑原因（触顶时填写）
+    quotaSignal?: ToolLoopQuotaSignal;
     decisionSource?: "model";  // 决策来源
 }
 
@@ -245,4 +255,5 @@ export interface AgentRoutedChatResult {
     remainingToolCalls?: number;
     remainingSteps?: number;
     continuationReason?: string;
+    quotaSignal?: ToolLoopQuotaSignal;
 }

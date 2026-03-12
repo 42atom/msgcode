@@ -22,6 +22,8 @@ describe("P5.7-R15 + P5.7-R16: skill 场景完整工具暴露", () => {
     expect(tools).toContain("read_file");
     // 必须包含 bash（后续执行）
     expect(tools).toContain("bash");
+    // 必须包含 help_docs（命令合同自发现）
+    expect(tools).toContain("help_docs");
     // 必须包含 browser（浏览器操作）
     expect(tools).toContain("browser");
     // 不应包含未实现的 mem tool
@@ -31,7 +33,7 @@ describe("P5.7-R15 + P5.7-R16: skill 场景完整工具暴露", () => {
     expect(tools).not.toContain("edit_file");
   });
 
-  it("workspace 未显式配置 tooling.allow 时也应保留 read_file + bash 基线", async () => {
+  it("workspace 未显式配置 tooling.allow 时也应保留 read_file + bash + help_docs 基线", async () => {
     const workspacePath = await mkdtemp(join(tmpdir(), "msgcode-r15-skill-bridge-"));
     await mkdir(join(workspacePath, ".msgcode"), { recursive: true });
     await writeFile(join(workspacePath, ".msgcode", "config.json"), JSON.stringify({}, null, 2), "utf-8");
@@ -42,6 +44,7 @@ describe("P5.7-R15 + P5.7-R16: skill 场景完整工具暴露", () => {
       expect(tools.length).toBeGreaterThan(0);
       expect(tools).toContain("read_file");
       expect(tools).toContain("bash");
+      expect(tools).toContain("help_docs");
     } finally {
       await rm(workspacePath, { recursive: true, force: true });
     }

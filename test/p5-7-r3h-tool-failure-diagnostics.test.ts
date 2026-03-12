@@ -440,7 +440,15 @@ describe("P5.7-R3h: Tool Failure Diagnostics (Behavior Lock)", () => {
                     backendRuntime: localOpenAiRuntime,
                 });
 
-                expect(result.answer).toContain("TOOL_LOOP_LIMIT_EXCEEDED");
+                expect(result.answer).toBe("TOOL_LOOP_LIMIT_EXCEEDED");
+                expect(result.quotaSignal).toMatchObject({
+                    code: "TOOL_LOOP_LIMIT_EXCEEDED",
+                    kind: "tool_calls",
+                    scope: "profile",
+                    observed: 9,
+                    limit: 8,
+                    continuation: "heartbeat",
+                });
                 expect(result.actionJournal).toEqual([]);
             } finally {
                 globalThis.fetch = originalFetch;

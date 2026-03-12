@@ -645,10 +645,11 @@ export class TaskSupervisor {
             : currentPhase === "blocked"
                 ? (result.verifyResult?.failureReason || result.continuationReason || "等待人工接力后继续")
                 : (result.continuationReason || "继续下一轮任务推进");
+        const quotaOnlySummary = result.continuable && result.quotaSignal?.code === "TOOL_LOOP_LIMIT_EXCEEDED";
 
         return {
             currentPhase,
-            summary: (result.answer || "").trim() || task.goal,
+            summary: quotaOnlySummary ? (task.checkpoint?.summary || task.goal) : ((result.answer || "").trim() || task.goal),
             nextAction,
             lastToolName: result.toolCall?.name,
             lastErrorCode: lastFailedEntry?.errorCode,

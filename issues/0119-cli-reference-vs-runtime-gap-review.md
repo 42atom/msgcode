@@ -44,6 +44,7 @@ links: [docs/design/plan-260312-cli-is-all-agents-need-reference.md, docs/notes/
 - [x] 输出研究记录与正式 plan
 - [x] 由用户决定第一批要收口的缺口
 - [x] 第一批收口项按新 issue 落地：`read_file + 输出层分层`（Issue 0120）
+- [x] 第二批收口项按新 issue 落地：`help 主探索路径 + quota 热路径瘦身`（Issue 0121）
 
 ## Acceptance Criteria
 
@@ -72,6 +73,8 @@ links: [docs/design/plan-260312-cli-is-all-agents-need-reference.md, docs/notes/
 - 已落地到：
   - `issues/0120-read-file-contract-and-preview-layering.md`
   - `docs/design/plan-260312-read-file-contract-and-preview-layering.md`
+  - `issues/0121-help-tool-and-quota-hot-path-thinning.md`
+  - `docs/design/plan-260312-help-tool-and-quota-hot-path-thinning.md`
 
 ## Links
 

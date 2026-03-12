@@ -323,6 +323,14 @@ export interface TaskTurnResult {
     remainingToolCalls?: number;
     remainingSteps?: number;
     continuationReason?: string;
+    quotaSignal?: {
+        code: "TOOL_LOOP_LIMIT_EXCEEDED";
+        kind: "tool_calls" | "tool_steps";
+        scope: "profile" | "hard_cap";
+        observed: number;
+        limit: number;
+        continuation: "heartbeat";
+    };
 }
 
 /**

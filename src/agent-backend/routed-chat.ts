@@ -170,6 +170,7 @@ export async function runAgentRoutedChat(options: AgentRoutedChatOptions): Promi
         remainingToolCalls: toolLoopResult.remainingToolCalls,
         remainingSteps: toolLoopResult.remainingSteps,
         continuationReason: toolLoopResult.continuationReason,
+        quotaSignal: toolLoopResult.quotaSignal,
     };
 }
 

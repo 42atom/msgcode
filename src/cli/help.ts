@@ -25,7 +25,7 @@ import { getBrowserCommandContracts } from "./browser.js";
 // 类型定义
 // ============================================
 
-interface HelpCommandContract {
+export interface HelpCommandContract {
   name: string;
   description: string;
   options?: {
@@ -37,8 +37,9 @@ interface HelpCommandContract {
   constraints?: Record<string, unknown>;
 }
 
-interface HelpData {
+export interface HelpData {
   version: string;
+  totalCommands: number;
   commands: Record<string, unknown>[];
 }
 
@@ -97,58 +98,7 @@ export function createHelpDocsCommand(): Command {
       const errors: Diagnostic[] = [];
 
       try {
-        // 获取版本
-        const { getVersion } = await import("../version.js");
-        const version = getVersion();
-
-        // 构建命令合同列表
-        const commands: Record<string, unknown>[] = [
-          // File 命令组（R3 主链；legacy send 已退役，不再公开暴露）
-          getFileFindContract() as Record<string, unknown>,
-          getFileReadContract() as Record<string, unknown>,
-          getFileWriteContract() as Record<string, unknown>,
-          getFileDeleteContract() as Record<string, unknown>,
-          getFileMoveContract() as Record<string, unknown>,
-          getFileCopyContract() as Record<string, unknown>,
-          // Web 命令组（P5.7-R2）
-          ...(getWebCommandContract() as Record<string, unknown>[]),
-          // System 命令组（P5.7-R2 + R3-4）
-          ...(getSystemCommandContract() as Record<string, unknown>[]),
-          // Memory 命令组（P5.7-R4-1）
-          getMemoryAddContract() as Record<string, unknown>,
-          getMemorySearchContract() as Record<string, unknown>,
-          getMemoryStatsContract() as Record<string, unknown>,
-          // Thread 命令组（P5.7-R4-2）
-          getThreadListContract() as Record<string, unknown>,
-          getThreadMessagesContract() as Record<string, unknown>,
-          getThreadActiveContract() as Record<string, unknown>,
-          getThreadSwitchContract() as Record<string, unknown>,
-          // Todo 命令组（P5.7-R5-1）
-          getTodoAddContract() as Record<string, unknown>,
-          getTodoListContract() as Record<string, unknown>,
-          getTodoDoneContract() as Record<string, unknown>,
-          // Schedule 命令组（P5.7-R5-2）
-          getScheduleAddContract() as Record<string, unknown>,
-          getScheduleListContract() as Record<string, unknown>,
-          getScheduleRemoveContract() as Record<string, unknown>,
-          getScheduleEnableContract() as Record<string, unknown>,
-          getScheduleDisableContract() as Record<string, unknown>,
-          // Media 命令组（P5.7-R6-1）
-          getMediaScreenContract() as Record<string, unknown>,
-          // Gen Image 命令组（P5.7-R6-2）
-          getGenImageContract() as Record<string, unknown>,
-          getGenSelfieContract() as Record<string, unknown>,
-          // Gen Audio 命令组（P5.7-R6-3）
-          getGenTtsContract() as Record<string, unknown>,
-          getGenMusicContract() as Record<string, unknown>,
-          // Browser 命令组（P5.7-R7A）
-          ...(getBrowserCommandContracts() as Record<string, unknown>[]),
-        ];
-
-        const data: HelpData = {
-          version,
-          commands,
-        };
+        const data = await getHelpDocsData();
 
         if (options.json) {
           const envelope = createEnvelope<HelpData>(
@@ -161,6 +111,8 @@ export function createHelpDocsCommand(): Command {
           );
           console.log(JSON.stringify(envelope, null, 2));
         } else {
+          const version = data.version;
+          const commands = data.commands;
           // 文本格式帮助
           console.log(`msgcode help-docs v${version}`);
           console.log("");
@@ -232,4 +184,75 @@ export function createHelpDocsCommand(): Command {
     });
 
   return cmd;
+}
+
+function getAllHelpCommandContracts(): Record<string, unknown>[] {
+  return [
+    // File 命令组（R3 主链；legacy send 已退役，不再公开暴露）
+    getFileFindContract() as Record<string, unknown>,
+    getFileReadContract() as Record<string, unknown>,
+    getFileWriteContract() as Record<string, unknown>,
+    getFileDeleteContract() as Record<string, unknown>,
+    getFileMoveContract() as Record<string, unknown>,
+    getFileCopyContract() as Record<string, unknown>,
+    // Web 命令组（P5.7-R2）
+    ...(getWebCommandContract() as Record<string, unknown>[]),
+    // System 命令组（P5.7-R2 + R3-4）
+    ...(getSystemCommandContract() as Record<string, unknown>[]),
+    // Memory 命令组（P5.7-R4-1）
+    getMemoryAddContract() as Record<string, unknown>,
+    getMemorySearchContract() as Record<string, unknown>,
+    getMemoryStatsContract() as Record<string, unknown>,
+    // Thread 命令组（P5.7-R4-2）
+    getThreadListContract() as Record<string, unknown>,
+    getThreadMessagesContract() as Record<string, unknown>,
+    getThreadActiveContract() as Record<string, unknown>,
+    getThreadSwitchContract() as Record<string, unknown>,
+    // Todo 命令组（P5.7-R5-1）
+    getTodoAddContract() as Record<string, unknown>,
+    getTodoListContract() as Record<string, unknown>,
+    getTodoDoneContract() as Record<string, unknown>,
+    // Schedule 命令组（P5.7-R5-2）
+    getScheduleAddContract() as Record<string, unknown>,
+    getScheduleListContract() as Record<string, unknown>,
+    getScheduleRemoveContract() as Record<string, unknown>,
+    getScheduleEnableContract() as Record<string, unknown>,
+    getScheduleDisableContract() as Record<string, unknown>,
+    // Media 命令组（P5.7-R6-1）
+    getMediaScreenContract() as Record<string, unknown>,
+    // Gen Image 命令组（P5.7-R6-2）
+    getGenImageContract() as Record<string, unknown>,
+    getGenSelfieContract() as Record<string, unknown>,
+    // Gen Audio 命令组（P5.7-R6-3）
+    getGenTtsContract() as Record<string, unknown>,
+    getGenMusicContract() as Record<string, unknown>,
+    // Browser 命令组（P5.7-R7A）
+    ...(getBrowserCommandContracts() as Record<string, unknown>[]),
+  ];
+}
+
+export async function getHelpDocsData(params?: {
+  query?: string;
+  limit?: number;
+}): Promise<HelpData> {
+  const { getVersion } = await import("../version.js");
+  const version = getVersion();
+  const normalizedQuery = (params?.query || "").trim().toLowerCase();
+  const rawCommands = getAllHelpCommandContracts();
+  const commands = normalizedQuery
+    ? rawCommands.filter((item) => {
+        const name = typeof item?.name === "string" ? item.name.toLowerCase() : "";
+        const description = typeof item?.description === "string" ? item.description.toLowerCase() : "";
+        return name.includes(normalizedQuery) || description.includes(normalizedQuery);
+      })
+    : rawCommands;
+  const limitedCommands = typeof params?.limit === "number" && Number.isFinite(params.limit) && params.limit > 0
+    ? commands.slice(0, Math.floor(params.limit))
+    : commands;
+
+  return {
+    version,
+    totalCommands: rawCommands.length,
+    commands: limitedCommands,
+  };
 }

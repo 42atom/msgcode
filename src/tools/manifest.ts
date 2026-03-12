@@ -208,6 +208,27 @@ export const TOOL_MANIFESTS: Record<ToolName, ToolManifest> = {
     riskLevel: "low",
   },
 
+  help_docs: {
+    name: "help_docs",
+    description: "查询 msgcode CLI 命令合同与帮助文档。用于不确定命令名、参数或输出格式时先查正式 help。",
+    parameters: {
+      type: "object",
+      properties: {
+        query: {
+          type: "string",
+          description: "可选过滤关键词，如 browser、schedule、memory、file、gen",
+        },
+        limit: {
+          type: "number",
+          description: "可选返回条数上限，默认返回全部匹配命令",
+        },
+      },
+      required: [],
+      additionalProperties: true,
+    },
+    riskLevel: "low",
+  },
+
   write_file: {
     name: "write_file",
     description: "写入文件内容。会覆盖整个文件。",
@@ -607,7 +628,9 @@ export function renderLlmToolIndex(toolNames: ToolName[]): string {
   }
 
   lines.push("重要边界：skill 名不是工具名。禁止把 file、memory、thread、todo、cron、media、gen、banana-pro-image-gen 当作工具名。");
-  lines.push("常见映射：读文件用 read_file，写改文件优先用 bash，浏览器操作用 browser。");
+  if (toolNames.includes("help_docs")) {
+    lines.push("如果你不确定 msgcode CLI 的命令名、参数或输出合同，先调用 help_docs，再决定要不要 read_file / bash / browser / feishu_send_file。");
+  }
   lines.push("如果上面列表里没有某个工具名，就表示你本轮不能调用它。");
   lines.push("只有拿到本轮真实工具回执后，才能声称某个工具成功、失败、崩溃、超时、报错或已完成发送。");
   lines.push("如果本轮没有调用相关工具，就明确说“这轮还没实际核实”，不要编造旧错误、旧附件结果或旧视觉结论。");

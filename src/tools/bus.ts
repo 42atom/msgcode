@@ -17,6 +17,7 @@ import type {
 import { isUtf8 } from "node:buffer";
 import { resolve as resolvePath, sep as pathSep } from "node:path";
 import { getFsScope, getToolPolicy } from "../config/workspace.js";
+import { getHelpDocsData } from "../cli/help.js";
 import { runTts } from "../runners/tts.js";
 import { runAsr } from "../runners/asr.js";
 import { runVision } from "../runners/vision.js";
@@ -41,6 +42,7 @@ const TOOL_META: Record<ToolName, { sideEffect: SideEffectLevel }> = {
   desktop: { sideEffect: "local-write" },  // T6.1: observe 会落盘 evidence
   // P5.6.13-R1A-EXEC: run_skill 已退役
   read_file: { sideEffect: "read-only" },  // P5.6.8-R3: PI 四基础工具
+  help_docs: { sideEffect: "read-only" },
   write_file: { sideEffect: "local-write" },
   edit_file: { sideEffect: "local-write" },
   feishu_send_file: { sideEffect: "message-send" },  // 飞书文件发送
@@ -162,6 +164,18 @@ function validateToolArgs(
       }
       if (args.content === undefined || args.content === null) {
         return { code: "TOOL_BAD_ARGS", message: "write_file: 'content' is required" };
+      }
+      break;
+    }
+    case "help_docs": {
+      if (args.query !== undefined && typeof args.query !== "string") {
+        return { code: "TOOL_BAD_ARGS", message: "help_docs: 'query' must be a string when provided" };
+      }
+      if (args.limit !== undefined) {
+        const limit = Number(args.limit);
+        if (!Number.isFinite(limit) || limit <= 0) {
+          return { code: "TOOL_BAD_ARGS", message: "help_docs: 'limit' must be a positive number when provided" };
+        }
       }
       break;
     }
@@ -399,6 +413,25 @@ function buildReadFilePreviewText(params: {
   ];
   if (params.guidance) {
     lines.push(`[guidance] ${params.guidance}`);
+  }
+  return clipPreviewText(lines.join("\n"));
+}
+
+function buildHelpDocsPreviewText(params: {
+  version: string;
+  query?: string;
+  matchedCommands: number;
+  totalCommands: number;
+  commandNames: string[];
+}): string {
+  const lines = [
+    `[help_docs] version=${params.version}`,
+    params.query ? `[query] ${params.query}` : "[query] <all>",
+    `[matched] ${params.matchedCommands}/${params.totalCommands}`,
+  ];
+  if (params.commandNames.length > 0) {
+    lines.push("[commands]");
+    lines.push(...params.commandNames.map((name) => `- ${name}`));
   }
   return clipPreviewText(lines.join("\n"));
 }
@@ -1052,6 +1085,39 @@ export async function executeTool(
           };
           break;
         }
+      }
+      case "help_docs": {
+        const query = typeof args.query === "string" ? args.query.trim() : "";
+        const rawLimit = args.limit;
+        const numericLimit = rawLimit === undefined ? undefined : Number(rawLimit);
+        const data = await getHelpDocsData({
+          query: query || undefined,
+          limit: Number.isFinite(numericLimit) && numericLimit && numericLimit > 0 ? numericLimit : undefined,
+        });
+        const commands = Array.isArray(data.commands) ? data.commands : [];
+        result = {
+          ok: true,
+          tool,
+          data: {
+            version: data.version,
+            totalCommands: data.totalCommands,
+            matchedCommands: commands.length,
+            query: query || undefined,
+            commands,
+          },
+          previewText: buildHelpDocsPreviewText({
+            version: data.version,
+            query: query || undefined,
+            matchedCommands: commands.length,
+            totalCommands: data.totalCommands,
+            commandNames: commands
+              .map((item) => (typeof item?.name === "string" ? item.name : ""))
+              .filter(Boolean)
+              .slice(0, 12),
+          }),
+          durationMs: Date.now() - started,
+        };
+        break;
       }
       case "write_file": {
         // P5.6.8-R3: 整文件写入

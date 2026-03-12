@@ -23,6 +23,7 @@ import {
     type AgentBackendRuntime,
     type ActionJournalEntry,
     type ParsedToolCall,
+    type ToolLoopQuotaSignal,
 } from "./types.js";
 import {
     resolveBaseSystemPrompt,
@@ -132,6 +133,61 @@ type ChatResponse = {
 const AIDOCS_ROOT = process.env.AIDOCS_ROOT || "AIDOCS";
 const MAIN_AGENT_MAX_TOKENS = 8192;
 let cachedLocalModel: { baseUrl: string; id: string } | undefined;
+
+function buildQuotaSignal(params: {
+    kind: ToolLoopQuotaSignal["kind"];
+    scope: ToolLoopQuotaSignal["scope"];
+    observed: number;
+    limit: number;
+}): ToolLoopQuotaSignal {
+    return {
+        code: "TOOL_LOOP_LIMIT_EXCEEDED",
+        kind: params.kind,
+        scope: params.scope,
+        observed: params.observed,
+        limit: params.limit,
+        continuation: "heartbeat",
+    };
+}
+
+function buildContinuableQuotaResult(params: {
+    actionJournal: ActionJournalEntry[];
+    quotaProfile: "conservative" | "balanced" | "aggressive";
+    perTurnToolCallLimit: number;
+    perTurnToolStepLimit: number;
+    remainingToolCalls: number;
+    remainingSteps: number;
+    continuationReason: string;
+    kind: ToolLoopQuotaSignal["kind"];
+    scope: ToolLoopQuotaSignal["scope"];
+    observed: number;
+    limit: number;
+    lastExecutedCall?: ExecutedToolCall;
+}): AgentToolLoopResult {
+    return {
+        answer: "TOOL_LOOP_LIMIT_EXCEEDED",
+        actionJournal: params.actionJournal,
+        continuable: true,
+        quotaProfile: params.quotaProfile,
+        perTurnToolCallLimit: params.perTurnToolCallLimit,
+        perTurnToolStepLimit: params.perTurnToolStepLimit,
+        remainingToolCalls: Math.max(0, params.remainingToolCalls),
+        remainingSteps: Math.max(0, params.remainingSteps),
+        continuationReason: params.continuationReason,
+        quotaSignal: buildQuotaSignal({
+            kind: params.kind,
+            scope: params.scope,
+            observed: params.observed,
+            limit: params.limit,
+        }),
+        toolCall: params.lastExecutedCall ? {
+            name: params.lastExecutedCall.tc.function.name,
+            args: params.lastExecutedCall.args,
+            result: params.lastExecutedCall.result,
+        } : undefined,
+    };
+}
+
 function getToolNameFromDef(tool: unknown): string | undefined {
     if (!tool || typeof tool !== "object") return undefined;
     const asObj = tool as Record<string, unknown>;
@@ -527,7 +583,7 @@ export async function getToolsForLlm(workspacePath?: string): Promise<ToolName[]
             ? (DEFAULT_WORKSPACE_CONFIG["tooling.allow"] as ToolName[])
             : [];
         const allowedTools = filterDefaultLlmTools(
-            Array.from(new Set<ToolName>(["read_file", "bash", ...configuredTools]))
+            Array.from(new Set<ToolName>(["read_file", "bash", "help_docs", ...configuredTools]))
         );
         const exposure = resolveLlmToolExposure(allowedTools);
         return exposure.exposedTools;
@@ -535,13 +591,13 @@ export async function getToolsForLlm(workspacePath?: string): Promise<ToolName[]
     try {
         const { loadWorkspaceConfig } = await import("../config/workspace.js");
         const cfg = await loadWorkspaceConfig(workspacePath);
-        // 单一真相源：LLM 工具暴露只看 tooling.allow，再补 skill 发现所需的最小基线。
+        // 单一真相源：LLM 工具暴露只看 tooling.allow，再补 skill + help 自发现最小基线。
         // 不再依赖任何历史开关决定“有没有工具”，否则会吞掉 feishu_send_file 等已允许工具。
         const configuredTools = Array.isArray(cfg["tooling.allow"])
             ? (cfg["tooling.allow"] as ToolName[])
             : [];
         const allowedTools = filterDefaultLlmTools(
-            Array.from(new Set<ToolName>(["read_file", "bash", ...configuredTools]))
+            Array.from(new Set<ToolName>(["read_file", "bash", "help_docs", ...configuredTools]))
         );
 
         // 解析 LLM 工具暴露结果，返回 exposedTools
@@ -609,6 +665,9 @@ function buildNativeToolPriorityHint(toolNames: ToolName[]): string {
     lines.push("[原生工具优先]");
     lines.push("如果当前能力已经作为原生工具暴露，就优先调用原生工具，不要先走 bash 包一层 CLI。");
     lines.push("bash 只用于系统命令、脚本 glue、或当前确实没有原生工具的能力；不要把已有原生工具再包装一层。");
+    if (toolNames.includes("help_docs")) {
+        lines.push("如果你不确定 msgcode CLI 的命令名、参数或输出合同，先调用 help_docs，不要先猜 bash 命令。");
+    }
 
     if (toolNames.includes("feishu_send_file")) {
         lines.push("发送文件回飞书群时，唯一正式发送入口是 feishu_send_file。");
@@ -867,12 +926,8 @@ async function runMiniMaxAnthropicToolLoop(params: {
             const isHardCapExceeded = currentToolCalls.length > HARD_CAP_TOOL_CALLS;
             const lastExecutedCall = executedToolCalls[executedToolCalls.length - 1];
 
-            return {
-                answer: isHardCapExceeded
-                    ? `本轮工具调用次数达到单轮硬上限\n- 本轮请求数：${currentToolCalls.length}\n- 单轮硬上限：${HARD_CAP_TOOL_CALLS}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n任务将在下一轮 heartbeat 继续执行。`
-                    : `本轮工具调用次数达到档位上限\n- 本轮请求数：${currentToolCalls.length}\n- 档位上限：${params.perTurnToolCallLimit}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n任务将在下一轮 heartbeat 继续执行。`,
+            return buildContinuableQuotaResult({
                 actionJournal,
-                continuable: true,
                 quotaProfile: params.quotaProfile,
                 perTurnToolCallLimit: params.perTurnToolCallLimit,
                 perTurnToolStepLimit: params.perTurnToolStepLimit,
@@ -881,12 +936,12 @@ async function runMiniMaxAnthropicToolLoop(params: {
                 continuationReason: isHardCapExceeded
                     ? `exceeded_hard_cap_tool_calls_${currentToolCalls.length}_limit_${HARD_CAP_TOOL_CALLS}`
                     : `reached_profile_limit_tool_calls_${currentToolCalls.length}_limit_${params.perTurnToolCallLimit}`,
-                toolCall: lastExecutedCall ? {
-                    name: lastExecutedCall.tc.function.name,
-                    args: lastExecutedCall.args,
-                    result: lastExecutedCall.result,
-                } : undefined,
-            };
+                kind: "tool_calls",
+                scope: isHardCapExceeded ? "hard_cap" : "profile",
+                observed: currentToolCalls.length,
+                limit: isHardCapExceeded ? HARD_CAP_TOOL_CALLS : params.perTurnToolCallLimit,
+                lastExecutedCall,
+            });
         }
 
         if (currentToolCalls.length > 0) {
@@ -943,12 +998,8 @@ async function runMiniMaxAnthropicToolLoop(params: {
                         const isHardCapExceeded = executedToolCalls.length > HARD_CAP_TOOL_STEPS;
                         const lastExecutedCall = executedToolCalls[executedToolCalls.length - 1];
 
-                        return {
-                            answer: isHardCapExceeded
-                                ? `本轮工具步骤总数达到单轮硬上限\n- 本轮步骤数：${executedToolCalls.length}\n- 单轮硬上限：${HARD_CAP_TOOL_STEPS}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n任务将在下一轮 heartbeat 继续执行。`
-                                : `本轮工具步骤总数达到档位上限\n- 总步骤数：${executedToolCalls.length}\n- 档位上限：${params.perTurnToolStepLimit}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n任务将在下一轮 heartbeat 继续执行。`,
+                        return buildContinuableQuotaResult({
                             actionJournal,
-                            continuable: true,
                             quotaProfile: params.quotaProfile,
                             perTurnToolCallLimit: params.perTurnToolCallLimit,
                             perTurnToolStepLimit: params.perTurnToolStepLimit,
@@ -957,12 +1008,12 @@ async function runMiniMaxAnthropicToolLoop(params: {
                             continuationReason: isHardCapExceeded
                                 ? `exceeded_hard_cap_tool_steps_${executedToolCalls.length}_limit_${HARD_CAP_TOOL_STEPS}`
                                 : `reached_profile_limit_tool_steps_${executedToolCalls.length}_limit_${params.perTurnToolStepLimit}`,
-                            toolCall: lastExecutedCall ? {
-                                name: lastExecutedCall.tc.function.name,
-                                args: lastExecutedCall.args,
-                                result: lastExecutedCall.result,
-                            } : undefined,
-                        };
+                            kind: "tool_steps",
+                            scope: isHardCapExceeded ? "hard_cap" : "profile",
+                            observed: executedToolCalls.length,
+                            limit: isHardCapExceeded ? HARD_CAP_TOOL_STEPS : params.perTurnToolStepLimit,
+                            lastExecutedCall,
+                        });
                     }
                     break;
                 }
@@ -987,12 +1038,8 @@ async function runMiniMaxAnthropicToolLoop(params: {
                     const isHardCapExceeded = executedToolCalls.length > HARD_CAP_TOOL_STEPS;
                     const lastExecutedCall = executedToolCalls[executedToolCalls.length - 1];
 
-                    return {
-                        answer: isHardCapExceeded
-                            ? `本轮工具步骤总数达到单轮硬上限\n- 本轮步骤数：${executedToolCalls.length}\n- 单轮硬上限：${HARD_CAP_TOOL_STEPS}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n任务将在下一轮 heartbeat 继续执行。`
-                            : `本轮工具步骤总数达到档位上限\n- 总步骤数：${executedToolCalls.length}\n- 档位上限：${params.perTurnToolStepLimit}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n任务将在下一轮 heartbeat 继续执行。`,
+                    return buildContinuableQuotaResult({
                         actionJournal,
-                        continuable: true,
                         quotaProfile: params.quotaProfile,
                         perTurnToolCallLimit: params.perTurnToolCallLimit,
                         perTurnToolStepLimit: params.perTurnToolStepLimit,
@@ -1001,12 +1048,12 @@ async function runMiniMaxAnthropicToolLoop(params: {
                         continuationReason: isHardCapExceeded
                             ? `exceeded_hard_cap_tool_steps_${executedToolCalls.length}_limit_${HARD_CAP_TOOL_STEPS}`
                             : `reached_profile_limit_tool_steps_${executedToolCalls.length}_limit_${params.perTurnToolStepLimit}`,
-                        toolCall: lastExecutedCall ? {
-                            name: lastExecutedCall.tc.function.name,
-                            args: lastExecutedCall.args,
-                            result: lastExecutedCall.result,
-                        } : undefined,
-                    };
+                        kind: "tool_steps",
+                        scope: isHardCapExceeded ? "hard_cap" : "profile",
+                        observed: executedToolCalls.length,
+                        limit: isHardCapExceeded ? HARD_CAP_TOOL_STEPS : params.perTurnToolStepLimit,
+                        lastExecutedCall,
+                    });
                 }
             }
 
@@ -1361,44 +1408,40 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
             if (isHardCapExceeded) {
                 // 超过硬上限，必须移交下一轮 heartbeat
                 // P5.7-R12-T8: 补上 toolCall，用于 sameToolSameArgsRetryLimit 检查
-                const lastExecutedCall = executedToolCalls[executedToolCalls.length - 1];
-                return {
-                    answer: `本轮工具调用次数达到单轮硬上限\n- 本轮请求数：${currentToolCalls.length}\n- 单轮硬上限：${HARD_CAP_TOOL_CALLS}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n任务将在下一轮 heartbeat 继续执行。`,
-                    actionJournal,
-                    continuable: true,
-                    quotaProfile,
-                    perTurnToolCallLimit,
-                    perTurnToolStepLimit,
-                    remainingToolCalls: 0,
-                    remainingSteps: perTurnToolStepLimit - executedToolCalls.length,
-                    continuationReason: `exceeded_hard_cap_tool_calls_${currentToolCalls.length}_limit_${HARD_CAP_TOOL_CALLS}`,
-                    toolCall: lastExecutedCall ? {
-                        name: lastExecutedCall.tc.function.name,
-                        args: lastExecutedCall.args,
-                        result: lastExecutedCall.result,
-                    } : undefined,
-                };
-            }
+            const lastExecutedCall = executedToolCalls[executedToolCalls.length - 1];
+            return buildContinuableQuotaResult({
+                actionJournal,
+                quotaProfile,
+                perTurnToolCallLimit,
+                perTurnToolStepLimit,
+                remainingToolCalls: 0,
+                remainingSteps: perTurnToolStepLimit - executedToolCalls.length,
+                continuationReason: `exceeded_hard_cap_tool_calls_${currentToolCalls.length}_limit_${HARD_CAP_TOOL_CALLS}`,
+                kind: "tool_calls",
+                scope: "hard_cap",
+                observed: currentToolCalls.length,
+                limit: HARD_CAP_TOOL_CALLS,
+                lastExecutedCall,
+            });
+        }
 
             // 达到档位上限但未超过硬上限，移交下一轮 heartbeat 继续执行
             // P5.7-R12-T8: 补上 toolCall，用于 sameToolSameArgsRetryLimit 检查
             const lastExecutedCall = executedToolCalls[executedToolCalls.length - 1];
-            return {
-                answer: `本轮工具调用次数达到档位上限\n- 本轮请求数：${currentToolCalls.length}\n- 档位上限：${perTurnToolCallLimit}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n任务将在下一轮 heartbeat 继续执行。`,
+            return buildContinuableQuotaResult({
                 actionJournal,
-                continuable: true,
                 quotaProfile,
                 perTurnToolCallLimit,
                 perTurnToolStepLimit,
                 remainingToolCalls: 0,
                 remainingSteps: perTurnToolStepLimit - executedToolCalls.length,
                 continuationReason: `reached_profile_limit_tool_calls_${currentToolCalls.length}_limit_${perTurnToolCallLimit}`,
-                toolCall: lastExecutedCall ? {
-                    name: lastExecutedCall.tc.function.name,
-                    args: lastExecutedCall.args,
-                    result: lastExecutedCall.result,
-                } : undefined,
-            };
+                kind: "tool_calls",
+                scope: "profile",
+                observed: currentToolCalls.length,
+                limit: perTurnToolCallLimit,
+                lastExecutedCall,
+            });
         }
 
         if (currentToolCalls.length > 0) {
@@ -1454,12 +1497,8 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                     if (executedToolCalls.length > perTurnToolStepLimit) {
                         const isHardCapExceeded = executedToolCalls.length > HARD_CAP_TOOL_STEPS;
                         const lastExecutedCall = executedToolCalls[executedToolCalls.length - 1];
-                        return {
-                            answer: isHardCapExceeded
-                                ? `本轮工具步骤总数达到单轮硬上限\n- 本轮步骤数：${executedToolCalls.length}\n- 单轮硬上限：${HARD_CAP_TOOL_STEPS}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n任务将在下一轮 heartbeat 继续执行。`
-                                : `本轮工具步骤总数达到档位上限\n- 总步骤数：${executedToolCalls.length}\n- 档位上限：${perTurnToolStepLimit}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n任务将在下一轮 heartbeat 继续执行。`,
+                        return buildContinuableQuotaResult({
                             actionJournal,
-                            continuable: true,
                             quotaProfile,
                             perTurnToolCallLimit,
                             perTurnToolStepLimit,
@@ -1468,12 +1507,12 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                             continuationReason: isHardCapExceeded
                                 ? `exceeded_hard_cap_tool_steps_${executedToolCalls.length}_limit_${HARD_CAP_TOOL_STEPS}`
                                 : `reached_profile_limit_tool_steps_${executedToolCalls.length}_limit_${perTurnToolStepLimit}`,
-                            toolCall: lastExecutedCall ? {
-                                name: lastExecutedCall.tc.function.name,
-                                args: lastExecutedCall.args,
-                                result: lastExecutedCall.result,
-                            } : undefined,
-                        };
+                            kind: "tool_steps",
+                            scope: isHardCapExceeded ? "hard_cap" : "profile",
+                            observed: executedToolCalls.length,
+                            limit: isHardCapExceeded ? HARD_CAP_TOOL_STEPS : perTurnToolStepLimit,
+                            lastExecutedCall,
+                        });
                     }
                     break;
                 }
@@ -1503,43 +1542,39 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                         // 超过硬上限，必须移交下一轮 heartbeat
                         // P5.7-R12-T8: 补上 toolCall，用于 sameToolSameArgsRetryLimit 检查
                         const lastExecutedCall = executedToolCalls[executedToolCalls.length - 1];
-                        return {
-                            answer: `本轮工具步骤总数达到单轮硬上限\n- 本轮步骤数：${executedToolCalls.length}\n- 单轮硬上限：${HARD_CAP_TOOL_STEPS}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n任务将在下一轮 heartbeat 继续执行。`,
+                        return buildContinuableQuotaResult({
                             actionJournal,
-                            continuable: true,
                             quotaProfile,
                             perTurnToolCallLimit,
                             perTurnToolStepLimit,
                             remainingToolCalls: perTurnToolCallLimit - currentToolCalls.length,
                             remainingSteps: 0,
                             continuationReason: `exceeded_hard_cap_tool_steps_${executedToolCalls.length}_limit_${HARD_CAP_TOOL_STEPS}`,
-                            toolCall: lastExecutedCall ? {
-                                name: lastExecutedCall.tc.function.name,
-                                args: lastExecutedCall.args,
-                                result: lastExecutedCall.result,
-                            } : undefined,
-                        };
+                            kind: "tool_steps",
+                            scope: "hard_cap",
+                            observed: executedToolCalls.length,
+                            limit: HARD_CAP_TOOL_STEPS,
+                            lastExecutedCall,
+                        });
                     }
 
                     // 达到档位上限但未超过硬上限，移交下一轮 heartbeat 继续执行
                     // P5.7-R12-T8: 补上 toolCall，用于 sameToolSameArgsRetryLimit 检查
                     const lastExecutedCall = executedToolCalls[executedToolCalls.length - 1];
-                    return {
-                        answer: `本轮工具步骤总数达到档位上限\n- 总步骤数：${executedToolCalls.length}\n- 档位上限：${perTurnToolStepLimit}\n- 错误码：TOOL_LOOP_LIMIT_EXCEEDED\n\n任务将在下一轮 heartbeat 继续执行。`,
+                    return buildContinuableQuotaResult({
                         actionJournal,
-                        continuable: true,
                         quotaProfile,
                         perTurnToolCallLimit,
                         perTurnToolStepLimit,
                         remainingToolCalls: perTurnToolCallLimit - currentToolCalls.length,
                         remainingSteps: 0,
                         continuationReason: `reached_profile_limit_tool_steps_${executedToolCalls.length}_limit_${perTurnToolStepLimit}`,
-                        toolCall: lastExecutedCall ? {
-                            name: lastExecutedCall.tc.function.name,
-                            args: lastExecutedCall.args,
-                            result: lastExecutedCall.result,
-                        } : undefined,
-                    };
+                        kind: "tool_steps",
+                        scope: "profile",
+                        observed: executedToolCalls.length,
+                        limit: perTurnToolStepLimit,
+                        lastExecutedCall,
+                    });
                 }
             }
 

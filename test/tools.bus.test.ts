@@ -184,6 +184,7 @@ describe("Tool Bus", () => {
       expect(policy.allow).toContain("bash");
       expect(policy.allow).toContain("browser");
       expect(policy.allow).toContain("read_file");
+      expect(policy.allow).toContain("help_docs");
       expect(policy.allow).toContain("feishu_list_members");
       expect(policy.allow).toContain("feishu_list_recent_messages");
       expect(policy.allow).toContain("feishu_reply_message");
@@ -660,6 +661,46 @@ describe("Tool Bus", () => {
     });
   });
 
+  describe("Scenario E3: help_docs CLI 合同探索", () => {
+    beforeEach(() => {
+      const configDir = join(tempWorkspace, ".msgcode");
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, "config.json"), JSON.stringify({
+        "tooling.mode": "autonomous",
+        "tooling.allow": ["help_docs"],
+        "tooling.require_confirm": [],
+      }));
+    });
+
+    test("help_docs 应返回匹配命令与 preview", async () => {
+      const result = await executeTool(
+        "help_docs",
+        { query: "browser", limit: 2 },
+        {
+          workspacePath: tempWorkspace,
+          source: "llm-tool-call",
+          requestId: randomUUID(),
+        }
+      );
+
+      expect(result.ok).toBe(true);
+      const data = result.data as {
+        version: string;
+        totalCommands: number;
+        matchedCommands: number;
+        query?: string;
+        commands: Array<{ name?: string }>;
+      };
+      expect(data.version.length).toBeGreaterThan(0);
+      expect(data.totalCommands).toBeGreaterThan(0);
+      expect(data.matchedCommands).toBeGreaterThan(0);
+      expect(data.query).toBe("browser");
+      expect(data.commands.length).toBeLessThanOrEqual(2);
+      expect(data.commands[0]?.name).toContain("browser");
+      expect(result.previewText).toContain("[help_docs]");
+    });
+  });
+
   describe("Scenario F: allowlist 仍生效", () => {
     test("allowlist 中没有的工具应该被拒绝", () => {
       const policy: ToolPolicy = {
@@ -733,6 +774,7 @@ describe("Tool Bus", () => {
       expect(policy.allow).toContain("bash");
       expect(policy.allow).toContain("browser");
       expect(policy.allow).toContain("read_file");
+      expect(policy.allow).toContain("help_docs");
       expect(policy.allow).not.toContain("write_file");
       expect(policy.allow).not.toContain("edit_file");
     });

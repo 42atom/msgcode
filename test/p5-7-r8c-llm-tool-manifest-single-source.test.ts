@@ -157,6 +157,7 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
 
     expect(tools).toContain("bash");
     expect(tools).toContain("read_file");
+    expect(tools).toContain("help_docs");
     expect(tools).not.toContain("write_file");
     expect(tools).not.toContain("edit_file");
   });
@@ -179,6 +180,7 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     expect(tools).not.toContain("vision");
     expect(tools).toContain("bash");
     expect(tools).toContain("read_file");
+    expect(tools).toContain("help_docs");
   });
 
   it("旧工作区即使 allow 包含 mem，getToolsForLlm() 也不应再暴露它", async () => {
@@ -199,6 +201,7 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     expect(tools).not.toContain("mem");
     expect(tools).toContain("bash");
     expect(tools).toContain("read_file");
+    expect(tools).toContain("help_docs");
   });
 
   it("workspace tooling.allow 不包含 browser 时，getToolsForLlm() 不应返回 browser", async () => {
@@ -220,7 +223,7 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     expect(tools).not.toContain("browser");
   });
 
-  it("workspace 未显式放开 browser 时，getToolsForLlm() 仍应保留 read_file + bash 基线", async () => {
+  it("workspace 未显式放开 browser 时，getToolsForLlm() 仍应保留 read_file + bash + help_docs 基线", async () => {
     const workspacePath = await createTempWorkspace();
     const configPath = join(workspacePath, ".msgcode", "config.json");
 
@@ -238,6 +241,7 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
 
     expect(tools).toContain("read_file");
     expect(tools).toContain("bash");
+    expect(tools).toContain("help_docs");
   });
 
   it("allow 包含 feishu_send_file 时，getToolsForLlm() 应暴露它", async () => {
@@ -257,6 +261,7 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
 
     expect(tools).toContain("read_file");
     expect(tools).toContain("bash");
+    expect(tools).toContain("help_docs");
     expect(tools).toContain("feishu_send_file");
   });
 
@@ -266,6 +271,7 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
 
     expect(tools).toContain("read_file");
     expect(tools).toContain("bash");
+    expect(tools).toContain("help_docs");
     expect(tools).toContain("feishu_send_file");
     expect(tools).toContain("feishu_list_recent_messages");
     expect(tools).not.toContain("vision");
@@ -391,6 +397,6 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     expect(compatModule.getToolsForLlm).toBe(toolLoopModule.getToolsForLlm);
 
     const tools = await compatModule.getToolsForLlm(workspacePath);
-    expect(tools).toEqual(["read_file", "bash", "browser"]);
+    expect(tools).toEqual(["read_file", "bash", "help_docs", "browser"]);
   });
 });

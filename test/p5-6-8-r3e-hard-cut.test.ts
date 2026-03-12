@@ -81,6 +81,7 @@ describe("P5.6.8-R3e: 硬切割回归锁", () => {
       const tools = await compat.getToolsForLlm(tmpWorkspace);
       expect(tools).toContain("bash");
       expect(tools).toContain("read_file");
+      expect(tools).toContain("help_docs");
       expect(tools).not.toContain("run_skill" as any);
     } finally {
       fs.rmSync(tmpWorkspace, { recursive: true, force: true });

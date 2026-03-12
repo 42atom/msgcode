@@ -17,6 +17,7 @@ export type ToolName =
   | "desktop"  // T6.1: Desktop Bridge (msgcode-desktopctl)
   // P5.6.13-R1A-EXEC: run_skill 已退役
   | "read_file"  // P5.6.8-R3: PI 四基础工具
+  | "help_docs"
   | "write_file"
   | "edit_file"
   | "feishu_list_members"
@@ -43,6 +44,13 @@ export type ToolDataMap = {
     truncated?: boolean;
     byteLength?: number;
     guidance?: string;
+  };
+  help_docs: {
+    version: string;
+    totalCommands: number;
+    matchedCommands: number;
+    query?: string;
+    commands: Array<Record<string, unknown>>;
   };
   write_file: { path: string };
   edit_file: { path: string; editsApplied: number };
