@@ -19,6 +19,7 @@ const PROJECT_ROOT = path.resolve(__dirname, "..", "..");
 const DAEMON_SCRIPT = path.join(PROJECT_ROOT, "src", "daemon.ts");
 const TSX_CLI = path.join(PROJECT_ROOT, "node_modules", "tsx", "dist", "cli.mjs");
 const MSGCODE_LAUNCH_AGENT_LABEL = "ai.msgcode.daemon";
+const RETIRED_DAEMON_ENV_KEYS = ["IMSG_PATH", "IMSG_DB_PATH"] as const;
 
 export type LaunchAgentStatus = "running" | "stopped" | "missing" | "unknown";
 
@@ -96,6 +97,24 @@ export function resolveLaunchAgentLogPaths(env: NodeJS.ProcessEnv = process.env)
   };
 }
 
+function resolveDaemonEnvironment(env: NodeJS.ProcessEnv = process.env): Record<string, string | undefined> {
+  const environment: Record<string, string | undefined> = {
+    ...env,
+    LOG_CONSOLE: "false",
+    MSGCODE_DAEMON_SUPERVISOR: "launchd",
+    MSGCODE_ENV_BOOTSTRAPPED: "1",
+    // LaunchAgent 是正式守护入口，不允许把 retired transport 从 shell env 回流进 daemon。
+    MSGCODE_TRANSPORTS: "feishu",
+    PATH: env.PATH ?? "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+  };
+
+  for (const key of RETIRED_DAEMON_ENV_KEYS) {
+    delete environment[key];
+  }
+
+  return environment;
+}
+
 export function resolveDaemonCommandConfig(env: NodeJS.ProcessEnv = process.env): {
   programArguments: string[];
   workingDirectory: string;
@@ -105,17 +124,10 @@ export function resolveDaemonCommandConfig(env: NodeJS.ProcessEnv = process.env)
     throw new Error(`缺少 tsx 运行时：${TSX_CLI}`);
   }
 
-  const environment: Record<string, string | undefined> = {
-    ...env,
-    LOG_CONSOLE: "false",
-    MSGCODE_DAEMON_SUPERVISOR: "launchd",
-    PATH: env.PATH ?? "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
-  };
-
   return {
     programArguments: [process.execPath, TSX_CLI, DAEMON_SCRIPT],
     workingDirectory: PROJECT_ROOT,
-    environment,
+    environment: resolveDaemonEnvironment(env),
   };
 }
 

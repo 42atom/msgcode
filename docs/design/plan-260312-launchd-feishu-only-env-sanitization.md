@@ -1,0 +1,97 @@
+# launchd 守护环境收口为 Feishu-only
+
+Issue: 0096
+
+## Problem
+
+正式 runtime 已经收口为 Feishu-only，但 `launchd` 守护安装链仍会把整个 `process.env` 原样写进 LaunchAgent plist。这样一来，只要用户 shell 或 `~/.config/msgcode/.env` 里还残留 `MSGCODE_TRANSPORTS=imsg,feishu`，下一次 `msgcode start/restart` 就会把旧值重新写回守护环境，导致 daemon 在 bootstrapped 入口直接因 sunset 校验失败。
+
+## Occam Check
+
+1. 不加它，系统具体坏在哪？
+   - `msgcode start/restart` 会持续生成带脏 transport 的 LaunchAgent，daemon 表面“没反应”，实则每次启动即失败。
+2. 用更少的层能不能解决？
+   - 能。只在 `launchd` 环境生成处做最小收口，不新增控制层、不改 daemon 主链。
+3. 这个改动让主链数量变多了还是变少了？
+   - 变少了。它消掉的是“shell env -> launchd env -> daemon 崩溃”这条 legacy 回流旁路。
+
+## Decision
+
+采用最小修复：
+
+1. `src/runtime/launchd.ts`
+   - 生成 LaunchAgent 环境时强制写入 `MSGCODE_TRANSPORTS=feishu`
+   - 显式剥离 retired `IMSG_PATH` / `IMSG_DB_PATH`
+   - 保留其余现役 env，不引入大 allowlist
+2. `test/runtime.launchd.test.ts`
+   - 增加回归锁，验证 legacy transport/env 不得被持久化到 LaunchAgent
+3. 真实运行态验证
+   - 重写并重载一次 LaunchAgent
+   - 确认 `launchctl` 状态为 `running`
+   - 确认日志进入 `Feishu WS transport 已启动`
+
+## Alternatives
+
+### 方案 A：只手工改用户本地 plist/.env
+
+- 优点：最快
+- 缺点：下一次 `msgcode restart` 仍会复发
+
+### 方案 B：对 LaunchAgent 环境做全量 allowlist
+
+- 优点：理论上更干净
+- 缺点：风险高，容易误删当前实际需要的模型/API/path 变量
+
+### 方案 C：只收口 retired transport/env（推荐）
+
+- 优点：最小、直接、足够解决真实故障
+
+## Plan
+
+1. 真相源
+   - 新建 `issues/0096-launchd-feishu-only-env-sanitization.md`
+   - 新建本 plan 文档
+2. 代码
+   - 修改 `src/runtime/launchd.ts`
+   - 增加最小 daemon env 收口 helper
+3. 测试
+   - 更新 `test/runtime.launchd.test.ts`
+4. 验证
+   - `bun test test/runtime.launchd.test.ts`
+   - `npx tsc --noEmit`
+   - 真实重写 LaunchAgent 并检查 `launchctl print` + 最新日志
+5. 文档
+   - 更新 `issues/0096...` notes
+   - 更新 `docs/CHANGELOG.md`
+
+## Risks
+
+1. 剥离 env 过多，导致 daemon 缺少现役配置
+   - 缓解：只剥离明确 retired 的 `IMSG_*`，其余不动
+2. 启动主链与手工本地配置再次漂移
+   - 缓解：真实重写一次 LaunchAgent，不只跑单元测试
+3. 旧 shell 里仍留 `MSGCODE_TRANSPORTS=imsg*`
+   - 缓解：LaunchAgent 生成口径固定覆盖为 `feishu`
+
+## Test Plan
+
+1. 单元回归
+   - `test/runtime.launchd.test.ts`
+2. 编译门槛
+   - `npx tsc --noEmit`
+3. 真实运行态
+   - `launchctl print gui/$(id -u)/ai.msgcode.daemon`
+   - `tail -n 20 ~/.config/msgcode/log/{daemon.stdout.log,daemon.stderr.log,msgcode.log}`
+
+## Progress
+
+- 已完成 `src/runtime/launchd.ts` 最小收口：LaunchAgent 环境固定写入 `MSGCODE_TRANSPORTS=feishu`
+- 已剥离 `IMSG_PATH` / `IMSG_DB_PATH`，避免 retired iMessage 启动变量继续回流到 daemon
+- 已补 `test/runtime.launchd.test.ts` 回归锁
+- 已通过 targeted tests、`npx tsc --noEmit`、`npm run docs:check`
+- 已用真实 `node --import tsx src/cli.ts restart` 重写并重启 LaunchAgent
+- 当前运行态验证通过：
+  - `launchctl print gui/$(id -u)/ai.msgcode.daemon` -> `active count = 1`, `state = running`
+  - `msgcode.log` 已出现 `Feishu WS transport 已启动`
+
+（章节级）评审意见：[留空,用户将给出反馈]

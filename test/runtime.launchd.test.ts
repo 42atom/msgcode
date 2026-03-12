@@ -57,4 +57,19 @@ last exit reason = crashed
     expect(config.environment.LOG_CONSOLE).toBe("false");
     expect(config.environment.MSGCODE_DAEMON_SUPERVISOR).toBe("launchd");
   });
+
+  it("应在 launchd 守护环境中强制收口为 Feishu-only，并剥离 retired imsg env", () => {
+    const config = resolveDaemonCommandConfig({
+      ...process.env,
+      PATH: "/opt/homebrew/bin:/usr/bin:/bin",
+      MSGCODE_TRANSPORTS: "imsg,feishu",
+      IMSG_PATH: "/tmp/imsg",
+      IMSG_DB_PATH: "/tmp/chat.db",
+    });
+
+    expect(config.environment.MSGCODE_TRANSPORTS).toBe("feishu");
+    expect(config.environment.MSGCODE_ENV_BOOTSTRAPPED).toBe("1");
+    expect(config.environment.IMSG_PATH).toBeUndefined();
+    expect(config.environment.IMSG_DB_PATH).toBeUndefined();
+  });
 });
