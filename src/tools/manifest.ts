@@ -625,7 +625,7 @@ export function renderLlmToolIndex(toolNames: ToolName[]): string {
     lines.push(`- ${manifest.name}: ${manifest.description}`);
   }
 
-  lines.push("重要边界：skill 名不是工具名。禁止把 file、memory、thread、todo、cron、media、gen、banana-pro-image-gen 当作工具名。");
+  lines.push("重要边界：skill 名不是工具名。禁止把 file、memory、thread、todo、cron、gen、banana-pro-image-gen 当作工具名。");
   if (toolNames.includes("help_docs")) {
     lines.push("如果你不确定 msgcode CLI 的命令名、参数或输出合同，先调用 help_docs，再决定要不要 read_file / bash / browser / feishu_send_file。");
   }

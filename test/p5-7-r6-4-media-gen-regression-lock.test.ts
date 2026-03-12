@@ -1,9 +1,9 @@
 /**
- * msgcode: P5.7-R6-4 Media/Gen 回归锁测试
+ * msgcode: P5.7-R6-4 Gen 回归锁测试
  *
  * 目标：
- * - 验证 help-docs --json 完整暴露 media/gen 合同
- * - 回归锁：错误码枚举与参数口径冻结
+ * - 验证 help-docs --json 只暴露 gen 合同，不再暴露 retired media
+ * - 回归锁：gen 错误码枚举与参数口径冻结
  * - 全行为断言，禁止源码字符串匹配
  */
 
@@ -51,15 +51,12 @@ function findCommand(commands: ReturnType<typeof getHelpDocsOutput>["commands"],
 // 测试
 // ============================================
 
-describe("P5.7-R6-4: Media/Gen 回归锁", () => {
+describe("P5.7-R6-4: Gen 回归锁", () => {
   describe("合同可发现锁", () => {
-    it("help-docs --json 必须包含 msgcode media screen 合同", () => {
+    it("help-docs --json 不应再包含 msgcode media screen 合同", () => {
       const { commands } = getHelpDocsOutput();
       const cmd = findCommand(commands, "msgcode media screen");
-
-      expect(cmd).toBeDefined();
-      expect(cmd?.description).toContain("截图");
-      expect(cmd?.options?.optional).toHaveProperty("--output");
+      expect(cmd).toBeUndefined();
     });
 
     it("help-docs --json 必须包含 msgcode gen image 合同", () => {
@@ -99,20 +96,6 @@ describe("P5.7-R6-4: Media/Gen 回归锁", () => {
       expect(cmd?.description).toContain("音乐生成");
       expect(cmd?.options?.required).toHaveProperty("--prompt");
       expect(cmd?.options?.optional).toHaveProperty("--format");
-    });
-  });
-
-  describe("Media 错误码枚举锁", () => {
-    it("media screen 错误码必须冻结为固定集合", () => {
-      const { commands } = getHelpDocsOutput();
-      const cmd = findCommand(commands, "msgcode media screen");
-
-      expect(cmd?.errorCodes).toBeDefined();
-      expect(cmd?.errorCodes).toContain("MEDIA_SCREEN_FAILED");
-      expect(cmd?.errorCodes).toContain("MEDIA_OUTPUT_PATH_INVALID");
-
-      // 锁定数量
-      expect(cmd?.errorCodes?.length).toBe(2);
     });
   });
 
@@ -177,12 +160,10 @@ describe("P5.7-R6-4: Media/Gen 回归锁", () => {
   });
 
   describe("参数口径锁", () => {
-    it("media screen 必填参数应该为空（全部可选）", () => {
+    it("media screen 必须保持不在 help-docs 合同里", () => {
       const { commands } = getHelpDocsOutput();
       const cmd = findCommand(commands, "msgcode media screen");
-
-      const requiredKeys = Object.keys(cmd?.options?.required || {});
-      expect(requiredKeys.length).toBe(0);
+      expect(cmd).toBeUndefined();
     });
 
     it("gen image 必填参数口径必须冻结", () => {
@@ -223,14 +204,10 @@ describe("P5.7-R6-4: Media/Gen 回归锁", () => {
   });
 
   describe("输出结构锁", () => {
-    it("media screen 输出结构必须冻结", () => {
+    it("media screen 输出合同必须保持删除状态", () => {
       const { commands } = getHelpDocsOutput();
       const cmd = findCommand(commands, "msgcode media screen");
-
-      expect(cmd?.output).toBeDefined();
-      expect(cmd?.output).toHaveProperty("path");
-      expect(cmd?.output).toHaveProperty("filename");
-      expect(cmd?.output).toHaveProperty("capturedAt");
+      expect(cmd).toBeUndefined();
     });
 
     it("gen image 输出结构必须冻结", () => {
@@ -278,13 +255,13 @@ describe("P5.7-R6-4: Media/Gen 回归锁", () => {
   });
 
   describe("命令数量回归锁", () => {
-    it("help-docs 必须包含至少 5 个 media/gen 命令", () => {
+    it("help-docs 必须只包含 4 个 gen 命令，不应再有 media 命令", () => {
       const { commands } = getHelpDocsOutput();
 
       const mediaCommands = commands.filter((cmd) => cmd.name.startsWith("msgcode media"));
       const genCommands = commands.filter((cmd) => cmd.name.startsWith("msgcode gen"));
 
-      expect(mediaCommands.length).toBe(1); // screen
+      expect(mediaCommands.length).toBe(0);
       expect(genCommands.length).toBe(4); // image, selfie, tts, music
     });
   });

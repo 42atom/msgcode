@@ -5,7 +5,7 @@
  *
  * ⚠️ 单真相源说明（2026-03-11）：
  * - 正式技能真相源：`src/skills/runtime/` → `~/.config/msgcode/skills/`
- * - repo 侧仅保留 `system-info` 这条最小 auto skill 兼容链
+ * - repo 侧 auto skill 已退役，仅保留最小兼容导出
  * - 不再导出历史 registry / orchestrator 伪入口
  */
 

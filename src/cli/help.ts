@@ -9,14 +9,10 @@
 import { Command } from "commander";
 import { randomUUID } from "node:crypto";
 import type { Envelope, Diagnostic } from "../memory/types.js";
-import { getFileFindContract, getFileReadContract, getFileWriteContract, getFileDeleteContract, getFileMoveContract, getFileCopyContract } from "./file.js";
-import { getWebCommandContract } from "./web.js";
-import { getSystemCommandContract } from "./system.js";
 import { getMemoryAddContract, getMemoryIndexContract, getMemorySearchContract, getMemoryGetContract, getMemoryStatsContract } from "./memory.js";
 import { getThreadListContract, getThreadMessagesContract, getThreadActiveContract, getThreadSwitchContract } from "./thread.js";
 import { getTodoAddContract, getTodoListContract, getTodoDoneContract } from "./todo.js";
 import { getScheduleAddContract, getScheduleListContract, getScheduleRemoveContract, getScheduleEnableContract, getScheduleDisableContract } from "./schedule.js";
-import { getMediaScreenContract } from "./media.js";
 import { getGenImageContract, getGenSelfieContract } from "./gen-image.js";
 import { getGenTtsContract, getGenMusicContract } from "./gen-audio.js";
 import { getBrowserCommandContracts } from "./browser.js";
@@ -194,17 +190,6 @@ export function createHelpDocsCommand(): Command {
 
 function getAllHelpCommandContracts(): Record<string, unknown>[] {
   return [
-    // File 命令组（R3 主链；legacy send 已退役，不再公开暴露）
-    getFileFindContract() as Record<string, unknown>,
-    getFileReadContract() as Record<string, unknown>,
-    getFileWriteContract() as Record<string, unknown>,
-    getFileDeleteContract() as Record<string, unknown>,
-    getFileMoveContract() as Record<string, unknown>,
-    getFileCopyContract() as Record<string, unknown>,
-    // Web 命令组（P5.7-R2）
-    ...(getWebCommandContract() as Record<string, unknown>[]),
-    // System 命令组（P5.7-R2 + R3-4）
-    ...(getSystemCommandContract() as Record<string, unknown>[]),
     // Memory 命令组（P5.7-R4-1）
     getMemoryAddContract() as Record<string, unknown>,
     getMemoryIndexContract() as Record<string, unknown>,
@@ -226,8 +211,6 @@ function getAllHelpCommandContracts(): Record<string, unknown>[] {
     getScheduleRemoveContract() as Record<string, unknown>,
     getScheduleEnableContract() as Record<string, unknown>,
     getScheduleDisableContract() as Record<string, unknown>,
-    // Media 命令组（P5.7-R6-1）
-    getMediaScreenContract() as Record<string, unknown>,
     // Gen Image 命令组（P5.7-R6-2）
     getGenImageContract() as Record<string, unknown>,
     getGenSelfieContract() as Record<string, unknown>,

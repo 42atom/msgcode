@@ -15,12 +15,6 @@
       "description": "Google Veo 视频生成说明书。需要调用 Gemini/Veo 生成文生视频或图生视频时按需读取。"
     },
     {
-      "id": "screenshot",
-      "name": "Screenshot",
-      "entry": "~/.config/msgcode/skills/optional/screenshot/SKILL.md",
-      "description": "本地截图说明书。需要采集当前屏幕并落盘为截图证据时按需读取。"
-    },
-    {
       "id": "scrapling",
       "name": "Scrapling",
       "entry": "~/.config/msgcode/skills/optional/scrapling/SKILL.md",

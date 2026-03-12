@@ -90,6 +90,16 @@ describe("P5.7-R6 HOTFIX: gen 入口 + tools 缺省值", () => {
     expect(out).not.toContain("gen-audio");
   });
 
+  it("CLI: `msgcode gen-image --help` 应回落到根帮助且不公开 gen-image", () => {
+    const out = execCliStdoutIsolated(["gen-image", "--help"]);
+    expect(out).not.toContain("\n  gen-image");
+  });
+
+  it("CLI: `msgcode gen-audio --help` 应回落到根帮助且不公开 gen-audio", () => {
+    const out = execCliStdoutIsolated(["gen-audio", "--help"]);
+    expect(out).not.toContain("\n  gen-audio");
+  });
+
   it("CLI: `msgcode gen image --prompt '' --json` 应返回固定错误码", () => {
     const res = runCliIsolated(["gen", "image", "--prompt", "", "--json"]);
     expect(res.status).toBe(1);
@@ -97,10 +107,16 @@ describe("P5.7-R6 HOTFIX: gen 入口 + tools 缺省值", () => {
     expect(output).toContain("GEN_INVALID_PROMPT");
   });
 
-  it("CLI: `msgcode jobs --help` 应兼容映射到 job 主链", () => {
+  it("CLI: `msgcode jobs --help` 应回落到根帮助且不公开 jobs", () => {
     const out = execCliStdoutIsolated(["jobs", "--help"]);
-    expect(out).toContain("Jobs 管理");
-    expect(out).toContain("add");
-    expect(out).toContain("list");
+    expect(out).not.toContain("\n  jobs");
+  });
+
+  it("CLI: `msgcode jobs run 123 --json` 应返回 unknown command", () => {
+    const res = runCliIsolated(["jobs", "run", "123", "--json"]);
+    expect(res.status).toBe(1);
+    const output = `${res.stdout ?? ""}${res.stderr ?? ""}`;
+    expect(output).toContain("unknown command");
+    expect(output).toContain("jobs");
   });
 });

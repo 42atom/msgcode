@@ -119,36 +119,29 @@ describe("P5.7-R1c: CLI 基座能力硬门回归锁", () => {
       expect(names).not.toContain("file send");
     });
 
-    it("file send retired 错误码固定为 FILE_SEND_RETIRED", () => {
+    it("file send 现在应直接返回 unknown command", () => {
       const result = runCli(["file", "send", "--json"]);
       expect(result.status).toBe(1);
+      const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+      expect(output).toContain("unknown command");
+      expect(output).toContain("file");
+    });
 
+    it("help-docs 不应再暴露 file/system/web/media 包装层", () => {
+      const result = runCli(["help-docs", "--json"]);
       const envelope = JSON.parse(result.stdout);
-      expect(envelope.data.errorCode).toBe("FILE_SEND_RETIRED");
-    });
+      const names = envelope.data.commands.map((command: any) => command.name);
 
-    it("web search 合同包含错误码", () => {
-      const { getWebCommandContract } = require("../src/cli/web.js");
-      const contracts = getWebCommandContract();
-      const searchContract = contracts.find((c: any) => c.name === "web search");
-
-      expect(searchContract.errorCodes).toContain("OK");
-      expect(searchContract.errorCodes).toContain("SEARCH_FAILED");
-    });
-
-    it("system info 合同包含错误码", () => {
-      const { getSystemCommandContract } = require("../src/cli/system.js");
-      const contracts = getSystemCommandContract();
-      const infoContract = contracts.find((c: any) => c.name === "system info");
-
-      expect(infoContract.errorCodes).toContain("OK");
-      expect(infoContract.errorCodes).toContain("INFO_FAILED");
+      expect(names.some((name: string) => name.startsWith("file "))).toBe(false);
+      expect(names.some((name: string) => name.startsWith("system "))).toBe(false);
+      expect(names.some((name: string) => name.startsWith("web "))).toBe(false);
+      expect(names.some((name: string) => name.startsWith("media "))).toBe(false);
     });
   });
 
   describe("R1c-4: 退出码规范", () => {
     it("file helpers 的 exitCode 映射正确", () => {
-      const { createEnvelope } = require("../src/cli/file.js");
+      const { createEnvelope } = require("../src/cli/command-runner.js");
 
       const passEnvelope = createEnvelope("test", Date.now(), "pass", { ok: true });
       expect(passEnvelope.exitCode).toBe(0);

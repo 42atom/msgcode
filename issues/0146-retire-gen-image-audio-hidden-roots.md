@@ -1,0 +1,64 @@
+---
+id: 0146
+title: 退役 gen-image 与 gen-audio 隐藏根入口
+status: done
+owner: agent
+labels: [architecture, cli, docs, refactor]
+risk: low
+scope: 生成能力 CLI 隐藏兼容根入口与相关测试口径
+plan_doc: docs/design/plan-260313-retire-gen-image-audio-hidden-roots.md
+links: []
+---
+
+## Context
+
+`msgcode --help` 已经只公开 `gen`，但 `gen-image` 与 `gen-audio` 这两个历史根命令仍可 direct invoke：
+
+- `msgcode gen-image --help`
+- `msgcode gen-audio --help`
+
+它们不是新的能力边界，只是 `msgcode gen image/selfie/tts/music` 的重复入口，属于隐藏双口径。
+
+## Goal / Non-Goals
+
+- Goal: 退役 `gen-image` 与 `gen-audio` 隐藏根入口
+- Goal: direct invoke 返回显式迁移提示，统一引导回 `msgcode gen ...`
+- Goal: 更新相关合同测试与 changelog
+- Non-Goals: 本轮不改 `msgcode gen image/selfie/tts/music` 正式合同
+- Non-Goals: 本轮不改生成能力的 provider/API 实现
+
+## Plan
+
+- [x] 创建 Plan 文档，冻结隐藏根入口退役决策
+- [x] 将 `src/cli/gen-image.ts` 与 `src/cli/gen-audio.ts` 增加 retired compat root
+- [x] 更新 `src/cli.ts`，direct invoke 不再加载旧根命令组
+- [x] 更新相关测试并执行 targeted tests、`npx tsc --noEmit` 与 `npm run docs:check`
+- [x] 更新 issue notes 与 `docs/CHANGELOG.md`
+
+## Acceptance Criteria
+
+1. `msgcode gen-image --help` 不再公开 image/selfie 子命令，而是 retired 提示
+2. `msgcode gen-audio --help` 不再公开 tts/music 子命令，而是 retired 提示
+3. 正式生成合同仍只通过 `msgcode gen image/selfie/tts/music` 暴露
+
+## Notes
+
+- 关键证据：
+  - `src/cli/gen-image.ts`
+  - `src/cli/gen-audio.ts`
+  - `src/cli.ts`
+  - `test/p5-7-r6-2-gen-image-contract.test.ts`
+  - `test/p5-7-r6-3-gen-audio-contract.test.ts`
+  - `test/p5-7-r6-hotfix-gen-entry-tools-default.test.ts`
+- 2026-03-13:
+  - `msgcode gen-image` 与 `msgcode gen-audio` 已从隐藏活入口改为 retired compat root
+  - direct invoke 现在只返回迁移提示，并显式引导回 `msgcode gen image/selfie/tts/music`
+  - 正式生成合同与 `help-docs --json` 保持不变，仍只暴露 `msgcode gen ...`
+  - 验证：
+    - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r6-hotfix-gen-entry-tools-default.test.ts test/p5-7-r6-2-gen-image-contract.test.ts test/p5-7-r6-3-gen-audio-contract.test.ts`
+    - `npx tsc --noEmit`
+    - `npm run docs:check`
+
+## Links
+
+- Plan: /Users/admin/GitProjects/msgcode/docs/design/plan-260313-retire-gen-image-audio-hidden-roots.md

@@ -71,32 +71,6 @@ const program = new Command();
 
 program.name("msgcode").description("msgcode - personal agent runtime on macOS").version(getVersion());
 
-function normalizeLegacyCliArgs(argv: string[]): string[] {
-  if (argv.length < 2) return argv;
-
-  const [top, subcommand, ...rest] = argv;
-  if (top === "memory" && subcommand === "remember") {
-    return [top, "add", ...rest];
-  }
-  if (top === "memory" && subcommand === "status") {
-    return [top, "stats", ...rest];
-  }
-  if (top === "browser" && subcommand === "gmail-readonly") {
-    return ["browser-gmail-readonly", ...rest];
-  }
-  if (top === "file" && subcommand === "send") {
-    return ["file-send", ...rest];
-  }
-  if (top === "jobs") {
-    return ["job", subcommand, ...rest].filter(Boolean) as string[];
-  }
-  if (top === "skills") {
-    return ["skill", subcommand, ...rest].filter(Boolean) as string[];
-  }
-
-  return argv;
-}
-
 program
   .command("start [mode]")
   .description("启动 msgcode（debug 模式前台运行，否则后台 daemon；支持 -d 调试全开）")
@@ -295,23 +269,6 @@ async function loadRunCommands() {
   program.addCommand(createRunCommand());
 }
 
-// Skill 命令组（M6）
-async function loadSkillCommands() {
-  const { createSkillCommand } = await import("./cli/skills.js");
-  program.addCommand(createSkillCommand());
-}
-
-// File 命令组（P5.7-R1）
-async function loadFileCommands() {
-  const { createFileCommand } = await import("./cli/file.js");
-  program.addCommand(createFileCommand());
-}
-
-async function loadFileCompatCommands() {
-  const { createFileSendCompatCommand } = await import("./cli/file.js");
-  program.addCommand(createFileSendCompatCommand());
-}
-
 // Help-Docs 命令（P5.7-R1：机器可读帮助）
 async function loadHelpDocsCommand() {
   const { createHelpDocsCommand } = await import("./cli/help.js");
@@ -321,18 +278,6 @@ async function loadHelpDocsCommand() {
 async function loadSubagentCommands() {
   const { createSubagentCommand } = await import("./cli/subagent.js");
   program.addCommand(createSubagentCommand());
-}
-
-// Web 命令组（P5.7-R2）
-async function loadWebCommands() {
-  const { createWebCommand } = await import("./cli/web.js");
-  program.addCommand(createWebCommand());
-}
-
-// System 命令组（P5.7-R2）
-async function loadSystemCommands() {
-  const { createSystemCommand } = await import("./cli/system.js");
-  program.addCommand(createSystemCommand());
 }
 
 // Thread 命令组（P5.7-R4-2）
@@ -353,33 +298,10 @@ async function loadScheduleCommands() {
   program.addCommand(createScheduleCommand());
 }
 
-// Media 命令组（P5.7-R6-1）
-async function loadMediaCommands() {
-  const { createMediaCommand } = await import("./cli/media.js");
-  program.addCommand(createMediaCommand());
-}
-
-// Gen Image 命令组（P5.7-R6-2）
-async function loadGenImageCommands() {
-  const { createGenImageCommandGroup } = await import("./cli/gen-image.js");
-  program.addCommand(createGenImageCommandGroup());
-}
-
-// Gen Audio 命令组（P5.7-R6-3）
-async function loadGenAudioCommands() {
-  const { createGenAudioCommandGroup } = await import("./cli/gen-audio.js");
-  program.addCommand(createGenAudioCommandGroup());
-}
-
 // Browser 命令组（P5.7-R7A）
 async function loadBrowserCommands() {
   const { createBrowserCommand } = await import("./cli/browser.js");
   program.addCommand(createBrowserCommand());
-}
-
-async function loadBrowserCompatCommands() {
-  const { createBrowserGmailReadonlyCompatCommand } = await import("./cli/browser.js");
-  program.addCommand(createBrowserGmailReadonlyCompatCommand());
 }
 
 // Gen 命令组（P5.7-R6 命令入口统一）
@@ -401,13 +323,13 @@ async function loadGenCommands() {
 async function main() {
   // P0: 仅按需加载子命令，避免在"未初始化配置"时也强制 import 导致 CLI 直接崩溃。
   // 例：用户首次使用时需要能运行 `msgcode init` 来生成 ~/.config/msgcode/.env。
-  const argv = normalizeLegacyCliArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
   const top = (argv[0] ?? "").toLowerCase();
 
   if (top === "memory") {
     await loadMemoryCommands();
   }
-  if (top === "job" || top === "jobs") {
+  if (top === "job") {
     await loadJobCommands();
   }
   if (top === "preflight") {
@@ -415,21 +337,6 @@ async function main() {
   }
   if (top === "run") {
     await loadRunCommands();
-  }
-  if (top === "skill" || top === "skills") {
-    await loadSkillCommands();
-  }
-  if (top === "file") {
-    await loadFileCommands();
-  }
-  if (top === "file-send") {
-    await loadFileCompatCommands();
-  }
-  if (top === "web") {
-    await loadWebCommands();
-  }
-  if (top === "system") {
-    await loadSystemCommands();
   }
   if (top === "thread") {
     await loadThreadCommands();
@@ -440,26 +347,14 @@ async function main() {
   if (top === "schedule") {
     await loadScheduleCommands();
   }
-  if (top === "media") {
-    await loadMediaCommands();
-  }
   if (top === "gen") {
     await loadGenCommands();
-  }
-  if (top === "gen-image") {
-    await loadGenImageCommands();
-  }
-  if (top === "gen-audio") {
-    await loadGenAudioCommands();
   }
   if (top === "browser") {
     await loadBrowserCommands();
   }
   if (top === "subagent") {
     await loadSubagentCommands();
-  }
-  if (top === "browser-gmail-readonly") {
-    await loadBrowserCompatCommands();
   }
   if (top === "help-docs") {
     await loadHelpDocsCommand();
@@ -471,13 +366,9 @@ async function main() {
     await loadJobCommands();
     await loadPreflightCommands();
     await loadRunCommands();
-    await loadFileCommands();
-    await loadWebCommands();
-    await loadSystemCommands();
     await loadThreadCommands();
     await loadTodoCommands();
     await loadScheduleCommands();
-    await loadMediaCommands();
     await loadGenCommands();
     await loadBrowserCommands();
     await loadSubagentCommands();

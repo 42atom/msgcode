@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { execCliStdoutIsolated } from "./helpers/cli-process.js";
+import { execCliStdoutIsolated, runCliIsolated } from "./helpers/cli-process.js";
 
 // ============================================
 // 测试
@@ -95,15 +95,6 @@ describe("P5.7-R6-3: Gen Audio 命令合同", () => {
       expect(cmd.description()).toContain("音乐生成");
     });
 
-    it("createGenAudioCommandGroup 应该包含 tts 和 music 子命令", async () => {
-      const { createGenAudioCommandGroup } = await import("../src/cli/gen-audio.js");
-      const cmd = createGenAudioCommandGroup();
-
-      expect(cmd.name()).toBe("gen-audio");
-      const subCommands = cmd.commands.map((c) => c.name());
-      expect(subCommands).toContain("tts");
-      expect(subCommands).toContain("music");
-    });
   });
 
   describe("help-docs 集成验证", () => {
@@ -165,11 +156,18 @@ describe("P5.7-R6-3: Gen Audio 命令合同", () => {
   });
 
   describe("命令行帮助验证", () => {
-    it("gen-audio --help 应该显示 tts 和 music 子命令", () => {
+    it("gen-audio --help 应回落到根帮助且不公开 gen-audio", () => {
       const output = execCliStdoutIsolated(["gen-audio", "--help"]);
 
-      expect(output).toContain("tts");
-      expect(output).toContain("music");
+      expect(output).not.toContain("\n  gen-audio");
+    });
+
+    it("gen-audio tts --json 应返回 unknown command", () => {
+      const result = runCliIsolated(["gen-audio", "tts", "--json"]);
+      expect(result.status).toBe(1);
+      const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+      expect(output).toContain("unknown command");
+      expect(output).toContain("gen-audio");
     });
   });
 });

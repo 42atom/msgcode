@@ -37,7 +37,6 @@ describe("P5.7-R13: runtime skill sync", () => {
       "file",
       "thread",
       "todo",
-      "media",
       "gen",
       "banana-pro-image-gen",
       "patchright-browser",
@@ -51,7 +50,7 @@ describe("P5.7-R13: runtime skill sync", () => {
       expect(result.exitCode).toBe(0);
     }
 
-    const optionalSkillIds = ["twitter-media", "veo-video", "screenshot", "scrapling", "reactions", "subagent"];
+    const optionalSkillIds = ["twitter-media", "veo-video", "scrapling", "reactions", "subagent"];
 
     for (const skillId of optionalSkillIds) {
       const result = Bun.spawnSync(
@@ -112,16 +111,16 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(result.runtimeSkillIds).toContain("file");
     expect(result.runtimeSkillIds).toContain("thread");
     expect(result.runtimeSkillIds).toContain("todo");
-    expect(result.runtimeSkillIds).toContain("media");
     expect(result.runtimeSkillIds).toContain("gen");
     expect(result.runtimeSkillIds).toContain("banana-pro-image-gen");
     expect(result.runtimeSkillIds).not.toContain("zai-vision-mcp");
+    expect(result.runtimeSkillIds).not.toContain("media");
     expect(result.optionalSkillIds).toContain("twitter-media");
     expect(result.optionalSkillIds).toContain("veo-video");
-    expect(result.optionalSkillIds).toContain("screenshot");
     expect(result.optionalSkillIds).toContain("scrapling");
     expect(result.optionalSkillIds).toContain("reactions");
     expect(result.optionalSkillIds).toContain("subagent");
+    expect(result.optionalSkillIds).not.toContain("screenshot");
     expect(result.copiedFiles).toBeGreaterThanOrEqual(10);
     expect(result.indexUpdated).toBe(true);
 
@@ -142,7 +141,6 @@ describe("P5.7-R13: runtime skill sync", () => {
     const threadDoc = await readFile(join(userSkillsDir, "thread", "SKILL.md"), "utf-8");
     const todoDoc = await readFile(join(userSkillsDir, "todo", "SKILL.md"), "utf-8");
     const todoSh = await readFile(join(userSkillsDir, "todo", "main.sh"), "utf-8");
-    const mediaDoc = await readFile(join(userSkillsDir, "media", "SKILL.md"), "utf-8");
     const genDoc = await readFile(join(userSkillsDir, "gen", "SKILL.md"), "utf-8");
     const bananaDoc = await readFile(join(userSkillsDir, "banana-pro-image-gen", "SKILL.md"), "utf-8");
     const bananaSh = await readFile(join(userSkillsDir, "banana-pro-image-gen", "main.sh"), "utf-8");
@@ -157,7 +155,6 @@ describe("P5.7-R13: runtime skill sync", () => {
       skills: Array<{ id: string; entry?: string; description?: string }>;
     };
     const twitterMediaDoc = await readFile(join(userSkillsDir, "optional", "twitter-media", "SKILL.md"), "utf-8");
-    const screenshotDoc = await readFile(join(userSkillsDir, "optional", "screenshot", "SKILL.md"), "utf-8");
     const subagentDoc = await readFile(join(userSkillsDir, "optional", "subagent", "SKILL.md"), "utf-8");
     const mergedIndex = JSON.parse(await readFile(join(userSkillsDir, "index.json"), "utf-8")) as {
       skills: Array<{ id: string; entry?: string; description?: string }>;
@@ -213,7 +210,8 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(memorySh).toContain('--workspace "$PWD"');
     expect(fileDoc).toContain("# file skill");
     expect(fileDoc).toContain("移动/复制文件");
-    expect(fileDoc).toContain("msgcode file find");
+    expect(fileDoc).toContain("原生 `read_file` 与 `bash`");
+    expect(fileDoc).toContain("sed -n '1,120p' README.md");
     expect(fileDoc).toContain("feishu_send_file");
     expect(existsSync(join(userSkillsDir, "file", "main.sh"))).toBe(false);
     expect(threadDoc).toContain("# thread skill");
@@ -224,10 +222,7 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(todoDoc).toContain("任务记录");
     expect(todoSh).toContain('exec msgcode todo "$sub"');
     expect(todoSh).toContain('--workspace "$PWD"');
-    expect(mediaDoc).toContain("# media skill");
-    expect(mediaDoc).toContain("截图");
-    expect(mediaDoc).toContain("msgcode media screen");
-    expect(existsSync(join(userSkillsDir, "media", "main.sh"))).toBe(false);
+    expect(existsSync(join(userSkillsDir, "media"))).toBe(false);
     expect(genDoc).toContain("# gen skill");
     expect(genDoc).toContain("图片生成");
     expect(genDoc).toContain("msgcode gen image");
@@ -238,9 +233,9 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(bananaScript).toContain('path.join(projectRoot, "AIDOCS/banana-images")');
     expect(twitterMediaDoc).toContain("twitter-media skill");
     expect(twitterMediaDoc).toContain("api.fxtwitter.com");
-    expect(screenshotDoc).toContain("msgcode media screen");
+    expect(existsSync(join(userSkillsDir, "optional", "screenshot"))).toBe(false);
     expect(subagentDoc).toContain("subagent skill");
-    expect(subagentDoc).toContain("不得假装已经委派成功");
+    expect(subagentDoc).toContain("假装已经把任务派出去了");
     expect(subagentDoc).toContain("贪吃蛇 HTML 游戏");
     expect(skillDoc).toContain("patchright-browser skill");
     expect(skillDoc).toContain("name: patchright-browser");
@@ -275,23 +270,23 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("file");
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("thread");
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("todo");
-    expect(mergedIndex.skills.map((skill) => skill.id)).toContain("media");
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("gen");
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("banana-pro-image-gen");
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("twitter-media");
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("veo-video");
-    expect(mergedIndex.skills.map((skill) => skill.id)).toContain("screenshot");
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("scrapling");
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("reactions");
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("subagent");
     expect(mergedIndex.skills.map((skill) => skill.id)).not.toContain("pinchtab-browser");
     expect(mergedIndex.skills.map((skill) => skill.id)).not.toContain("zai-vision-mcp");
+    expect(mergedIndex.skills.map((skill) => skill.id)).not.toContain("media");
+    expect(mergedIndex.skills.map((skill) => skill.id)).not.toContain("screenshot");
     expect(optionalIndex.skills.map((skill) => skill.id)).toContain("twitter-media");
     expect(optionalIndex.skills.map((skill) => skill.id)).toContain("veo-video");
-    expect(optionalIndex.skills.map((skill) => skill.id)).toContain("screenshot");
     expect(optionalIndex.skills.map((skill) => skill.id)).toContain("scrapling");
     expect(optionalIndex.skills.map((skill) => skill.id)).toContain("reactions");
     expect(optionalIndex.skills.map((skill) => skill.id)).toContain("subagent");
+    expect(optionalIndex.skills.map((skill) => skill.id)).not.toContain("screenshot");
     expect(optionalIndex.skills.find((skill) => skill.id === "twitter-media")?.entry).toBe(
       "~/.config/msgcode/skills/optional/twitter-media/SKILL.md",
     );
@@ -312,7 +307,6 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(mergedIndex.skills.find((skill) => skill.id === "file")?.entry).toBe("~/.config/msgcode/skills/file/SKILL.md");
     expect(mergedIndex.skills.find((skill) => skill.id === "thread")?.entry).toBe("~/.config/msgcode/skills/thread/SKILL.md");
     expect(mergedIndex.skills.find((skill) => skill.id === "todo")?.entry).toBe("~/.config/msgcode/skills/todo/SKILL.md");
-    expect(mergedIndex.skills.find((skill) => skill.id === "media")?.entry).toBe("~/.config/msgcode/skills/media/SKILL.md");
     expect(mergedIndex.skills.find((skill) => skill.id === "gen")?.entry).toBe("~/.config/msgcode/skills/gen/SKILL.md");
     expect(mergedIndex.skills.find((skill) => skill.id === "banana-pro-image-gen")?.entry).toBe("~/.config/msgcode/skills/banana-pro-image-gen/SKILL.md");
     expect(mergedIndex.skills.find((skill) => skill.id === "patchright-browser")?.entry).toBe(
@@ -373,5 +367,24 @@ describe("P5.7-R13: runtime skill sync", () => {
 
     expect(existsSync(join(userSkillsDir, "patchright-browser", "main.sh"))).toBe(false);
     expect(existsSync(join(userSkillsDir, "vision-index", "main.sh"))).toBe(false);
+  });
+
+  it("应清退已退役的 media/screenshot skill 目录", async () => {
+    const userSkillsDir = await mkdtemp(join(tmpdir(), "msgcode-runtime-skills-retired-screen-"));
+    tempDirs.push(userSkillsDir);
+
+    await mkdir(join(userSkillsDir, "media"), { recursive: true });
+    await writeFile(join(userSkillsDir, "media", "SKILL.md"), "# legacy media\n", "utf-8");
+    await mkdir(join(userSkillsDir, "optional", "screenshot"), { recursive: true });
+    await writeFile(join(userSkillsDir, "optional", "screenshot", "SKILL.md"), "# legacy screenshot\n", "utf-8");
+
+    await syncRuntimeSkills({
+      sourceDir: runtimeSourceDir,
+      userSkillsDir,
+      overwrite: false,
+    });
+
+    expect(existsSync(join(userSkillsDir, "media"))).toBe(false);
+    expect(existsSync(join(userSkillsDir, "optional", "screenshot"))).toBe(false);
   });
 });

@@ -30,14 +30,20 @@ interface SkillIndexFile {
   skills: SkillIndexEntry[];
 }
 
-const RETIRED_RUNTIME_SKILL_IDS = new Set(["pinchtab-browser", "zai-vision-mcp"]);
-const RETIRED_RUNTIME_SKILL_PATHS = [
-  ["vision-index", "main.sh"],
-  ["file", "main.sh"],
-  ["gen", "main.sh"],
-  ["media", "main.sh"],
-  ["thread", "main.sh"],
-  ["patchright-browser", "main.sh"],
+const RETIRED_RUNTIME_SKILL_IDS = new Set([
+  "pinchtab-browser",
+  "zai-vision-mcp",
+  "media",
+  "screenshot",
+]);
+const RETIRED_SKILL_PATHS = [
+  { parts: ["vision-index", "main.sh"], recursive: false },
+  { parts: ["file", "main.sh"], recursive: false },
+  { parts: ["gen", "main.sh"], recursive: false },
+  { parts: ["thread", "main.sh"], recursive: false },
+  { parts: ["patchright-browser", "main.sh"], recursive: false },
+  { parts: ["media"], recursive: true },
+  { parts: ["optional", "screenshot"], recursive: true },
 ] as const;
 
 export interface RuntimeSkillSyncOptions {
@@ -138,8 +144,11 @@ async function copyDirectoryRecursive(
 }
 
 async function removeRetiredRuntimeFiles(userSkillsDir: string): Promise<void> {
-  for (const parts of RETIRED_RUNTIME_SKILL_PATHS) {
-    await rm(join(userSkillsDir, ...parts), { force: true });
+  for (const retiredPath of RETIRED_SKILL_PATHS) {
+    await rm(join(userSkillsDir, ...retiredPath.parts), {
+      force: true,
+      recursive: retiredPath.recursive,
+    });
   }
 }
 

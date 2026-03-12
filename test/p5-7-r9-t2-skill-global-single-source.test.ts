@@ -204,7 +204,7 @@ describe("P5.7-R9-T2: Skills global-only single source", () => {
       expect(observedSystemPrompt).toContain("- bash:");
       expect(observedSystemPrompt).toContain("skill 名不是工具名");
       expect(observedSystemPrompt).not.toContain("查记忆用 mem");
-      expect(observedSystemPrompt).toContain("禁止把 file、memory、thread、todo、cron、media、gen、banana-pro-image-gen 当作工具名");
+      expect(observedSystemPrompt).toContain("禁止把 file、memory、thread、todo、cron、gen、banana-pro-image-gen 当作工具名");
       expect(observedSystemPrompt).toContain("只有拿到本轮真实工具回执后");
       expect(observedSystemPrompt).toContain("不要编造旧错误、旧附件结果或旧视觉结论");
       expect(observedSystemPrompt).toContain("[技能系统]");

@@ -17,11 +17,6 @@ import {
   type BrowserOperation,
 } from "../runners/browser-patchright.js";
 import {
-  GMAIL_ERROR_CODES,
-  GmailReadonlyError,
-  runGmailReadonlyAcceptance,
-} from "../browser/gmail-readonly.js";
-import {
   CHROME_ROOT_ERROR_CODES,
   ChromeRootCommandError,
   ensureChromeRoot,
@@ -410,103 +405,6 @@ function createEvalCommand(): Command {
     });
 
   return cmd;
-}
-
-function createGmailReadonlyCommand(): Command {
-  const cmd = new Command("gmail-readonly");
-
-  cmd
-    .description("Gmail 收件箱只读摘要验收")
-    .option("--root-name <name>", "显式 Gmail Chrome rootName", "work-default")
-    .option("--mode <mode>", "运行模式：headed|headless", "headless")
-    .option("--timezone <tz>", "日期解释时区", "Asia/Singapore")
-    .option("--keep-open", "执行后不自动停止实例")
-    .option("--json", "JSON 格式输出")
-    .action(async (options) => {
-      const startTime = Date.now();
-      const command = "msgcode browser gmail-readonly";
-      const warnings: Diagnostic[] = [];
-      const errors: Diagnostic[] = [];
-
-      try {
-        const result = await runGmailReadonlyAcceptance({
-          rootName: options.rootName,
-          mode: options.mode,
-          timezone: options.timezone,
-          cleanup: !options.keepOpen,
-        });
-
-        const envelope = createEnvelope(command, startTime, "pass", result, warnings, errors);
-        if (options.json) {
-          console.log(JSON.stringify(envelope, null, 2));
-        } else {
-          console.log(result.summary);
-        }
-        process.exit(0);
-      } catch (error) {
-        const gmailError = error instanceof GmailReadonlyError
-          ? error
-          : new GmailReadonlyError(
-            GMAIL_ERROR_CODES.EXTRACTION_FAILED,
-            error instanceof Error ? error.message : String(error)
-          );
-
-        errors.push(createBrowserDiagnostic(gmailError.code, gmailError.message, gmailError.details));
-        const envelope = createEnvelope<Record<string, unknown>>(
-          command,
-          startTime,
-          "error",
-          {},
-          warnings,
-          errors
-        );
-        if (options.json) {
-          console.log(JSON.stringify(envelope, null, 2));
-        } else {
-          console.error(`${gmailError.code}: ${gmailError.message}`);
-        }
-        process.exit(1);
-      }
-    });
-
-  return cmd;
-}
-
-export function createBrowserGmailReadonlyCompatCommand(): Command {
-  const cmd = new Command("browser-gmail-readonly");
-
-  cmd
-    .description("内部兼容入口：browser gmail-readonly")
-    .allowUnknownOption(false)
-    .option("--root-name <name>", "显式 Gmail Chrome rootName", "work-default")
-    .option("--mode <mode>", "运行模式：headed|headless", "headless")
-    .option("--timezone <tz>", "日期解释时区", "Asia/Singapore")
-    .option("--keep-open", "执行后不自动停止实例")
-    .option("--json", "JSON 格式输出")
-    .action(async (options) => {
-      const legacy = createGmailReadonlyCommand();
-      await legacy.parseAsync(["node", "browser-gmail-readonly", ...buildGmailReadonlyCompatArgs(options)], {
-        from: "user",
-      });
-    });
-
-  return cmd;
-}
-
-function buildGmailReadonlyCompatArgs(options: {
-  rootName?: string;
-  mode?: string;
-  timezone?: string;
-  keepOpen?: boolean;
-  json?: boolean;
-}): string[] {
-  const args: string[] = [];
-  if (options.rootName) args.push("--root-name", options.rootName);
-  if (options.mode) args.push("--mode", options.mode);
-  if (options.timezone) args.push("--timezone", options.timezone);
-  if (options.keepOpen) args.push("--keep-open");
-  if (options.json) args.push("--json");
-  return args;
 }
 
 function createRootCommand(): Command {

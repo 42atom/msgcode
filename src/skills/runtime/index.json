@@ -48,7 +48,7 @@
       "id": "file",
       "name": "File",
       "entry": "~/.config/msgcode/skills/file/SKILL.md",
-      "description": "文件能力说明书。优先直接调用 msgcode file CLI，做查找、读取、写入、复制和移动；需要回传飞书时改用 feishu_send_file。"
+      "description": "文件能力说明书。本地文件操作直接使用 read_file 或 bash 搭配 rg/find/cat/sed/cp/mv/rm；需要回传飞书时改用 feishu_send_file。"
     },
     {
       "id": "thread",
@@ -61,12 +61,6 @@
       "name": "Todo",
       "entry": "~/.config/msgcode/skills/todo/SKILL.md",
       "description": "待办能力说明书。优先通过 todo wrapper 调用 msgcode todo CLI，在当前 workspace 记录、查看和完成待办。"
-    },
-    {
-      "id": "media",
-      "name": "Media",
-      "entry": "~/.config/msgcode/skills/media/SKILL.md",
-      "description": "媒体能力说明书。优先直接调用 msgcode media CLI 获取当前屏幕截图，并默认把产物落到 AIDOCS。"
     },
     {
       "id": "gen",

@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { execCliStdoutIsolated } from "./helpers/cli-process.js";
+import { execCliStdoutIsolated, runCliIsolated } from "./helpers/cli-process.js";
 
 // ============================================
 // 测试
@@ -94,15 +94,6 @@ describe("P5.7-R6-2: Gen Image 命令合同", () => {
       expect(cmd.description()).toContain("自拍");
     });
 
-    it("createGenImageCommandGroup 应该包含 image 和 selfie 子命令", async () => {
-      const { createGenImageCommandGroup } = await import("../src/cli/gen-image.js");
-      const cmd = createGenImageCommandGroup();
-
-      expect(cmd.name()).toBe("gen-image");
-      const subCommands = cmd.commands.map((c) => c.name());
-      expect(subCommands).toContain("image");
-      expect(subCommands).toContain("selfie");
-    });
   });
 
   describe("help-docs 集成验证", () => {
@@ -163,11 +154,18 @@ describe("P5.7-R6-2: Gen Image 命令合同", () => {
   });
 
   describe("命令行帮助验证", () => {
-    it("gen-image --help 应该显示 image 和 selfie 子命令", () => {
+    it("gen-image --help 应回落到根帮助且不公开 gen-image", () => {
       const output = execCliStdoutIsolated(["gen-image", "--help"]);
 
-      expect(output).toContain("image");
-      expect(output).toContain("selfie");
+      expect(output).not.toContain("\n  gen-image");
+    });
+
+    it("gen-image image --json 应返回 unknown command", () => {
+      const result = runCliIsolated(["gen-image", "image", "--json"]);
+      expect(result.status).toBe(1);
+      const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+      expect(output).toContain("unknown command");
+      expect(output).toContain("gen-image");
     });
   });
 });

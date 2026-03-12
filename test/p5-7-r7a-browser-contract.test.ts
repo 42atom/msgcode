@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import { execCliStdoutIsolated } from "./helpers/cli-process.js";
+import { execCliStdoutIsolated, runCliIsolated } from "./helpers/cli-process.js";
 
 describe("P5.7-R7A: browser CLI 合同", () => {
   it("BROWSER 错误码应保持 BROWSER_ 前缀", async () => {
@@ -101,5 +101,21 @@ describe("P5.7-R7A: browser CLI 合同", () => {
     expect(output).toContain("root");
     expect(output).toContain("Patchright");
     expect(output).not.toContain("gmail-readonly");
+  });
+
+  it("browser gmail-readonly direct invoke 应返回 unknown subcommand", () => {
+    const result = runCliIsolated(["browser", "gmail-readonly", "--json"]);
+    expect(result.status).toBe(1);
+    const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+    expect(output).toContain("unknown command");
+    expect(output).toContain("gmail-readonly");
+  });
+
+  it("browser-gmail-readonly direct invoke 应返回 unknown command", () => {
+    const result = runCliIsolated(["browser-gmail-readonly", "--json"]);
+    expect(result.status).toBe(1);
+    const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+    expect(output).toContain("unknown command");
+    expect(output).toContain("browser-gmail-readonly");
   });
 });

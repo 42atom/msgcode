@@ -8,7 +8,8 @@ function runCli(args: string[]) {
 describe("P5.7-R1: legacy file send should be retired cleanly", () => {
   it("file --help 不应再公开 retired file send", () => {
     const out = execCliStdoutIsolated(["file", "--help"]);
-    expect(out).not.toContain("send");
+    expect(out).not.toMatch(/\n\s+file\b/);
+    expect(out).not.toContain("\n  send");
   });
 
   it("help-docs --json 不应再暴露 file send 合同", () => {
@@ -21,7 +22,7 @@ describe("P5.7-R1: legacy file send should be retired cleanly", () => {
     expect(names).not.toContain("file send");
   });
 
-  it("file send --json 应返回固定 retired 错误码", () => {
+  it("file send --json 应返回 unknown command", () => {
     const result = runCli([
       "file",
       "send",
@@ -33,22 +34,17 @@ describe("P5.7-R1: legacy file send should be retired cleanly", () => {
     ]);
 
     expect(result.status).toBe(1);
-
-    const envelope = JSON.parse(result.stdout);
-    expect(envelope.status).toBe("error");
-    expect(envelope.exitCode).toBe(1);
-    expect(envelope.data.ok).toBe(false);
-    expect(envelope.data.errorCode).toBe("FILE_SEND_RETIRED");
-    expect(envelope.errors[0].code).toBe("FILE_SEND_RETIRED");
+    const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+    expect(output).toContain("unknown command");
+    expect(output).toContain("file");
   });
 
-  it("file send 文本模式应明确提示已退役与新方向", () => {
+  it("file send 文本模式应直接报 unknown command", () => {
     const result = runCli(["file", "send"]);
     const output = `${result.stdout}\n${result.stderr}`;
 
     expect(result.status).toBe(1);
-    expect(output).toContain("已退役");
-    expect(output).toContain("Feishu");
-    expect(output).toContain("app/web");
+    expect(output).toContain("unknown command");
+    expect(output).toContain("file");
   });
 });

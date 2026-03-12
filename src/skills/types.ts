@@ -3,17 +3,17 @@
  *
  * 说明：
  * - 正式技能真相源：`src/skills/runtime/` -> `~/.config/msgcode/skills/`
- * - repo 侧只保留一个最小 auto skill：`system-info`
+ * - repo 侧 auto skill 已退役，仅保留最小兼容接口类型
  * - 不再表达历史 builtin registry 的伪能力地图
  */
 
-export type SkillId = "system-info";
+export type SkillId = string;
 export type BuiltinSkillId = SkillId;
 
 export interface SkillMatch {
   skillId: SkillId;
   input: string;
-  reason: "keyword";
+  reason: string;
 }
 
 export interface SkillContext {

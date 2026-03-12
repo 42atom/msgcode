@@ -1,47 +1,46 @@
 /**
- * msgcode: P5.7-R3 开放路径策略回归锁
+ * msgcode: file/system CLI 退役回归锁
  *
  * 目标：
- * 1. file 域合同不再包含 workspace 越界限制
- * 2. 不再暴露 ACCESS_DENIED/OUT_OF_BOUNDS 作为路径边界错误
+ * 1. root help 不再公开 file/system
+ * 2. help-docs 不再暴露 file/system 合同
+ * 3. direct invoke 时返回 retired 提示
  */
 
 import { describe, it, expect } from "bun:test";
-import {
-  getFileReadContract,
-  getFileWriteContract,
-  getFileDeleteContract,
-  getFileMoveContract,
-  getFileCopyContract,
-} from "../src/cli/file.js";
+import { execCliStdoutIsolated, runCliIsolated } from "./helpers/cli-process.js";
 
-describe("P5.7-R3: open path policy", () => {
-  it("R3-open-1: file read 合同不应包含 --force 或 ACCESS_DENIED", () => {
-    const contract = getFileReadContract();
-    expect(contract.options?.optional?.["--force"]).toBeUndefined();
-    expect(contract.errorCodes).not.toContain("ACCESS_DENIED");
-    expect(contract.constraints?.workspaceBoundary).toBe("none");
+describe("P5.7-R3: retire file/system CLI wrappers", () => {
+  it("R3-open-1: root help 不应再公开 file 与 system", () => {
+    const out = execCliStdoutIsolated(["--help"]);
+    expect(out).not.toMatch(/\n\s+file\b/);
+    expect(out).not.toMatch(/\n\s+system\b/);
   });
 
-  it("R3-open-2: file write 合同不应包含 --force 或 ACCESS_DENIED", () => {
-    const contract = getFileWriteContract();
-    expect(contract.options?.optional?.["--force"]).toBeUndefined();
-    expect(contract.errorCodes).not.toContain("ACCESS_DENIED");
-    expect(contract.constraints?.workspaceBoundary).toBe("none");
+  it("R3-open-2: help-docs --json 不应再暴露 file 与 system 合同", () => {
+    const out = execCliStdoutIsolated(["help-docs", "--json"]);
+    const envelope = JSON.parse(out);
+    const names = envelope.data.commands.map((command: { name: string }) => command.name);
+
+    expect(names.some((name: string) => name.startsWith("file "))).toBe(false);
+    expect(names.some((name: string) => name.startsWith("system "))).toBe(false);
   });
 
-  it("R3-open-3: file delete/move/copy 合同不应包含 --force 或 ACCESS_DENIED", () => {
-    const deleteContract = getFileDeleteContract();
-    const moveContract = getFileMoveContract();
-    const copyContract = getFileCopyContract();
+  it("R3-open-3: file direct invoke 应返回 unknown command", () => {
+    const res = runCliIsolated(["file", "read", "README.md"]);
+    const output = `${res.stdout ?? ""}${res.stderr ?? ""}`;
 
-    expect(deleteContract.options?.optional?.["--force"]).toBeUndefined();
-    expect(moveContract.options?.optional?.["--force"]).toBeUndefined();
-    expect(copyContract.options?.optional?.["--force"]).toBeUndefined();
+    expect(res.status).toBe(1);
+    expect(output).toContain("unknown command");
+    expect(output).toContain("file");
+  });
 
-    expect(deleteContract.errorCodes).not.toContain("ACCESS_DENIED");
-    expect(moveContract.errorCodes).not.toContain("ACCESS_DENIED");
-    expect(copyContract.errorCodes).not.toContain("ACCESS_DENIED");
+  it("R3-open-4: system direct invoke 应返回 unknown command", () => {
+    const res = runCliIsolated(["system", "info"]);
+    const output = `${res.stdout ?? ""}${res.stderr ?? ""}`;
+
+    expect(res.status).toBe(1);
+    expect(output).toContain("unknown command");
+    expect(output).toContain("system");
   });
 });
-

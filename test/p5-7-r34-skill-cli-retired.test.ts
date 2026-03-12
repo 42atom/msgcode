@@ -8,26 +8,25 @@ describe("P5.7-R34: skill CLI retired compat shell", () => {
     expect(out).not.toContain("skills");
   });
 
-  it("skill --help 应明确显示已退役", () => {
+  it("skill --help 应回落到根帮助且不公开 skill", () => {
     const out = execCliStdoutIsolated(["skill", "--help"]);
-    expect(out).toContain("已退役");
-    expect(out).not.toContain("list");
-    expect(out).not.toContain("run <name>");
+    expect(out).not.toContain("\n  skill");
+    expect(out).not.toContain("\n  skills");
   });
 
-  it("skill run demo 应返回 retired 提示", () => {
+  it("skill run demo 应直接报 unknown command", () => {
     const res = runCliIsolated(["skill", "run", "demo"]);
     const output = `${res.stdout ?? ""}${res.stderr ?? ""}`;
     expect(res.status).toBe(1);
-    expect(output).toContain("msgcode skill 已退役");
-    expect(output).toContain("help-docs");
-    expect(output).toContain("SKILL.md");
+    expect(output).toContain("unknown command");
+    expect(output).toContain("skill");
   });
 
-  it("skills run demo 应映射到同一 retired 壳", () => {
+  it("skills run demo 应直接报 unknown command", () => {
     const res = runCliIsolated(["skills", "run", "demo"]);
     const output = `${res.stdout ?? ""}${res.stderr ?? ""}`;
     expect(res.status).toBe(1);
-    expect(output).toContain("msgcode skill 已退役");
+    expect(output).toContain("unknown command");
+    expect(output).toContain("skills");
   });
 });

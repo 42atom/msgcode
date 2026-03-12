@@ -82,7 +82,7 @@ describe("P5.7-R4-1: Memory 命令合同", () => {
 
       expect(contract.name).toBe("msgcode memory add");
       expect(contract.description).toContain("记忆");
-      expect(contract.aliases).toContain("msgcode memory remember");
+      expect(contract).not.toHaveProperty("aliases");
       expect(contract.options?.required).toHaveProperty("--workspace");
       expect(contract.options?.optional).toHaveProperty("--dry-run");
       expect(contract.options?.optional).toHaveProperty("--json");
@@ -145,7 +145,7 @@ describe("P5.7-R4-1: Memory 命令合同", () => {
 
       expect(contract.name).toBe("msgcode memory stats");
       expect(contract.description).toContain("统计");
-      expect(contract.aliases).toContain("msgcode memory status");
+      expect(contract).not.toHaveProperty("aliases");
       expect(contract.options?.optional).toHaveProperty("--json");
       expect(contract.errorCodes).toContain("MEMORY_STATUS_FAILED");
     });
@@ -288,31 +288,28 @@ describe("P5.7-R4-1: Memory 命令合同", () => {
       expect(output).not.toContain("status");
     });
 
-    it("remember 应该兼容映射到 add 主链", () => {
-      const workspace = path.join(tempDir, "ws-remember");
-      mkdirSync(workspace, { recursive: true });
-
+    it("remember direct invoke 应返回 unknown subcommand", () => {
       const result = runCliIsolated([
         "memory",
         "remember",
         "compat memory",
         "--workspace",
-        workspace,
+        path.join(tempDir, "ws-remember"),
         "--json",
       ]);
 
-      expect(result.status).toBe(0);
-      const envelope = JSON.parse(result.stdout);
-      expect(envelope.command).toBe("msgcode memory add");
-      expect(envelope.status).toBe("pass");
+      expect(result.status).toBe(1);
+      const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+      expect(output).toContain("unknown command");
+      expect(output).toContain("remember");
     });
 
-    it("status 应该兼容映射到 stats 主链", () => {
+    it("status direct invoke 应返回 unknown subcommand", () => {
       const result = runCliIsolated(["memory", "status", "--json"]);
-      expect(result.status).toBe(0);
-      const envelope = JSON.parse(result.stdout);
-      expect(envelope.command).toBe("msgcode memory stats");
-      expect(envelope.status).toBe("pass");
+      expect(result.status).toBe(1);
+      const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+      expect(output).toContain("unknown command");
+      expect(output).toContain("status");
     });
   });
 });

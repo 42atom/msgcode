@@ -1,108 +1,51 @@
 /**
- * msgcode: Auto Skill 路由
+ * msgcode: Repo 侧 auto skill 退役兼容层
  *
- * 目标：自然语言优先触发 run_skill（仅保留最小能力）
+ * 原则：
+ * - repo 侧 auto skill 已退出现役主链
+ * - 本地系统与文件壳操作直接交给原生 shell / 原生工具
+ * - 保留最小 compat 接口，返回明确 retired 提示
  */
 
-import os from "node:os";
 import { logger } from "../logger/index.js";
 import type {
   SkillContext as SkillRunContext,
-  SkillId,
   SkillMatch,
   SkillResult as SkillRunResult,
 } from "./types.js";
 
-const SYSTEM_INFO_PATTERNS: RegExp[] = [
-  /\bsystem[\s-]?info\b/i,
-  /\bsysinfo\b/i,
-  /系统信息|系统状态|系统配置|环境信息|机器信息|设备信息/,
-];
+const AUTO_SKILL_RETIRED_ERROR =
+  "repo 侧 auto skill 已退役：请直接使用原生 Unix/macOS shell 或已注册原生工具。";
+const AUTO_SKILL_RETIRED_HINT =
+  "系统信息请直接用 bash 执行 uname -a、sw_vers、env、printenv；不要再走 system-info auto skill。";
 
-function firstLine(input: string): string {
-  return input.split("\n")[0]?.trim() ?? "";
-}
-
-function buildSystemInfo(ctx: SkillRunContext): string {
-  const cpu = os.cpus();
-  const cpuModel = cpu[0]?.model ?? "unknown";
-  const cpuCount = cpu.length || 0;
-
-  const lines = [
-    "系统信息",
-    `OS: ${os.platform()} ${os.release()}`,
-    `Arch: ${os.arch()}`,
-    `CPU: ${cpuModel} (${cpuCount} cores)`,
-    `Node: ${process.version}`,
-    `Uptime: ${Math.floor(os.uptime())}s`,
-  ];
-
-  if (ctx.workspacePath) {
-    lines.push(`Workspace: ${ctx.workspacePath}`);
-  }
-
-  return lines.join("\n");
-}
-
-export function detectAutoSkill(message: string): SkillMatch | null {
-  const line = firstLine(message);
-  if (!line) return null;
-
-  const hit = SYSTEM_INFO_PATTERNS.find(p => p.test(line));
-  if (!hit) return null;
-
+function buildRetiredResult(input: string): SkillRunResult {
   return {
-    skillId: "system-info",
-    input: line,
-    reason: "keyword",
+    ok: false,
+    skillId: "retired-auto-skill",
+    output: "",
+    error: `${AUTO_SKILL_RETIRED_ERROR} ${AUTO_SKILL_RETIRED_HINT}`,
+    durationMs: 0,
   };
 }
 
-export function normalizeSkillId(raw: string): SkillId | null {
-  const id = raw.trim().toLowerCase();
-  if (!id) return null;
+export function detectAutoSkill(_message: string): SkillMatch | null {
+  return null;
+}
 
-  if (id === "system-info" || id === "systeminfo" || id === "sysinfo") {
-    return "system-info";
-  }
-
+export function normalizeSkillId(_raw: string): null {
   return null;
 }
 
 export async function runSkill(
-  skillId: SkillId,
-  _input: string,
-  ctx: SkillRunContext
+  _skillId: string,
+  input: string,
+  _ctx: SkillRunContext
 ): Promise<SkillRunResult> {
   const started = Date.now();
-
-  try {
-    if (skillId === "system-info") {
-      const output = buildSystemInfo(ctx);
-      return {
-        ok: true,
-        skillId,
-        output,
-        durationMs: Date.now() - started,
-      };
-    }
-
-    return {
-      ok: false,
-      skillId,
-      output: "",
-      error: `unsupported skill: ${skillId}`,
-      durationMs: Date.now() - started,
-    };
-  } catch (error) {
-    return {
-      ok: false,
-      skillId,
-      output: "",
-      error: error instanceof Error ? error.message : String(error),
-      durationMs: Date.now() - started,
-    };
-  }
+  const result = buildRetiredResult(input);
+  result.durationMs = Date.now() - started;
+  return result;
 }
 
 export async function runAutoSkill(
@@ -111,22 +54,11 @@ export async function runAutoSkill(
 ): Promise<SkillRunResult> {
   const inputPreview = match.input.slice(0, 80);
 
-  logger.info("AutoSkill triggered", {
+  logger.info("AutoSkill retired path reached", {
     module: "skills",
     chatId: ctx.chatId,
-    autoSkill: match.skillId,
     autoSkillInput: inputPreview,
   });
 
-  const result = await runSkill(match.skillId, match.input, ctx);
-
-  logger.info("AutoSkill completed", {
-    module: "skills",
-    chatId: ctx.chatId,
-    autoSkill: match.skillId,
-    autoSkillResult: result.ok ? "ok" : "error",
-    durationMs: result.durationMs,
-  });
-
-  return result;
+  return await runSkill(match.skillId, match.input, ctx);
 }

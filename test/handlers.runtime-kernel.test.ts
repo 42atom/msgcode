@@ -84,18 +84,15 @@ describe("handlers 运行时内核契约", () => {
         });
     });
 
-    describe("Skill 编排", () => {
-        it("/skill run 命令通过 skill-orchestrator 处理", async () => {
+    describe("历史 skill 入口已删除", () => {
+        it("/skill run 命令应作为未知历史入口处理", async () => {
             const context = createMockContext();
-            const handler = new (class extends BaseHandler {
-                async handleSpecific(message: string, ctx: HandlerContext): Promise<HandleResult> {
-                    return { success: false, error: "not implemented" };
-                }
-            })();
+            const handler = new DefaultHandler();
 
             const result = await handler.handle("/skill run system-info", context);
-            // skill 命令应该被识别并处理
-            expect(result).toBeDefined();
+            expect(result.success).toBe(true);
+            expect(result.response).toContain("未知命令: /skill run system-info");
+            expect(result.response).toContain(renderUnknownCommandHint());
         });
     });
 

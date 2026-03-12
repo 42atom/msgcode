@@ -40,8 +40,8 @@
 
 **repo 侧兼容层说明**：
 
-- `auto.ts` 只保留最小 auto skill：`system-info`
-- `types.ts` 只表达这条 repo 侧最小兼容接口
+- `auto.ts` 已退役，只保留最小 compat 接口与显式迁移提示
+- `types.ts` 只表达 repo 侧最小兼容接口
 - 历史 `registry.ts` / `runtime/skill-orchestrator.ts` 已退出主链并归档到 `.trash/`
 
 ## 目录结构
@@ -51,15 +51,13 @@ src/skills/
 ├── README.md               # 本目录说明（含单真相源说明）
 ├── index.ts                # repo 侧最小兼容导出
 ├── types.ts                # repo 侧最小兼容类型
-├── auto.ts                 # 自然语言触发（仅保留 system-info）
+├── auto.ts                 # 已退役：repo 侧 auto skill compat
 ├── runtime-sync.ts         # runtime skill 安装/同步
 ├── optional/               # repo 内置按需技能（不进默认主索引）
 │   ├── index.json
 │   ├── twitter-media/
 │   │   └── SKILL.md
 │   ├── veo-video/
-│   │   └── SKILL.md
-│   ├── screenshot/
 │   │   └── SKILL.md
 │   ├── scrapling/
 │   │   └── SKILL.md
@@ -68,7 +66,7 @@ src/skills/
 │   └── subagent/
 │       └── SKILL.md
 └── runtime/                # 仓库托管的 runtime skill 真相源
-    ├── index.json          # 托管 skill 索引（vision-index, local-vision-lmstudio, scheduler, plan-files, character-identity, feishu-send-file, memory, file, thread, todo, media, gen, banana-pro-image-gen, patchright-browser）
+    ├── index.json          # 托管 skill 索引（vision-index, local-vision-lmstudio, scheduler, plan-files, character-identity, feishu-send-file, memory, file, thread, todo, gen, banana-pro-image-gen, patchright-browser）
     ├── scheduler/
     │   ├── SKILL.md
     │   └── main.sh
@@ -86,8 +84,6 @@ src/skills/
     ├── todo/
     │   ├── SKILL.md
     │   └── main.sh
-    ├── media/
-    │   └── SKILL.md
     ├── gen/
     │   └── SKILL.md
     ├── banana-pro-image-gen/
@@ -111,7 +107,7 @@ src/skills/
 
 - `types.ts`：repo 侧最小兼容类型
 - `index.ts`：repo 侧导出聚合，不承载技能逻辑
-- `auto.ts`：自然语言触发（仅保留 system-info）
+- `auto.ts`：已退役的 repo 侧 auto skill compat
 - `runtime/`：**正式技能真相源** - 描述真实调用合同，不默认把所有任务导向 bash/CLI
 - `optional/`：**可选扩展技能真相源** - 运行时会同步，但不并入默认主索引；仅在任务明显匹配或主索引无覆盖时按需读取
 
@@ -133,6 +129,7 @@ src/skills/
 - `msgcode start` 时会 best-effort 补齐仓库托管 runtime skills，避免安装目录缺失
 - **幂等原则**：仅首次创建，已存在文件不覆盖
 - **覆盖开关**：`msgcode init --overwrite-skills` 强制覆盖
+- 已退役的 repo skill（如 `media`、`screenshot`）会在同步时从用户目录清退，不再继续暴露
 
 ### R1c 边界原则
 
@@ -140,7 +137,8 @@ src/skills/
 - skill 默认主体是 `SKILL.md`
 - 实际执行优先走 canonical 入口：
   - 直接工具
-  - 直接 CLI 命令合同（如 `msgcode file read`）
+  - 原生 shell 命令（如 `rg`、`sed -n`、`cp`、`mv`、`env`）
+  - 直接 CLI 命令合同（仅限 msgcode 真正新增桥接能力）
   - 少数真实桥接脚本
 - 不要为了 CLI 再额外包一层 alias `main.sh`
 
@@ -161,10 +159,11 @@ src/skills/
 3. 如有安装/同步逻辑变化，更新 `runtime-sync.ts`
 4. 不要把 optional skill 加进 `src/skills/runtime/index.json`
 
-### repo 侧 auto skill 扩展
+### repo 侧 auto skill
 
-- 如需继续保留 repo 侧自然语言兼容入口，直接在 `auto.ts` 增补
+- repo 侧 auto skill 已退役
 - 不要再恢复一套独立 registry/orchestrator
+- 若未来确有必要恢复，必须先证明它跨越了原生 shell 或现有 runtime skill 无法覆盖的能力边界
 
 ### 输出规范
 

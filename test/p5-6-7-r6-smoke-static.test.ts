@@ -155,7 +155,7 @@ describe("P5.6.7-R6: 集成冒烟行为验证", () => {
       expect(result.message).toContain(`Workspace SOUL: yes (${path.join(workspacePath, ".msgcode", "SOUL.md")})`);
     });
 
-    it("skills/auto.ts 的 runSkill 应继续作为最小 auto-skill 执行入口", async () => {
+    it("skills/auto.ts 的 runSkill 应返回 retired compat 提示", async () => {
       const { runSkill } = await import("../src/skills/auto.js");
 
       const result = await runSkill("system-info", "system info", {
@@ -163,10 +163,10 @@ describe("P5.6.7-R6: 集成冒烟行为验证", () => {
         workspacePath: "/tmp/msgcode-smoke-skill",
       });
 
-      expect(result.ok).toBe(true);
-      expect(result.skillId).toBe("system-info");
-      expect(result.output).toContain("系统信息");
-      expect(result.output).toContain("Workspace: /tmp/msgcode-smoke-skill");
+      expect(result.ok).toBe(false);
+      expect(result.skillId).toBe("retired-auto-skill");
+      expect(result.error).toContain("auto skill 已退役");
+      expect(result.error).toContain("printenv");
     });
   });
 
