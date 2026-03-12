@@ -1,10 +1,10 @@
 /**
- * msgcode: P5.7-R20 结束前最小监督闭环回归锁
+ * msgcode: P5.7-R20 热路径不再额外复核回归锁
  *
  * 验收：
- * 1. 只读/摘要任务不应触发 supervisor
- * 2. mutating 任务会记录 supervisor 审计，但不再改变控制流
- * 3. CONTINUE 只做日志/审计，不再阻塞完成
+ * 1. 工具链结束后不再额外打一轮 finish supervisor 请求
+ * 2. mutating / fail / verify 场景都只保留原生 action + verify 证据
+ * 3. 最终答复直接来自模型主链，不再追加 finish-supervisor journal
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
@@ -12,7 +12,6 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { config } from "../src/config.js";
 import { logger } from "../src/logger/index.js";
 import { runLmStudioToolLoop } from "../src/lmstudio.js";
 
@@ -63,21 +62,14 @@ async function createToolEnabledWorkspace(): Promise<string> {
 }
 
 describe("P5.7-R20: minimal finish supervisor", () => {
-    const originalSupervisorConfig = { ...config.supervisor };
     let originalFetch: typeof globalThis.fetch;
 
     beforeEach(() => {
         originalFetch = globalThis.fetch;
-        config.supervisor.enabled = true;
-        config.supervisor.temperature = 0;
-        config.supervisor.maxTokens = 200;
     });
 
     afterEach(() => {
         globalThis.fetch = originalFetch;
-        config.supervisor.enabled = originalSupervisorConfig.enabled;
-        config.supervisor.temperature = originalSupervisorConfig.temperature;
-        config.supervisor.maxTokens = originalSupervisorConfig.maxTokens;
     });
 
     it("只读任务应直接结束，不触发 finish supervisor", async () => {
@@ -208,7 +200,7 @@ describe("P5.7-R20: minimal finish supervisor", () => {
         }
     });
 
-    it("假完成只记录 supervisor CONTINUE 审计，不再强制继续执行", async () => {
+    it("假完成场景不再额外请求 finish supervisor", async () => {
         const workspacePath = await createToolEnabledWorkspace();
         let callCount = 0;
 
@@ -278,17 +270,15 @@ describe("P5.7-R20: minimal finish supervisor", () => {
                 timeoutMs: 10_000,
             });
 
-            expect(callCount).toBe(3);
+            expect(callCount).toBe(2);
             expect(result.answer).toBe("已完成。");
-            expect(result.answer).not.toContain("FINISH_SUPERVISOR_BLOCKED");
-            expect(result.actionJournal.filter((entry) => entry.tool === "finish-supervisor").length).toBe(1);
-            expect(result.actionJournal.some((entry) => entry.tool === "finish-supervisor" && entry.ok === false)).toBe(true);
+            expect(result.actionJournal.some((entry) => entry.tool === "finish-supervisor")).toBe(false);
         } finally {
             await rm(workspacePath, { recursive: true, force: true });
         }
     });
 
-    it("已验证成功但 supervisor 空返时，不应假阻塞成功任务", async () => {
+    it("已验证成功时只保留 bash + verify 证据，不再额外复核", async () => {
         const workspacePath = await createToolEnabledWorkspace();
         let callCount = 0;
 
@@ -346,20 +336,18 @@ describe("P5.7-R20: minimal finish supervisor", () => {
                 timeoutMs: 10_000,
             });
 
-            expect(callCount).toBe(3);
+            expect(callCount).toBe(2);
             expect(result.answer).toBe("已创建完成。");
-            expect(result.answer).not.toContain("FINISH_SUPERVISOR_BLOCKED");
             expect(result.actionJournal.map((entry) => `${entry.phase}:${entry.tool}:${entry.ok}`)).toEqual([
                 "act:bash:true",
                 "verify:bash:true",
-                "report:finish-supervisor:true",
             ]);
         } finally {
             await rm(workspacePath, { recursive: true, force: true });
         }
     });
 
-    it("连续 CONTINUE 现在只做审计，不再阻塞完成", async () => {
+    it("连续 CONTINUE 现在也不会再触发额外复核", async () => {
         const workspacePath = await createToolEnabledWorkspace();
         let callCount = 0;
 
@@ -417,17 +405,15 @@ describe("P5.7-R20: minimal finish supervisor", () => {
                 timeoutMs: 10_000,
             });
 
-            expect(callCount).toBe(3);
+            expect(callCount).toBe(2);
             expect(result.answer).toBe("仍然认为可以结束");
-            expect(result.answer).not.toContain("FINISH_SUPERVISOR_BLOCKED");
-            expect(result.actionJournal.filter((entry) => entry.tool === "finish-supervisor").length).toBe(1);
-            expect(result.actionJournal[result.actionJournal.length - 1]?.ok).toBe(false);
+            expect(result.actionJournal.some((entry) => entry.tool === "finish-supervisor")).toBe(false);
         } finally {
             await rm(workspacePath, { recursive: true, force: true });
         }
     });
 
-    it("ok -> fail 的工具链也应经过 finish supervisor 再结束", async () => {
+    it("ok -> fail 的工具链只保留真实 verify 结果", async () => {
         const workspacePath = await createToolEnabledWorkspace();
         await writeFile(join(workspacePath, ".msgcode", "evidence.txt"), "verified-evidence", "utf-8");
         let callCount = 0;
@@ -494,7 +480,7 @@ describe("P5.7-R20: minimal finish supervisor", () => {
                 timeoutMs: 10_000,
             });
 
-            expect(callCount).toBe(4);
+            expect(callCount).toBe(3);
             expect(result.answer).toContain("PASS");
             expect(result.answer).not.toContain("TOOL_EXEC_FAILED");
             expect(result.verifyResult?.ok).toBe(false);
@@ -503,14 +489,13 @@ describe("P5.7-R20: minimal finish supervisor", () => {
                 "act:read_file:true",
                 "act:bash:false",
                 "verify:bash:false",
-                "report:finish-supervisor:true",
             ]);
         } finally {
             await rm(workspacePath, { recursive: true, force: true });
         }
     });
 
-    it("工具失败后 supervisor 的 CONTINUE 只做审计，不再阻塞退出", async () => {
+    it("工具失败后也不再追加 finish-supervisor 审计", async () => {
         const workspacePath = await createToolEnabledWorkspace();
         let callCount = 0;
 
@@ -568,12 +553,11 @@ describe("P5.7-R20: minimal finish supervisor", () => {
                 timeoutMs: 10_000,
             });
 
-            expect(callCount).toBe(3);
+            expect(callCount).toBe(2);
             expect(result.answer).toBe("已删除，我还是直接结束。");
-            expect(result.answer).not.toContain("FINISH_SUPERVISOR_BLOCKED");
             expect(result.verifyResult?.ok).toBe(false);
             expect(result.verifyResult?.errorCode).toBe("TOOL_VERIFY_FAILED");
-            expect(result.actionJournal.filter((entry) => entry.tool === "finish-supervisor").length).toBe(1);
+            expect(result.actionJournal.some((entry) => entry.tool === "finish-supervisor")).toBe(false);
             expect(result.actionJournal[0]?.tool).toBe("bash");
             expect(result.actionJournal[0]?.ok).toBe(false);
         } finally {

@@ -5,7 +5,6 @@ import { tmpdir } from "node:os";
 
 import { runAgentChat } from "../src/agent-backend.js";
 import { runAgentRoutedChat } from "../src/agent-backend/routed-chat.js";
-import { config } from "../src/config.js";
 import { runLmStudioToolLoop } from "../src/lmstudio.js";
 
 type MiniMaxMessagesResponse = {
@@ -270,15 +269,10 @@ describe("P5.7-R10: MiniMax Anthropic provider", () => {
         }
     });
 
-    it("runLmStudioToolLoop 在 minimax 下工具失败也应经过 finish supervisor", async () => {
+    it("runLmStudioToolLoop 在 minimax 下工具失败后不再额外复核", async () => {
         const originalFetch = globalThis.fetch;
-        const originalSupervisorConfig = { ...config.supervisor };
         const workspacePath = await createToolEnabledWorkspace();
         let callCount = 0;
-
-        config.supervisor.enabled = true;
-        config.supervisor.temperature = 0;
-        config.supervisor.maxTokens = 200;
 
         globalThis.fetch = (async () => {
             callCount += 1;
@@ -315,7 +309,7 @@ describe("P5.7-R10: MiniMax Anthropic provider", () => {
                 timeoutMs: 10_000,
             });
 
-            expect(callCount).toBe(3);
+            expect(callCount).toBe(2);
             expect(result.answer).toContain("PASS");
             expect(result.answer).not.toContain("TOOL_EXEC_FAILED");
             expect(result.verifyResult?.ok).toBe(false);
@@ -323,26 +317,17 @@ describe("P5.7-R10: MiniMax Anthropic provider", () => {
             expect(result.actionJournal.map((entry) => `${entry.phase}:${entry.tool}:${entry.ok}`)).toEqual([
                 "act:bash:false",
                 "verify:bash:false",
-                "report:finish-supervisor:true",
             ]);
         } finally {
             globalThis.fetch = originalFetch;
-            config.supervisor.enabled = originalSupervisorConfig.enabled;
-            config.supervisor.temperature = originalSupervisorConfig.temperature;
-            config.supervisor.maxTokens = originalSupervisorConfig.maxTokens;
             await rm(workspacePath, { recursive: true, force: true });
         }
     });
 
-    it("finish supervisor 在 minimax 下只返回 thinking PASS 时也应放行成功任务", async () => {
+    it("minimax 成功任务现在只保留工具与 verify 证据", async () => {
         const originalFetch = globalThis.fetch;
-        const originalSupervisorConfig = { ...config.supervisor };
         const workspacePath = await createToolEnabledWorkspace();
         let callCount = 0;
-
-        config.supervisor.enabled = true;
-        config.supervisor.temperature = 0;
-        config.supervisor.maxTokens = 200;
 
         globalThis.fetch = (async () => {
             callCount += 1;
@@ -389,18 +374,14 @@ describe("P5.7-R10: MiniMax Anthropic provider", () => {
                 timeoutMs: 10_000,
             });
 
-            expect(callCount).toBe(3);
+            expect(callCount).toBe(2);
             expect(result.answer).toBe("已创建完成。");
             expect(result.actionJournal.map((entry) => `${entry.phase}:${entry.tool}:${entry.ok}`)).toEqual([
                 "act:bash:true",
                 "verify:bash:true",
-                "report:finish-supervisor:true",
             ]);
         } finally {
             globalThis.fetch = originalFetch;
-            config.supervisor.enabled = originalSupervisorConfig.enabled;
-            config.supervisor.temperature = originalSupervisorConfig.temperature;
-            config.supervisor.maxTokens = originalSupervisorConfig.maxTokens;
             await rm(workspacePath, { recursive: true, force: true });
         }
     });
