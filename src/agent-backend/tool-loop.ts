@@ -987,56 +987,17 @@ function hardenFeishuDeliveryClaim(
     return "我还没有真正把附件发送到飞书。只有 feishu_send_file 成功后，我才会确认“已发送”。";
 }
 
-function buildToolLoopFallbackAnswer(
-    executedToolCalls: ExecutedToolCall[],
-    prompt: string
-): string {
-    if (executedToolCalls.length === 0) return "";
-    const lastCall = executedToolCalls[executedToolCalls.length - 1];
-    const toolName = lastCall.tc.function.name;
-    const result = lastCall.result;
+function needsFinalAnswerRetry(answer: string): boolean {
+    const cleaned = sanitizeLmStudioOutput(answer || "");
+    return !cleaned.trim() || hasToolProtocolArtifacts(cleaned);
+}
 
-    if (toolName === "read_file") {
-        const content = result
-            && typeof result === "object"
-            && typeof (result as Record<string, unknown>).content === "string"
-            ? String((result as Record<string, unknown>).content)
-            : "";
-
-        if (!content.trim()) {
-            return "文件读取成功，但内容为空。";
-        }
-
-        const wantsTop3 = /前\s*(3|三)\s*行/.test(prompt);
-        const maxLines = wantsTop3 ? 3 : 20;
-        const lines = content.replace(/\r\n/g, "\n").split("\n").slice(0, maxLines);
-        const preview = clipText(lines.join("\n"), 2000).trim();
-
-        if (wantsTop3) {
-            return `读取成功，前 3 行如下：\n${preview}`;
-        }
-        return `读取成功，内容预览如下：\n${preview}`;
-    }
-
-    if (toolName === "bash") {
-        const obj = (result && typeof result === "object")
-            ? (result as Record<string, unknown>)
-            : {};
-        const stdout = typeof obj.stdout === "string" ? obj.stdout.trim() : "";
-        const stderr = typeof obj.stderr === "string" ? obj.stderr.trim() : "";
-        const exitCode = typeof obj.exitCode === "number" ? obj.exitCode : null;
-
-        if (stdout) return clipText(stdout, 2000);
-        if (stderr) return `命令执行完成（exitCode=${exitCode ?? "unknown"}），stderr：${clipText(stderr, 500)}`;
-        if (exitCode !== null) return `命令执行完成（exitCode=${exitCode}）。`;
-        return "命令执行完成。";
-    }
-
-    if (toolName === "write_file" || toolName === "edit_file") {
-        return `${toolName} 执行成功。`;
-    }
-
-    return `工具执行成功：${toolName}`;
+function buildFinalAnswerRetryMessage(): string {
+    return [
+        "你还没有给用户最终答复。",
+        "请基于已经完成的工具结果，直接给出面向用户的最终答复。",
+        "不要调用工具，不要输出协议片段，不要解释内部过程。",
+    ].join("\n");
 }
 
 function buildConversationToolResult(toolResult: ToolRunResult): unknown {
@@ -1624,17 +1585,31 @@ async function runMiniMaxAnthropicToolLoop(params: {
             finalAnswer = forcedFinalState.answer;
             verifyResult = forcedFinalState.verifyResult;
         } else {
-            const cleanedAnswer = sanitizeLmStudioOutput(currentResponse.content || "");
-            finalAnswer = cleanedAnswer;
+            let cleanedAnswer = sanitizeLmStudioOutput(currentResponse.content || "");
 
-            if (!cleanedAnswer || hasToolProtocolArtifacts(cleanedAnswer)) {
-                const fallbackAnswer = buildToolLoopFallbackAnswer(executedToolCalls, params.options.prompt);
-                if (fallbackAnswer) {
-                    finalAnswer = fallbackAnswer;
-                }
+            if (needsFinalAnswerRetry(cleanedAnswer) && executedToolCalls.length > 0) {
+                conversationMessages = [
+                    ...conversationMessages,
+                    {
+                        role: "user",
+                        content: buildFinalAnswerRetryMessage(),
+                    },
+                ];
+                currentResponse = await callMiniMaxAnthropicRaw({
+                    baseUrl: params.baseUrl,
+                    model: params.model,
+                    messages: conversationMessages,
+                    system: anthropicContext.system,
+                    tools: [],
+                    temperature: 0,
+                    maxTokens: MAIN_AGENT_MAX_TOKENS,
+                    timeoutMs: params.timeoutMs,
+                    apiKey: params.apiKey,
+                });
+                cleanedAnswer = sanitizeLmStudioOutput(currentResponse.content || "");
             }
 
-            finalAnswer = hardenFeishuDeliveryClaim(finalAnswer, executedToolCalls, params.options.prompt);
+            finalAnswer = hardenFeishuDeliveryClaim(cleanedAnswer, executedToolCalls, params.options.prompt);
 
             const verifyOutcome = await runVerifyPhase(
                 executedToolCalls,
@@ -2255,17 +2230,36 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
             finalAnswer = forcedFinalState.answer;
             verifyResult = forcedFinalState.verifyResult;
         } else {
-            const cleanedAnswer = sanitizeLmStudioOutput(currentAssistantContent ?? "");
-            finalAnswer = cleanedAnswer;
+            let cleanedAnswer = sanitizeLmStudioOutput(currentAssistantContent ?? "");
 
-            if (!cleanedAnswer || hasToolProtocolArtifacts(cleanedAnswer)) {
-                const fallbackAnswer = buildToolLoopFallbackAnswer(executedToolCalls, options.prompt);
-                if (fallbackAnswer) {
-                    finalAnswer = fallbackAnswer;
-                }
+            if (needsFinalAnswerRetry(cleanedAnswer) && executedToolCalls.length > 0) {
+                conversationMessages = [
+                    ...conversationMessages,
+                    {
+                        role: "user",
+                        content: buildFinalAnswerRetryMessage(),
+                    },
+                ];
+                const retryRound = await callChatCompletionsRaw({
+                    baseUrl,
+                    model: usedModel,
+                    messages: conversationMessages,
+                    tools: [],
+                    toolChoice: "none",
+                    temperature: 0,
+                    maxTokens: MAIN_AGENT_MAX_TOKENS,
+                    timeoutMs,
+                    apiKey: backendRuntime.apiKey,
+                });
+                const retryMsg = retryRound.choices[0]?.message;
+                currentAssistantRole = retryMsg?.role || "assistant";
+                currentAssistantContent = retryMsg?.content;
+                currentToolCalls = retryMsg?.tool_calls ?? [];
+                currentFinishReason = retryRound.finishReason ?? null;
+                cleanedAnswer = sanitizeLmStudioOutput(currentAssistantContent ?? "");
             }
 
-            finalAnswer = hardenFeishuDeliveryClaim(finalAnswer, executedToolCalls, options.prompt);
+            finalAnswer = hardenFeishuDeliveryClaim(cleanedAnswer, executedToolCalls, options.prompt);
 
             // P5.7-R12-T3: 在返回前执行 verify phase
             const verifyOutcome = await runVerifyPhase(

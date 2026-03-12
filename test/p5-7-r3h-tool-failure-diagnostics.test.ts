@@ -229,6 +229,80 @@ describe("P5.7-R3h: Tool Failure Diagnostics (Behavior Lock)", () => {
             }
         });
 
+        it("工具轮后若模型没有给出最终答复，应继续向模型补要最终答复，而不是系统代答", async () => {
+            const originalFetch = globalThis.fetch;
+            const workspacePath = await createToolEnabledWorkspace();
+            await writeFile(join(workspacePath, ".msgcode", "final-answer.txt"), "hello-final-answer", "utf-8");
+            let callCount = 0;
+
+            globalThis.fetch = (async () => {
+                callCount += 1;
+
+                if (callCount === 1) {
+                    return asJsonResponse({
+                        choices: [{
+                            message: {
+                                role: "assistant",
+                                content: "",
+                                tool_calls: [{
+                                    id: "call_read_final_retry",
+                                    type: "function",
+                                    function: {
+                                        name: "read_file",
+                                        arguments: JSON.stringify({ path: ".msgcode/final-answer.txt" }),
+                                    },
+                                }],
+                            },
+                            finish_reason: "tool_calls",
+                        }],
+                    });
+                }
+
+                if (callCount === 2) {
+                    return asJsonResponse({
+                        choices: [{
+                            message: {
+                                role: "assistant",
+                                content: "",
+                            },
+                            finish_reason: "stop",
+                        }],
+                    });
+                }
+
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: "最终结果是：hello-final-answer",
+                        },
+                        finish_reason: "stop",
+                    }],
+                });
+            }) as typeof fetch;
+
+            try {
+                const result = await runLmStudioToolLoop({
+                    baseUrl: "http://127.0.0.1:1234",
+                    model: "test-model",
+                    prompt: "读取文件并告诉我最终结果",
+                    workspacePath,
+                    timeoutMs: 10_000,
+                    backendRuntime: localOpenAiRuntime,
+                });
+
+                expect(callCount).toBe(3);
+                expect(result.answer).toBe("最终结果是：hello-final-answer");
+                expect(result.answer).not.toContain("读取成功，内容预览如下");
+                expect(result.answer).not.toContain("工具执行成功");
+                expect(result.actionJournal[0].tool).toBe("read_file");
+                expect(result.actionJournal.at(-1)?.phase).toBe("verify");
+            } finally {
+                globalThis.fetch = originalFetch;
+                await rm(workspacePath, { recursive: true, force: true });
+            }
+        });
+
         it("单轮工具调用超限时应返回 TOOL_LOOP_LIMIT_EXCEEDED", async () => {
             const originalFetch = globalThis.fetch;
             const workspacePath = await createToolEnabledWorkspace();
