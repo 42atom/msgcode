@@ -1,0 +1,56 @@
+---
+id: 0134
+title: 退役占位式 skill CLI 命令面
+status: done
+owner: agent
+labels: [architecture, cli, docs, refactor]
+risk: low
+scope: 将占位式 `msgcode skill` 从假合同降级为显式 retired compat shell
+plan_doc: docs/design/plan-260312-retire-placeholder-skill-cli-surface.md
+links: []
+---
+
+## Context
+
+当前 `msgcode skill` 仍可直接执行，但实现只是占位：
+
+- `msgcode skill --help` 仍显示 `list/run`
+- `msgcode skill run <name>` 实际只打印“Skill 功能待实现”
+
+这会造成两个问题：
+
+- 程序表面上暴露了一个不存在的正式合同
+- 与“程序是真合同、skill 是说明书”的主线冲突
+
+## Goal / Non-Goals
+
+- Goal: 把 `msgcode skill` 降为显式 retired compat shell
+- Goal: 让 direct invoke 明确失败，并引导到 `help-docs` / runtime skill 说明书
+- Non-Goals: 本轮不重写 runtime skill 体系
+- Non-Goals: 本轮不新增新的 skill 管理 CLI
+
+## Plan
+
+- [x] 确认 `skill` 仍是占位假合同
+- [x] 将 `src/cli/skills.ts` 改为 retired compat shell
+- [x] 补回归锁：`skill --help` 不再列出 `list/run`，`skill run` 返回显式 retired 错误
+- [x] 更新 `0132` 审计分类与 changelog
+
+## Acceptance Criteria
+
+1. `msgcode skill --help` 明确显示已退役
+2. `msgcode skill run foo` 返回非 0 并给出迁移指引
+3. `0132` 中 `skill` 分类不再是 internal compat，而是 retired
+
+## Notes
+
+- 证据：
+  - `node --import tsx src/cli.ts skill --help`
+  - `src/cli/skills.ts`
+  - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r34-skill-cli-retired.test.ts test/p5-7-r6-hotfix-gen-entry-tools-default.test.ts`
+  - `npx tsc --noEmit`
+  - `npm run docs:check`
+
+## Links
+
+- Plan: /Users/admin/GitProjects/msgcode/docs/design/plan-260312-retire-placeholder-skill-cli-surface.md

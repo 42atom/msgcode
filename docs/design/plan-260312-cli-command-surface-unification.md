@@ -176,10 +176,10 @@
 #### Retired
 
 - `file send`
+- `skill`
 
 #### Internal compat
 
-- `skill`
 - `browser-gmail-readonly`
 - `gen-image`
 - `gen-audio`

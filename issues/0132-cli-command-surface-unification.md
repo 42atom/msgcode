@@ -68,8 +68,8 @@ links: []
     - agent-facing canonical：`file/web/system/memory/thread/todo/schedule/media/gen/browser/help-docs`
     - canonical but operator/internal-facing：`job/preflight/run`
     - alias：`jobs`、`skills`、`memory remember/status`、`browser gmail-readonly`
-    - retired：`file send`
-    - internal compat：`skill`、`browser-gmail-readonly`、`gen-image`、`gen-audio`
+    - retired：`file send`、`skill`
+    - internal compat：`browser-gmail-readonly`、`gen-image`、`gen-audio`
   - 已写准 `help-docs` 边界：
     - 它是 agent-facing 操作命令真相源
     - root lifecycle/admin 继续由 `msgcode --help` 暴露
@@ -87,3 +87,4 @@ links: []
 - Plan: /Users/admin/GitProjects/msgcode/docs/design/plan-260312-cli-command-surface-unification.md
 - Reference: /Users/admin/GitProjects/msgcode/docs/design/plan-260312-cli-is-all-agents-need-reference.md
 - Follow-up: /Users/admin/GitProjects/msgcode/issues/0133-help-docs-memory-canonical-coverage.md
+- Follow-up: /Users/admin/GitProjects/msgcode/issues/0134-retire-placeholder-skill-cli-surface.md

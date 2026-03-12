@@ -3,6 +3,7 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-12
+  - cli/skills: 占位式 `msgcode skill` 已降为显式 retired compat shell；它不再伪装成可运行的正式命令合同，直接执行会返回迁移提示并引导到 `help-docs` / `SKILL.md`，避免假合同继续污染二进制公开面 (Issue: 0134, Plan: docs/design/plan-260312-retire-placeholder-skill-cli-surface.md) [risk: low] [rollback: 恢复 `src/cli/skills.ts` 中原占位 list/run 子命令]
   - cli/help-docs: `help-docs --json` 现在覆盖全部 canonical memory 子命令，补齐 `memory index/get` 合同，避免与 `memory --help` 分叉 (Issue: 0133, Plan: docs/design/plan-260312-help-docs-memory-canonical-coverage.md) [risk: low] [rollback: 移除新增 memory 合同导出与 help-docs 接线]
   - cli/root-surface: 根级公开命令面继续收口到 canonical；`--help` 现在只公开 `gen`，不再同时公开 `gen-image/gen-audio` 两套重复入口，`jobs`/`skills` 这类历史复数入口则统一在 CLI 解析期映射到 canonical 主链，减少根命令层的双口径 (Issue: 0132, Plan: docs/design/plan-260312-cli-command-surface-unification.md) [risk: medium] [rollback: 回退 `src/cli.ts`、`test/p5-7-r6-hotfix-gen-entry-tools-default.test.ts` 与 `issues/0132...`]
   - cli/browser: `browser gmail-readonly` 已退出公开命令面与 `help-docs` 正式合同；`browser --help` 现在只保留通用 browser core 子命令，历史 Gmail 验收入口改为 CLI 解析期兼容映射，避免业务历史命令继续污染公开 browser 合同 (Issue: 0132, Plan: docs/design/plan-260312-cli-command-surface-unification.md) [risk: medium] [rollback: 回退 `src/cli{.ts,/browser.ts}`、`test/p5-7-r7a-browser-contract.test.ts` 与 `issues/0132...`]
