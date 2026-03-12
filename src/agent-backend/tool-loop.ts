@@ -131,6 +131,8 @@ type ChatResponse = {
 
 const AIDOCS_ROOT = process.env.AIDOCS_ROOT || "AIDOCS";
 const MAIN_AGENT_MAX_TOKENS = 8192;
+const HARD_CAP_TOOL_CALLS = 999;
+const HARD_CAP_TOOL_STEPS = 4096;
 let cachedLocalModel: { baseUrl: string; id: string } | undefined;
 
 function buildQuotaSignal(params: {
@@ -185,6 +187,66 @@ function buildContinuableQuotaResult(params: {
             result: params.lastExecutedCall.result,
         } : undefined,
     };
+}
+
+function maybeBuildToolCallQuotaResult(params: {
+    actionJournal: ActionJournalEntry[];
+    quotaProfile: "conservative" | "balanced" | "aggressive";
+    perTurnToolCallLimit: number;
+    perTurnToolStepLimit: number;
+    currentToolCallsLength: number;
+    executedToolSteps: number;
+    lastExecutedCall?: ExecutedToolCall;
+}): AgentToolLoopResult | undefined {
+    if (params.currentToolCallsLength <= params.perTurnToolCallLimit) return undefined;
+    const isHardCapExceeded = params.currentToolCallsLength > HARD_CAP_TOOL_CALLS;
+
+    return buildContinuableQuotaResult({
+        actionJournal: params.actionJournal,
+        quotaProfile: params.quotaProfile,
+        perTurnToolCallLimit: params.perTurnToolCallLimit,
+        perTurnToolStepLimit: params.perTurnToolStepLimit,
+        remainingToolCalls: 0,
+        remainingSteps: params.perTurnToolStepLimit - params.executedToolSteps,
+        continuationReason: isHardCapExceeded
+            ? `exceeded_hard_cap_tool_calls_${params.currentToolCallsLength}_limit_${HARD_CAP_TOOL_CALLS}`
+            : `reached_profile_limit_tool_calls_${params.currentToolCallsLength}_limit_${params.perTurnToolCallLimit}`,
+        kind: "tool_calls",
+        scope: isHardCapExceeded ? "hard_cap" : "profile",
+        observed: params.currentToolCallsLength,
+        limit: isHardCapExceeded ? HARD_CAP_TOOL_CALLS : params.perTurnToolCallLimit,
+        lastExecutedCall: params.lastExecutedCall,
+    });
+}
+
+function maybeBuildToolStepQuotaResult(params: {
+    actionJournal: ActionJournalEntry[];
+    quotaProfile: "conservative" | "balanced" | "aggressive";
+    perTurnToolCallLimit: number;
+    perTurnToolStepLimit: number;
+    currentToolCallsLength: number;
+    executedToolSteps: number;
+    lastExecutedCall?: ExecutedToolCall;
+}): AgentToolLoopResult | undefined {
+    if (params.executedToolSteps <= params.perTurnToolStepLimit) return undefined;
+    const isHardCapExceeded = params.executedToolSteps > HARD_CAP_TOOL_STEPS;
+
+    return buildContinuableQuotaResult({
+        actionJournal: params.actionJournal,
+        quotaProfile: params.quotaProfile,
+        perTurnToolCallLimit: params.perTurnToolCallLimit,
+        perTurnToolStepLimit: params.perTurnToolStepLimit,
+        remainingToolCalls: params.perTurnToolCallLimit - params.currentToolCallsLength,
+        remainingSteps: 0,
+        continuationReason: isHardCapExceeded
+            ? `exceeded_hard_cap_tool_steps_${params.executedToolSteps}_limit_${HARD_CAP_TOOL_STEPS}`
+            : `reached_profile_limit_tool_steps_${params.executedToolSteps}_limit_${params.perTurnToolStepLimit}`,
+        kind: "tool_steps",
+        scope: isHardCapExceeded ? "hard_cap" : "profile",
+        observed: params.executedToolSteps,
+        limit: isHardCapExceeded ? HARD_CAP_TOOL_STEPS : params.perTurnToolStepLimit,
+        lastExecutedCall: params.lastExecutedCall,
+    });
 }
 
 function getToolNameFromDef(tool: unknown): string | undefined {
@@ -918,8 +980,6 @@ async function runMiniMaxAnthropicToolLoop(params: {
     currentMessageId?: string;
     defaultActionTargetMessageId?: string;
 }): Promise<AgentToolLoopResult> {
-    const HARD_CAP_TOOL_CALLS = 999;
-    const HARD_CAP_TOOL_STEPS = 4096;
     const actionJournal: ActionJournalEntry[] = [];
     let stepId = 0;
 
@@ -951,26 +1011,17 @@ async function runMiniMaxAnthropicToolLoop(params: {
     let failureRecoveryNudges = 0;
 
     while (true) {
-        if (currentToolCalls.length > params.perTurnToolCallLimit) {
-            const isHardCapExceeded = currentToolCalls.length > HARD_CAP_TOOL_CALLS;
-            const lastExecutedCall = executedToolCalls[executedToolCalls.length - 1];
-
-            return buildContinuableQuotaResult({
-                actionJournal,
-                quotaProfile: params.quotaProfile,
-                perTurnToolCallLimit: params.perTurnToolCallLimit,
-                perTurnToolStepLimit: params.perTurnToolStepLimit,
-                remainingToolCalls: 0,
-                remainingSteps: params.perTurnToolStepLimit - executedToolCalls.length,
-                continuationReason: isHardCapExceeded
-                    ? `exceeded_hard_cap_tool_calls_${currentToolCalls.length}_limit_${HARD_CAP_TOOL_CALLS}`
-                    : `reached_profile_limit_tool_calls_${currentToolCalls.length}_limit_${params.perTurnToolCallLimit}`,
-                kind: "tool_calls",
-                scope: isHardCapExceeded ? "hard_cap" : "profile",
-                observed: currentToolCalls.length,
-                limit: isHardCapExceeded ? HARD_CAP_TOOL_CALLS : params.perTurnToolCallLimit,
-                lastExecutedCall,
-            });
+        const toolCallQuotaResult = maybeBuildToolCallQuotaResult({
+            actionJournal,
+            quotaProfile: params.quotaProfile,
+            perTurnToolCallLimit: params.perTurnToolCallLimit,
+            perTurnToolStepLimit: params.perTurnToolStepLimit,
+            currentToolCallsLength: currentToolCalls.length,
+            executedToolSteps: executedToolCalls.length,
+            lastExecutedCall: executedToolCalls[executedToolCalls.length - 1],
+        });
+        if (toolCallQuotaResult) {
+            return toolCallQuotaResult;
         }
 
         if (currentToolCalls.length > 0) {
@@ -1023,26 +1074,17 @@ async function runMiniMaxAnthropicToolLoop(params: {
                     executedToolCalls.push(executed);
                     roundExecutedToolCalls.push(executed);
 
-                    if (executedToolCalls.length > params.perTurnToolStepLimit) {
-                        const isHardCapExceeded = executedToolCalls.length > HARD_CAP_TOOL_STEPS;
-                        const lastExecutedCall = executedToolCalls[executedToolCalls.length - 1];
-
-                        return buildContinuableQuotaResult({
-                            actionJournal,
-                            quotaProfile: params.quotaProfile,
-                            perTurnToolCallLimit: params.perTurnToolCallLimit,
-                            perTurnToolStepLimit: params.perTurnToolStepLimit,
-                            remainingToolCalls: params.perTurnToolCallLimit - currentToolCalls.length,
-                            remainingSteps: 0,
-                            continuationReason: isHardCapExceeded
-                                ? `exceeded_hard_cap_tool_steps_${executedToolCalls.length}_limit_${HARD_CAP_TOOL_STEPS}`
-                                : `reached_profile_limit_tool_steps_${executedToolCalls.length}_limit_${params.perTurnToolStepLimit}`,
-                            kind: "tool_steps",
-                            scope: isHardCapExceeded ? "hard_cap" : "profile",
-                            observed: executedToolCalls.length,
-                            limit: isHardCapExceeded ? HARD_CAP_TOOL_STEPS : params.perTurnToolStepLimit,
-                            lastExecutedCall,
-                        });
+                    const toolStepQuotaResult = maybeBuildToolStepQuotaResult({
+                        actionJournal,
+                        quotaProfile: params.quotaProfile,
+                        perTurnToolCallLimit: params.perTurnToolCallLimit,
+                        perTurnToolStepLimit: params.perTurnToolStepLimit,
+                        currentToolCallsLength: currentToolCalls.length,
+                        executedToolSteps: executedToolCalls.length,
+                        lastExecutedCall: executedToolCalls[executedToolCalls.length - 1],
+                    });
+                    if (toolStepQuotaResult) {
+                        return toolStepQuotaResult;
                     }
                     break;
                 }
@@ -1063,26 +1105,17 @@ async function runMiniMaxAnthropicToolLoop(params: {
                     durationMs: toolResult.durationMs,
                 });
 
-                if (executedToolCalls.length > params.perTurnToolStepLimit) {
-                    const isHardCapExceeded = executedToolCalls.length > HARD_CAP_TOOL_STEPS;
-                    const lastExecutedCall = executedToolCalls[executedToolCalls.length - 1];
-
-                    return buildContinuableQuotaResult({
-                        actionJournal,
-                        quotaProfile: params.quotaProfile,
-                        perTurnToolCallLimit: params.perTurnToolCallLimit,
-                        perTurnToolStepLimit: params.perTurnToolStepLimit,
-                        remainingToolCalls: params.perTurnToolCallLimit - currentToolCalls.length,
-                        remainingSteps: 0,
-                        continuationReason: isHardCapExceeded
-                            ? `exceeded_hard_cap_tool_steps_${executedToolCalls.length}_limit_${HARD_CAP_TOOL_STEPS}`
-                            : `reached_profile_limit_tool_steps_${executedToolCalls.length}_limit_${params.perTurnToolStepLimit}`,
-                        kind: "tool_steps",
-                        scope: isHardCapExceeded ? "hard_cap" : "profile",
-                        observed: executedToolCalls.length,
-                        limit: isHardCapExceeded ? HARD_CAP_TOOL_STEPS : params.perTurnToolStepLimit,
-                        lastExecutedCall,
-                    });
+                const toolStepQuotaResult = maybeBuildToolStepQuotaResult({
+                    actionJournal,
+                    quotaProfile: params.quotaProfile,
+                    perTurnToolCallLimit: params.perTurnToolCallLimit,
+                    perTurnToolStepLimit: params.perTurnToolStepLimit,
+                    currentToolCallsLength: currentToolCalls.length,
+                    executedToolSteps: executedToolCalls.length,
+                    lastExecutedCall: executedToolCalls[executedToolCalls.length - 1],
+                });
+                if (toolStepQuotaResult) {
+                    return toolStepQuotaResult;
                 }
             }
 
@@ -1214,9 +1247,6 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     } as const;
 
     // 单轮硬上限：只保留极端防护，不作为默认主链阻断
-    const HARD_CAP_TOOL_CALLS = 999;
-    const HARD_CAP_TOOL_STEPS = 4096;
-
     // 解析配额档位（默认 balanced）
     const quotaProfile = options.quotaProfile ?? "balanced";
     const profileLimits = QUOTA_PROFILES[quotaProfile];
@@ -1430,47 +1460,17 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
 
     while (true) {
         // P5.7-R12-T8: 单轮工具调用数检查
-        if (currentToolCalls.length > perTurnToolCallLimit) {
-            // P5.7-R12-T8: 达到档位上限时，标记为可续跑（除非超过硬上限）
-            const isHardCapExceeded = currentToolCalls.length > HARD_CAP_TOOL_CALLS;
-
-            if (isHardCapExceeded) {
-                // 超过硬上限，必须移交下一轮 heartbeat
-                // P5.7-R12-T8: 补上 toolCall，用于 sameToolSameArgsRetryLimit 检查
-            const lastExecutedCall = executedToolCalls[executedToolCalls.length - 1];
-            return buildContinuableQuotaResult({
-                actionJournal,
-                quotaProfile,
-                perTurnToolCallLimit,
-                perTurnToolStepLimit,
-                remainingToolCalls: 0,
-                remainingSteps: perTurnToolStepLimit - executedToolCalls.length,
-                continuationReason: `exceeded_hard_cap_tool_calls_${currentToolCalls.length}_limit_${HARD_CAP_TOOL_CALLS}`,
-                kind: "tool_calls",
-                scope: "hard_cap",
-                observed: currentToolCalls.length,
-                limit: HARD_CAP_TOOL_CALLS,
-                lastExecutedCall,
-            });
-        }
-
-            // 达到档位上限但未超过硬上限，移交下一轮 heartbeat 继续执行
-            // P5.7-R12-T8: 补上 toolCall，用于 sameToolSameArgsRetryLimit 检查
-            const lastExecutedCall = executedToolCalls[executedToolCalls.length - 1];
-            return buildContinuableQuotaResult({
-                actionJournal,
-                quotaProfile,
-                perTurnToolCallLimit,
-                perTurnToolStepLimit,
-                remainingToolCalls: 0,
-                remainingSteps: perTurnToolStepLimit - executedToolCalls.length,
-                continuationReason: `reached_profile_limit_tool_calls_${currentToolCalls.length}_limit_${perTurnToolCallLimit}`,
-                kind: "tool_calls",
-                scope: "profile",
-                observed: currentToolCalls.length,
-                limit: perTurnToolCallLimit,
-                lastExecutedCall,
-            });
+        const toolCallQuotaResult = maybeBuildToolCallQuotaResult({
+            actionJournal,
+            quotaProfile,
+            perTurnToolCallLimit,
+            perTurnToolStepLimit,
+            currentToolCallsLength: currentToolCalls.length,
+            executedToolSteps: executedToolCalls.length,
+            lastExecutedCall: executedToolCalls[executedToolCalls.length - 1],
+        });
+        if (toolCallQuotaResult) {
+            return toolCallQuotaResult;
         }
 
         if (currentToolCalls.length > 0) {
@@ -1523,25 +1523,17 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                     executedToolCalls.push(executed);
                     roundExecutedToolCalls.push(executed);
 
-                    if (executedToolCalls.length > perTurnToolStepLimit) {
-                        const isHardCapExceeded = executedToolCalls.length > HARD_CAP_TOOL_STEPS;
-                        const lastExecutedCall = executedToolCalls[executedToolCalls.length - 1];
-                        return buildContinuableQuotaResult({
-                            actionJournal,
-                            quotaProfile,
-                            perTurnToolCallLimit,
-                            perTurnToolStepLimit,
-                            remainingToolCalls: perTurnToolCallLimit - currentToolCalls.length,
-                            remainingSteps: 0,
-                            continuationReason: isHardCapExceeded
-                                ? `exceeded_hard_cap_tool_steps_${executedToolCalls.length}_limit_${HARD_CAP_TOOL_STEPS}`
-                                : `reached_profile_limit_tool_steps_${executedToolCalls.length}_limit_${perTurnToolStepLimit}`,
-                            kind: "tool_steps",
-                            scope: isHardCapExceeded ? "hard_cap" : "profile",
-                            observed: executedToolCalls.length,
-                            limit: isHardCapExceeded ? HARD_CAP_TOOL_STEPS : perTurnToolStepLimit,
-                            lastExecutedCall,
-                        });
+                    const toolStepQuotaResult = maybeBuildToolStepQuotaResult({
+                        actionJournal,
+                        quotaProfile,
+                        perTurnToolCallLimit,
+                        perTurnToolStepLimit,
+                        currentToolCallsLength: currentToolCalls.length,
+                        executedToolSteps: executedToolCalls.length,
+                        lastExecutedCall: executedToolCalls[executedToolCalls.length - 1],
+                    });
+                    if (toolStepQuotaResult) {
+                        return toolStepQuotaResult;
                     }
                     break;
                 }
@@ -1563,47 +1555,17 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                 });
 
                 // P5.7-R12-T8: 总工具步骤数检查
-                if (executedToolCalls.length > perTurnToolStepLimit) {
-                    // P5.7-R12-T8: 达到档位上限时，标记为可续跑（除非超过硬上限）
-                    const isHardCapExceeded = executedToolCalls.length > HARD_CAP_TOOL_STEPS;
-
-                    if (isHardCapExceeded) {
-                        // 超过硬上限，必须移交下一轮 heartbeat
-                        // P5.7-R12-T8: 补上 toolCall，用于 sameToolSameArgsRetryLimit 检查
-                        const lastExecutedCall = executedToolCalls[executedToolCalls.length - 1];
-                        return buildContinuableQuotaResult({
-                            actionJournal,
-                            quotaProfile,
-                            perTurnToolCallLimit,
-                            perTurnToolStepLimit,
-                            remainingToolCalls: perTurnToolCallLimit - currentToolCalls.length,
-                            remainingSteps: 0,
-                            continuationReason: `exceeded_hard_cap_tool_steps_${executedToolCalls.length}_limit_${HARD_CAP_TOOL_STEPS}`,
-                            kind: "tool_steps",
-                            scope: "hard_cap",
-                            observed: executedToolCalls.length,
-                            limit: HARD_CAP_TOOL_STEPS,
-                            lastExecutedCall,
-                        });
-                    }
-
-                    // 达到档位上限但未超过硬上限，移交下一轮 heartbeat 继续执行
-                    // P5.7-R12-T8: 补上 toolCall，用于 sameToolSameArgsRetryLimit 检查
-                    const lastExecutedCall = executedToolCalls[executedToolCalls.length - 1];
-                    return buildContinuableQuotaResult({
-                        actionJournal,
-                        quotaProfile,
-                        perTurnToolCallLimit,
-                        perTurnToolStepLimit,
-                        remainingToolCalls: perTurnToolCallLimit - currentToolCalls.length,
-                        remainingSteps: 0,
-                        continuationReason: `reached_profile_limit_tool_steps_${executedToolCalls.length}_limit_${perTurnToolStepLimit}`,
-                        kind: "tool_steps",
-                        scope: "profile",
-                        observed: executedToolCalls.length,
-                        limit: perTurnToolStepLimit,
-                        lastExecutedCall,
-                    });
+                const toolStepQuotaResult = maybeBuildToolStepQuotaResult({
+                    actionJournal,
+                    quotaProfile,
+                    perTurnToolCallLimit,
+                    perTurnToolStepLimit,
+                    currentToolCallsLength: currentToolCalls.length,
+                    executedToolSteps: executedToolCalls.length,
+                    lastExecutedCall: executedToolCalls[executedToolCalls.length - 1],
+                });
+                if (toolStepQuotaResult) {
+                    return toolStepQuotaResult;
                 }
             }
 
