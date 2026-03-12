@@ -318,6 +318,11 @@ async function loadHelpDocsCommand() {
   program.addCommand(createHelpDocsCommand());
 }
 
+async function loadSubagentCommands() {
+  const { createSubagentCommand } = await import("./cli/subagent.js");
+  program.addCommand(createSubagentCommand());
+}
+
 // Web 命令组（P5.7-R2）
 async function loadWebCommands() {
   const { createWebCommand } = await import("./cli/web.js");
@@ -450,6 +455,9 @@ async function main() {
   if (top === "browser") {
     await loadBrowserCommands();
   }
+  if (top === "subagent") {
+    await loadSubagentCommands();
+  }
   if (top === "browser-gmail-readonly") {
     await loadBrowserCompatCommands();
   }
@@ -472,6 +480,7 @@ async function main() {
     await loadMediaCommands();
     await loadGenCommands();
     await loadBrowserCommands();
+    await loadSubagentCommands();
     await loadHelpDocsCommand();
   }
   program.parse([process.argv[0], process.argv[1], ...argv]);

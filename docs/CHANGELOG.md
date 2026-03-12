@@ -247,6 +247,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - vision/privacy: `backend=api` 时视觉能力明确冻结为 local-only；`/vision-model` 继续配置本地视觉模型，`/model status` 显式回显 `local-only (...)`，避免误判图片会上传云端 API (Issue: 0130, Plan: docs/design/plan-260312-api-backend-local-vision-policy.md) [risk: medium] [rollback: revert 0130 local-only vision policy commit]
   - browser/runtime: `browser tabs.text` 现在会把正文全文落盘到 `artifacts/browser/`，并通过 `textPath + textBytes + textPreview` 暴露给模型，网页转写主链不再只有标题/URL 预览 (Issue: 0131, Plan: docs/design/plan-260312-browser-text-artifact-and-skill-contract.md) [risk: medium] [rollback: revert 0131 browser text artifact commit]
   - browser/skill: `patchright-browser` 说明书改为优先复用 `tabs.text` 返回的 `textPath`，长文网页原文/结果文件改成按任务生成唯一文件名，避免多任务覆盖 (Issue: 0131, Plan: docs/design/plan-260312-browser-text-artifact-and-skill-contract.md) [risk: low] [rollback: revert 0131 browser skill contract commit]
+  - subagent/runtime: 新增最小正式 `subagent` CLI 主链，提供 `run/status/stop`，直接复用 tmux 执行臂并把任务状态收口到 workspace/.msgcode/subagents/*.json (Issue: 0137, Plan: docs/design/plan-260312-subagent-cli-runtime-mvp.md) [risk: medium] [rollback: revert 0137 subagent runtime commits]
 
 [2.3.0]: https://github.com/yourorg/msgcode/releases/tag/v2.3.0
 [1.0.0]: https://github.com/yourorg/msgcode/releases/tag/v1.0.0

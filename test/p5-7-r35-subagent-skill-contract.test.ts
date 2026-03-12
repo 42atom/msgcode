@@ -23,7 +23,8 @@ describe("P5.7-R35: subagent optional skill 合同", () => {
 
     expect(content).toContain("name: subagent");
     expect(content).toContain("msgcode subagent run codex --goal");
-    expect(content).toContain("不得假装已经委派成功");
+    expect(content).toContain("msgcode subagent stop <task-id>");
+    expect(content).toContain("假装已经把任务派出去了");
     expect(content).toContain("codex --version");
     expect(content).toContain("claude --version");
     expect(content).toContain("@anthropic-ai/claude-code");

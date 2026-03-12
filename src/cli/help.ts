@@ -20,6 +20,7 @@ import { getMediaScreenContract } from "./media.js";
 import { getGenImageContract, getGenSelfieContract } from "./gen-image.js";
 import { getGenTtsContract, getGenMusicContract } from "./gen-audio.js";
 import { getBrowserCommandContracts } from "./browser.js";
+import { getSubagentRunContract, getSubagentStatusContract, getSubagentStopContract } from "./subagent.js";
 
 // ============================================
 // 类型定义
@@ -235,6 +236,10 @@ function getAllHelpCommandContracts(): Record<string, unknown>[] {
     getGenMusicContract() as Record<string, unknown>,
     // Browser 命令组（P5.7-R7A）
     ...(getBrowserCommandContracts() as Record<string, unknown>[]),
+    // Subagent 命令组（P5.7-R36）
+    getSubagentRunContract() as Record<string, unknown>,
+    getSubagentStatusContract() as Record<string, unknown>,
+    getSubagentStopContract() as Record<string, unknown>,
   ];
 }
 
