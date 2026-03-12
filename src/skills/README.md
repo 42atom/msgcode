@@ -5,7 +5,7 @@
 **runtime skills 是唯一正式常驻真相源**：
 
 - 真相源：`src/skills/runtime/` → `~/.config/msgcode/skills/`
-- 执行主链：runtime skill -> bash -> CLI 命令
+- 执行主链：runtime skill -> 真实调用合同（原生工具 / 直接 CLI / 少数桥接脚本）
 - 不再保留 repo 内的 builtin registry 主链
 
 **optional skills 是 repo 内置的按需扩展层**：
@@ -116,7 +116,7 @@ src/skills/
 - `types.ts`：repo 侧最小兼容类型
 - `index.ts`：repo 侧导出聚合，不承载技能逻辑
 - `auto.ts`：自然语言触发（仅保留 system-info）
-- `runtime/`：**正式技能真相源** - 执行主链：runtime skill -> bash -> CLI 命令
+- `runtime/`：**正式技能真相源** - 描述真实调用合同，不默认把所有任务导向 bash/CLI
 - `optional/`：**可选扩展技能真相源** - 运行时会同步，但不并入默认主索引；仅在任务明显匹配或主索引无覆盖时按需读取
 
 ## 架构决策

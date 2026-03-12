@@ -687,9 +687,10 @@ function buildNativeToolPriorityHint(toolNames: ToolName[]): string {
 
     lines.push("[原生工具优先]");
     lines.push("如果当前能力已经作为原生工具暴露，就优先调用原生工具，不要先走 bash 包一层 CLI。");
-    lines.push("bash 只用于系统命令、脚本 glue、或当前确实没有原生工具的能力；不要把已有原生工具再包装一层。");
+    lines.push("bash 只用于系统命令、脚本 glue、排障、或当前确实没有原生工具的能力；不要把已有原生工具再包装一层。");
     if (toolNames.includes("help_docs")) {
         lines.push("如果你不确定 msgcode CLI 的命令名、参数或输出合同，先调用 help_docs，不要先猜 bash 命令。");
+        lines.push("只有当 help_docs 仍不足以覆盖具体能力边界或步骤时，才再去读对应 skill 的 SKILL.md。");
     }
 
     if (toolNames.includes("feishu_send_file")) {
@@ -1340,7 +1341,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                     // 忽略
                 }
             }
-            skillHint += "调用方式：read_file 先读 ~/.config/msgcode/skills/<id>/SKILL.md。把 SKILL.md 当成能力说明书 / 接口文档，仔细阅读后再按里面写明的真实调用合同执行；不要自造 wrapper，不要猜 main.sh，也不要猜 skill 目录里还有别的脚本。若当前能力已经作为原生工具暴露（例如 browser、feishu_send_file），优先调用原生工具，不要先绕回 bash/CLI。判断某个 skill 能做什么、不能做什么之前，必须先读清 SKILL.md；如果看完仍然不确定，就先和用户沟通，不要先下结论。";
+            skillHint += "调用方式：read_file 先读 ~/.config/msgcode/skills/<id>/SKILL.md。把 SKILL.md 当成能力说明书 / 接口文档，仔细阅读后再按里面写明的真实调用合同执行；不要自造 wrapper，不要猜 main.sh，也不要猜 skill 目录里还有别的脚本。skill 是说明书，不是默认执行入口。若当前能力已经作为原生工具暴露（例如 browser、feishu_send_file），优先调用原生工具，不要先绕回 bash/CLI。只有当前能力没有原生工具，或需要额外 CLI / 脚本合同知识时，才读 skill 后继续走 bash/CLI。判断某个 skill 能做什么、不能做什么之前，必须先读清 SKILL.md；如果看完仍然不确定，就先和用户沟通，不要先下结论。";
             system += skillHint;
         } catch {
             // 忽略

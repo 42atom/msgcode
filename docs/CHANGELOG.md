@@ -231,5 +231,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `mac/MsgcodeDesktopHost/README.md` - HostApp 架构与使用
 - `mac/MsgcodeDesktopHost/docs/desktop/README.md` - LaunchAgent 与测试钩子
 
+- 2026-03-12
+  - prompt/runtime: 收口系统 prompt 与 skill README 的 bash-first 叙事，冻结“原生工具优先，help_docs 为 CLI 自发现入口，skill 按需进入”的主线口径 (Issue: 0124, Plan: docs/design/plan-260312-native-tool-first-prompt-and-skill-contract.md) [risk: medium] [rollback: revert 0124 prompt/skill contract commit]
+
 [2.3.0]: https://github.com/yourorg/msgcode/releases/tag/v2.3.0
 [1.0.0]: https://github.com/yourorg/msgcode/releases/tag/v1.0.0

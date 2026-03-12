@@ -57,12 +57,16 @@ describe("P5.7-R3n: system prompt file reference", () => {
     expect(content).toContain("feishu_reply_message");
     expect(content).toContain("feishu_react_message");
     expect(content).toContain('<at user_id="对方ID">称呼</at>');
-    expect(content).toContain("optional/index.json");
+    expect(content).toContain("entry 指向 optional/ 目录");
     expect(content).toContain("twitter-media");
     expect(content).toContain("主索引已经汇总了基础 skill 和可选 skill 的摘要");
     expect(content).toContain("`memory` 不是工具名");
     expect(content).toContain("判断某个 skill 能做什么、不能做什么之前，必须仔细阅读对应的 SKILL.md");
     expect(content).toContain("如果看完仍然不确定能力边界或调用方式，先向用户说明不确定点并沟通");
+    expect(content).toContain("优先使用已注册原生工具");
+    expect(content).toContain("探索 CLI 合同时优先使用 help_docs");
+    expect(content).toContain("CLI 是正式能力边界之一，但不是所有任务都先绕 bash");
+    expect(content).toContain("skill 是说明书，不是默认执行入口");
     expect(content).toContain("凡是 AI 生成的图片、音频、视频以及其他生成产物，优先在当前 workspace 的 `AIDOCS/` 目录下查找");
   });
 

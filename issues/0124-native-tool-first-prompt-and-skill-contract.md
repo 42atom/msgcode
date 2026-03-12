@@ -1,0 +1,59 @@
+---
+id: 0124
+title: 原生工具优先的 prompt 与 skill 合同收口
+status: done
+owner: agent
+labels: [refactor, docs]
+risk: medium
+scope: agents prompt、tool-loop skill hint、skills README 的 bash-first 口径收正
+plan_doc: docs/design/plan-260312-native-tool-first-prompt-and-skill-contract.md
+links: [issues/0119-cli-reference-vs-runtime-gap-review.md, docs/design/plan-260312-cli-is-all-agents-need-reference.md]
+---
+
+## Context
+
+前几轮已经把 `help_docs`、第一公民文件工具、tool preview 单一真相源逐步收进主链，但系统 prompt 与 skill README 里仍残留明显的 bash-first 叙事：一开头就强调“通过 bash 调 msgcode CLI”，以及把 runtime skill 描述成 `runtime skill -> bash -> CLI 命令`。这会继续把模型折返到 shell glue，而不是先使用已注册原生工具。
+
+## Goal / Non-Goals
+
+### Goal
+
+- 把系统 prompt 收口为“原生工具优先，CLI 通过 help_docs 和 skill 合同按需进入”
+- 把 tool-loop 里的 skill hint 与该口径对齐
+- 把 `src/skills/README.md` 从 bash-first 收口为“真实调用合同优先”
+- 补上相应行为锁，防止 prompt 再漂回 bash-first
+
+### Non-Goals
+
+- 不新增或删除任何运行时工具
+- 不调整 `vision` / `mem` 的 suppress 决策
+- 不重写 skill runtime 结构
+
+## Plan
+
+- [x] 创建 0124 issue / plan 真相源
+- [x] 收口 `prompts/agents-prompt.md` 的 bash-first 叙事
+- [x] 收口 `src/agent-backend/tool-loop.ts` 的 skill 注入文案
+- [x] 收口 `src/skills/README.md` 的执行主链描述
+- [x] 更新相关测试锁与 changelog
+- [x] 运行 targeted tests、tsc、docs check
+
+## Acceptance Criteria
+
+- `agents-prompt.md` 明确“原生工具优先，help_docs 为 CLI 自发现入口”
+- `tool-loop` skill hint 不再暗示默认 `bash -> CLI`
+- `src/skills/README.md` 不再把 runtime skill 主链写成 bash-first
+- 至少一组 prompt / system prompt 回归锁住新口径
+
+## Notes
+
+- 这是 0119 的第五批收口项，目标是修骨架，不是加功能。
+- 验证：
+  - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r3n-system-prompt-file-ref.test.ts test/p5-7-r9-t2-skill-global-single-source.test.ts test/p5-7-r15-agent-read-skill-bridge.test.ts`
+  - `npx tsc --noEmit`
+  - `npm run docs:check`
+
+## Links
+
+- [Issue 0119](/Users/admin/GitProjects/msgcode/issues/0119-cli-reference-vs-runtime-gap-review.md)
+- [参考文档](/Users/admin/GitProjects/msgcode/docs/design/plan-260312-cli-is-all-agents-need-reference.md)
