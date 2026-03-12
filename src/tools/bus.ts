@@ -287,27 +287,6 @@ function validateToolArgs(
   return null;
 }
 
-function isSoulAliasPath(inputPath: string): boolean {
-  const normalized = inputPath.trim().replace(/\\/g, "/").toLowerCase();
-  if (!normalized) return false;
-  return (
-    normalized === "soul" ||
-    normalized === "soul.md" ||
-    normalized.endsWith("/soul") ||
-    normalized.endsWith("/soul.md")
-  );
-}
-
-async function pathExists(filePath: string): Promise<boolean> {
-  try {
-    const fsPromises = await import("node:fs/promises");
-    await fsPromises.access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 async function withTimeout<T>(p: Promise<T>, ms = 120000): Promise<T> {
   return await Promise.race([
     p,
@@ -1132,27 +1111,6 @@ export async function executeTool(
             durationMs: Date.now() - started,
           };
           break;
-        }
-
-        // P5.7-R6e: soul 路径别名兜底
-        // 仅在模型传入相对别名且主路径不存在时回退到工作区 SOUL 文件，避免误参导致 ENOENT
-        if (!isAbsolute(inputPath) && isSoulAliasPath(inputPath)) {
-          const canonicalSoulPath = resolve(ctx.workspacePath, ".msgcode", "SOUL.md");
-          const [primaryExists, canonicalExists] = await Promise.all([
-            pathExists(filePath),
-            pathExists(canonicalSoulPath),
-          ]);
-
-          if (!primaryExists && canonicalExists) {
-            logger.info("read_file remapped soul alias to workspace SOUL", {
-              module: "tools-bus",
-              tool,
-              inputPath,
-              resolvedPath: filePath,
-              remappedPath: canonicalSoulPath,
-            });
-            filePath = canonicalSoulPath;
-          }
         }
 
         try {

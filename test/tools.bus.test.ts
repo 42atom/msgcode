@@ -556,7 +556,7 @@ describe("Tool Bus", () => {
     });
   });
 
-  describe("Scenario E2: read_file soul 别名兜底", () => {
+  describe("Scenario E2: read_file SOUL 路径透明性", () => {
     beforeEach(() => {
       const configDir = join(tempWorkspace, ".msgcode");
       mkdirSync(configDir, { recursive: true });
@@ -567,7 +567,7 @@ describe("Tool Bus", () => {
       }));
     });
 
-    test("path=soul 且主路径不存在时应回退到 .msgcode/SOUL.md", async () => {
+    test("path=soul 且主路径不存在时应保留原生失败并提示下一步", async () => {
       const soulDir = join(tempWorkspace, ".msgcode");
       mkdirSync(soulDir, { recursive: true });
       writeFileSync(join(soulDir, "SOUL.md"), "# SOUL\nworkspace soul content");
@@ -582,9 +582,10 @@ describe("Tool Bus", () => {
         }
       );
 
-      expect(result.ok).toBe(true);
-      const data = result.data as { content: string };
-      expect(data.content).toContain("workspace soul content");
+      expect(result.ok).toBe(false);
+      expect(result.error?.code).toBe("TOOL_EXEC_FAILED");
+      expect(result.error?.message).toContain(`文件不存在：${join(tempWorkspace, "soul")}`);
+      expect(result.previewText).toContain("下一步建议：先用 bash 执行 ls、find 或 rg 确认路径");
     });
 
     test("path=soul 且主路径存在时应优先读取主路径", async () => {
