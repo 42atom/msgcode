@@ -56,10 +56,10 @@ describe("P5.7-R13: default workspace command fallback", () => {
 
     expect(result.success).toBe(true);
     expect(result.message).toContain("记忆注入状态");
-    expect(result.message).toContain("工作目录: default");
+    expect(result.message).toContain(`工作目录: ${defaultWorkspace}`);
   });
 
-  it("未显式绑定的新群首次落到 default 时，应持久化为真实 route", () => {
+  it("未显式绑定的新群首次落到 default 时，不应被系统自动持久化为真实 route", () => {
     const chatId = "feishu:oc_auto_default_bind";
     const defaultWorkspace = path.join(TEST_ROOT, "default");
 
@@ -68,10 +68,7 @@ describe("P5.7-R13: default workspace command fallback", () => {
     expect(routed?.projectDir).toBe(defaultWorkspace);
 
     const persisted = getRouteByChatId(chatId);
-    expect(persisted).not.toBeNull();
-    expect(persisted?.workspacePath).toBe(defaultWorkspace);
-    expect(persisted?.label).toBe("default");
-    expect(persisted?.botType).toBe("agent-backend");
+    expect(persisted).toBeNull();
   });
 
   it("显式绑定存在时，应优先使用显式 workspace", async () => {

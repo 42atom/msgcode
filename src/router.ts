@@ -9,7 +9,7 @@
 
 import { config, type GroupConfig } from "./config.js";
 import { normalizeChatId, stableGroupNameForChatId } from "./channels/chat-id.js";
-import { getRouteByChatId as getRouteFromStore, setRoute } from "./routes/store.js";
+import { getRouteByChatId as getRouteFromStore } from "./routes/store.js";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -90,22 +90,8 @@ export function routeByChatId(chatId: string): Route | null {
         // ignore：创建失败不阻塞路由，但后续会在 handler 里报错（更可观测）
     }
 
-    // default workspace 不是“临时假路由”，而是新群的真实初始绑定。
-    try {
-        const now = new Date().toISOString();
-        setRoute(chatId, {
-            chatGuid: chatId,
-            chatId: normalizeChatId(chatId),
-            workspacePath,
-            label: defaultDir,
-            botType: "agent-backend",
-            status: "active",
-            createdAt: now,
-            updatedAt: now,
-        });
-    } catch {
-        // ignore：route 持久化失败不阻塞当前消息，保留 fallback 行为
-    }
+    // default workspace 只保留为运行时临时 fallback。
+    // 真实 route 必须来自显式 /bind 或静态配置，避免系统替用户永久做主。
 
     return {
         chatId, // 回复仍回到当前 chat

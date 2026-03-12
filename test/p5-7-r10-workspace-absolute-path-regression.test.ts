@@ -120,7 +120,7 @@ describe("P5.7-R10: absolute workspace path", () => {
     expect(remove.code).not.toBe(0); // 失败是因为 schedule 不存在
   });
 
-  it("default workspace 自动落地后，schedule add 应可成功投递到当前群", () => {
+  it("default workspace 仅作临时 fallback 时，schedule add 应重新要求显式 route", () => {
     const root = createWorkspace();
     const routesFile = path.join(root, "config", "routes.json");
     const defaultWorkspace = path.join(root, "default");
@@ -148,9 +148,9 @@ describe("P5.7-R10: absolute workspace path", () => {
       "--json",
     ]);
 
-    expect(add.code).toBe(0);
-    expect(add.envelope.status).toBe("pass");
-    expect(String(add.envelope.data?.path || "")).toContain(defaultWorkspace);
+    expect(add.code).not.toBe(0);
+    expect(add.envelope.status).toBe("error");
+    expect(add.envelope.errors?.[0]?.code).toBe("SCHEDULE_WORKSPACE_NOT_FOUND");
   });
 
   it("相对路径越界应仍返回 PATH_TRAVERSAL", () => {
