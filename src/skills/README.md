@@ -63,7 +63,9 @@ src/skills/
 │   │   └── SKILL.md
 │   ├── scrapling/
 │   │   └── SKILL.md
-│   └── reactions/
+│   ├── reactions/
+│   │   └── SKILL.md
+│   └── subagent/
 │       └── SKILL.md
 └── runtime/                # 仓库托管的 runtime skill 真相源
     ├── index.json          # 托管 skill 索引（vision-index, local-vision-lmstudio, scheduler, plan-files, character-identity, feishu-send-file, memory, file, thread, todo, media, gen, banana-pro-image-gen, patchright-browser）

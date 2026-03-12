@@ -51,7 +51,7 @@ describe("P5.7-R13: runtime skill sync", () => {
       expect(result.exitCode).toBe(0);
     }
 
-    const optionalSkillIds = ["twitter-media", "veo-video", "screenshot", "scrapling", "reactions"];
+    const optionalSkillIds = ["twitter-media", "veo-video", "screenshot", "scrapling", "reactions", "subagent"];
 
     for (const skillId of optionalSkillIds) {
       const result = Bun.spawnSync(
@@ -121,6 +121,7 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(result.optionalSkillIds).toContain("screenshot");
     expect(result.optionalSkillIds).toContain("scrapling");
     expect(result.optionalSkillIds).toContain("reactions");
+    expect(result.optionalSkillIds).toContain("subagent");
     expect(result.copiedFiles).toBeGreaterThanOrEqual(10);
     expect(result.indexUpdated).toBe(true);
 
@@ -157,6 +158,7 @@ describe("P5.7-R13: runtime skill sync", () => {
     };
     const twitterMediaDoc = await readFile(join(userSkillsDir, "optional", "twitter-media", "SKILL.md"), "utf-8");
     const screenshotDoc = await readFile(join(userSkillsDir, "optional", "screenshot", "SKILL.md"), "utf-8");
+    const subagentDoc = await readFile(join(userSkillsDir, "optional", "subagent", "SKILL.md"), "utf-8");
     const mergedIndex = JSON.parse(await readFile(join(userSkillsDir, "index.json"), "utf-8")) as {
       skills: Array<{ id: string; entry?: string; description?: string }>;
     };
@@ -237,6 +239,9 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(twitterMediaDoc).toContain("twitter-media skill");
     expect(twitterMediaDoc).toContain("api.fxtwitter.com");
     expect(screenshotDoc).toContain("msgcode media screen");
+    expect(subagentDoc).toContain("subagent skill");
+    expect(subagentDoc).toContain("不得假装已经委派成功");
+    expect(subagentDoc).toContain("贪吃蛇 HTML 游戏");
     expect(skillDoc).toContain("patchright-browser skill");
     expect(skillDoc).toContain("name: patchright-browser");
     expect(skillDoc).toContain("## 能力");
@@ -278,6 +283,7 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("screenshot");
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("scrapling");
     expect(mergedIndex.skills.map((skill) => skill.id)).toContain("reactions");
+    expect(mergedIndex.skills.map((skill) => skill.id)).toContain("subagent");
     expect(mergedIndex.skills.map((skill) => skill.id)).not.toContain("pinchtab-browser");
     expect(mergedIndex.skills.map((skill) => skill.id)).not.toContain("zai-vision-mcp");
     expect(optionalIndex.skills.map((skill) => skill.id)).toContain("twitter-media");
@@ -285,6 +291,7 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(optionalIndex.skills.map((skill) => skill.id)).toContain("screenshot");
     expect(optionalIndex.skills.map((skill) => skill.id)).toContain("scrapling");
     expect(optionalIndex.skills.map((skill) => skill.id)).toContain("reactions");
+    expect(optionalIndex.skills.map((skill) => skill.id)).toContain("subagent");
     expect(optionalIndex.skills.find((skill) => skill.id === "twitter-media")?.entry).toBe(
       "~/.config/msgcode/skills/optional/twitter-media/SKILL.md",
     );
@@ -292,6 +299,10 @@ describe("P5.7-R13: runtime skill sync", () => {
       "~/.config/msgcode/skills/optional/twitter-media/SKILL.md",
     );
     expect(mergedIndex.skills.find((skill) => skill.id === "twitter-media")?.layer).toBe("optional");
+    expect(optionalIndex.skills.find((skill) => skill.id === "subagent")?.entry).toBe(
+      "~/.config/msgcode/skills/optional/subagent/SKILL.md",
+    );
+    expect(mergedIndex.skills.find((skill) => skill.id === "subagent")?.layer).toBe("optional");
     expect(mergedIndex.skills.find((skill) => skill.id === "vision-index")?.entry).toBe("~/.config/msgcode/skills/vision-index/SKILL.md");
     expect(mergedIndex.skills.find((skill) => skill.id === "local-vision-lmstudio")?.entry).toBe("~/.config/msgcode/skills/local-vision-lmstudio/SKILL.md");
     expect(mergedIndex.skills.find((skill) => skill.id === "plan-files")?.entry).toBe("~/.config/msgcode/skills/plan-files/SKILL.md");

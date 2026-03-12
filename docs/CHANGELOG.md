@@ -3,6 +3,7 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-12
+  - skills/optional: 新增 `subagent` optional skill，专门教主脑何时把复杂任务委派给 `codex` / `claude-code`、如何写子任务卡、如何监控与验收；同时明确当前若无正式 `subagent` 合同或未安装执行臂，不得假装已委派成功，并提示用户安装以获得更强能力 (Issue: 0136, Plan: docs/design/plan-260312-subagent-skill-guidance-and-install-hint.md) [risk: low] [rollback: 移除 `src/skills/optional/subagent/`、还原 optional 索引/README/测试与本条 changelog]
   - cli/file: retired `file send` 已退出 `file --help` 公开命令面，只保留 direct invoke compat 壳；人类公开 help 与 `help-docs` 现在在 retired 口径上重新一致 (Issue: 0135, Plan: docs/design/plan-260312-hide-retired-file-send-from-public-file-surface.md) [risk: low] [rollback: 恢复 `src/cli/file.ts` 中的 `send` 子命令并移除 `file-send` compat 映射]
   - cli/skills: 占位式 `msgcode skill` 已降为显式 retired compat shell；它不再伪装成可运行的正式命令合同，直接执行会返回迁移提示并引导到 `help-docs` / `SKILL.md`，避免假合同继续污染二进制公开面 (Issue: 0134, Plan: docs/design/plan-260312-retire-placeholder-skill-cli-surface.md) [risk: low] [rollback: 恢复 `src/cli/skills.ts` 中原占位 list/run 子命令]
   - cli/help-docs: `help-docs --json` 现在覆盖全部 canonical memory 子命令，补齐 `memory index/get` 合同，避免与 `memory --help` 分叉 (Issue: 0133, Plan: docs/design/plan-260312-help-docs-memory-canonical-coverage.md) [risk: low] [rollback: 移除新增 memory 合同导出与 help-docs 接线]

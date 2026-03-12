@@ -31,6 +31,12 @@
       "name": "Reactions",
       "entry": "~/.config/msgcode/skills/optional/reactions/SKILL.md",
       "description": "消息表情反应说明书。只有本地 reaction bridge 已存在时才使用，不属于默认 core 能力。"
+    },
+    {
+      "id": "subagent",
+      "name": "Subagent",
+      "entry": "~/.config/msgcode/skills/optional/subagent/SKILL.md",
+      "description": "子代理委派说明书。需要主脑把复杂任务拆给 codex 或 claude-code，并在完成后回收结果时按需读取。"
     }
   ]
 }
