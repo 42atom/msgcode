@@ -88,3 +88,4 @@ links: []
 - Reference: /Users/admin/GitProjects/msgcode/docs/design/plan-260312-cli-is-all-agents-need-reference.md
 - Follow-up: /Users/admin/GitProjects/msgcode/issues/0133-help-docs-memory-canonical-coverage.md
 - Follow-up: /Users/admin/GitProjects/msgcode/issues/0134-retire-placeholder-skill-cli-surface.md
+- Follow-up: /Users/admin/GitProjects/msgcode/issues/0135-hide-retired-file-send-from-public-file-surface.md

@@ -157,12 +157,10 @@ function createFileSendRetiredEnvelope(
 }
 
 /**
- * 创建 file send 子命令（legacy 退役壳）
+ * 绑定 retired file send 动作
  */
-function createFileSendCommand(): Command {
-  const cmd = new Command("send");
-
-  cmd
+function attachFileSendRetiredAction(cmd: Command): Command {
+  return cmd
     .description("已退役：历史 iMessage-only 文件发送入口")
     .option("--path <path>", "legacy 文件路径（已忽略）")
     .option("--to <chat-guid>", "legacy 目标 chatGuid（已忽略）")
@@ -184,8 +182,15 @@ function createFileSendCommand(): Command {
       }
       process.exit(1);
     });
+}
 
-  return cmd;
+/**
+ * 创建 file send 兼容命令（legacy 退役壳）
+ */
+export function createFileSendCompatCommand(): Command {
+  const cmd = new Command("file-send");
+
+  return attachFileSendRetiredAction(cmd);
 }
 
 // ============================================
@@ -955,7 +960,6 @@ export function createFileCommand(): Command {
   const fileCmd = new Command("file");
 
   fileCmd.description("文件操作（查找/读取/写入/删除/移动/复制等）");
-  fileCmd.addCommand(createFileSendCommand());
   fileCmd.addCommand(createFileFindCommand());
   fileCmd.addCommand(createFileReadCommand());
   fileCmd.addCommand(createFileWriteCommand());

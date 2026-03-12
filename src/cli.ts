@@ -84,6 +84,9 @@ function normalizeLegacyCliArgs(argv: string[]): string[] {
   if (top === "browser" && subcommand === "gmail-readonly") {
     return ["browser-gmail-readonly", ...rest];
   }
+  if (top === "file" && subcommand === "send") {
+    return ["file-send", ...rest];
+  }
   if (top === "jobs") {
     return ["job", subcommand, ...rest].filter(Boolean) as string[];
   }
@@ -304,6 +307,11 @@ async function loadFileCommands() {
   program.addCommand(createFileCommand());
 }
 
+async function loadFileCompatCommands() {
+  const { createFileSendCompatCommand } = await import("./cli/file.js");
+  program.addCommand(createFileSendCompatCommand());
+}
+
 // Help-Docs 命令（P5.7-R1：机器可读帮助）
 async function loadHelpDocsCommand() {
   const { createHelpDocsCommand } = await import("./cli/help.js");
@@ -408,6 +416,9 @@ async function main() {
   }
   if (top === "file") {
     await loadFileCommands();
+  }
+  if (top === "file-send") {
+    await loadFileCompatCommands();
   }
   if (top === "web") {
     await loadWebCommands();
