@@ -62,9 +62,11 @@ links: []
   - 兼容别名 `remember/status` 不再出现在 `memory --help`，但会在 CLI 解析前映射到 canonical 主链
   - `help-docs` 合同现显式暴露 `aliases`
   - 已完成第二刀收口：`browser gmail-readonly` 已退出公开命令面与 `help-docs` 正式合同，保留为 CLI 解析期兼容入口
+  - 已完成第三刀收口：`gen-image/gen-audio` 已退出根级公开命令面，公开入口统一回 `gen`；`jobs`/`skills` 根级兼容别名也已统一在 CLI 解析期映射到 canonical 主链
   - 验证：
     - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r4-1-memory-contract.test.ts test/p5-7-r4-t1-smoke-verification.test.ts`
     - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r7a-browser-contract.test.ts test/p5-7-r1c-hard-gate.test.ts test/p5-7-r1-file-send.test.ts`
+    - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r6-hotfix-gen-entry-tools-default.test.ts test/p5-7-r6-2-gen-image-contract.test.ts test/p5-7-r6-3-gen-audio-contract.test.ts`
     - `npx tsc --noEmit`
     - `npm run docs:check`
 

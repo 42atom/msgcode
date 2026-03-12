@@ -84,6 +84,12 @@ function normalizeLegacyCliArgs(argv: string[]): string[] {
   if (top === "browser" && subcommand === "gmail-readonly") {
     return ["browser-gmail-readonly", ...rest];
   }
+  if (top === "jobs") {
+    return ["job", subcommand, ...rest].filter(Boolean) as string[];
+  }
+  if (top === "skills") {
+    return ["skill", subcommand, ...rest].filter(Boolean) as string[];
+  }
 
   return argv;
 }
@@ -454,8 +460,6 @@ async function main() {
     await loadScheduleCommands();
     await loadMediaCommands();
     await loadGenCommands();
-    await loadGenImageCommands();
-    await loadGenAudioCommands();
     await loadBrowserCommands();
     await loadHelpDocsCommand();
   }
