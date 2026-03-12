@@ -1,0 +1,73 @@
+---
+id: 0118
+title: 自然语言文件回传动作题优先走 feishu_send_file 主链
+status: done
+owner: agent
+labels: [feature, refactor]
+risk: medium
+scope: 提示词、tool-loop 原生工具优先提示、feishu-send-file skill 与真实 Feishu BDD 验收
+plan_doc: docs/design/plan-260312-feishu-send-file-natural-language-action-mainline.md
+links: []
+---
+
+## Context
+
+真实 Feishu BDD 串行验收已经证明：当用户用自然语言说“把当前工作目录里的 smoke-a.txt 发回这个群里”时，模型会直接回复“已发好了”，但日志显示 `toolCallCount=0 route=no-tool`，群里也没有真实 `file` 类型消息。这意味着文件发送链在自然语言动作题下仍可能退化成“口头完成、没有副作用”。
+
+## Goal / Non-Goals
+
+### Goal
+
+- 自然语言“把当前工作目录里的某个文件发回当前群/当前会话”默认按动作题处理
+- 在真实 `feishu_send_file` 成功前，不允许模型口头宣布“已发好了”
+- 用真实 Feishu BDD 串行复测证明：群里出现真实文件消息，日志出现 `Tool Bus: SUCCESS feishu_send_file`
+
+### Non-Goals
+
+- 本轮不新增新的动作裁判层、supervisor 或 policy layer
+- 本轮不重写 `feishu_send_file` 工具实现
+- 本轮不把所有外部动作题都硬编码成 fail-closed 状态机
+
+## Plan
+
+- [x] 收紧执行提示词：明确“把当前工作目录里的某个文件发回当前群/当前会话”是动作题，不是解释题
+- [x] 收紧 `tool-loop` 原生工具优先提示：当 `feishu_send_file` 可用时，没有真实成功回执前不得直接结束
+- [x] 更新 `feishu-send-file` skill 文案，强调动作题语义与成功回执前不得口头完成
+- [x] 同步 runtime skills 到用户目录并重启 daemon
+- [x] 重新跑真实 Feishu 串行 BDD，拿到日志、群消息、workspace 三类证据
+
+## Acceptance Criteria
+
+- 串行自然语言文件回传 case 不再出现 `toolCallCount=0 route=no-tool`
+- 日志出现 `Tool Bus: SUCCESS feishu_send_file`
+- 群里出现真实 `file` 类型消息
+- 最终文本回复与真实文件发送一致
+
+## Notes
+
+- 修复前串行失败：
+  - token：`file-bdd-serial-1773300512`
+  - runId：`d30a0207-dca5-44d2-b78f-a3f8d5221134`
+  - 证据：`toolCallCount=0 route=no-tool`
+  - 群里只有文本“已发好了”，没有真实文件消息
+- 修复后串行通过：
+  - token：`file-bdd-fix-1773300671`
+  - 文件：`/Users/admin/msgcode-workspaces/smoke/ws-a/live-send-serial-fix-1773300670.txt`
+  - runId：`f800a916-75db-4c80-8403-c02fa2da0a06`
+  - 日志证据：
+    - `Feishu 文件消息发送成功`
+    - `Tool Bus: SUCCESS feishu_send_file`
+    - `toolSequence=ok:feishu_send_file`
+  - 群里最终文本：
+    - `已发好了。`
+    - `file-bdd-fix-1773300671`
+- 代码收口：
+  - `prompts/agents-prompt.md`
+  - `prompts/fragments/exec-tool-protocol-constraint.md`
+  - `src/agent-backend/tool-loop.ts`
+  - `src/skills/runtime/feishu-send-file/SKILL.md`
+
+## Links
+
+- /Users/admin/.config/msgcode/log/msgcode.log
+- /Users/admin/GitProjects/msgcode/AIDOCS/prompts/feishu-live-bdd-acceptance-suite-v1.md

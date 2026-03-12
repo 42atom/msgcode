@@ -600,6 +600,7 @@ function buildNativeToolPriorityHint(toolNames: ToolName[]): string {
     if (toolNames.includes("feishu_send_file")) {
         lines.push("发送文件回飞书群时，唯一正式发送入口是 feishu_send_file。");
         lines.push("不要先用 bash 调 msgcode CLI 假装发送文件；只有 feishu_send_file 成功后，才可回答“已发送”。");
+        lines.push("如果用户明确要求“把当前工作目录里的某个文件发回当前群/当前会话”，这就是必须执行的动作题；没有真实 feishu_send_file 回执前，不要直接结束。");
     }
 
     if (toolNames.includes("browser")) {
