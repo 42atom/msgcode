@@ -46,6 +46,7 @@ links: [docs/design/plan-260312-cli-is-all-agents-need-reference.md, docs/notes/
 - [x] 第一批收口项按新 issue 落地：`read_file + 输出层分层`（Issue 0120）
 - [x] 第二批收口项按新 issue 落地：`help 主探索路径 + quota 热路径瘦身`（Issue 0121）
 - [x] 第三批收口项按新 issue 落地：`write/edit 第一公民工具 + 写改 preview 下沉`（Issue 0122）
+- [x] 第四批收口项按新 issue 落地：`tool preview 单一真相源 + tool-loop 二次裁剪退出`（Issue 0123）
 
 ## Acceptance Criteria
 
@@ -78,6 +79,8 @@ links: [docs/design/plan-260312-cli-is-all-agents-need-reference.md, docs/notes/
   - `docs/design/plan-260312-help-tool-and-quota-hot-path-thinning.md`
   - `issues/0122-first-class-file-tools-and-write-preview-layering.md`
   - `docs/design/plan-260312-first-class-file-tools-and-write-preview-layering.md`
+  - `issues/0123-tool-preview-single-source-thinning.md`
+  - `docs/design/plan-260312-tool-preview-single-source-thinning.md`
 
 ## Links
 

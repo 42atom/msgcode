@@ -107,6 +107,8 @@ describe("P5.7-R32: feishu_list_members", () => {
       { senderId: "ou_owner", name: "won" },
       { senderId: "ou_other", name: "tan" },
     ]);
+    expect(result.previewText).toContain("[feishu_list_members]");
+    expect(result.previewText).toContain("[memberTotal] 2");
   });
 
   it("接口失败时，错误信息应提示权限或机器人状态", async () => {

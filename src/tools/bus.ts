@@ -458,6 +458,157 @@ function buildEditFilePreviewText(params: {
   ].join("\n"));
 }
 
+function buildToolErrorPreviewText(tool: ToolName, message: string): string {
+  return clipPreviewText([
+    `[${tool}] error`,
+    message,
+  ].join("\n"));
+}
+
+function buildTtsPreviewText(audioPath: string): string {
+  return clipPreviewText([
+    `[tts] audioPath=${audioPath}`,
+    "语音已生成。",
+  ].join("\n"));
+}
+
+function buildAsrPreviewText(txtPath: string): string {
+  return clipPreviewText([
+    `[asr] txtPath=${txtPath}`,
+    "语音已转写为文本。",
+  ].join("\n"));
+}
+
+function buildVisionPreviewText(textPath: string): string {
+  return clipPreviewText([
+    `[vision] textPath=${textPath}`,
+    "视觉识别结果已落盘。",
+  ].join("\n"));
+}
+
+function buildBrowserPreviewText(params: {
+  operation: string;
+  data: Record<string, unknown>;
+}): string {
+  const lines = [`[browser] operation=${params.operation}`];
+  if (typeof params.data.title === "string" && params.data.title.trim()) {
+    lines.push(`[title] ${params.data.title.trim()}`);
+  }
+  if (typeof params.data.url === "string" && params.data.url.trim()) {
+    lines.push(`[url] ${params.data.url.trim()}`);
+  }
+  if (typeof params.data.instanceId === "string" && params.data.instanceId.trim()) {
+    lines.push(`[instanceId] ${params.data.instanceId.trim()}`);
+  }
+  if (typeof params.data.tabId === "string" && params.data.tabId.trim()) {
+    lines.push(`[tabId] ${params.data.tabId.trim()}`);
+  }
+  if (lines.length === 1) {
+    const keys = Object.keys(params.data).slice(0, 6);
+    lines.push(keys.length > 0 ? `[keys] ${keys.join(", ")}` : "[status] ok");
+  }
+  return clipPreviewText(lines.join("\n"));
+}
+
+function buildDesktopPreviewText(params: {
+  exitCode: number | null;
+  stdout: string;
+  stderr: string;
+}): string {
+  const lines = [`[desktop] exitCode=${params.exitCode ?? "null"}`];
+  if (params.stdout.trim()) {
+    lines.push("[stdout]");
+    lines.push(params.stdout.trim());
+  }
+  if (params.stderr.trim()) {
+    lines.push("[stderr]");
+    lines.push(params.stderr.trim());
+  }
+  return clipPreviewText(lines.join("\n"));
+}
+
+function buildFeishuSendFilePreviewText(params: {
+  chatId: string;
+  attachmentType?: "file" | "image";
+  attachmentKey?: string;
+}): string {
+  const lines = [`[feishu_send_file] chatId=${params.chatId}`];
+  if (params.attachmentType) {
+    lines.push(`[attachmentType] ${params.attachmentType}`);
+  }
+  if (params.attachmentKey) {
+    lines.push(`[attachmentKey] ${params.attachmentKey}`);
+  }
+  lines.push("文件消息已发送。");
+  return clipPreviewText(lines.join("\n"));
+}
+
+function buildFeishuListMembersPreviewText(params: {
+  chatId: string;
+  memberTotal: number;
+  members: Array<{ senderId: string; name: string }>;
+}): string {
+  const lines = [
+    `[feishu_list_members] chatId=${params.chatId}`,
+    `[memberTotal] ${params.memberTotal}`,
+  ];
+  const roster = params.members.slice(0, 5).map((member) => member.name || member.senderId);
+  if (roster.length > 0) {
+    lines.push("[members]");
+    lines.push(...roster.map((name) => `- ${name}`));
+  }
+  return clipPreviewText(lines.join("\n"));
+}
+
+function buildFeishuRecentMessagesPreviewText(params: {
+  chatId: string;
+  count: number;
+  messages: Array<{ textSnippet: string; senderId: string; messageType: string }>;
+}): string {
+  const lines = [
+    `[feishu_list_recent_messages] chatId=${params.chatId}`,
+    `[count] ${params.count}`,
+  ];
+  const snippets = params.messages.slice(0, 5).map((message) => {
+    const snippet = (message.textSnippet || "").trim() || `<${message.messageType}>`;
+    return `- ${message.senderId}: ${snippet}`;
+  });
+  if (snippets.length > 0) {
+    lines.push("[messages]");
+    lines.push(...snippets);
+  }
+  return clipPreviewText(lines.join("\n"));
+}
+
+function buildFeishuReplyPreviewText(params: {
+  repliedToMessageId: string;
+  messageId: string;
+  replyInThread: boolean;
+}): string {
+  return clipPreviewText([
+    `[feishu_reply_message] repliedTo=${params.repliedToMessageId}`,
+    `[messageId] ${params.messageId}`,
+    `[replyInThread] ${params.replyInThread ? "true" : "false"}`,
+    "消息回复已发送。",
+  ].join("\n"));
+}
+
+function buildFeishuReactPreviewText(params: {
+  messageId: string;
+  emojiType: string;
+  reactionId?: string;
+}): string {
+  const lines = [
+    `[feishu_react_message] messageId=${params.messageId}`,
+    `[emojiType] ${params.emojiType}`,
+  ];
+  if (params.reactionId) {
+    lines.push(`[reactionId] ${params.reactionId}`);
+  }
+  lines.push("消息表情回复已发送。");
+  return clipPreviewText(lines.join("\n"));
+}
+
 export async function executeTool<TTool extends ToolName>(
   tool: TTool,
   args: Record<string, unknown>,
@@ -480,6 +631,7 @@ export async function executeTool(
       ok: false,
       tool,
       error: { code: gate.code!, message: gate.message! },
+      previewText: buildToolErrorPreviewText(tool, gate.message!),
       durationMs: Date.now() - started,
     };
 
@@ -507,6 +659,7 @@ export async function executeTool(
       ok: false,
       tool,
       error: { code: validationError.code, message: validationError.message },
+      previewText: buildToolErrorPreviewText(tool, validationError.message),
       durationMs: Date.now() - started,
     };
 
@@ -557,6 +710,7 @@ export async function executeTool(
           tool,
           data: { audioPath: out.audioPath },
           artifacts: [{ kind: "tts", path: out.audioPath }],
+          previewText: buildTtsPreviewText(out.audioPath),
           durationMs: Date.now() - started,
         };
         break;
@@ -574,6 +728,7 @@ export async function executeTool(
           tool,
           data: { txtPath: out.txtPath },
           artifacts: [{ kind: "asr", path: out.txtPath }],
+          previewText: buildAsrPreviewText(out.txtPath),
           durationMs: Date.now() - started,
         };
         break;
@@ -591,6 +746,7 @@ export async function executeTool(
           tool,
           data: { textPath: out.textPath },
           artifacts: [{ kind: "vision", path: out.textPath }],
+          previewText: buildVisionPreviewText(out.textPath),
           durationMs: Date.now() - started,
         };
         break;
@@ -666,6 +822,10 @@ export async function executeTool(
               operation: browser.operation,
               result: browser.data,
             },
+            previewText: buildBrowserPreviewText({
+              operation: browser.operation,
+              data: browser.data,
+            }),
             durationMs: Date.now() - started,
           };
           break;
@@ -687,6 +847,7 @@ export async function executeTool(
               code,
               message,
             },
+            previewText: buildToolErrorPreviewText(tool, message),
             durationMs: Date.now() - started,
           };
           break;
@@ -744,6 +905,11 @@ export async function executeTool(
               tool,
               data: { exitCode: out.exitCode, stdout: out.stdout, stderr: out.stderr },
               artifacts: artifacts.length > 0 ? artifacts : undefined,
+              previewText: buildDesktopPreviewText({
+                exitCode: out.exitCode,
+                stdout: out.stdout,
+                stderr: out.stderr,
+              }),
               durationMs: Date.now() - started,
             };
             break;
@@ -760,6 +926,7 @@ export async function executeTool(
                 code: "TOOL_EXEC_FAILED",
                 message: msg
               },
+              previewText: buildToolErrorPreviewText(tool, msg),
               durationMs: Date.now() - started,
             };
             break;
@@ -809,6 +976,7 @@ export async function executeTool(
                 code: "TOOL_EXEC_FAILED",
                 message: `msgcode-desktopctl not found. Build first: cd mac/msgcode-desktopctl && swift build`
               },
+              previewText: buildToolErrorPreviewText(tool, "msgcode-desktopctl not found. Build first: cd mac/msgcode-desktopctl && swift build"),
               durationMs: Date.now() - started,
             };
             break;
@@ -854,6 +1022,7 @@ export async function executeTool(
               ok: false,
               tool,
               error: { code: "TOOL_NOT_ALLOWED", message: "abort-demo is for CLI testing only" },
+              previewText: buildToolErrorPreviewText(tool, "abort-demo is for CLI testing only"),
               durationMs: Date.now() - started,
             };
             break;
@@ -912,6 +1081,11 @@ export async function executeTool(
             tool,
             data: { exitCode: out.exitCode ?? -1, stdout: out.stdout, stderr: out.stderr },
             artifacts: artifacts.length > 0 ? artifacts : undefined,
+            previewText: buildDesktopPreviewText({
+              exitCode: out.exitCode ?? -1,
+              stdout: out.stdout,
+              stderr: out.stderr,
+            }),
             durationMs: Date.now() - started,
           };
           break;
@@ -954,6 +1128,7 @@ export async function executeTool(
               code: "TOOL_NOT_ALLOWED",
               message: `path must be under workspace (fsScope: ${fsScope}, path: ${inputPath})`,
             },
+            previewText: buildToolErrorPreviewText(tool, `path must be under workspace (fsScope: ${fsScope}, path: ${inputPath})`),
             durationMs: Date.now() - started,
           };
           break;
@@ -1178,6 +1353,7 @@ export async function executeTool(
               code: "TOOL_NOT_ALLOWED",
               message: `path must be under workspace (fsScope: ${fsScope}, path: ${inputPath})`,
             },
+            previewText: buildToolErrorPreviewText(tool, `path must be under workspace (fsScope: ${fsScope}, path: ${inputPath})`),
             durationMs: Date.now() - started,
           };
           break;
@@ -1245,6 +1421,7 @@ export async function executeTool(
               code: "TOOL_NOT_ALLOWED",
               message: `path must be under workspace (fsScope: ${fsScope}, path: ${inputPath})`,
             },
+            previewText: buildToolErrorPreviewText(tool, `path must be under workspace (fsScope: ${fsScope}, path: ${inputPath})`),
             durationMs: Date.now() - started,
           };
           break;
@@ -1351,6 +1528,13 @@ export async function executeTool(
             ...(out.attachmentKey ? { attachmentKey: out.attachmentKey } : {}),
           } : undefined,
           error: out.ok ? undefined : { code: "TOOL_EXEC_FAILED", message: out.error || "发送失败" },
+          previewText: out.ok
+            ? buildFeishuSendFilePreviewText({
+                chatId: out.chatId,
+                attachmentType: out.attachmentType,
+                attachmentKey: out.attachmentKey,
+              })
+            : buildToolErrorPreviewText(tool, out.error || "发送失败"),
           durationMs: Date.now() - started,
         };
         break;
@@ -1408,6 +1592,13 @@ export async function executeTool(
               }
             : undefined,
           error: out.ok ? undefined : { code: "TOOL_EXEC_FAILED", message: out.error || "获取群成员失败" },
+          previewText: out.ok
+            ? buildFeishuListMembersPreviewText({
+                chatId: out.chatId,
+                memberTotal: out.memberTotal ?? out.members?.length ?? 0,
+                members: out.members ?? [],
+              })
+            : buildToolErrorPreviewText(tool, out.error || "获取群成员失败"),
           durationMs: Date.now() - started,
         };
         break;
@@ -1462,6 +1653,13 @@ export async function executeTool(
               }
             : undefined,
           error: out.ok ? undefined : { code: "TOOL_EXEC_FAILED", message: out.error || "获取最近消息失败" },
+          previewText: out.ok
+            ? buildFeishuRecentMessagesPreviewText({
+                chatId: out.chatId,
+                count: out.count ?? out.messages?.length ?? 0,
+                messages: out.messages ?? [],
+              })
+            : buildToolErrorPreviewText(tool, out.error || "获取最近消息失败"),
           durationMs: Date.now() - started,
         };
         break;
@@ -1513,6 +1711,13 @@ export async function executeTool(
               }
             : undefined,
           error: out.ok ? undefined : { code: "TOOL_EXEC_FAILED", message: out.error || "回复消息失败" },
+          previewText: out.ok
+            ? buildFeishuReplyPreviewText({
+                repliedToMessageId: out.repliedToMessageId,
+                messageId: out.messageId ?? "",
+                replyInThread: out.replyInThread ?? replyInThread,
+              })
+            : buildToolErrorPreviewText(tool, out.error || "回复消息失败"),
           durationMs: Date.now() - started,
         };
         break;
@@ -1562,6 +1767,13 @@ export async function executeTool(
               }
             : undefined,
           error: out.ok ? undefined : { code: "TOOL_EXEC_FAILED", message: out.error || "消息表情回复失败" },
+          previewText: out.ok
+            ? buildFeishuReactPreviewText({
+                messageId: out.messageId,
+                reactionId: out.reactionId,
+                emojiType: out.emojiType ?? "THUMBSUP",
+              })
+            : buildToolErrorPreviewText(tool, out.error || "消息表情回复失败"),
           durationMs: Date.now() - started,
         };
         break;
@@ -1571,6 +1783,7 @@ export async function executeTool(
           ok: false,
           tool,
           error: { code: "TOOL_NOT_ALLOWED", message: `unsupported tool in P0: ${tool}` },
+          previewText: buildToolErrorPreviewText(tool, `unsupported tool in P0: ${tool}`),
           durationMs: Date.now() - started,
         };
         break;
@@ -1600,6 +1813,7 @@ export async function executeTool(
       ok: false,
       tool,
       error: { code, message: msg },
+      previewText: buildToolErrorPreviewText(tool, msg),
       durationMs: Date.now() - started,
     };
 

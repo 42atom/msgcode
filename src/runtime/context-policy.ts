@@ -4,7 +4,6 @@
  * 职责：
  * - 统一 summary / recent window / task checkpoint 的上下文装配
  * - 统一 budget observation 与 compact 入口
- * - 为 tool preview 提供同一套裁剪 helper
  *
  * 约束：
  * - 只做薄 helper，不新增 manager / platform
@@ -107,11 +106,6 @@ export function clipContextText(text: string, maxChars: number): string {
     if (text.length <= maxChars) return text;
     if (maxChars <= 16) return text.slice(0, maxChars);
     return `${text.slice(0, maxChars - 14)}...(truncated)`;
-}
-
-export function clipToolPreviewText(text: string, maxChars: number): string {
-    if (text.length <= maxChars) return text;
-    return `${text.slice(0, maxChars)}...`;
 }
 
 /**

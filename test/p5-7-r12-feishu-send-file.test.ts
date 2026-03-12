@@ -181,6 +181,8 @@ describe("P5.7-R12: feishu_send_file", () => {
     expect(result.data?.chatId).toBe("oc_from_workspace");
     expect(result.data?.attachmentType).toBe("file");
     expect(result.data?.attachmentKey).toBe("file_v3_workspace");
+    expect(result.previewText).toContain("[feishu_send_file]");
+    expect(result.previewText).toContain("文件消息已发送");
   });
 
 });

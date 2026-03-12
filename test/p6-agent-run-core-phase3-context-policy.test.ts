@@ -231,10 +231,9 @@ describe("Phase 3: Context Policy", () => {
     expect(result.summaryContext).toContain("Goal:");
   });
 
-  it("tool preview 裁剪 helper 应保持稳定输出", async () => {
-    const { clipToolPreviewText } = await import("../src/runtime/context-policy.js");
+  it("context policy 不再导出 tool preview helper", async () => {
+    const contextPolicy = await import("../src/runtime/context-policy.js");
 
-    expect(clipToolPreviewText("abcdefghij", 5)).toBe("abcde...");
-    expect(clipToolPreviewText("short", 10)).toBe("short");
+    expect("clipToolPreviewText" in contextPolicy).toBe(false);
   });
 });

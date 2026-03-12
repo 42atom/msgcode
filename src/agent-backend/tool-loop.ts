@@ -31,7 +31,6 @@ import {
     buildConversationContextBlocks,
     LMSTUDIO_DEFAULT_CHAT_MODEL,
 } from "./prompt.js";
-import { clipToolPreviewText } from "../runtime/context-policy.js";
 import {
     resolveAgentBackendRuntime,
     normalizeModelOverride,
@@ -444,7 +443,6 @@ function clipText(text: string, maxChars: number): string {
     return `${text.slice(0, maxChars)}...`;
 }
 
-const TOOL_RESULT_CONTEXT_MAX_CHARS = 4000;
 const MAX_FAILURE_RECOVERY_NUDGES = 2;
 const RAW_TOOL_FAILURE_PATTERNS = [
     /\bTOOL_[A-Z_]+\b/,
@@ -467,9 +465,34 @@ function serializeToolResultForConversation(result: unknown): string {
         if (typeof previewText === "string" && previewText.trim()) {
             return previewText;
         }
+        const asObj = result as Record<string, unknown>;
+        const lines = ["[tool_result] preview unavailable"];
+        if (typeof asObj.errorCode === "string" && asObj.errorCode.trim()) {
+            lines.push(`[errorCode] ${asObj.errorCode.trim()}`);
+        }
+        if (typeof asObj.exitCode === "number" || asObj.exitCode === null) {
+            lines.push(`[exitCode] ${String(asObj.exitCode)}`);
+        }
+        if (typeof asObj.fullOutputPath === "string" && asObj.fullOutputPath.trim()) {
+            lines.push(`[fullOutputPath] ${asObj.fullOutputPath.trim()}`);
+        }
+        const error = asObj.error;
+        if (typeof error === "string" && error.trim()) {
+            lines.push("[error]");
+            lines.push(error.trim());
+        } else if (error && typeof error === "object") {
+            const message = (error as { message?: unknown }).message;
+            if (typeof message === "string" && message.trim()) {
+                lines.push("[error]");
+                lines.push(message.trim());
+            }
+        }
+        return clipText(lines.join("\n"), 512);
     }
-    const raw = typeof result === "string" ? result : JSON.stringify(result);
-    return clipToolPreviewText(raw, TOOL_RESULT_CONTEXT_MAX_CHARS);
+    if (typeof result === "string" && result.trim()) {
+        return clipText(result.trim(), 512);
+    }
+    return "[tool_result] preview unavailable";
 }
 
 function bashCommandLooksMutating(command: string): boolean {

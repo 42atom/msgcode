@@ -61,7 +61,6 @@ describe("P5.7-R9-T2: Context Budget & Compact", () => {
     const {
       buildConversationContextBlocks,
       buildDialogPromptWithContext,
-      clipToolPreviewText,
     } = await import("../src/runtime/context-policy.js");
 
     const blocks = buildConversationContextBlocks({
@@ -100,7 +99,6 @@ describe("P5.7-R9-T2: Context Budget & Compact", () => {
     expect(prompt).toContain("[最近对话窗口]");
     expect(prompt).toContain("[当前用户问题]");
     expect(prompt).toContain("继续执行");
-    expect(clipToolPreviewText("abcdefghij", 5)).toBe("abcde...");
   });
 
   it("assembleAgentContext 超过软阈值时应 compact 并落盘", async () => {

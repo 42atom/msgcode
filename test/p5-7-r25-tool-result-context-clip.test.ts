@@ -107,14 +107,15 @@ describe("P5.7-R25: tool_result 上下文截断", () => {
     }
   });
 
-  it("minimax anthropic 路径也应复用同一截断函数", () => {
+  it("tool-loop 应只转运执行层 preview，不再依赖旧的上下文裁剪 helper", () => {
     const code = readFileSync(
       join(process.cwd(), "src", "agent-backend", "tool-loop.ts"),
       "utf-8",
     );
 
-    expect(code).toContain("const TOOL_RESULT_CONTEXT_MAX_CHARS = 4000");
     expect(code).toContain("function serializeToolResultForConversation");
     expect(code).toContain("content: serializeToolResultForConversation(result)");
+    expect(code).not.toContain("clipToolPreviewText");
+    expect(code).not.toContain("TOOL_RESULT_CONTEXT_MAX_CHARS");
   });
 });

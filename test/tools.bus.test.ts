@@ -11,7 +11,7 @@
  * - Scenario G: 默认模式守卫（确保默认为 explicit）
  */
 
-import { describe, test, expect, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -552,6 +552,7 @@ describe("Tool Bus", () => {
       // P5.6.13-R1A-EXEC R2: 参数校验返回 TOOL_BAD_ARGS
       expect(result.ok).toBe(false);
       expect(result.error?.code).toBe("TOOL_BAD_ARGS");
+      expect(result.previewText).toContain("[bash] error");
     });
   });
 
@@ -746,6 +747,119 @@ describe("Tool Bus", () => {
       expect(result.previewText).toContain("[edit_file]");
       expect(result.previewText).toContain("文件补丁已应用");
       expect((result.data as { editsApplied: number }).editsApplied).toBe(1);
+    });
+
+    test("策略拒绝和参数校验失败都应返回执行层 previewText", async () => {
+      const denied = await executeTool(
+        "bash",
+        { command: "echo denied" },
+        {
+          workspacePath: tempWorkspace,
+          source: "llm-tool-call",
+          requestId: randomUUID(),
+        }
+      );
+      expect(denied.ok).toBe(false);
+      expect(denied.previewText).toContain("[bash] error");
+      expect(denied.previewText).toContain("tool not allowed");
+
+      const badArgs = await executeTool(
+        "write_file",
+        { path: "" },
+        {
+          workspacePath: tempWorkspace,
+          source: "llm-tool-call",
+          requestId: randomUUID(),
+        }
+      );
+      expect(badArgs.ok).toBe(false);
+      expect(badArgs.previewText).toContain("[write_file] error");
+      expect(badArgs.previewText).toContain("'path' must be a non-empty string");
+    });
+  });
+
+  describe("Scenario E5: 飞书工具预览下沉", () => {
+    beforeEach(() => {
+      const configDir = join(tempWorkspace, ".msgcode");
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, "config.json"), JSON.stringify({
+        "tooling.mode": "autonomous",
+        "tooling.allow": ["feishu_send_file", "feishu_list_members", "feishu_reply_message", "feishu_react_message"],
+        "tooling.require_confirm": [],
+        "feishu.appId": "workspace-app-id",
+        "feishu.appSecret": "workspace-app-secret",
+      }));
+    });
+
+    test("feishu_list_members / reply / react 应返回执行层 previewText", async () => {
+      mock.module("../src/tools/feishu-list-members.js", () => ({
+        feishuListMembers: async () => ({
+          ok: true,
+          chatId: "oc_preview_chat",
+          memberIdType: "open_id",
+          memberTotal: 2,
+          members: [
+            { senderId: "ou_owner", name: "won" },
+            { senderId: "ou_other", name: "tan" },
+          ],
+        }),
+      }));
+      mock.module("../src/tools/feishu-reply-message.js", () => ({
+        feishuReplyMessage: async () => ({
+          ok: true,
+          repliedToMessageId: "om_target",
+          messageId: "om_reply",
+          replyInThread: true,
+          chatId: "oc_preview_chat",
+        }),
+      }));
+      mock.module("../src/tools/feishu-react-message.js", () => ({
+        feishuReactMessage: async () => ({
+          ok: true,
+          messageId: "om_target",
+          reactionId: "reaction_preview",
+          emojiType: "HEART",
+        }),
+      }));
+
+      const members = await executeTool(
+        "feishu_list_members",
+        { chatId: "oc_preview_chat" },
+        {
+          workspacePath: tempWorkspace,
+          source: "llm-tool-call",
+          requestId: randomUUID(),
+        }
+      );
+      expect(members.ok).toBe(true);
+      expect(members.previewText).toContain("[feishu_list_members]");
+      expect(members.previewText).toContain("[memberTotal] 2");
+
+      const reply = await executeTool(
+        "feishu_reply_message",
+        { messageId: "om_target", text: "收到", replyInThread: true },
+        {
+          workspacePath: tempWorkspace,
+          source: "llm-tool-call",
+          requestId: randomUUID(),
+        }
+      );
+      expect(reply.ok).toBe(true);
+      expect(reply.previewText).toContain("[feishu_reply_message]");
+      expect(reply.previewText).toContain("消息回复已发送");
+
+      const react = await executeTool(
+        "feishu_react_message",
+        { messageId: "om_target", emoji: "heart" },
+        {
+          workspacePath: tempWorkspace,
+          source: "llm-tool-call",
+          requestId: randomUUID(),
+        }
+      );
+      expect(react.ok).toBe(true);
+      expect(react.previewText).toContain("[feishu_react_message]");
+      expect(react.previewText).toContain("[emojiType] HEART");
     });
   });
 
