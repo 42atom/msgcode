@@ -100,8 +100,9 @@ describe("P5.7-R25: tool_result 上下文截断", () => {
       });
 
       expect(result.answer).toContain("ok");
-      expect(observedToolContent.length).toBeLessThanOrEqual(4003);
-      expect(observedToolContent.endsWith("...")).toBe(true);
+      expect(observedToolContent.length).toBeLessThanOrEqual(4000);
+      expect(observedToolContent).toContain("[durationMs]");
+      expect(observedToolContent).toContain("[status] inline-full");
     } finally {
       globalThis.fetch = originalFetch;
     }

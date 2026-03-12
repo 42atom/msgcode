@@ -503,6 +503,24 @@ describe("Tool Bus", () => {
       expect(result.data?.stdout).toContain("hello world");
       expect(result.previewText).toContain("[bash] exitCode=0");
       expect(result.previewText).toContain("[stdout]");
+      expect(result.previewText).toContain("[durationMs]");
+    });
+
+    test("bash 大输出时 previewText 只保留一个 fullOutputPath 脚注", async () => {
+      const result = await executeTool(
+        "bash",
+        { command: "node -e \"console.log('x'.repeat(200000))\"" },
+        {
+          workspacePath: tempWorkspace,
+          source: "slash-command",
+          requestId: randomUUID(),
+        }
+      );
+
+      expect(result.fullOutputPath).toBeDefined();
+      const matches = result.previewText?.match(/\[fullOutputPath\]/g) ?? [];
+      expect(matches).toHaveLength(1);
+      expect(result.previewText).toContain("[durationMs]");
     });
 
     test("应该记录 bash 执行到 telemetry", async () => {
@@ -638,6 +656,7 @@ describe("Tool Bus", () => {
       expect(data.guidance).toContain("bash");
       expect(data.content.length).toBeLessThan(80 * 1024);
       expect(result.previewText).toContain("[status] truncated-preview");
+      expect(result.previewText).toContain("[durationMs]");
     });
 
     test("read_file 遇到二进制文件时应返回带下一步建议的失败", async () => {
@@ -699,6 +718,7 @@ describe("Tool Bus", () => {
       expect(data.commands.length).toBeLessThanOrEqual(2);
       expect(data.commands[0]?.name).toContain("browser");
       expect(result.previewText).toContain("[help_docs]");
+      expect(result.previewText).toContain("[durationMs]");
     });
   });
 
@@ -728,6 +748,7 @@ describe("Tool Bus", () => {
       expect(result.ok).toBe(true);
       expect(result.previewText).toContain("[write_file]");
       expect(result.previewText).toContain("文件已写入");
+      expect(result.previewText).toContain("[durationMs]");
       expect((result.data as { bytesWritten: number }).bytesWritten).toBeGreaterThan(0);
     });
 
@@ -747,6 +768,7 @@ describe("Tool Bus", () => {
       expect(result.ok).toBe(true);
       expect(result.previewText).toContain("[edit_file]");
       expect(result.previewText).toContain("文件补丁已应用");
+      expect(result.previewText).toContain("[durationMs]");
       expect((result.data as { editsApplied: number }).editsApplied).toBe(1);
     });
 
@@ -763,6 +785,7 @@ describe("Tool Bus", () => {
       expect(denied.ok).toBe(false);
       expect(denied.previewText).toContain("[bash] error");
       expect(denied.previewText).toContain("tool not allowed");
+      expect(denied.previewText).toContain("[durationMs]");
 
       const badArgs = await executeTool(
         "write_file",
@@ -776,6 +799,7 @@ describe("Tool Bus", () => {
       expect(badArgs.ok).toBe(false);
       expect(badArgs.previewText).toContain("[write_file] error");
       expect(badArgs.previewText).toContain("'path' must be a non-empty string");
+      expect(badArgs.previewText).toContain("[durationMs]");
     });
   });
 
@@ -835,6 +859,7 @@ describe("Tool Bus", () => {
       expect(members.ok).toBe(true);
       expect(members.previewText).toContain("[feishu_list_members]");
       expect(members.previewText).toContain("[memberTotal] 2");
+      expect(members.previewText).toContain("[durationMs]");
 
       const reply = await executeTool(
         "feishu_reply_message",
@@ -848,6 +873,7 @@ describe("Tool Bus", () => {
       expect(reply.ok).toBe(true);
       expect(reply.previewText).toContain("[feishu_reply_message]");
       expect(reply.previewText).toContain("消息回复已发送");
+      expect(reply.previewText).toContain("[durationMs]");
 
       const react = await executeTool(
         "feishu_react_message",
@@ -861,6 +887,7 @@ describe("Tool Bus", () => {
       expect(react.ok).toBe(true);
       expect(react.previewText).toContain("[feishu_react_message]");
       expect(react.previewText).toContain("[emojiType] HEART");
+      expect(react.previewText).toContain("[durationMs]");
     });
   });
 

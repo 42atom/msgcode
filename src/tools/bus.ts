@@ -300,6 +300,40 @@ function clipPreviewText(text: string, maxChars = TOOL_PREVIEW_MAX_CHARS): strin
   return `${text.slice(0, maxChars - 3)}...`;
 }
 
+function applyPreviewFooter(
+  previewText: string | undefined,
+  params: {
+    durationMs: number;
+    fullOutputPath?: string;
+  }
+): string | undefined {
+  const base = (previewText || "").trim();
+  if (!base) return previewText;
+
+  const footerLines = [`[durationMs] ${params.durationMs}`];
+  if (params.fullOutputPath && !base.includes("[fullOutputPath]")) {
+    footerLines.push(`[fullOutputPath] ${params.fullOutputPath}`);
+  }
+
+  const footer = footerLines.join("\n");
+  const separator = base ? "\n" : "";
+  const bodyBudget = TOOL_PREVIEW_MAX_CHARS - footer.length - separator.length;
+  if (bodyBudget <= 0) {
+    return clipPreviewText(footer);
+  }
+
+  const body = clipPreviewText(base, bodyBudget);
+  return `${body}${separator}${footer}`;
+}
+
+function finalizeToolResultPreview<T extends ToolResult>(result: T): T {
+  result.previewText = applyPreviewFooter(result.previewText, {
+    durationMs: result.durationMs,
+    fullOutputPath: result.fullOutputPath,
+  });
+  return result;
+}
+
 function buildBashPreviewText(params: {
   exitCode: number;
   stdoutTail: string;
@@ -628,7 +662,7 @@ export async function executeTool(
       timestamp: Date.now(),
     });
 
-    return result;
+    return finalizeToolResultPreview(result);
   }
 
   // P5.6.13-R1A-EXEC R2: 参数校验（四核心工具）
@@ -656,7 +690,7 @@ export async function executeTool(
       timestamp: Date.now(),
     });
 
-    return result;
+    return finalizeToolResultPreview(result);
   }
 
   try {
@@ -1762,7 +1796,7 @@ export async function executeTool(
       timestamp: Date.now(),
     });
 
-    return result;
+    return finalizeToolResultPreview(result);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     const code = msg === "TOOL_TIMEOUT" ? "TOOL_TIMEOUT" : "TOOL_EXEC_FAILED";
@@ -1789,7 +1823,7 @@ export async function executeTool(
       timestamp: Date.now(),
     });
 
-    return result;
+    return finalizeToolResultPreview(result);
   }
 }
 
