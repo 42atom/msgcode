@@ -357,7 +357,7 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path transparency", () => {
         }
     });
 
-    it("总结阶段返回 minimax tool_call 协议片段时，应回退为可展示文本", async () => {
+    it("总结阶段返回 minimax tool_call 协议片段时，不应再由系统内部补打一轮修正", async () => {
         const originalFetch = globalThis.fetch;
         const workspacePath = await createToolEnabledWorkspace();
         const soulContent = [
@@ -393,27 +393,15 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path transparency", () => {
                 });
             }
 
-            if (callCount === 2) {
-                return asJsonResponse({
-                    choices: [{
-                        message: {
-                            role: "assistant",
-                            content: `<minimax:tool_call>
-<invoke name="read_file">
-<parameter name="path">/home/user/.msgcode/SOUL.md</parameter>
-</invoke>
-</minimax:tool_call>`,
-                        },
-                        finish_reason: "stop",
-                    }],
-                });
-            }
-
             return asJsonResponse({
                 choices: [{
                     message: {
                         role: "assistant",
-                        content: "前 3 行如下：\n# Soul\nline-1\nline-2",
+                        content: `<minimax:tool_call>
+<invoke name="read_file">
+<parameter name="path">/home/user/.msgcode/SOUL.md</parameter>
+</invoke>
+</minimax:tool_call>`,
                     },
                     finish_reason: "stop",
                 }],
@@ -430,13 +418,8 @@ describe("P5.7-R3l-7: tool protocol retry + SOUL path transparency", () => {
                 backendRuntime: localOpenAiRuntime,
             });
 
-            expect(callCount).toBe(3);
-            expect(result.answer).toMatch(/前\s*3\s*行如下/);
-            expect(result.answer).toContain("# Soul");
-            expect(result.answer).toContain("line-1");
-            expect(result.answer).toContain("line-2");
-            expect(result.answer).not.toContain("<minimax:tool_call>");
-            expect(result.answer).not.toContain("line-4");
+            expect(callCount).toBe(2);
+            expect(result.answer).toBe("");
         } finally {
             globalThis.fetch = originalFetch;
             await rm(workspacePath, { recursive: true, force: true });

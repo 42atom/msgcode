@@ -916,19 +916,6 @@ function hasToolProtocolArtifacts(text: string): boolean {
 }
 
 
-function needsFinalAnswerRetry(answer: string): boolean {
-    const cleaned = sanitizeLmStudioOutput(answer || "");
-    return !cleaned.trim() || hasToolProtocolArtifacts(cleaned);
-}
-
-function buildFinalAnswerRetryMessage(): string {
-    return [
-        "你还没有给用户最终答复。",
-        "请基于已经完成的工具结果，直接给出面向用户的最终答复。",
-        "不要调用工具，不要输出协议片段，不要解释内部过程。",
-    ].join("\n");
-}
-
 function buildConversationToolResult(toolResult: ToolRunResult): unknown {
     if (!toolResult.error) {
         return toolResult.data || { success: true };
@@ -1479,31 +1466,7 @@ async function runMiniMaxAnthropicToolLoop(params: {
             continue;
         }
 
-        let cleanedAnswer = sanitizeLmStudioOutput(currentResponse.content || "");
-
-        if (needsFinalAnswerRetry(cleanedAnswer) && executedToolCalls.length > 0) {
-            conversationMessages = [
-                ...conversationMessages,
-                {
-                    role: "user",
-                    content: buildFinalAnswerRetryMessage(),
-                },
-            ];
-            currentResponse = await callMiniMaxAnthropicRaw({
-                baseUrl: params.baseUrl,
-                model: params.model,
-                messages: conversationMessages,
-                system: anthropicContext.system,
-                tools: [],
-                temperature: 0,
-                maxTokens: MAIN_AGENT_MAX_TOKENS,
-                timeoutMs: params.timeoutMs,
-                apiKey: params.apiKey,
-            });
-            cleanedAnswer = sanitizeLmStudioOutput(currentResponse.content || "");
-        }
-
-        const finalAnswer = cleanedAnswer;
+        const finalAnswer = sanitizeLmStudioOutput(currentResponse.content || "");
         const verifyOutcome = await runVerifyPhase(
             executedToolCalls,
             actionJournal,
@@ -2045,36 +2008,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
             continue;
         }
 
-        let cleanedAnswer = sanitizeLmStudioOutput(currentAssistantContent ?? "");
-
-        if (needsFinalAnswerRetry(cleanedAnswer) && executedToolCalls.length > 0) {
-            conversationMessages = [
-                ...conversationMessages,
-                {
-                    role: "user",
-                    content: buildFinalAnswerRetryMessage(),
-                },
-            ];
-            const retryRound = await callChatCompletionsRaw({
-                baseUrl,
-                model: usedModel,
-                messages: conversationMessages,
-                tools: [],
-                toolChoice: "none",
-                temperature: 0,
-                maxTokens: MAIN_AGENT_MAX_TOKENS,
-                timeoutMs,
-                apiKey: backendRuntime.apiKey,
-            });
-            const retryMsg = retryRound.choices[0]?.message;
-            currentAssistantRole = retryMsg?.role || "assistant";
-            currentAssistantContent = retryMsg?.content;
-            currentToolCalls = retryMsg?.tool_calls ?? [];
-            currentFinishReason = retryRound.finishReason ?? null;
-            cleanedAnswer = sanitizeLmStudioOutput(currentAssistantContent ?? "");
-        }
-
-        const finalAnswer = cleanedAnswer;
+        const finalAnswer = sanitizeLmStudioOutput(currentAssistantContent ?? "");
 
         // P5.7-R12-T3: 在返回前执行 verify phase
         const verifyOutcome = await runVerifyPhase(

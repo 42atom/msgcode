@@ -229,7 +229,7 @@ describe("P5.7-R3h: Tool Failure Diagnostics (Behavior Lock)", () => {
             }
         });
 
-        it("工具轮后若模型没有给出最终答复，应继续向模型补要最终答复，而不是系统代答", async () => {
+        it("工具轮后若模型没有给出最终答复，不应再由系统内部补打一轮", async () => {
             const originalFetch = globalThis.fetch;
             const workspacePath = await createToolEnabledWorkspace();
             await writeFile(join(workspacePath, ".msgcode", "final-answer.txt"), "hello-final-answer", "utf-8");
@@ -291,8 +291,8 @@ describe("P5.7-R3h: Tool Failure Diagnostics (Behavior Lock)", () => {
                     backendRuntime: localOpenAiRuntime,
                 });
 
-                expect(callCount).toBe(3);
-                expect(result.answer).toBe("最终结果是：hello-final-answer");
+                expect(callCount).toBe(2);
+                expect(result.answer).toBe("");
                 expect(result.answer).not.toContain("读取成功，内容预览如下");
                 expect(result.answer).not.toContain("工具执行成功");
                 expect(result.actionJournal[0].tool).toBe("read_file");
