@@ -61,8 +61,10 @@ links: []
   - 已完成第一刀收口：`memory` 命令面只公开 `add/search/index/get/stats`
   - 兼容别名 `remember/status` 不再出现在 `memory --help`，但会在 CLI 解析前映射到 canonical 主链
   - `help-docs` 合同现显式暴露 `aliases`
+  - 已完成第二刀收口：`browser gmail-readonly` 已退出公开命令面与 `help-docs` 正式合同，保留为 CLI 解析期兼容入口
   - 验证：
     - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r4-1-memory-contract.test.ts test/p5-7-r4-t1-smoke-verification.test.ts`
+    - `PATH="$HOME/.bun/bin:$PATH" bun test test/p5-7-r7a-browser-contract.test.ts test/p5-7-r1c-hard-gate.test.ts test/p5-7-r1-file-send.test.ts`
     - `npx tsc --noEmit`
     - `npm run docs:check`
 

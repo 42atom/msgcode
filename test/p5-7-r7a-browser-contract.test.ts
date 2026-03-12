@@ -55,6 +55,7 @@ describe("P5.7-R7A: browser CLI 合同", () => {
     const action = commands.find((item) => item.name === "msgcode browser action");
     const profiles = commands.find((item) => item.name === "msgcode browser profiles list");
     const root = commands.find((item) => item.name === "msgcode browser root");
+    const gmailReadonly = commands.find((item) => item.name === "msgcode browser gmail-readonly");
 
     expect(snapshot).toBeDefined();
     expect(snapshot?.errorCodes).toContain("BROWSER_TAB_NOT_FOUND");
@@ -65,6 +66,7 @@ describe("P5.7-R7A: browser CLI 合同", () => {
     expect(profiles?.errorCodes).toContain("BROWSER_RUNTIME_UNAVAILABLE");
     expect(root).toBeDefined();
     expect(root?.errorCodes).toContain("BROWSER_ROOT_CREATE_FAILED");
+    expect(gmailReadonly).toBeUndefined();
   });
 
   it("browser manifest 应包含 kind/key/interactive/port 参数", async () => {
@@ -98,5 +100,6 @@ describe("P5.7-R7A: browser CLI 合同", () => {
     expect(output).toContain("eval");
     expect(output).toContain("root");
     expect(output).toContain("Patchright");
+    expect(output).not.toContain("gmail-readonly");
   });
 });

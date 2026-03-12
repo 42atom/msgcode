@@ -472,6 +472,43 @@ function createGmailReadonlyCommand(): Command {
   return cmd;
 }
 
+export function createBrowserGmailReadonlyCompatCommand(): Command {
+  const cmd = new Command("browser-gmail-readonly");
+
+  cmd
+    .description("内部兼容入口：browser gmail-readonly")
+    .allowUnknownOption(false)
+    .option("--root-name <name>", "显式 Gmail Chrome rootName", "work-default")
+    .option("--mode <mode>", "运行模式：headed|headless", "headless")
+    .option("--timezone <tz>", "日期解释时区", "Asia/Singapore")
+    .option("--keep-open", "执行后不自动停止实例")
+    .option("--json", "JSON 格式输出")
+    .action(async (options) => {
+      const legacy = createGmailReadonlyCommand();
+      await legacy.parseAsync(["node", "browser-gmail-readonly", ...buildGmailReadonlyCompatArgs(options)], {
+        from: "user",
+      });
+    });
+
+  return cmd;
+}
+
+function buildGmailReadonlyCompatArgs(options: {
+  rootName?: string;
+  mode?: string;
+  timezone?: string;
+  keepOpen?: boolean;
+  json?: boolean;
+}): string[] {
+  const args: string[] = [];
+  if (options.rootName) args.push("--root-name", options.rootName);
+  if (options.mode) args.push("--mode", options.mode);
+  if (options.timezone) args.push("--timezone", options.timezone);
+  if (options.keepOpen) args.push("--keep-open");
+  if (options.json) args.push("--json");
+  return args;
+}
+
 function createRootCommand(): Command {
   const cmd = new Command("root");
 
@@ -517,7 +554,6 @@ export function createBrowserCommand(): Command {
   cmd.addCommand(createActionCommand());
   cmd.addCommand(createEvalCommand());
   cmd.addCommand(createRootCommand());
-  cmd.addCommand(createGmailReadonlyCommand());
 
   return cmd;
 }
@@ -554,37 +590,6 @@ export function getBrowserCommandContracts() {
       errorCodes: [
         CHROME_ROOT_ERROR_CODES.BAD_ARGS,
         CHROME_ROOT_ERROR_CODES.ROOT_CREATE_FAILED,
-      ],
-    },
-    {
-      name: "msgcode browser gmail-readonly",
-      description: "Gmail 收件箱只读摘要验收",
-      options: {
-        required: {},
-        optional: {
-          "--root-name": "显式 Gmail Chrome rootName（默认 work-default）",
-          "--mode": "运行模式：headed|headless",
-          "--timezone": "日期解释时区",
-          "--keep-open": "执行后不自动停止实例",
-          "--json": "JSON 格式输出",
-        },
-      },
-      output: {
-        rootName: "显式 Chrome rootName",
-        instanceId: "显式 instanceId",
-        tabId: "显式 tabId",
-        count: "今日邮件数量",
-        messages: "今日邮件摘要列表",
-        summary: "中文结构化摘要",
-      },
-      errorCodes: [
-        GMAIL_ERROR_CODES.OK,
-        GMAIL_ERROR_CODES.BAD_ARGS,
-        GMAIL_ERROR_CODES.LOGIN_REQUIRED,
-        GMAIL_ERROR_CODES.SITE_CHANGED,
-        GMAIL_ERROR_CODES.EXTRACTION_FAILED,
-        BROWSER_ERROR_CODES.TIMEOUT,
-        ...COMMON_BROWSER_ERRORS,
       ],
     },
     {

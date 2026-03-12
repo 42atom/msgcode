@@ -81,6 +81,9 @@ function normalizeLegacyCliArgs(argv: string[]): string[] {
   if (top === "memory" && subcommand === "status") {
     return [top, "stats", ...rest];
   }
+  if (top === "browser" && subcommand === "gmail-readonly") {
+    return ["browser-gmail-readonly", ...rest];
+  }
 
   return argv;
 }
@@ -355,6 +358,11 @@ async function loadBrowserCommands() {
   program.addCommand(createBrowserCommand());
 }
 
+async function loadBrowserCompatCommands() {
+  const { createBrowserGmailReadonlyCompatCommand } = await import("./cli/browser.js");
+  program.addCommand(createBrowserGmailReadonlyCompatCommand());
+}
+
 // Gen 命令组（P5.7-R6 命令入口统一）
 async function loadGenCommands() {
   const { createGenImageCommand, createGenSelfieCommand } = await import("./cli/gen-image.js");
@@ -424,6 +432,9 @@ async function main() {
   }
   if (top === "browser") {
     await loadBrowserCommands();
+  }
+  if (top === "browser-gmail-readonly") {
+    await loadBrowserCompatCommands();
   }
   if (top === "help-docs") {
     await loadHelpDocsCommand();
