@@ -198,12 +198,6 @@ type ToolRunResult = {
     durationMs: number;
 };
 
-type ForcedFinalState = {
-    answer: string;
-    toolCall: { name: string; args: Record<string, unknown>; result: unknown };
-    verifyResult: VerifyResult;
-};
-
 type ResolveModelParams = {
     baseUrl: string;
     configuredModel?: string;
@@ -821,19 +815,8 @@ function hasSuccessfulMutatingExecution(executedToolCalls: ExecutedToolCall[]): 
 function shouldRunFinishSupervisor(params: {
     finalAnswer: string;
     executedToolCalls: ExecutedToolCall[];
-    forcedFinalState?: ForcedFinalState;
 }): boolean {
     if (params.executedToolCalls.some(({ tc, args }) => isMutatingToolCall(tc.function.name, args))) {
-        return true;
-    }
-
-    if (
-        params.forcedFinalState
-        && isMutatingToolCall(
-            params.forcedFinalState.toolCall.name,
-            params.forcedFinalState.toolCall.args,
-        )
-    ) {
         return true;
     }
 
@@ -1335,8 +1318,6 @@ async function runMiniMaxAnthropicToolLoop(params: {
     const supervisorSettings = getFinishSupervisorSettings();
     let currentResponse = response;
     let currentToolCalls = toolCalls;
-    let forcedFinalState: ForcedFinalState | undefined;
-    let lastFailureState: ForcedFinalState | undefined;
 
     while (true) {
         if (currentToolCalls.length > params.perTurnToolCallLimit) {
@@ -1523,56 +1504,46 @@ async function runMiniMaxAnthropicToolLoop(params: {
             continue;
         }
 
-        let finalAnswer: string;
-        let verifyResult: VerifyResult | undefined;
+        let cleanedAnswer = sanitizeLmStudioOutput(currentResponse.content || "");
 
-        if (forcedFinalState) {
-            finalAnswer = forcedFinalState.answer;
-            verifyResult = forcedFinalState.verifyResult;
-        } else {
-            let cleanedAnswer = sanitizeLmStudioOutput(currentResponse.content || "");
+        if (needsFinalAnswerRetry(cleanedAnswer) && executedToolCalls.length > 0) {
+            conversationMessages = [
+                ...conversationMessages,
+                {
+                    role: "user",
+                    content: buildFinalAnswerRetryMessage(),
+                },
+            ];
+            currentResponse = await callMiniMaxAnthropicRaw({
+                baseUrl: params.baseUrl,
+                model: params.model,
+                messages: conversationMessages,
+                system: anthropicContext.system,
+                tools: [],
+                temperature: 0,
+                maxTokens: MAIN_AGENT_MAX_TOKENS,
+                timeoutMs: params.timeoutMs,
+                apiKey: params.apiKey,
+            });
+            cleanedAnswer = sanitizeLmStudioOutput(currentResponse.content || "");
+        }
 
-            if (needsFinalAnswerRetry(cleanedAnswer) && executedToolCalls.length > 0) {
-                conversationMessages = [
-                    ...conversationMessages,
-                    {
-                        role: "user",
-                        content: buildFinalAnswerRetryMessage(),
-                    },
-                ];
-                currentResponse = await callMiniMaxAnthropicRaw({
-                    baseUrl: params.baseUrl,
-                    model: params.model,
-                    messages: conversationMessages,
-                    system: anthropicContext.system,
-                    tools: [],
-                    temperature: 0,
-                    maxTokens: MAIN_AGENT_MAX_TOKENS,
-                    timeoutMs: params.timeoutMs,
-                    apiKey: params.apiKey,
-                });
-                cleanedAnswer = sanitizeLmStudioOutput(currentResponse.content || "");
-            }
+        const finalAnswer = cleanedAnswer;
+        const verifyOutcome = await runVerifyPhase(
+            executedToolCalls,
+            actionJournal,
+            params.traceId,
+            params.route
+        );
+        const verifyResult = verifyOutcome.verifyResult;
 
-            finalAnswer = cleanedAnswer;
-
-            const verifyOutcome = await runVerifyPhase(
-                executedToolCalls,
-                actionJournal,
-                params.traceId,
-                params.route
-            );
-            verifyResult = verifyOutcome.verifyResult;
-
-            if (verifyOutcome.verifyJournal) {
-                actionJournal.push(verifyOutcome.verifyJournal);
-            }
+        if (verifyOutcome.verifyJournal) {
+            actionJournal.push(verifyOutcome.verifyJournal);
         }
 
         const shouldReviewWithSupervisor = supervisorSettings.enabled && shouldRunFinishSupervisor({
             finalAnswer,
             executedToolCalls,
-            forcedFinalState,
         });
 
         if (shouldReviewWithSupervisor) {
@@ -1616,10 +1587,9 @@ async function runMiniMaxAnthropicToolLoop(params: {
             });
         }
 
-        const firstCall = forcedFinalState?.toolCall
-            ?? (executedToolCalls[0]
-                ? { name: executedToolCalls[0].tc.function.name, args: executedToolCalls[0].args, result: executedToolCalls[0].result }
-                : undefined);
+        const firstCall = executedToolCalls[0]
+            ? { name: executedToolCalls[0].tc.function.name, args: executedToolCalls[0].args, result: executedToolCalls[0].result }
+            : undefined;
         const metadataRoute = firstCall !== undefined ? "tool" : "no-tool";
         logger.info("agent final response metadata", {
             module: "agent-backend/tool-loop",
@@ -1869,8 +1839,6 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     let currentAssistantContent = msg1?.content;
     let currentToolCalls = toolCalls;
     let conversationMessages = [...messages];
-    let forcedFinalState: ForcedFinalState | undefined;
-    let lastFailureState: ForcedFinalState | undefined;
 
     while (true) {
         // P5.7-R12-T8: 单轮工具调用数检查
@@ -2104,63 +2072,54 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
             continue;
         }
 
-        let finalAnswer: string;
-        let verifyResult: VerifyResult | undefined;
+        let cleanedAnswer = sanitizeLmStudioOutput(currentAssistantContent ?? "");
 
-        if (forcedFinalState) {
-            finalAnswer = forcedFinalState.answer;
-            verifyResult = forcedFinalState.verifyResult;
-        } else {
-            let cleanedAnswer = sanitizeLmStudioOutput(currentAssistantContent ?? "");
+        if (needsFinalAnswerRetry(cleanedAnswer) && executedToolCalls.length > 0) {
+            conversationMessages = [
+                ...conversationMessages,
+                {
+                    role: "user",
+                    content: buildFinalAnswerRetryMessage(),
+                },
+            ];
+            const retryRound = await callChatCompletionsRaw({
+                baseUrl,
+                model: usedModel,
+                messages: conversationMessages,
+                tools: [],
+                toolChoice: "none",
+                temperature: 0,
+                maxTokens: MAIN_AGENT_MAX_TOKENS,
+                timeoutMs,
+                apiKey: backendRuntime.apiKey,
+            });
+            const retryMsg = retryRound.choices[0]?.message;
+            currentAssistantRole = retryMsg?.role || "assistant";
+            currentAssistantContent = retryMsg?.content;
+            currentToolCalls = retryMsg?.tool_calls ?? [];
+            currentFinishReason = retryRound.finishReason ?? null;
+            cleanedAnswer = sanitizeLmStudioOutput(currentAssistantContent ?? "");
+        }
 
-            if (needsFinalAnswerRetry(cleanedAnswer) && executedToolCalls.length > 0) {
-                conversationMessages = [
-                    ...conversationMessages,
-                    {
-                        role: "user",
-                        content: buildFinalAnswerRetryMessage(),
-                    },
-                ];
-                const retryRound = await callChatCompletionsRaw({
-                    baseUrl,
-                    model: usedModel,
-                    messages: conversationMessages,
-                    tools: [],
-                    toolChoice: "none",
-                    temperature: 0,
-                    maxTokens: MAIN_AGENT_MAX_TOKENS,
-                    timeoutMs,
-                    apiKey: backendRuntime.apiKey,
-                });
-                const retryMsg = retryRound.choices[0]?.message;
-                currentAssistantRole = retryMsg?.role || "assistant";
-                currentAssistantContent = retryMsg?.content;
-                currentToolCalls = retryMsg?.tool_calls ?? [];
-                currentFinishReason = retryRound.finishReason ?? null;
-                cleanedAnswer = sanitizeLmStudioOutput(currentAssistantContent ?? "");
-            }
+        const finalAnswer = cleanedAnswer;
 
-            finalAnswer = cleanedAnswer;
+        // P5.7-R12-T3: 在返回前执行 verify phase
+        const verifyOutcome = await runVerifyPhase(
+            executedToolCalls,
+            actionJournal,
+            traceId,
+            route
+        );
+        const verifyResult = verifyOutcome.verifyResult;
 
-            // P5.7-R12-T3: 在返回前执行 verify phase
-            const verifyOutcome = await runVerifyPhase(
-                executedToolCalls,
-                actionJournal,
-                traceId,
-                route
-            );
-            verifyResult = verifyOutcome.verifyResult;
-
-            // 如果有 verify journal，添加到 actionJournal
-            if (verifyOutcome.verifyJournal) {
-                actionJournal.push(verifyOutcome.verifyJournal);
-            }
+        // 如果有 verify journal，添加到 actionJournal
+        if (verifyOutcome.verifyJournal) {
+            actionJournal.push(verifyOutcome.verifyJournal);
         }
 
         const shouldReviewWithSupervisor = supervisorSettings.enabled && shouldRunFinishSupervisor({
             finalAnswer,
             executedToolCalls,
-            forcedFinalState,
         });
 
         if (shouldReviewWithSupervisor) {
@@ -2197,10 +2156,9 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
             });
         }
 
-        const firstCall = forcedFinalState?.toolCall
-            ?? (executedToolCalls[0]
-                ? { name: executedToolCalls[0].tc.function.name, args: executedToolCalls[0].args, result: executedToolCalls[0].result }
-                : undefined);
+        const firstCall = executedToolCalls[0]
+            ? { name: executedToolCalls[0].tc.function.name, args: executedToolCalls[0].args, result: executedToolCalls[0].result }
+            : undefined;
         const metadataRoute = firstCall !== undefined ? "tool" : "no-tool";
         logger.info("agent final response metadata", {
             module: "agent-backend/tool-loop",
