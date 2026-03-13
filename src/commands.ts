@@ -387,6 +387,17 @@ export async function startBot(): Promise<void> {
   const { initLoggerFromSettings } = await import("./logger/index.js");
   await initLoggerFromSettings();
 
+  // macOS 桌面权限预热：只触发入口与事实记录，不做拦截/代决。
+  try {
+    const { maybeRequestDesktopPermissionsPreauth } = await import("./runtime/desktop-permissions-preauth.js");
+    await maybeRequestDesktopPermissionsPreauth();
+  } catch (error) {
+    logger.warn("desktop permissions preauth failed (best-effort)", {
+      module: "commands",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
   try {
     const { syncRuntimeSkills } = await import("./skills/runtime-sync.js");
     const skillSync = await syncRuntimeSkills({ overwrite: true });
