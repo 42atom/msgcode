@@ -121,6 +121,7 @@ ghost status
 - msgcode 会直接暴露 `ghost_*` 原生工具，不再长期保留 `desktop.* -> ghost_*` 翻译层。
 - 未安装 `ghost-os` 时，`ghost_*` 工具会 fail-closed 返回真实缺失事实和安装指引。
 - `ghost status` 未 ready 时，msgcode 会补跑一次 `ghost doctor`，把最小诊断事实回给模型。
+- 高风险动作默认通过 skill / prompt 约束模型先询问用户；msgcode 不额外新增 confirm gate 或审批层。
 
 ### 5. 启动服务
 

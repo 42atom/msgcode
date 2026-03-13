@@ -48,6 +48,17 @@ ghost status
 5. 还不清楚就 `ghost_screenshot`
 6. Web/视觉退化场景再 `ghost_ground`
 
+### 高风险动作
+
+- `ghost_*` 能力面保持完整；msgcode 不为它额外加 confirm gate
+- 但涉及高风险语义时，默认先向用户确认，不要自己替用户做主
+- 典型高风险动作包括：
+  - 发送、提交、回复、发布、支付、下单
+  - 删除、覆盖、清空、格式化、退出登录、关闭安全设置
+  - 在终端或系统输入框里输入破坏性命令
+- 如果动作只是观察、读取、截图、标注、定位，就直接做；不要为了“看起来更安全”把只读动作也变成审批流
+- 如果你已经非常确定元素定位正确，但对动作意图仍有不确定，问题不在“点得准不准”，而在“该不该点”；这时先问用户
+
 ### Web 场景
 
 - Chrome / Electron 场景优先 `dom_id`
@@ -73,4 +84,5 @@ ghost status
 - `ghost-os` 是外部 provider，不是 msgcode core
 - 不要把 `ghost setup/doctor` 的业务逻辑搬进 msgcode
 - 不要发明新的 desktop manager / plugin platform / supervisor
-- 若高危动作未来需要 token，只允许收口在 `ghost-mcp-client`，不上升为总线级审批层
+- 不要把“高风险动作先问用户”实现成新的系统 gate、审批层或 supervisor
+- 先用说明书约束模型；不要因为风险焦虑回流执行层拦截
