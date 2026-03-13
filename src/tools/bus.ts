@@ -625,6 +625,7 @@ export async function executeTool(
       durationMs: result.durationMs,
       ok: false,
       errorCode: gate.code!,
+      errorMessage: gate.message!,
       artifactPaths: [],
       timestamp: Date.now(),
     });
@@ -653,6 +654,7 @@ export async function executeTool(
       durationMs: result.durationMs,
       ok: false,
       errorCode: validationError.code,
+      errorMessage: validationError.message,
       artifactPaths: [],
       timestamp: Date.now(),
     });
@@ -1305,6 +1307,7 @@ export async function executeTool(
       durationMs: result.durationMs,
       ok: result.ok,
       errorCode: result.error?.code,
+      errorMessage: result.error?.message,
       artifactPaths,
       timestamp: Date.now(),
     });
@@ -1332,6 +1335,7 @@ export async function executeTool(
       durationMs: result.durationMs,
       ok: false,
       errorCode: code,
+      errorMessage: msg,
       artifactPaths: [],
       timestamp: Date.now(),
     });

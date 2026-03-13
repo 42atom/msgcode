@@ -140,7 +140,9 @@ export interface ActionJournalEntry {
     ok: boolean;               // 成功与否
     exitCode?: number | null;  // 退出码（bash 工具）
     errorCode?: string;        // 错误码
+    errorMessage?: string;     // 错误文本（失败时；用于诊断，允许被截断）
     stdoutTail?: string;       // stdout 尾部
+    stderrTail?: string;       // stderr 尾部
     fullOutputPath?: string;   // 完整输出文件路径
 
     // 诊断字段

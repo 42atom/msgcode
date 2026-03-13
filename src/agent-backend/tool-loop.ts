@@ -118,6 +118,16 @@ function normalizeBaseUrl(raw: string): string {
     return base;
 }
 
+function normalizeToolErrorMessage(message: unknown, maxChars = 400): string | undefined {
+    const raw = typeof message === "string" ? message : (message instanceof Error ? message.message : String(message));
+    const trimmed = (raw || "").trim();
+    if (!trimmed) return undefined;
+    const singleLine = trimmed.replace(/\s+/g, " ").trim();
+    if (singleLine.length <= maxChars) return singleLine;
+    if (maxChars <= 16) return singleLine.slice(0, maxChars);
+    return `${singleLine.slice(0, maxChars - 14)}...(truncated)`;
+}
+
 type ChatResponse = {
     choices: Array<{
         message?: {
@@ -1006,7 +1016,9 @@ async function runMiniMaxAnthropicToolLoop(params: {
                         ok: false,
                         exitCode: toolResult.exitCode ?? undefined,
                         errorCode: toolErrorCode,
+                        errorMessage: normalizeToolErrorMessage(toolResult.error),
                         stdoutTail: toolResult.stdoutTail ?? undefined,
+                        stderrTail: toolResult.stderrTail ?? undefined,
                         fullOutputPath: toolResult.fullOutputPath ?? undefined,
                         durationMs: toolResult.durationMs,
                     });
@@ -1397,7 +1409,9 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                         ok: false,
                         exitCode: toolResult.exitCode ?? undefined,
                         errorCode: toolErrorCode,
+                        errorMessage: normalizeToolErrorMessage(toolResult.error),
                         stdoutTail: toolResult.stdoutTail ?? undefined,
+                        stderrTail: toolResult.stderrTail ?? undefined,
                         fullOutputPath: toolResult.fullOutputPath ?? undefined,
                         durationMs: toolResult.durationMs,
                     });

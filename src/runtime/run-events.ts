@@ -77,6 +77,7 @@ type ToolLoopActEntry = {
     stepId: number;
     durationMs: number;
     errorCode?: string;
+    errorMessage?: string;
     exitCode?: number | null;
 };
 
@@ -188,6 +189,7 @@ export function emitToolLoopRunEvents(params: {
     const toolEntries = params.actionJournal.filter((entry) => entry.phase === "act");
 
     for (const entry of toolEntries) {
+        const errorMessage = entry.errorMessage ? clipRunEventText(entry.errorMessage, 240) : "";
         emitRunEvent({
             runId: params.runId,
             sessionKey: params.sessionKey,
@@ -202,6 +204,7 @@ export function emitToolLoopRunEvents(params: {
                 stepId: entry.stepId,
                 durationMs: entry.durationMs,
                 exitCode: entry.exitCode ?? undefined,
+                ...(errorMessage ? { errorMessage } : {}),
             },
         });
     }

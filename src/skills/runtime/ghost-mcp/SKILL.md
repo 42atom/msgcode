@@ -45,6 +45,7 @@ ghost status
 - msgcode 不会静默代装 `ghost-os`
 - `ghost` 缺失时，`ghost_*` 工具会直接返回缺失事实和安装指引
 - `ghost status` 未 ready 时，msgcode 会补跑一次 `ghost doctor`，把最小诊断事实回给模型
+- **权限宿主很关键**：如果 msgcode 以 launchd daemon 方式运行（`msgcode start`），`ghost_*` 的截图/视觉类能力需要给 daemon 宿主进程授权（通常是 launchd 里的 `node`），仅授权 Terminal 不一定生效。用 `msgcode ghost permissions --open` 打开系统设置并查看 daemon 宿主事实。
 
 ### 使用顺序
 

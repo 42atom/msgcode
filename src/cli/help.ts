@@ -17,6 +17,7 @@ import { getGenImageContract, getGenSelfieContract } from "./gen-image.js";
 import { getGenTtsContract, getGenMusicContract } from "./gen-audio.js";
 import { getBrowserCommandContracts } from "./browser.js";
 import { getSubagentRunContract, getSubagentListContract, getSubagentStatusContract, getSubagentStopContract } from "./subagent.js";
+import { getGhostPermissionsContract } from "./ghost.js";
 
 // ============================================
 // 类型定义
@@ -219,6 +220,8 @@ function getAllHelpCommandContracts(): Record<string, unknown>[] {
     getGenMusicContract() as Record<string, unknown>,
     // Browser 命令组（P5.7-R7A）
     ...(getBrowserCommandContracts() as Record<string, unknown>[]),
+    // Ghost 命令（ghost-os 权限事实）
+    getGhostPermissionsContract() as Record<string, unknown>,
     // Subagent 命令组（P5.7-R36）
     getSubagentRunContract() as Record<string, unknown>,
     getSubagentListContract() as Record<string, unknown>,

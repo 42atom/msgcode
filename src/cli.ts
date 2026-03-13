@@ -275,6 +275,11 @@ async function loadHelpDocsCommand() {
   program.addCommand(createHelpDocsCommand());
 }
 
+async function loadGhostCommands() {
+  const { createGhostCommand } = await import("./cli/ghost.js");
+  program.addCommand(createGhostCommand());
+}
+
 async function loadSubagentCommands() {
   const { createSubagentCommand } = await import("./cli/subagent.js");
   program.addCommand(createSubagentCommand());
@@ -359,6 +364,9 @@ async function main() {
   if (top === "help-docs") {
     await loadHelpDocsCommand();
   }
+  if (top === "ghost") {
+    await loadGhostCommands();
+  }
 
   // 对于 help（无参数或 --help），也加载一遍子命令，让帮助信息完整
   if (!top || top === "-h" || top === "--help") {
@@ -373,6 +381,7 @@ async function main() {
     await loadBrowserCommands();
     await loadSubagentCommands();
     await loadHelpDocsCommand();
+    await loadGhostCommands();
   }
   program.parse([process.argv[0], process.argv[1], ...argv]);
 }

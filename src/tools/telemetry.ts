@@ -35,6 +35,8 @@ export interface ToolEvent {
   ok: boolean;
   /** 错误码（失败时） */
   errorCode?: string;
+  /** 错误消息（失败时，原样透传并允许被截断） */
+  errorMessage?: string;
   /** 产物路径列表 */
   artifactPaths: string[];
   /** 时间戳 */
@@ -155,6 +157,7 @@ export function recordToolEvent(event: ToolEvent): void {
       durationMs: event.durationMs,
       ok: event.ok,
       errorCode: event.errorCode,
+      errorMessage: event.errorMessage,
       artifactPaths: event.artifactPaths,
     }
   );
