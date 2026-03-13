@@ -38,10 +38,10 @@ import {
 import { runAgentChat } from "./chat.js";
 import {
     filterDefaultLlmTools,
-    renderLlmToolIndex,
-    resolveLlmToolExposure,
-    toAnthropicToolSchemas,
-    toOpenAiToolSchemas,
+    renderLlmToolIndexForWorkspace,
+    resolveLlmToolExposureForWorkspace,
+    toAnthropicToolSchemasForWorkspace,
+    toOpenAiToolSchemasForWorkspace,
 } from "../tools/manifest.js";
 import type { ToolName } from "../tools/types.js";
 import { getChromeRootInfo } from "../browser/chrome-root.js";
@@ -617,7 +617,7 @@ export async function getToolsForLlm(workspacePath?: string): Promise<ToolName[]
             ? (DEFAULT_WORKSPACE_CONFIG["tooling.allow"] as ToolName[])
             : [];
         const allowedTools = filterDefaultLlmTools(configuredTools);
-        const exposure = resolveLlmToolExposure(allowedTools);
+        const exposure = await resolveLlmToolExposureForWorkspace(allowedTools, process.cwd());
         return exposure.exposedTools;
     }
     try {
@@ -630,7 +630,7 @@ export async function getToolsForLlm(workspacePath?: string): Promise<ToolName[]
         const allowedTools = filterDefaultLlmTools(configuredTools);
 
         // 解析 LLM 工具暴露结果，返回 exposedTools
-        const exposure = resolveLlmToolExposure(allowedTools);
+        const exposure = await resolveLlmToolExposureForWorkspace(allowedTools, workspacePath);
 
         return exposure.exposedTools;
     } catch {
@@ -1212,7 +1212,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     const useMcp = backendRuntime.nativeApiEnabled && process.env.LMSTUDIO_ENABLE_MCP === "1" && !!workspacePath;
     let system = buildExecSystemPrompt(baseSystem, useMcp);
 
-    system += `\n\n${renderLlmToolIndex(toolNames)}`;
+    system += `\n\n${await renderLlmToolIndexForWorkspace(toolNames, workspaceRootForTools)}`;
     const workspacePathHint = buildWorkspacePathHint(workspacePath);
     if (workspacePathHint) {
         system += `\n\n${workspacePathHint}`;
@@ -1295,8 +1295,8 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     const activeToolNames = toolNames;
 
     // P5.7-R8c: 使用 manifest 的 toOpenAiToolSchemas 生成完整说明书
-    const activeToolSchemas = toOpenAiToolSchemas(activeToolNames);
-    const activeAnthropicToolSchemas = toAnthropicToolSchemas(activeToolNames);
+    const activeToolSchemas = await toOpenAiToolSchemasForWorkspace(activeToolNames, workspaceRootForTools);
+    const activeAnthropicToolSchemas = await toAnthropicToolSchemasForWorkspace(activeToolNames, workspaceRootForTools);
 
     if (backendRuntime.id === "minimax") {
         return await runMiniMaxAnthropicToolLoop({

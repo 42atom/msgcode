@@ -60,7 +60,6 @@ import {
   handleToolAllowAddCommand as handleToolAllowAddCommandImpl,
   handleToolAllowRemoveCommand as handleToolAllowRemoveCommandImpl,
 } from "./cmd-tooling.js";
-import { handleDesktopCommand as handleDesktopCommandImpl } from "./cmd-desktop.js";
 import {
   handleSteerCommand as handleSteerCommandImpl,
   handleNextCommand as handleNextCommandImpl,
@@ -102,7 +101,6 @@ export const handleToolstatsCommand = handleToolstatsCommandImpl;
 export const handleToolAllowListCommand = handleToolAllowListCommandImpl;
 export const handleToolAllowAddCommand = handleToolAllowAddCommandImpl;
 export const handleToolAllowRemoveCommand = handleToolAllowRemoveCommandImpl;
-export const handleDesktopCommand = handleDesktopCommandImpl;
 export const handleSteerCommand = handleSteerCommandImpl;
 export const handleNextCommand = handleNextCommandImpl;
 export const handleTaskCommand = handleTaskCommandImpl;
@@ -188,8 +186,6 @@ export async function handleRouteCommand(
       return handleToolAllowAddCommand(options);
     case "toolAllowRemove":
       return handleToolAllowRemoveCommand(options);
-    case "desktop":
-      return handleDesktopCommand(options);
     case "steer":
       return handleSteerCommand(options);
     case "next":
@@ -255,8 +251,6 @@ export function isRouteCommand(text: string): boolean {
     trimmed === "/reload" ||
     trimmed === "/toolstats" ||
     trimmed.startsWith("/tool ") ||
-    trimmed === "/desktop" ||
-    trimmed.startsWith("/desktop ") ||
     trimmed.startsWith("/steer ") ||
     trimmed === "/steer" ||
     trimmed.startsWith("/next ") ||
@@ -447,23 +441,6 @@ export function parseRouteCommand(text: string): { command: string; args: string
       }
     }
     return { command: "toolAllowList", args: [] };
-  }
-  if (trimmed === "/desktop") {
-    return { command: "desktop", args: [] };
-  }
-  if (trimmed.startsWith("/desktop ")) {
-    if (trimmed.startsWith("/desktop rpc")) {
-      const m = trimmed.match(/^\/desktop\s+rpc(?:\s+(\S+))?(?:\s+--timeout-ms\s+(\S+))?(?:\s+--confirm-token\s+(\S+))?(?:\s+(.*))?$/);
-      if (!m) return { command: "desktop", args: ["rpc"] };
-      const method = m[1] ?? "";
-      const timeoutMs = m[2] ?? "";
-      const confirmToken = m[3] ?? "";
-      const paramsJson = (m[4] ?? "").trim();
-      return { command: "desktop", args: ["rpc", method, timeoutMs, confirmToken, paramsJson] };
-    }
-
-    const parts = trimmed.split(/\s+/);
-    return { command: "desktop", args: parts.slice(1) };
   }
   if (trimmed.startsWith("/steer ")) {
     const parts = trimmed.split(/\s+/);

@@ -5,6 +5,8 @@
  * P0: 显式工具触发，避免依赖 tool-calls 玄学
  */
 
+import type { GhostToolName } from "../runners/ghost-mcp-contract.js";
+
 export type ToolingMode = "explicit" | "autonomous" | "tool-calls";
 
 export type ToolName =
@@ -14,7 +16,6 @@ export type ToolName =
   | "mem"
   | "bash"
   | "browser"
-  | "desktop"  // T6.1: Desktop Bridge (msgcode-desktopctl)
   // P5.6.13-R1A-EXEC: run_skill 已退役
   | "read_file"  // P5.6.8-R3: PI 四基础工具
   | "help_docs"
@@ -24,7 +25,8 @@ export type ToolName =
   | "feishu_list_recent_messages"
   | "feishu_reply_message"
   | "feishu_react_message"
-  | "feishu_send_file";  // 飞书文件发送工具
+  | "feishu_send_file"
+  | GhostToolName;  // ghost-os 原生 MCP 工具
 
 export type ToolDataMap = {
   tts: { audioPath: string };
@@ -40,8 +42,6 @@ export type ToolDataMap = {
     textBytes?: number;
     textTruncated?: boolean;
   };
-  // T6.1: Desktop tool data (exitCode + stdout + stderr from desktopctl)
-  desktop: { exitCode: number | null; stdout: string; stderr: string };
   // P5.6.13-R1A-EXEC: run_skill 已退役
   // P5.6.8-R3: PI 四基础工具 data
   read_file: {
@@ -90,7 +90,15 @@ export type ToolDataMap = {
   };
   // 飞书文件发送工具
   feishu_send_file: { chatId: string; attachmentType?: "file" | "image"; attachmentKey?: string };
-};
+} & Record<GhostToolName, {
+  rawResult: Record<string, unknown>;
+  structuredContent?: Record<string, unknown>;
+  textContent?: string;
+  binaryPath: string;
+  version: string;
+  statusSummary: string;
+  stderr?: string;
+}>;
 
 export type ToolSource =
   | "slash-command"    // 用户显式命令
@@ -149,7 +157,7 @@ export interface ToolResult<TTool extends ToolName = ToolName> {
     /** 错误描述 */
     message: string;
   };
-  /** P5.7-R3h: 诊断字段 - 退出码（bash/desktop 工具） */
+  /** P5.7-R3h: 诊断字段 - 退出码（bash 工具） */
   exitCode?: number | null;
   /** P5.7-R3h: 诊断字段 - stderr 尾部截断 */
   stderrTail?: string;
@@ -161,7 +169,7 @@ export interface ToolResult<TTool extends ToolName = ToolName> {
   previewText?: string;
   /** artifacts（可选） */
   artifacts?: Array<{
-    kind: "tts" | "asr" | "vision" | "browser" | "log" | "desktop";
+    kind: "tts" | "asr" | "vision" | "browser" | "log" | "desktop" | "ghost";
     path: string;
     digest?: string;
   }>;

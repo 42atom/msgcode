@@ -21,6 +21,7 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ToolName, ToolingMode } from "../tools/types.js";
+import { GHOST_TOOL_NAMES } from "../runners/ghost-mcp-contract.js";
 
 type LegacyAgentProviderAlias = "lmstudio" | "llama" | "claude";
 type StoredAgentProvider = AgentProvider | LegacyAgentProviderAlias;
@@ -251,7 +252,7 @@ export const DEFAULT_WORKSPACE_CONFIG: Required<WorkspaceConfig> = {
   "tmux.client": "codex", // P5.6.14-R1: 默认 codex client
   "runner.default": "agent-backend", // P5.7-R9-T6: 兼容字段，默认 agent-backend
   "tooling.mode": "autonomous", // P5.5: 测试期统一 autonomous（LLM 自主决策 tool_calls）
-  "tooling.allow": ["tts", "asr", "bash", "browser", "read_file", "write_file", "edit_file", "help_docs", "feishu_list_members", "feishu_list_recent_messages", "feishu_reply_message", "feishu_react_message", "feishu_send_file"], // 默认文件主链恢复为 read/write/edit + bash，CLI 合同探索走 help_docs；vision 与 desktop 都改为显式 opt-in
+  "tooling.allow": ["tts", "asr", "bash", "browser", "read_file", "write_file", "edit_file", "help_docs", "feishu_list_members", "feishu_list_recent_messages", "feishu_reply_message", "feishu_react_message", "feishu_send_file", ...GHOST_TOOL_NAMES], // 默认文件主链恢复为 read/write/edit + bash；ghost_* 原生桌面能力进入正式工具面，vision 与 legacy desktop 都改为显式 opt-in
   "tooling.require_confirm": [], // 默认不要求确认
   "tooling.fs_scope": "unrestricted", // 当前默认 unrestricted，避免扩大变更面
   "feishu.appId": "", // 飞书 App ID（默认空，需要用户配置）

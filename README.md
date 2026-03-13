@@ -57,6 +57,7 @@ msgcode 的默认原则不是“约束 LLM”，而是“支持 LLM 完成任务
 - `tmux`
 - 飞书企业自建应用凭据（`FEISHU_APP_ID` / `FEISHU_APP_SECRET`）
 - Chrome/Chromium（供浏览器自动化底座使用）
+- 可选：`ghost-os`（供 `ghost_*` 桌面 computer-use 原生工具使用）
 
 ### 2. 安装依赖
 
@@ -107,6 +108,20 @@ Browser Core 配置口径：
   - `npx tsx src/cli.ts browser root --json`
   - `npx tsx src/cli.ts browser root --ensure --json`
 
+Ghost OS 安装与健康检查（可选，但 `ghost_*` 工具依赖它）：
+
+```bash
+brew install ghostwright/ghost-os/ghost-os
+ghost setup
+ghost doctor
+ghost status
+```
+
+说明：
+- msgcode 会直接暴露 `ghost_*` 原生工具，不再长期保留 `desktop.* -> ghost_*` 翻译层。
+- 未安装 `ghost-os` 时，`ghost_*` 工具会 fail-closed 返回真实缺失事实和安装指引。
+- `ghost status` 未 ready 时，msgcode 会补跑一次 `ghost doctor`，把最小诊断事实回给模型。
+
 ### 5. 启动服务
 
 ```bash
@@ -152,15 +167,10 @@ msgcode start -d
 
 更多命令请以运行时 `/help` 输出为准。
 
-## Desktop Bridge（可选）
+## Legacy Desktop Bridge（遗留显式链路）
 
-```bash
-open mac/MsgcodeDesktopHost/MsgcodeDesktopHost.app
-npx tsx src/cli.ts /desktop health
-npx tsx src/cli.ts /desktop observe
-```
-
-完整文档：`docs/desktop/`
+- 当前默认桌面能力面已切到 `ghost_*` 原生工具。
+- `docs/desktop/` 与 `mac/MsgcodeDesktopHost` 只保留 legacy bridge 历史文档；现役桌面能力以 `ghost_*` 为准。
 
 ## 记忆机制（L0/L1/L2）
 
@@ -180,7 +190,7 @@ npx tsx src/cli.ts /desktop observe
 
 - `docs/README.md` 文档总入口
 - `docs/product/pitch.md` 产品叙事与定位
-- `docs/desktop/` Desktop Bridge 文档
+- `docs/desktop/` Legacy Desktop Bridge 历史文档
 - `src/README.md` 代码分层与职责
 - `test/README.md` 测试结构与回归约束
 - `scripts/README.md` 脚本目录说明

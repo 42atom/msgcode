@@ -66,7 +66,7 @@ src/skills/
 │   └── subagent/
 │       └── SKILL.md
 └── runtime/                # 仓库托管的 runtime skill 真相源
-    ├── index.json          # 托管 skill 索引（vision-index, local-vision-lmstudio, scheduler, plan-files, character-identity, feishu-send-file, memory, file, thread, todo, gen, banana-pro-image-gen, patchright-browser）
+    ├── index.json          # 托管 skill 索引（vision-index, local-vision-lmstudio, scheduler, plan-files, character-identity, feishu-send-file, memory, file, thread, todo, gen, banana-pro-image-gen, patchright-browser, ghost-mcp）
     ├── scheduler/
     │   ├── SKILL.md
     │   └── main.sh
@@ -99,7 +99,9 @@ src/skills/
     │   ├── main.sh
     │   └── scripts/
     │       └── analyze_image.py
-    └── patchright-browser/
+    ├── patchright-browser/
+    │   └── SKILL.md
+    └── ghost-mcp/
         └── SKILL.md
 ```
 

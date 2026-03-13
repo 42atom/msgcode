@@ -127,7 +127,6 @@ const HELP_ENTRIES: SlashCommandDocEntry[] = [
   },
   { group: "编排层", usage: "/toolstats", summary: "工具统计", keywords: ["/toolstats"] },
   { group: "编排层", usage: "/tool allow ...", summary: "工具白名单管理", keywords: ["/tool"] },
-  { group: "编排层", usage: "/desktop rpc <method> ...", summary: "桌面桥 RPC（legacy）", keywords: ["/desktop"] },
 
   { group: "会话（tmux/direct）", usage: "/start", summary: "启动会话", keywords: ["/start"] },
   { group: "会话（tmux/direct）", usage: "/stop", summary: "停止会话", keywords: ["/stop"] },

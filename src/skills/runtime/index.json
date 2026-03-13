@@ -79,6 +79,12 @@
       "name": "Patchright Browser",
       "entry": "~/.config/msgcode/skills/patchright-browser/SKILL.md",
       "description": "Patchright 浏览器能力说明书。真实网页任务默认优先走 browser 原生工具；长文网页正文提取优先复用 tabs.text 返回的 textPath，再按唯一文件名分段处理；只有排障或查 CLI 合同时，再看 msgcode browser 路径。"
+    },
+    {
+      "id": "ghost-mcp",
+      "name": "Ghost MCP",
+      "entry": "~/.config/msgcode/skills/ghost-mcp/SKILL.md",
+      "description": "ghost-os 桌面 computer-use 说明书。主体真相源是 GHOST-MCP.md；msgcode 侧只补本地安装、探测、失败处理与 `ghost_*` 使用顺序。"
     }
   ]
 }

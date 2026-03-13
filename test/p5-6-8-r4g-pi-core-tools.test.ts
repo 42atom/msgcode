@@ -21,10 +21,11 @@ describe("P5.6.8-R4g: 命名收口", () => {
 
     // 通过类型系统验证：shell 已从 ToolName 中删除
     // P5.6.13-R1A-EXEC: run_skill 已退役
-    const validTools = ["tts", "asr", "vision", "bash", "browser", "desktop", "read_file", "help_docs", "feishu_list_members", "feishu_list_recent_messages", "feishu_reply_message", "feishu_react_message", "feishu_send_file"];
+    const validTools = ["tts", "asr", "vision", "bash", "browser", "read_file", "help_docs", "feishu_list_members", "feishu_list_recent_messages", "feishu_reply_message", "feishu_react_message", "feishu_send_file"];
 
     expect(validTools).toContain("bash");
     expect(validTools).not.toContain("shell");
+    expect(validTools).not.toContain("desktop");
     expect(validTools).not.toContain("run_skill");
   });
 
@@ -50,10 +51,25 @@ describe("P5.6.8-R4g: 命名收口", () => {
     expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).not.toContain("shell");
   });
 
-  it("R4g-3b: desktop 应退出默认 LLM 工具主链", async () => {
-    const { filterDefaultLlmTools } = await import("../src/tools/manifest.js");
+  it("R4g-3b: 旧工作区即使 allow 包含 desktop，也不应恢复现役桌面主链", async () => {
+    const { resolveLlmToolExposureForWorkspace } = await import("../src/tools/manifest.js");
+    const { getToolPolicy } = await import("../src/config/workspace.js");
+    const { mkdir, writeFile } = await import("node:fs/promises");
+    const { join } = await import("node:path");
+    const { tmpdir } = await import("node:os");
 
-    expect(filterDefaultLlmTools(["desktop", "bash", "read_file"] as any)).toEqual(["bash", "read_file"]);
+    const workspacePath = join(tmpdir(), "msgcode-r4g-desktop-legacy");
+    await mkdir(join(workspacePath, ".msgcode"), { recursive: true });
+    await writeFile(
+      join(workspacePath, ".msgcode", "config.json"),
+      JSON.stringify({ "tooling.allow": ["desktop", "bash", "read_file"] }),
+      "utf-8"
+    );
+
+    const policy = await getToolPolicy(workspacePath);
+    const exposure = await resolveLlmToolExposureForWorkspace(policy.allow, workspacePath);
+    expect(exposure.exposedTools).not.toContain("desktop");
+    expect((exposure.missingManifests as string[])).toContain("desktop");
   });
 });
 

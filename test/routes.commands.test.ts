@@ -201,16 +201,10 @@ describe("路由命令处理器", () => {
       expect(parseRouteCommand("/model status")).toEqual({ command: "model", args: ["status"] });
     });
 
-    it("desktop 路由只保留 rpc 显式入口", () => {
-      expect(parseRouteCommand("/desktop")).toEqual({ command: "desktop", args: [] });
-      expect(parseRouteCommand("/desktop rpc desktop.health {}")).toEqual({
-        command: "desktop",
-        args: ["rpc", "desktop.health", "", "", "{}"],
-      });
-      expect(parseRouteCommand("/desktop find {\"selector\":{}}")).toEqual({
-        command: "desktop",
-        args: ["find", "{\"selector\":{}}"],
-      });
+    it("desktop 路由已退出现役 slash 命令面", () => {
+      expect(parseRouteCommand("/desktop")).toBeNull();
+      expect(parseRouteCommand("/desktop rpc desktop.health {}")).toBeNull();
+      expect(parseRouteCommand("/desktop find {\"selector\":{}}")).toBeNull();
     });
 
     it("拒绝非路由命令", () => {
@@ -421,7 +415,6 @@ describe("路由命令处理器", () => {
       expect(result.message).toContain("/mem");
       expect(result.message).toContain("/task");
       expect(result.message).toContain("/toolstats");
-      expect(result.message).toContain("/desktop");
       expect(result.message).toContain("/help");
       expect(result.message).toContain("/info");
     });
@@ -433,7 +426,6 @@ describe("路由命令处理器", () => {
 
       expect(text).toContain("msgcode 2.3 命令速查");
       expect(text).toContain("/bind <dir>");
-      expect(text).toContain("/desktop rpc <method> ...");
       expect(text).toContain("/mode style-reset");
       expect(text).toContain("/loglevel [level]");
     });
@@ -443,7 +435,6 @@ describe("路由命令处理器", () => {
 
       expect(keywords).toEqual(expect.arrayContaining([
         "/bind",
-        "/desktop",
         "/help",
         "/loglevel",
         "/mode",
@@ -458,7 +449,6 @@ describe("路由命令处理器", () => {
 
       expect(hint).toContain("可用命令:");
       expect(hint).toContain("/bind");
-      expect(hint).toContain("/desktop");
       expect(hint).toContain("/mode");
     });
   });
@@ -554,24 +544,13 @@ describe("路由命令处理器", () => {
       expect(result.message).toContain("msgcode 2.3 命令速查");
     });
 
-    it("desktop 路由对旧糖衣只返回 rpc 用法", async () => {
-      const result = await handleRouteCommand("desktop", {
-        chatId: "any;+;desktop-dispatch",
-        args: ["find", "{\"selector\":{}}"],
-      });
-
-      expect(result.success).toBe(false);
-      expect(result.message).toContain("/desktop rpc <method>");
-      expect(result.message).toContain("已移除旧 desktop 子命令: find");
-    });
-
     it("拒绝未知命令", async () => {
       const options: CommandHandlerOptions = { chatId: "any;+;dispatch6", args: [] };
       const result = await handleRouteCommand("unknown", options);
 
       expect(result.success).toBe(false);
       expect(result.message).toContain("未知命令");
-      expect(result.message).toContain("/desktop");
+      expect(result.message).toContain("/tool");
     });
   });
 

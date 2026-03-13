@@ -14,7 +14,6 @@ src/routes/
 ├── cmd-soul.ts       # /soul list/use/current
 ├── cmd-schedule.ts   # /schedule* /reload
 ├── cmd-tooling.ts    # /toolstats /tool allow *
-├── cmd-desktop.ts    # /desktop *
 ├── cmd-steer.ts      # /steer /next
 └── store.ts          # 群聊绑定存储（RouteStore）
 ```

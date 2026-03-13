@@ -23,7 +23,15 @@ import { runTts } from "../runners/tts.js";
 import { runAsr } from "../runners/asr.js";
 import { runVision } from "../runners/vision.js";
 import { runBashCommand } from "../runners/bash-runner.js";
-import { runDesktopTool } from "../runners/desktop.js";
+import {
+  runGhostMcpTool,
+  type GhostToolRunResult,
+} from "../runners/ghost-mcp-client.js";
+import {
+  GHOST_TOOL_NAMES,
+  getGhostToolSideEffect,
+  isGhostToolName,
+} from "../runners/ghost-mcp-contract.js";
 import {
   normalizeEditFileEditsInput,
   runReadFileTool,
@@ -47,6 +55,13 @@ import { logger } from "../logger/index.js";
 import { recordToolEvent } from "./telemetry.js";
 import { filterDefaultLlmTools } from "./manifest.js";
 
+const GHOST_TOOL_META = Object.fromEntries(
+  GHOST_TOOL_NAMES.map((toolName) => [
+    toolName,
+    { sideEffect: getGhostToolSideEffect(toolName) as SideEffectLevel },
+  ])
+) as Record<typeof GHOST_TOOL_NAMES[number], { sideEffect: SideEffectLevel }>;
+
 const TOOL_META: Record<ToolName, { sideEffect: SideEffectLevel }> = {
   tts: { sideEffect: "message-send" },
   asr: { sideEffect: "local-write" },
@@ -54,7 +69,6 @@ const TOOL_META: Record<ToolName, { sideEffect: SideEffectLevel }> = {
   mem: { sideEffect: "local-write" },
   bash: { sideEffect: "process-control" },
   browser: { sideEffect: "process-control" },
-  desktop: { sideEffect: "local-write" },  // T6.1: observe 会落盘 evidence
   // P5.6.13-R1A-EXEC: run_skill 已退役
   read_file: { sideEffect: "read-only" },  // P5.6.8-R3: PI 四基础工具
   help_docs: { sideEffect: "read-only" },
@@ -65,6 +79,7 @@ const TOOL_META: Record<ToolName, { sideEffect: SideEffectLevel }> = {
   feishu_list_recent_messages: { sideEffect: "read-only" },  // 飞书最近消息查询
   feishu_reply_message: { sideEffect: "message-send" },  // 飞书消息回复
   feishu_react_message: { sideEffect: "message-send" },  // 飞书消息表情回复
+  ...GHOST_TOOL_META,
 };
 
 const MEDIA_PIPELINE_ALLOWED: ToolName[] = ["asr", "vision"];
@@ -195,15 +210,6 @@ function validateToolArgs(
     case "browser": {
       if (!args.operation || typeof args.operation !== "string" || !args.operation.trim()) {
         return { code: "TOOL_BAD_ARGS", message: "browser: 'operation' must be a non-empty string" };
-      }
-      break;
-    }
-    case "desktop": {
-      if (!args.method || typeof args.method !== "string" || !args.method.trim()) {
-        return { code: "TOOL_BAD_ARGS", message: "desktop: 'method' must be a non-empty string" };
-      }
-      if (args.params !== undefined && (typeof args.params !== "object" || args.params === null || Array.isArray(args.params))) {
-        return { code: "TOOL_BAD_ARGS", message: "desktop: 'params' must be an object when provided" };
       }
       break;
     }
@@ -475,20 +481,32 @@ async function persistBrowserTextArtifact(params: {
   };
 }
 
-function buildDesktopPreviewText(params: {
-  exitCode: number | null;
-  stdout: string;
-  stderr: string;
-}): string {
-  const lines = [`[desktop] exitCode=${params.exitCode ?? "null"}`];
-  if (params.stdout.trim()) {
-    lines.push("[stdout]");
-    lines.push(params.stdout.trim());
+function buildGhostPreviewText(tool: ToolName, params: GhostToolRunResult): string {
+  const lines = [
+    `[${tool}] ${params.statusSummary}`,
+    `[ghost] version=${params.version}`,
+    `[binary] ${params.binaryPath}`,
+  ];
+
+  if (params.structuredContent) {
+    lines.push("[json]");
+    lines.push(JSON.stringify(params.structuredContent));
+  } else if (params.textContent) {
+    lines.push("[text]");
+    lines.push(params.textContent);
   }
+
+  const artifactPaths = (params.artifacts ?? []).map((item) => item.path);
+  if (artifactPaths.length > 0) {
+    lines.push("[artifacts]");
+    lines.push(...artifactPaths.map((path) => `- ${path}`));
+  }
+
   if (params.stderr.trim()) {
     lines.push("[stderr]");
     lines.push(params.stderr.trim());
   }
+
   return clipPreviewText(lines.join("\n"));
 }
 
@@ -850,27 +868,61 @@ export async function executeTool(
           break;
         }
       }
-      case "desktop": {
+      case "ghost_context":
+      case "ghost_state":
+      case "ghost_find":
+      case "ghost_read":
+      case "ghost_inspect":
+      case "ghost_element_at":
+      case "ghost_screenshot":
+      case "ghost_click":
+      case "ghost_type":
+      case "ghost_press":
+      case "ghost_hotkey":
+      case "ghost_scroll":
+      case "ghost_hover":
+      case "ghost_long_press":
+      case "ghost_drag":
+      case "ghost_focus":
+      case "ghost_window":
+      case "ghost_wait":
+      case "ghost_recipes":
+      case "ghost_run":
+      case "ghost_recipe_show":
+      case "ghost_recipe_save":
+      case "ghost_recipe_delete":
+      case "ghost_parse_screen":
+      case "ghost_ground":
+      case "ghost_annotate": {
+        const ghostToolName = isGhostToolName(tool) ? tool : null;
+        if (!ghostToolName) {
+          throw new Error(`invalid ghost tool: ${tool}`);
+        }
+
         const out = await withTimeout(
-          runDesktopTool({
+          runGhostMcpTool({
             workspacePath: ctx.workspacePath,
-            method: String(args.method),
-            params: (args.params as Record<string, unknown> | undefined) ?? {},
+            toolName: ghostToolName,
+            args,
             timeoutMs: ctx.timeoutMs ?? 120000,
           }),
           ctx.timeoutMs ?? 120000
         );
 
         result = {
-          ok: out.exitCode === 0,
+          ok: true,
           tool,
-          data: { exitCode: out.exitCode, stdout: out.stdout, stderr: out.stderr },
+          data: {
+            rawResult: out.rawResult,
+            structuredContent: out.structuredContent,
+            textContent: out.textContent,
+            binaryPath: out.binaryPath,
+            version: out.version,
+            statusSummary: out.statusSummary,
+            stderr: out.stderr || undefined,
+          },
           artifacts: out.artifacts,
-          previewText: buildDesktopPreviewText({
-            exitCode: out.exitCode,
-            stdout: out.stdout,
-            stderr: out.stderr,
-          }),
+          previewText: buildGhostPreviewText(tool, out),
           durationMs: Date.now() - started,
         };
         break;

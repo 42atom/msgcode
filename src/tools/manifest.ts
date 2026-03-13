@@ -8,11 +8,17 @@
  * - 执行核从该注册表派生 tools[]，消除 allow != expose 漂移
  *
  * 使用方式：
- * - TOOL_MANIFESTS: 所有工具说明书（Record<ToolName, ToolManifest>）
+ * - TOOL_MANIFESTS: 非 ghost 的静态工具说明书
+ * - getRegisteredToolManifests(): 当前真实工具说明书（含 ghost 动态 tools/list）
  * - resolveLlmToolExposure(): 解析允许/已注册/已暴露/缺失清单
  */
 
 import type { ToolName } from "./types.js";
+import {
+  getGhostToolRiskLevel,
+  type GhostToolName,
+} from "../runners/ghost-mcp-contract.js";
+import { listGhostMcpTools } from "../runners/ghost-mcp-client.js";
 
 // ============================================
 // 类型定义
@@ -35,6 +41,7 @@ export interface ToolManifest {
       type: string;
       description?: string;
       enum?: string[];
+      items?: { type: string };
     }>;
     required: string[];
     additionalProperties?: boolean;
@@ -63,9 +70,8 @@ export interface LlmToolExposureResult {
  * 默认不再暴露给 LLM 的工具。
  * 保留执行实现，但退出默认模型主链：
  * - mem：当前无 P0 执行实现；长期记忆通过自动注入与 /mem slash 控制，不作为默认 LLM tool
- * - desktop：内建 bridge 将被开源 desktop plugin 替换；替换完成前退出默认 LLM 主链，只保留显式链路
  */
-export const LLM_DEFAULT_SUPPRESSED_TOOLS: ToolName[] = ["mem", "desktop"];
+export const LLM_DEFAULT_SUPPRESSED_TOOLS: ToolName[] = ["mem"];
 
 export function filterDefaultLlmTools(toolNames: ToolName[]): ToolName[] {
   return toolNames.filter((tool) => !LLM_DEFAULT_SUPPRESSED_TOOLS.includes(tool));
@@ -83,7 +89,7 @@ export function filterDefaultLlmTools(toolNames: ToolName[]): ToolName[] {
  * - 字段必须与 Tool Bus 执行参数一致
  * - riskLevel 用于策略决策（medium/high 需确认）
  */
-export const TOOL_MANIFESTS: Record<ToolName, ToolManifest> = {
+export const TOOL_MANIFESTS: ManifestRegistry = {
   // ============================================
   // 浏览器工具（Patchright Browser Core）
   // ============================================
@@ -484,24 +490,77 @@ export const TOOL_MANIFESTS: Record<ToolName, ToolManifest> = {
     riskLevel: "low",
   },
 
-  desktop: {
-    name: "desktop",
-    description: "桌面桥接工具。通过 Desktop Bridge 与 macOS 桌面交互。",
-    parameters: {
-      type: "object",
-      properties: {
-        operation: {
-          type: "string",
-          description: "操作类型",
-          enum: ["observe", "click", "type"],
-        },
-      },
-      required: ["operation"],
-      additionalProperties: true,
-    },
-    riskLevel: "medium",
-  },
 };
+
+type ManifestRegistry = Partial<Record<ToolName, ToolManifest>>;
+
+function normalizeGhostToolParameters(schema: Record<string, unknown> | undefined): ToolManifest["parameters"] {
+  const propertiesInput = schema?.properties;
+  const properties: ToolManifest["parameters"]["properties"] = {};
+
+  if (propertiesInput && typeof propertiesInput === "object" && !Array.isArray(propertiesInput)) {
+    for (const [key, rawValue] of Object.entries(propertiesInput)) {
+      const value = rawValue as Record<string, unknown>;
+      const type = typeof value?.type === "string" ? value.type : "string";
+      const description = typeof value?.description === "string" ? value.description : undefined;
+      const enumValues = Array.isArray(value?.enum)
+        ? value.enum.filter((item): item is string => typeof item === "string")
+        : undefined;
+      const itemsType = value?.items && typeof value.items === "object" && typeof (value.items as Record<string, unknown>).type === "string"
+        ? { type: (value.items as Record<string, unknown>).type as string }
+        : undefined;
+
+      properties[key] = {
+        type,
+        ...(description ? { description } : {}),
+        ...(enumValues && enumValues.length > 0 ? { enum: enumValues } : {}),
+        ...(itemsType ? { items: itemsType } : {}),
+      };
+    }
+  }
+
+  const required = Array.isArray(schema?.required)
+    ? schema.required.filter((item): item is string => typeof item === "string")
+    : [];
+
+  return {
+    type: "object",
+    properties,
+    required,
+    additionalProperties: schema?.additionalProperties === true,
+  };
+}
+
+async function loadGhostToolManifests(workspacePath?: string): Promise<ManifestRegistry> {
+  const resolvedWorkspace = (workspacePath || process.cwd()).trim();
+  if (!resolvedWorkspace) {
+    return {};
+  }
+
+  try {
+    const tools = await listGhostMcpTools({ workspacePath: resolvedWorkspace });
+    const manifests: ManifestRegistry = {};
+    for (const tool of tools) {
+      manifests[tool.name] = {
+        name: tool.name,
+        description: tool.description,
+        parameters: normalizeGhostToolParameters(tool.inputSchema),
+        riskLevel: getGhostToolRiskLevel(tool.name as GhostToolName),
+      };
+    }
+    return manifests;
+  } catch {
+    return {};
+  }
+}
+
+export async function getRegisteredToolManifests(workspacePath?: string): Promise<ManifestRegistry> {
+  const ghostManifests = await loadGhostToolManifests(workspacePath);
+  return {
+    ...TOOL_MANIFESTS,
+    ...ghostManifests,
+  };
+}
 
 // ============================================
 // 暴露解析器
@@ -516,15 +575,18 @@ export const TOOL_MANIFESTS: Record<ToolName, ToolManifest> = {
  * @param allowedTools - workspace 允许的工具列表（tooling.allow）
  * @returns LLM 工具暴露结果
  */
-export function resolveLlmToolExposure(allowedTools: ToolName[]): LlmToolExposureResult {
+export function resolveLlmToolExposure(
+  allowedTools: ToolName[],
+  manifests: ManifestRegistry = TOOL_MANIFESTS
+): LlmToolExposureResult {
   // 已注册说明书的工具列表
-  const registeredTools = Object.keys(TOOL_MANIFESTS) as ToolName[];
+  const registeredTools = Object.keys(manifests) as ToolName[];
 
   // 真实暴露给 LLM 的工具列表（仅保留仍需 suppress 的工具）
-  const exposedTools = filterDefaultLlmTools(allowedTools).filter((tool) => tool in TOOL_MANIFESTS);
+  const exposedTools = filterDefaultLlmTools(allowedTools).filter((tool) => tool in manifests);
 
   // 允许但未注册说明书的工具列表
-  const missingManifests = allowedTools.filter((tool) => !(tool in TOOL_MANIFESTS));
+  const missingManifests = allowedTools.filter((tool) => !(tool in manifests));
 
   return {
     allowedTools,
@@ -532,6 +594,14 @@ export function resolveLlmToolExposure(allowedTools: ToolName[]): LlmToolExposur
     exposedTools,
     missingManifests,
   };
+}
+
+export async function resolveLlmToolExposureForWorkspace(
+  allowedTools: ToolName[],
+  workspacePath?: string
+): Promise<LlmToolExposureResult> {
+  const manifests = await getRegisteredToolManifests(workspacePath);
+  return resolveLlmToolExposure(allowedTools, manifests);
 }
 
 /**
@@ -544,6 +614,17 @@ export function toOpenAiToolSchema(toolName: ToolName): unknown | null {
   const manifest = TOOL_MANIFESTS[toolName];
   if (!manifest) return null;
 
+  return {
+    type: "function",
+    function: {
+      name: manifest.name,
+      description: manifest.description,
+      parameters: manifest.parameters,
+    },
+  };
+}
+
+function toOpenAiToolSchemaFromManifest(manifest: ToolManifest): unknown {
   return {
     type: "function",
     function: {
@@ -569,6 +650,21 @@ export function toOpenAiToolSchemas(toolNames: ToolName[]): unknown[] {
   return schemas;
 }
 
+export async function toOpenAiToolSchemasForWorkspace(
+  toolNames: ToolName[],
+  workspacePath?: string
+): Promise<unknown[]> {
+  const manifests = await getRegisteredToolManifests(workspacePath);
+  const schemas: unknown[] = [];
+  for (const name of toolNames) {
+    const manifest = manifests[name];
+    if (manifest) {
+      schemas.push(toOpenAiToolSchemaFromManifest(manifest));
+    }
+  }
+  return schemas;
+}
+
 /**
  * 将工具说明书转换为 Anthropic Tool Format
  *
@@ -579,6 +675,14 @@ export function toAnthropicToolSchema(toolName: ToolName): unknown | null {
   const manifest = TOOL_MANIFESTS[toolName];
   if (!manifest) return null;
 
+  return {
+    name: manifest.name,
+    description: manifest.description,
+    input_schema: manifest.parameters,
+  };
+}
+
+function toAnthropicToolSchemaFromManifest(manifest: ToolManifest): unknown {
   return {
     name: manifest.name,
     description: manifest.description,
@@ -601,6 +705,21 @@ export function toAnthropicToolSchemas(toolNames: ToolName[]): unknown[] {
   return schemas;
 }
 
+export async function toAnthropicToolSchemasForWorkspace(
+  toolNames: ToolName[],
+  workspacePath?: string
+): Promise<unknown[]> {
+  const manifests = await getRegisteredToolManifests(workspacePath);
+  const schemas: unknown[] = [];
+  for (const name of toolNames) {
+    const manifest = manifests[name];
+    if (manifest) {
+      schemas.push(toAnthropicToolSchemaFromManifest(manifest));
+    }
+  }
+  return schemas;
+}
+
 /**
  * 渲染给模型看的工具索引
  *
@@ -609,6 +728,10 @@ export function toAnthropicToolSchemas(toolNames: ToolName[]): unknown[] {
  * - 阻止模型把 skill 名误当成 tool 名
  */
 export function renderLlmToolIndex(toolNames: ToolName[]): string {
+  return renderLlmToolIndexFromManifests(toolNames, TOOL_MANIFESTS);
+}
+
+function renderLlmToolIndexFromManifests(toolNames: ToolName[], manifests: ManifestRegistry): string {
   const lines: string[] = [
     "[当前可用工具索引]",
     "你本轮真正可调用的工具只有以下名称；如果要发出 tool_calls/tool_use，工具名只能从下列列表中选择。",
@@ -621,7 +744,7 @@ export function renderLlmToolIndex(toolNames: ToolName[]): string {
   }
 
   for (const toolName of toolNames) {
-    const manifest = TOOL_MANIFESTS[toolName];
+    const manifest = manifests[toolName];
     if (!manifest) continue;
     lines.push(`- ${manifest.name}: ${manifest.description}`);
   }
@@ -635,4 +758,12 @@ export function renderLlmToolIndex(toolNames: ToolName[]): string {
   lines.push("如果本轮没有调用相关工具，就明确说“这轮还没实际核实”，不要编造旧错误、旧附件结果或旧视觉结论。");
 
   return lines.join("\n");
+}
+
+export async function renderLlmToolIndexForWorkspace(
+  toolNames: ToolName[],
+  workspacePath?: string
+): Promise<string> {
+  const manifests = await getRegisteredToolManifests(workspacePath);
+  return renderLlmToolIndexFromManifests(toolNames, manifests);
 }
