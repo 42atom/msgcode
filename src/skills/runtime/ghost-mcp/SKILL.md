@@ -138,6 +138,51 @@ ghost status
   - 视觉状态是否一致：`ghost_screenshot`
   - 是否需要视觉定位：`ghost_ground`
 
+## 系统 Modal（保存/打开/权限弹窗）处理规则（必须照做）
+
+你可以“感知”到 modal，但需要你**主动**去取证。Ghost OS 文档也明确：很多失败是因为被 modal 阻挡。
+
+### 什么时候必须怀疑 modal 出现了
+
+命中任意一条就进入 modal-first：
+
+- 你刚触发了会弹窗的动作：`cmd+s`、Export/Save/Print、打开文件、系统权限提示等
+- `ghost_click/ghost_type` 连续失败，但元素“按理应该在那”
+- `ghost_wait` 超时/失败两次以上（尤其是你在等“某按钮出现/消失”）
+- 你肉眼看到保存对话框，但模型还在点主窗口
+
+### modal-first 最小主链（不要发明花活）
+
+1. **停下**对主窗口的任何点击/输入，先取证：
+   - `ghost_context app:"<目标应用>"`
+   - `ghost_read app:"<目标应用>"`
+   - `ghost_annotate app:"<目标应用>"`（拿到带编号的可点坐标）
+2. **只在 modal 上找 4 个锚点**（不找到就别乱点）：
+   - `Cancel` / `取消`
+   - `Save` / `保存` / `Export` / `导出`
+   - 文件名输入框（File name / 名称）
+   - 位置/路径选择（Where / 位置）
+3. **做决定前先问用户**（除非用户已经明确给了文件名与保存位置）：
+   - “要保存吗？文件名是什么？保存到哪里？”
+   - 如果用户只是要“可视证据”，优先 `ghost_screenshot` + `feishu_send_file`，不要走应用内导出把自己卡在保存面板里。
+4. 用户明确后，再执行最小动作：
+   - `ghost_click`（点文件名输入框或 Save/Cancel）
+   - `ghost_type`（输入文件名）
+   - `ghost_click`（点 Save/保存）
+   - `ghost_wait condition:"elementGone" value:"Cancel" app:"<目标应用>"`（确认对话框消失）
+
+### 脱困预算（防止“永远卡住”）
+
+- modal-first 最多尝试 2 轮（取证 -> 定位 -> 动作）。
+- 超过 2 轮还不确定：
+  - **立刻停下**，把 `ghost_annotate` 产物（截图 + 编号索引）作为证据回给用户，请用户手动点掉或给出明确指令（保存/取消/替换/不保存）。
+
+### 禁止项
+
+- 不要在 modal 出现后继续对主窗口操作。
+- 不要“猜”默认保存路径或默认按钮含义（Save/Replace/Don't Save 语义差一点就是灾难）。
+- 不要在失败时无限循环 `ghost_wait` 或 `ghost_click`。
+
 ## 边界
 
 - `ghost-os` 是外部 provider，不是 msgcode core
