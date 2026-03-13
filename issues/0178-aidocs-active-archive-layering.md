@@ -1,7 +1,7 @@
 ---
 id: 0178
 title: AIDOCS 分层整理为 active 与 archive
-status: doing
+status: done
 owner: agent
 labels: [docs, cleanup, repo]
 risk: low
@@ -56,6 +56,13 @@ links: []
 ## Notes
 
 - 第一刀优先移动“无外部引用”与“仅一轮性草稿”的文档，避免误伤当前真相源。
+- 验证：
+  - `npm run docs:check`
+- 提交：
+  - `0af5195 docs: layer aidocs into active and archive`
+- 本轮说明：
+  - tracked 侧仅归档 3 份零外部引用报告
+  - 一批 untracked review/report 已在本地整理进 `active/` 与 `archive/20260313/`，但未纳入版本库
 
 ## Links
 
