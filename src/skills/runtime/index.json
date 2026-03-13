@@ -17,7 +17,7 @@
     {
       "id": "scheduler",
       "name": "Scheduler",
-      "entry": "~/.config/msgcode/skills/scheduler/main.sh",
+      "entry": "~/.config/msgcode/skills/scheduler/SKILL.md",
       "description": "周期定时任务能力说明书。先读本 skill，再通过 scheduler wrapper 调用 msgcode schedule CLI；一次性任务由 LLM 自行决定实现"
     },
     {

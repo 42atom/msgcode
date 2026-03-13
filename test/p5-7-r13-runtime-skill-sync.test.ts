@@ -312,6 +312,9 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(mergedIndex.skills.find((skill) => skill.id === "patchright-browser")?.entry).toBe(
       "~/.config/msgcode/skills/patchright-browser/SKILL.md",
     );
+    expect(mergedIndex.skills.find((skill) => skill.id === "scheduler")?.entry).toBe(
+      "~/.config/msgcode/skills/scheduler/SKILL.md",
+    );
     expect(localVisionStat.mode & 0o111).toBeGreaterThan(0);
     expect(memoryStat.mode & 0o111).toBeGreaterThan(0);
     expect(todoStat.mode & 0o111).toBeGreaterThan(0);
