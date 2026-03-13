@@ -1,7 +1,7 @@
 ---
 id: 0174
 title: 停止跟踪 .claude 目录
-status: doing
+status: done
 owner: agent
 labels: [chore, cleanup, repo]
 risk: low
@@ -43,6 +43,11 @@ links: []
 ## Notes
 
 - `CLAUDE.md` 继续保留为仓库协议文件；本轮只处理隐藏目录 `.claude/`。
+- 验证：
+  - `git ls-files '.claude/**' '.claude/*'`
+  - `npm run docs:check`
+- 提交：
+  - `794d054 chore: stop tracking claude directory`
 
 ## Links
 
