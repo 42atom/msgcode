@@ -3,6 +3,7 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-13
+  - repo/prompt-files: `CLAUDE.md` 与 `AGENTS.md` 已退回本地私有提示词文件语义；它们虽然继续保留在开发机上供本地 agent 使用，但已从开源仓库版本库中移除，不再污染 GitHub 对外代码面 (Issue: 0175) [risk: low] [rollback: 仅在明确需要时重新 add 指定文件，并回退本条 changelog]
   - repo/claude-dir: `.claude/` 已改为纯本地忽略目录；历史上误被 Git 跟踪的 `.claude/**` 文件已从版本库移除，`CLAUDE.md` 继续保留为仓库协议文件，不受本轮影响 (Issue: 0174) [risk: low] [rollback: 从本地 `.claude/` 重新 add 指定文件、回退 `.gitignore` 与本条 changelog]
   - repo/trash: `.trash/` 已回到纯本地坟场语义；历史上误被 Git 跟踪的 `.trash/**` 文件已从版本库移除，今后只由 `.gitignore` 负责忽略，不再出现在仓库树与 GitHub 目录里 (Issue: 0173) [risk: low] [rollback: 仅在确有必要时从本地 `.trash/` 重新 add 指定文件，并回退本条 changelog]
   - github/readme/workflow: GitHub 展示面已统一到 `v2.4.0` 与 `ghost_*` 主链；README 首屏明确当前版本与当前桌面能力面，同时失真的 legacy `desktop-smoke` workflow 已迁出 `.github/workflows/` 到 `.trash/2026-03-13-retired-legacy-github-workflow/`，避免仓库首页与 Actions 继续暗示旧 Desktop Bridge 仍是现役主线 (Issue: 0172, Plan: docs/design/plan-260313-github-surface-align-to-v2-4-0.md) [risk: low] [rollback: 回退 `README.md`、将 workflow 迁回 `.github/workflows/`、回退 `docs/CHANGELOG.md` 与本条 changelog]
