@@ -5,6 +5,13 @@ description: ghost-os 桌面 computer-use 说明书。msgcode 直接暴露 `ghos
 
 # Ghost MCP
 
+## Web 使用优先级（先记住这条）
+
+网页内容获取（抓文本、点普通按钮、表单填写、页面跳转）默认**不要**上 `ghost_*`。
+
+- **优先**：`browser`（更快、更稳定、可复现）
+- **仅当** `browser` 明显受阻（强反爬/复杂交互/页面被遮罩/DOM 不可达/需要原生系统弹窗）才降级用 `ghost_*`
+
 ## 真相源
 
 - 主体说明书：`/Users/admin/GitProjects/GithubDown/ghost-os/GHOST-MCP.md`
