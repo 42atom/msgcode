@@ -241,6 +241,7 @@ describe("Phase 4: Run Events", () => {
 
   it("tool-loop 事件应统一发 run:tool / run:assistant，verify 失败不再冒充 run:block", async () => {
     const { emitToolLoopRunEvents } = await import("../src/runtime/run-events.js");
+    const skillPath = path.join(os.homedir(), ".config", "msgcode", "skills", "ghost-mcp", "SKILL.md");
 
     emitToolLoopRunEvents({
       runId: "run-phase4-tool-loop",
@@ -257,6 +258,7 @@ describe("Phase 4: Run Events", () => {
           route: "tool",
           tool: "read_file",
           ok: true,
+          readFilePath: skillPath,
           durationMs: 12,
         },
         {
@@ -285,6 +287,15 @@ describe("Phase 4: Run Events", () => {
       "run:tool",
       "run:assistant",
     ]);
+
+    const events = readJsonlRecords(eventsPath);
+    const readFileEvent = events.find((record) => record.type === "run:tool" && record.toolName === "read_file");
+    expect(readFileEvent).toBeTruthy();
+    expect((readFileEvent?.details as { readFilePath?: unknown } | undefined)?.readFilePath).toBe(skillPath);
+
+    const bashEvent = events.find((record) => record.type === "run:tool" && record.toolName === "bash");
+    expect(bashEvent).toBeTruthy();
+    expect((bashEvent?.details as { readFilePath?: unknown } | undefined)?.readFilePath).toBeUndefined();
   });
 
   it("handlers.ts 与 commands.ts 必须把 runContext 透传给 executeAgentTurn", () => {

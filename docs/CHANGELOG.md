@@ -311,6 +311,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - subagent/observability: 新增 `msgcode subagent list` 作为最小观测原语；继续坚持 `run/list/status/stop` 四原语，不新增 queue/orchestrator，真实 Feishu 验收确认主脑已正确理解 list=当前 workspace 任务清单 (Issue: 0141, Plan: docs/design/plan-260312-subagent-list-observability-mvp.md) [risk: low] [rollback: revert 0141 subagent list commit]
 - 2026-03-13
   - runtime/tool-loop: 删除工具失败后的 recovery nudge 与 synthetic recovery prompt，主链回到“模型 -> 工具 -> 结果 -> 模型” (Issue: 0153, Plan: docs/design/plan-260313-tool-loop-heat-path-decontrol.md) [risk: medium] [rollback: revert 0153 tool-loop decontrol commit]
+  - runtime/run-events: `run:tool.details` 新增可选 `readFilePath`（仅 `skills/**/SKILL.md` 审计；不记录内容）用于证明模型确实读取了 skill 说明书 (Issue: 0164) [risk: low] [rollback: revert 0164 run-events skill path audit commit]
   - tools/read_file: 删除 Tool Bus 中 `read_file` 的教学式 guidance 与多余解释层，只保留结构化事实、导航字段与 fail-closed 保护 (Issue: 0154, Plan: docs/design/plan-260313-tool-bus-thin-gateway.md) [risk: low] [rollback: revert 0154 tool bus thin gateway commit]
   - tools/preview: 删除 Tool Bus success preview 里的重复确认句，保留 `durationMs/fullOutputPath/textPath/status` 等导航事实 (Issue: 0155, Plan: docs/design/plan-260313-tool-bus-preview-meta-thinning.md) [risk: low] [rollback: revert 0155 preview thinning commit]
   - tools/desktop: 删除 desktop 错误 preview 中不提供新事实的解释句，只保留最小错误事实 (Issue: 0156, Plan: docs/design/plan-260313-tool-bus-desktop-error-preview-thinning.md) [risk: low] [rollback: revert 0156 desktop error preview thinning commit]

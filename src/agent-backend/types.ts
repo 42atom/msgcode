@@ -144,6 +144,7 @@ export interface ActionJournalEntry {
     stdoutTail?: string;       // stdout 尾部
     stderrTail?: string;       // stderr 尾部
     fullOutputPath?: string;   // 完整输出文件路径
+    readFilePath?: string;     // read_file 读取的文件路径（仅用于 skills/SKILL.md 审计）
 
     // 诊断字段
     durationMs: number;        // 执行耗时

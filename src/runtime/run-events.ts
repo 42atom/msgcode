@@ -79,6 +79,7 @@ type ToolLoopActEntry = {
     errorCode?: string;
     errorMessage?: string;
     exitCode?: number | null;
+    readFilePath?: string;
 };
 
 type ToolLoopVerifyResult = {
@@ -190,6 +191,7 @@ export function emitToolLoopRunEvents(params: {
 
     for (const entry of toolEntries) {
         const errorMessage = entry.errorMessage ? clipRunEventText(entry.errorMessage, 240) : "";
+        const readFilePath = typeof entry.readFilePath === "string" ? entry.readFilePath.trim() : "";
         emitRunEvent({
             runId: params.runId,
             sessionKey: params.sessionKey,
@@ -205,6 +207,7 @@ export function emitToolLoopRunEvents(params: {
                 durationMs: entry.durationMs,
                 exitCode: entry.exitCode ?? undefined,
                 ...(errorMessage ? { errorMessage } : {}),
+                ...(readFilePath ? { readFilePath } : {}),
             },
         });
     }

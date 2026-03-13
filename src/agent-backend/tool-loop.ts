@@ -9,6 +9,7 @@
 
 import { config } from "../config.js";
 import * as path from "node:path";
+import * as os from "node:os";
 import * as fsPromises from "node:fs/promises";
 import * as crypto from "node:crypto";
 import { logger } from "../logger/index.js";
@@ -126,6 +127,21 @@ function normalizeToolErrorMessage(message: unknown, maxChars = 400): string | u
     if (singleLine.length <= maxChars) return singleLine;
     if (maxChars <= 16) return singleLine.slice(0, maxChars);
     return `${singleLine.slice(0, maxChars - 14)}...(truncated)`;
+}
+
+function maybeExtractSkillReadFilePath(toolName: string, toolResult: ToolRunResult): string | undefined {
+    // 仅做最薄审计：只记录成功读取的 skills/**/SKILL.md 路径，不记录任意文件读路径（避免噪声与隐私扩散）。
+    if (toolName !== "read_file") return undefined;
+    const data = toolResult.data;
+    if (!data || typeof data !== "object") return undefined;
+    const p = (data as { path?: unknown }).path;
+    if (typeof p !== "string" || !p.trim()) return undefined;
+
+    const normalized = path.normalize(p.trim());
+    const skillsRoot = `${path.join(os.homedir(), ".config", "msgcode", "skills")}${path.sep}`;
+    if (!normalized.startsWith(skillsRoot)) return undefined;
+    if (!normalized.endsWith(`${path.sep}SKILL.md`) && !normalized.endsWith("SKILL.md")) return undefined;
+    return normalized;
 }
 
 type ChatResponse = {
@@ -1053,6 +1069,7 @@ async function runMiniMaxAnthropicToolLoop(params: {
                     model: params.model,
                     tool: tc.function.name,
                     ok: true,
+                    readFilePath: maybeExtractSkillReadFilePath(tc.function.name, toolResult),
                     durationMs: toolResult.durationMs,
                 });
 
@@ -1446,6 +1463,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                     model: usedModel,
                     tool: tc.function.name,
                     ok: true,
+                    readFilePath: maybeExtractSkillReadFilePath(tc.function.name, toolResult),
                     durationMs: toolResult.durationMs,
                 });
 
