@@ -48,6 +48,16 @@ ghost status
 5. 还不清楚就 `ghost_screenshot`
 6. Web/视觉退化场景再 `ghost_ground`
 
+### 最佳实践（必须照做）
+
+- **先 recipes 再手工**：多步骤任务先问 `ghost_recipes`，能 `ghost_run` 就不要手搓流程。
+- **先 context 再动作**：任何 click/type/press/drag/hotkey 之前先 `ghost_context`，确认前台 app、窗口与焦点元素都对。
+- **Web 优先稳定锚点**：Web 场景优先 `dom_id`；原生 App 优先 `identifier`；不要长期依赖模糊 `query`。
+- **焦点与 app 参数**：需要 focus 的动作（尤其 hotkey/press/scroll/drag）尽量传 `app`，避免对错窗口执行。
+- **等待条件**：页面加载期先 `ghost_wait` 等“输入行/按钮可交互”再继续；不要边加载边疯狂 find。
+- **不要重复试探**：同一目标 `ghost_find` 最多 3 次，超出就换策略（annotate/screenshot/ground）或停下向用户确认状态。
+- **ground 必须具体**：`ghost_ground` 的 `description` 要写清“是什么 + 在哪 + 旁边锚点”，并尽量传 `crop_box` 提速与降误判。
+
 ### 两个最常见的失败点（必须记住）
 
 #### `ghost_screenshot`（截图）
@@ -74,6 +84,12 @@ ghost status
   - `crop_box`: 只要你能估出大概区域，就传，能显著提速并减少误判。
 - **调用预算**：
   - 同一目标最多调用 `ghost_ground` 1-2 次。超过就停下让用户确认页面状态，不要死磕。
+
+### 进程与内存（不要教模型“释放进程”）
+
+- **不需要你手动释放**：msgcode 调 `ghost_*` 时不会要求你去管理 `ghost mcp` 常驻进程；每次调用都会按需启动并在调用结束后退出。
+- **vision sidecar 可能短暂常驻**：`ghost_ground` 会用到 `ghost-vision` sidecar；它会在需要时启动，并在空闲约 600 秒后自动退出。
+- **做法**：默认忽略，不要在任务里插入“kill 进程/清内存”这种多余动作；只有在用户明确要求排障或内存压力时，才提 `ghost doctor` 看状态。
 
 ### 高风险动作
 
