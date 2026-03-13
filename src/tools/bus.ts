@@ -1113,10 +1113,10 @@ export async function executeTool(
           error: out.ok ? undefined : { code: "TOOL_EXEC_FAILED", message: out.error || "发送失败" },
           previewText: out.ok
             ? buildFeishuSendFilePreviewText({
-                chatId: out.chatId,
-                attachmentType: out.attachmentType,
-                attachmentKey: out.attachmentKey,
-              })
+              chatId: out.chatId,
+              attachmentType: out.attachmentType,
+              attachmentKey: out.attachmentKey,
+            })
             : buildToolErrorPreviewText(tool, out.error || "发送失败"),
           durationMs: Date.now() - started,
         };
@@ -1144,19 +1144,19 @@ export async function executeTool(
           tool,
           data: out.ok
             ? {
-                chatId: out.chatId,
-                memberIdType: out.memberIdType,
-                memberTotal: out.memberTotal ?? out.members?.length ?? 0,
-                members: out.members ?? [],
-              }
+              chatId: out.chatId,
+              memberIdType: out.memberIdType,
+              memberTotal: out.memberTotal ?? out.members?.length ?? 0,
+              members: out.members ?? [],
+            }
             : undefined,
           error: out.ok ? undefined : { code: "TOOL_EXEC_FAILED", message: out.error || "获取群成员失败" },
           previewText: out.ok
             ? buildFeishuListMembersPreviewText({
-                chatId: out.chatId,
-                memberTotal: out.memberTotal ?? out.members?.length ?? 0,
-                members: out.members ?? [],
-              })
+              chatId: out.chatId,
+              memberTotal: out.memberTotal ?? out.members?.length ?? 0,
+              members: out.members ?? [],
+            })
             : buildToolErrorPreviewText(tool, out.error || "获取群成员失败"),
           durationMs: Date.now() - started,
         };
@@ -1184,18 +1184,18 @@ export async function executeTool(
           tool,
           data: out.ok
             ? {
-                chatId: out.chatId,
-                count: out.count ?? out.messages?.length ?? 0,
-                messages: out.messages ?? [],
-              }
+              chatId: out.chatId,
+              count: out.count ?? out.messages?.length ?? 0,
+              messages: out.messages ?? [],
+            }
             : undefined,
           error: out.ok ? undefined : { code: "TOOL_EXEC_FAILED", message: out.error || "获取最近消息失败" },
           previewText: out.ok
             ? buildFeishuRecentMessagesPreviewText({
-                chatId: out.chatId,
-                count: out.count ?? out.messages?.length ?? 0,
-                messages: out.messages ?? [],
-              })
+              chatId: out.chatId,
+              count: out.count ?? out.messages?.length ?? 0,
+              messages: out.messages ?? [],
+            })
             : buildToolErrorPreviewText(tool, out.error || "获取最近消息失败"),
           durationMs: Date.now() - started,
         };
@@ -1226,19 +1226,19 @@ export async function executeTool(
           tool,
           data: out.ok
             ? {
-                chatId: out.chatId,
-                repliedToMessageId: out.repliedToMessageId,
-                messageId: out.messageId ?? "",
-                replyInThread: out.replyInThread ?? replyInThread,
-              }
+              chatId: out.chatId,
+              repliedToMessageId: out.repliedToMessageId,
+              messageId: out.messageId ?? "",
+              replyInThread: out.replyInThread ?? replyInThread,
+            }
             : undefined,
           error: out.ok ? undefined : { code: "TOOL_EXEC_FAILED", message: out.error || "回复消息失败" },
           previewText: out.ok
             ? buildFeishuReplyPreviewText({
-                repliedToMessageId: out.repliedToMessageId,
-                messageId: out.messageId ?? "",
-                replyInThread: out.replyInThread ?? replyInThread,
-              })
+              repliedToMessageId: out.repliedToMessageId,
+              messageId: out.messageId ?? "",
+              replyInThread: out.replyInThread ?? replyInThread,
+            })
             : buildToolErrorPreviewText(tool, out.error || "回复消息失败"),
           durationMs: Date.now() - started,
         };
@@ -1266,18 +1266,18 @@ export async function executeTool(
           tool,
           data: out.ok
             ? {
-                messageId: out.messageId,
-                reactionId: out.reactionId,
-                emojiType: out.emojiType ?? "THUMBSUP",
-              }
+              messageId: out.messageId,
+              reactionId: out.reactionId,
+              emojiType: out.emojiType ?? "THUMBSUP",
+            }
             : undefined,
           error: out.ok ? undefined : { code: "TOOL_EXEC_FAILED", message: out.error || "消息表情回复失败" },
           previewText: out.ok
             ? buildFeishuReactPreviewText({
-                messageId: out.messageId,
-                reactionId: out.reactionId,
-                emojiType: out.emojiType ?? "THUMBSUP",
-              })
+              messageId: out.messageId,
+              reactionId: out.reactionId,
+              emojiType: out.emojiType ?? "THUMBSUP",
+            })
             : buildToolErrorPreviewText(tool, out.error || "消息表情回复失败"),
           durationMs: Date.now() - started,
         };
