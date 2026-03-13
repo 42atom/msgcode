@@ -3,6 +3,7 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-13
+  - aidocs/reviews-reports: `AIDOCS/reviews` 与 `AIDOCS/reports` 已开始建立 `active/archive` 分层；第一刀先归档零外部引用或一次性历史报告，并新增 `AIDOCS/README.md` 明确“先看引用再搬动”的整理规则，避免现役输入与历史档案继续混堆 (Issue: 0178, Plan: docs/design/plan-260313-aidocs-active-archive-layering.md) [risk: low] [rollback: 将本轮移动文件迁回原路径，并回退 `AIDOCS/README.md`、`docs/CHANGELOG.md` 与 issue/plan]
   - repo/manual-artifacts: `artifacts/manual-modal-check/` 已改为纯本地人工检查产物目录；历史上误被 Git 跟踪的 JSON evidence 已从版本库移除，不再污染开源仓库主树 (Issue: 0176) [risk: low] [rollback: 仅在确有必要时重新 add 指定 artifact，并回退 `.gitignore` 与本条 changelog]
   - repo/prompt-files: `CLAUDE.md` 与 `AGENTS.md` 已退回本地私有提示词文件语义；它们虽然继续保留在开发机上供本地 agent 使用，但已从开源仓库版本库中移除，不再污染 GitHub 对外代码面 (Issue: 0175) [risk: low] [rollback: 仅在明确需要时重新 add 指定文件，并回退本条 changelog]
   - repo/claude-dir: `.claude/` 已改为纯本地忽略目录；历史上误被 Git 跟踪的 `.claude/**` 文件已从版本库移除，`CLAUDE.md` 继续保留为仓库协议文件，不受本轮影响 (Issue: 0174) [risk: low] [rollback: 从本地 `.claude/` 重新 add 指定文件、回退 `.gitignore` 与本条 changelog]
