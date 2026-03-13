@@ -1,7 +1,7 @@
 ---
 id: 0173
 title: 停止跟踪 .trash 目录内容
-status: doing
+status: done
 owner: agent
 labels: [chore, cleanup, repo]
 risk: low
@@ -43,6 +43,11 @@ links: []
 ## Notes
 
 - 这轮清理只影响版本库跟踪状态，不影响本地 `.trash` 目录继续使用。
+- 验证：
+  - `git ls-files '.trash/**' '.trash/*'`
+  - `npm run docs:check`
+- 提交：
+  - `6f408bf chore: stop tracking trash directory`
 
 ## Links
 
