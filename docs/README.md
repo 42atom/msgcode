@@ -21,6 +21,7 @@ docs/
 2. `issues/ + docs/design/` 作为执行面真相源，`docs/tasks/` 作为派单与时间线索引。
 3. 执行文档与验收证据分离：任务定义在仓库，运行证据落 `AIDOCS/reports`。
 4. 文档优先描述“行为契约”，避免绑定实现细节（减少重构噪声）。
+5. `docs/` 是正式真相源；`AIDOCS/` 是辅助材料区，默认不等于正式协议。
 
 ## 开发规范
 
@@ -33,6 +34,11 @@ docs/
 
 Legacy Desktop Bridge 现已整体迁入：
 - `docs/archive/retired-desktop-bridge/`
+
+补充口径：
+- 当前桌面能力面默认是 `ghost_*`
+- 最终产品方向统一表述为：`menu App + 单面板 + web系统面板`
+- msgcode 不再自研点击/识别逻辑，正式文档应坚持“薄桥接，不做自动化供应”
 
 ## 变更日志
 

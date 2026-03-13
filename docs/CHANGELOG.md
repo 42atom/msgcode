@@ -3,6 +3,7 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-13
+  - readme/docs/contributing: 根 README、`src/README.md`、`docs/README.md` 与新建 `CONTRIBUTING.md` 已对齐到当前主线；公开文档现在明确 `ghost-os` 是默认且唯一的桌面自动化桥、最终方向是“menu App + 单面板 + web系统面板”，并写死 msgcode 不再自研点击/识别类自动化供应逻辑，`tools/bus.ts` 的单一真相源口径也在 `src/README.md` 被再次强化 (Issue: 0179, Plan: docs/design/plan-260313-readme-and-contributing-truth-alignment.md) [risk: low] [rollback: 回退 `README.md`、`src/README.md`、`docs/README.md`、`CONTRIBUTING.md`、`docs/CHANGELOG.md` 与对应 issue/plan]
   - aidocs/reviews-reports: `AIDOCS/reviews` 与 `AIDOCS/reports` 已开始建立 `active/archive` 分层；第一刀先归档零外部引用或一次性历史报告，并新增 `AIDOCS/README.md` 明确“先看引用再搬动”的整理规则，避免现役输入与历史档案继续混堆 (Issue: 0178, Plan: docs/design/plan-260313-aidocs-active-archive-layering.md) [risk: low] [rollback: 将本轮移动文件迁回原路径，并回退 `AIDOCS/README.md`、`docs/CHANGELOG.md` 与 issue/plan]
   - repo/manual-artifacts: `artifacts/manual-modal-check/` 已改为纯本地人工检查产物目录；历史上误被 Git 跟踪的 JSON evidence 已从版本库移除，不再污染开源仓库主树 (Issue: 0176) [risk: low] [rollback: 仅在确有必要时重新 add 指定 artifact，并回退 `.gitignore` 与本条 changelog]
   - repo/prompt-files: `CLAUDE.md` 与 `AGENTS.md` 已退回本地私有提示词文件语义；它们虽然继续保留在开发机上供本地 agent 使用，但已从开源仓库版本库中移除，不再污染 GitHub 对外代码面 (Issue: 0175) [risk: low] [rollback: 仅在明确需要时重新 add 指定文件，并回退本条 changelog]

@@ -16,6 +16,13 @@ msgcode 的目标是把「个人智能体」做成可长期运行的基础设施
 
 产品叙事版文档：`docs/product/pitch.md`
 
+## 当前方向
+
+- 当前实现目标：薄 runtime，默认把真实电脑能力暴露给 LLM
+- 当前桌面桥：`ghost-os`，这是默认且唯一的桌面自动化桥
+- 最终产品方向：`menu App + 单面板 + web系统面板`
+- msgcode 不再自研点击、识别、视觉定位这一类“自动化供应”逻辑；这些能力由上游桌面执行引擎提供，msgcode 只做薄桥接、配置收口和结果回传
+
 ## 系统模型（先看这段）
 
 | 维度 | Agent 线（默认） | Tmux 线（复杂任务） |
@@ -63,7 +70,7 @@ msgcode 的默认原则不是“约束 LLM”，而是“支持 LLM 完成任务
 - `tmux`
 - 飞书企业自建应用凭据（`FEISHU_APP_ID` / `FEISHU_APP_SECRET`）
 - Chrome/Chromium（供浏览器自动化底座使用）
-- 可选：`ghost-os`（供 `ghost_*` 桌面 computer-use 原生工具使用）
+- `ghost-os`（默认且唯一的桌面自动化桥，供 `ghost_*` 使用）
 
 ### 2. 安装依赖
 
@@ -114,7 +121,7 @@ Browser Core 配置口径：
   - `npx tsx src/cli.ts browser root --json`
   - `npx tsx src/cli.ts browser root --ensure --json`
 
-Ghost OS 安装与健康检查（可选，但 `ghost_*` 工具依赖它）：
+Ghost OS 安装与健康检查（`ghost_*` 默认依赖它）：
 
 ```bash
 brew install ghostwright/ghost-os/ghost-os
@@ -125,6 +132,7 @@ ghost status
 
 说明：
 - msgcode 会直接暴露 `ghost_*` 原生工具，不再长期保留 `desktop.* -> ghost_*` 翻译层。
+- msgcode 不自己实现点击、识别、标注、grounding 等桌面自动化细节；这些能力由 `ghost-os` 提供，msgcode 只做薄桥接。
 - 未安装 `ghost-os` 时，`ghost_*` 工具会 fail-closed 返回真实缺失事实和安装指引。
 - `ghost status` 未 ready 时，msgcode 会补跑一次 `ghost doctor`，把最小诊断事实回给模型。
 - 高风险动作默认通过 skill / prompt 约束模型先询问用户；msgcode 不额外新增 confirm gate 或审批层。
@@ -198,6 +206,7 @@ msgcode start -d
 - `docs/README.md` 文档总入口
 - `docs/product/pitch.md` 产品叙事与定位
 - `docs/archive/retired-desktop-bridge/` Legacy Desktop Bridge 版本化归档（非现役上手入口）
+- `CONTRIBUTING.md` 开源协作与文档边界说明
 - `src/README.md` 代码分层与职责
 - `test/README.md` 测试结构与回归约束
 - `scripts/README.md` 脚本目录说明
