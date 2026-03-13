@@ -236,4 +236,62 @@ describe("ghost-os 第一刀：ghost mcp 挂载", () => {
     expect(result.previewText).toContain("Status: Ready");
     expect(result.previewText).toContain("[ghost_context]");
   });
+
+  test("ghost status not ready 且命中权限缺失时，应 best-effort 打开系统设置并返回原始事实", async () => {
+    writeFileSync(
+      join(tempWorkspace, ".msgcode", "config.json"),
+      JSON.stringify({
+        "tooling.mode": "autonomous",
+        "tooling.allow": ["ghost_context"],
+      }),
+    );
+
+    const calls: Array<{ file: string; args: string[] }> = [];
+    __setGhostMcpTestDeps({
+      fileExists: (path) => path === "/opt/homebrew/bin/ghost",
+      execFileText: async (file, args) => {
+        calls.push({ file, args });
+        if (file === "/opt/homebrew/bin/ghost" && args[0] === "version") {
+          return { stdout: "Ghost OS v2.0.0", stderr: "" };
+        }
+        if (file === "/opt/homebrew/bin/ghost" && args[0] === "status") {
+          return {
+            stdout: "Ghost OS v2.0.0\n\nAccessibility: NOT GRANTED\nScreen Recording: not granted\n\nStatus: needs setup",
+            stderr: "",
+          };
+        }
+        if (file === "/opt/homebrew/bin/ghost" && args[0] === "doctor") {
+          return {
+            stdout: "Accessibility Permission\n  [FAIL] Not granted\n\nScreen Recording Permission\n  [FAIL] Not granted",
+            stderr: "",
+          };
+        }
+        if (file === "open") {
+          return { stdout: "", stderr: "" };
+        }
+        throw new Error(`unexpected exec: ${file} ${args.join(" ")}`);
+      },
+      spawnProcess: () => new MockGhostProcess() as any,
+    });
+
+    const result = await executeTool(
+      "ghost_context",
+      { app: "Safari" },
+      {
+        workspacePath: tempWorkspace,
+        source: "slash-command",
+        requestId: randomUUID(),
+      }
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe("TOOL_EXEC_FAILED");
+    expect(result.error?.message).toContain("ghost status not ready");
+    expect(result.error?.message).toContain("[host]");
+    expect(result.error?.message).toContain("[tcc]");
+
+    if (process.platform === "darwin") {
+      expect(calls.some((c) => c.file === "open")).toBe(true);
+    }
+  });
 });

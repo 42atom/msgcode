@@ -28,6 +28,8 @@ const execFileAsync = promisify(execFile);
 const DEFAULT_TIMEOUT_MS = 60_000;
 const PROBE_CACHE_TTL_MS = 15_000;
 const GHOST_ARTIFACT_DIR = join("artifacts", "ghost");
+const PRIVACY_OPEN_THROTTLE_MS = 5 * 60_000;
+let lastPrivacyOpenAtMs = 0;
 
 interface ExecFileTextResult {
   stdout: string;
@@ -200,6 +202,42 @@ function parseStatusSummary(statusOutput: string): string {
   return summary ?? "Status: unknown";
 }
 
+function detectMissingPermissionsFromText(text: string): {
+  needsAccessibility: boolean;
+  needsScreenRecording: boolean;
+} {
+  const normalized = (text || "").toLowerCase();
+  const needsAccessibility = /accessibility/.test(normalized) && /(not granted|\[fail\]|denied)/.test(normalized);
+  const needsScreenRecording = /screen recording|screencapture|screen capture/.test(normalized) && /(not granted|\[fail\]|denied)/.test(normalized);
+  return { needsAccessibility, needsScreenRecording };
+}
+
+async function maybeOpenSystemSettingsForPermissions(params: {
+  needsAccessibility: boolean;
+  needsScreenRecording: boolean;
+  timeoutMs?: number;
+}): Promise<void> {
+  if (process.platform !== "darwin") return;
+  if (!params.needsAccessibility && !params.needsScreenRecording) return;
+  if (Date.now() - lastPrivacyOpenAtMs < PRIVACY_OPEN_THROTTLE_MS) return;
+  lastPrivacyOpenAtMs = Date.now();
+
+  const open = async (uri: string) => {
+    try {
+      await runtimeDeps.execFileText("open", [uri], { timeoutMs: params.timeoutMs ?? 3_000 });
+    } catch {
+      // best-effort: 触发失败不应该遮蔽原始 ghost status/doctor 事实
+    }
+  };
+
+  if (params.needsAccessibility) {
+    await open("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility");
+  }
+  if (params.needsScreenRecording) {
+    await open("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture");
+  }
+}
+
 async function runGhostHealthCheck(binaryPath: string): Promise<GhostProbeResult> {
   const version = await runtimeDeps.execFileText(binaryPath, ["version"], { timeoutMs: 10_000 });
   const status = await runtimeDeps.execFileText(binaryPath, ["status"], { timeoutMs: 15_000 });
@@ -214,16 +252,31 @@ async function runGhostHealthCheck(binaryPath: string): Promise<GhostProbeResult
       doctorOutput = error instanceof Error ? error.message : String(error);
     }
 
+    const missing = detectMissingPermissionsFromText([status.stdout, doctorOutput].filter(Boolean).join("\n"));
+    await maybeOpenSystemSettingsForPermissions({
+      needsAccessibility: missing.needsAccessibility,
+      needsScreenRecording: missing.needsScreenRecording,
+    });
+
     const parts = [
       `ghost status not ready`,
       `[binary] ${binaryPath}`,
       `[version] ${version.stdout || "<unknown>"}`,
+      `[host] ${process.execPath}`,
       "[status]",
       status.stdout || "<empty>",
     ];
     if (doctorOutput) {
       parts.push("[doctor]");
       parts.push(doctorOutput);
+    }
+    if (missing.needsAccessibility || missing.needsScreenRecording) {
+      const needs: string[] = [];
+      if (missing.needsAccessibility) needs.push("Accessibility");
+      if (missing.needsScreenRecording) needs.push("Screen Recording");
+      parts.push("[tcc]");
+      parts.push(`missing: ${needs.join(", ")}`);
+      parts.push("hint: open System Settings and grant permission to the host process shown above");
     }
     throw new GhostMcpError(parts.join("\n"));
   }

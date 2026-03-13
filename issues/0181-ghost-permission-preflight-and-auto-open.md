@@ -1,0 +1,39 @@
+---
+id: 0181
+title: Ghost Permission Preflight And Auto Open
+status: doing
+owner: agent
+labels: [runtime, ghost, chore]
+risk: low
+scope: ghost-mcp-client 权限缺失时前置触发系统设置页
+plan_doc: ""
+links: []
+---
+
+## Context
+
+用户授权了 Terminal 的 Screen Recording/Accessibility，但 msgcode 以 launchd daemon（宿主通常是 `node`）运行时仍会遇到 `ghost_screenshot/ghost_ground` 失败。为了避免用户只感知到“程序有问题”，授权缺失需要在 runner 的健康检查阶段就前置暴露，并 best-effort 触发系统设置页打开，方便用户完成授权。
+
+## Goal / Non-Goals
+
+- Goal: 在 `ghost status` 非 Ready 且命中“权限未授予”时，runner 自动打开对应系统设置页（best-effort + 节流），并把宿主进程事实与原始 status/doctor 输出回传。
+- Non-Goals: 不新增全局 gate/审批层；不自动授予权限；不把逻辑搬进 Tool Bus。
+
+## Plan
+
+- [x] 在 `src/runners/ghost-mcp-client.ts` 健康检查中检测权限缺失，并自动 `open` 系统设置页（节流）
+- [x] 补测试覆盖：权限缺失时仍返回原始事实，macOS 下会尝试调用 `open`
+- [ ] 更新 `docs/CHANGELOG.md`
+
+## Acceptance Criteria
+
+1. `ghost status` 非 Ready 且包含“NOT GRANTED”时，抛出的错误文本包含 `[host]` 与 `[tcc] missing: ...` 事实片段。
+2. macOS 下会 best-effort 打开对应系统设置页（Accessibility/Screen Recording），且有节流避免反复弹。
+3. CI 测试在非 macOS 上不强制要求出现 `open` 调用。
+
+## Notes
+
+- 本改动只在 runner 内触发，不上升为 Tool Bus 全局拦截层。
+
+## Links
+
