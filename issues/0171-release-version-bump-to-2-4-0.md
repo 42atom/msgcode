@@ -1,7 +1,7 @@
 ---
 id: 0171
 title: 发布版本统一升级到 2.4.0
-status: doing
+status: done
 owner: agent
 labels: [release, docs, chore]
 risk: low
@@ -49,6 +49,11 @@ links: []
 ## Notes
 
 - 版本升级口径：统一当前发布面，不重写历史里程碑
+- 验证：
+  - `npx tsc --noEmit`
+  - `npm run docs:check`
+- 提交：
+  - `d543c02 chore: bump release version to 2.4.0`
 
 ## Links
 
