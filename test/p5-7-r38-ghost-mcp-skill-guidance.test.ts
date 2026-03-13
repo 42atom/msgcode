@@ -15,9 +15,11 @@ describe("P5.7-R38: ghost-mcp skill 风险确认口径", () => {
     const content = readText("src/skills/runtime/ghost-mcp/SKILL.md");
 
     expect(content).toContain("高风险动作");
-    expect(content).toContain("默认先向用户确认");
+    expect(content).toContain("先向用户确认，不要自己替用户做主");
     expect(content).toContain("msgcode 不为它额外加 confirm gate");
     expect(content).toContain("不要把“高风险动作先问用户”实现成新的系统 gate");
+    expect(content).toContain("点得准不等于做得对");
+    expect(content).toContain("立刻造成不可逆损害");
   });
 
   it("system prompt 应锁定 ghost 高风险动作走用户确认，而不是系统审批层", () => {
