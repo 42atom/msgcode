@@ -1,7 +1,7 @@
 ---
 id: 0172
 title: GitHub 展示面统一到 v2.4.0 与 ghost 主链
-status: doing
+status: done
 owner: agent
 labels: [docs, chore, github]
 risk: low
@@ -44,6 +44,10 @@ links: []
 ## Notes
 
 - GitHub Release 发布/打 tag 如需执行，单独做，不与本轮 README/workflow 收口混做
+- 验证：
+  - `npm run docs:check`
+- 提交：
+  - `b9428dd docs: align github surface with ghost mainline`
 
 ## Links
 
