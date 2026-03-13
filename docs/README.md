@@ -10,7 +10,6 @@ docs/
 ├── adr/         # 架构决策记录（可选）
 ├── tasks/     # 任务单、派单包、执行顺序与签收口径（唯一时间线）
 ├── product/   # 产品与能力口径文档
-├── desktop/   # Desktop Bridge 协议与调试文档
 ├── testing/   # 测试策略与测试计划
 ├── release/   # 发布流程与发布记录
 └── archive/   # 历史归档与失效文档
@@ -31,6 +30,9 @@ docs/
 4. 外部可见变更统一写入 `docs/CHANGELOG.md`。
 5. 文档命名统一：`p5-7-rX-...`，保持可按阶段检索。
 6. 文档变更完成后必须执行 `npm run docs:check`。
+
+Legacy Desktop Bridge 现已整体迁入：
+- `docs/archive/retired-desktop-bridge/`
 
 ## 变更日志
 

@@ -17,7 +17,6 @@
     "lmstudio:toolstress": "tsx scripts/lmstudio/toolcall-stress.ts --base-url http://127.0.0.1:1234 --iterations 20 --timeout-ms 60000",
     "mlx:toolstress": "npm run lmstudio:toolstress",
     "mlx:smoke": "npm run lmstudio:toolstress",
-    "desktop:smoke": "bash scripts/desktop/smoke-desktop-toolbus.sh \"$PWD\"",
     "memory:e2e": "NODE_OPTIONS=\"--import tsx\" tsx scripts/memory/e2e-recall.ts"
   },
   "keywords": [

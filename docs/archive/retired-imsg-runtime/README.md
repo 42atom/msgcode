@@ -18,6 +18,9 @@
 - `test/`
   - `imsg.adapter.archived.ts`
   - `commands.startup-guard.archived.ts`
+- `scripts/`
+  - `build-imsg.sh`
+  - `verify-imsg.sh`
 - `vendor/imsg/v0.4.0/imsg`
   - legacy 二进制快照
 

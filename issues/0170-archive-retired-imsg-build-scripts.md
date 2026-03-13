@@ -1,0 +1,53 @@
+---
+id: 0170
+title: 归档 retired imsg 构建与校验脚本
+status: done
+owner: agent
+labels: [docs, refactor, chore]
+risk: low
+scope: retired imsg build/verify 脚本退出现役 scripts 入口
+plan_doc: docs/design/plan-260313-archive-retired-imsg-build-scripts.md
+links:
+  - docs/archive/retired-imsg-runtime/README.md
+  - docs/design/plan-260312-imsg-sunset-followup-archive-and-naming-cleanup.md
+---
+
+## Context
+
+Feishu-only 主链已经稳定，但 `scripts/` 根目录仍保留 `build-imsg.sh` 与 `verify-imsg.sh` 两个 retired iMessage 构建/校验脚本。它们既不在现役主链，也不该继续占用正式脚本入口。现在应把它们并入 `retired-imsg-runtime` archive。
+
+## Goal / Non-Goals
+
+- Goal: 将 `scripts/build-imsg.sh` 与 `scripts/verify-imsg.sh` 迁入 `docs/archive/retired-imsg-runtime/scripts/`。
+- Goal: 清掉空的根 `recipes/` 目录。
+- Goal: 更新 archive 索引与 changelog。
+- Non-Goals: 不改现役运行时、transport 或 vendor 主链。
+- Non-Goals: 不继续扩展 imsg archive 内容。
+
+## Plan
+
+- [x] 建 issue / plan，冻结这轮只处理 retired imsg 脚本。
+- [x] 迁移 `build-imsg.sh` 与 `verify-imsg.sh`。
+- [x] 更新 `docs/archive/retired-imsg-runtime/README.md`、`docs/archive/README.md`、`docs/CHANGELOG.md`。
+- [x] 删除空的根 `recipes/` 目录。
+- [x] 跑 `npm run docs:check`。
+
+## Acceptance Criteria
+
+1. `scripts/` 根目录不再保留 retired `imsg` 构建/校验脚本。
+2. `docs/archive/retired-imsg-runtime/` 可完整追溯这两份脚本。
+3. 根目录空 `recipes/` 目录退出。
+4. `npm run docs:check` 通过。
+
+## Notes
+
+- Docs: `docs/design/plan-260313-archive-retired-imsg-build-scripts.md`
+- Archived:
+  - `docs/archive/retired-imsg-runtime/scripts/build-imsg.sh`
+  - `docs/archive/retired-imsg-runtime/scripts/verify-imsg.sh`
+- Verification:
+  - `npm run docs:check`
+
+## Links
+
+- Plan: `docs/design/plan-260313-archive-retired-imsg-build-scripts.md`

@@ -8,10 +8,13 @@ docs/archive/
 ├── IMESSAGEKIT_BEST_PRACTICES_REPORT.md
 ├── deep-dive-into-imessage.md
 ├── review-report.md
+├── task-plan-backend-control-plane.md
 ├── PRD.md
 ├── retired-imsg-runtime/
 │   └── README.md
 ├── retired-imsg-cli/
+│   └── README.md
+├── retired-desktop-bridge/
 │   └── README.md
 └── protocol-migration/
     └── README.md
@@ -41,6 +44,13 @@ docs/archive/
    - `docs/archive/retired-imsg-cli/`
 7. 2026-03-12 起，已退役的 legacy `imsg` 运行时最小快照统一版本化归档到：
    - `docs/archive/retired-imsg-runtime/`
+8. 2026-03-13 起，已退役的自研 Desktop Bridge 整包迁入：
+   - `docs/archive/retired-desktop-bridge/`
+9. 2026-03-13 起，根目录遗留的 Desktop Bridge 安全文档与历史任务计划继续迁入：
+   - `docs/archive/retired-desktop-bridge/SECURITY.md`
+   - `docs/archive/task-plan-backend-control-plane.md`
+10. 2026-03-13 起，retired `imsg` 的构建/校验脚本继续迁入：
+   - `docs/archive/retired-imsg-runtime/scripts/`
 
 ## 变更日志
 
@@ -50,3 +60,6 @@ docs/archive/
 4. 2026-03-11：剩余 IndexTTS CLI/worker 脚本从 `scripts/` 迁入 `docs/archive/indextts-runtime/`。
 5. 2026-03-12：iMessage-only `file send` 历史任务单从 `docs/tasks/` 迁入 `docs/archive/retired-imsg-cli/`。
 6. 2026-03-12：补录 `retired-imsg-runtime/`，将 `.trash` 中转快照升级为版本化 archive 真相源。
+7. 2026-03-13：legacy Desktop Bridge 的源码、协议、脚本、recipe 与发布指南整体迁入 `retired-desktop-bridge/`。
+8. 2026-03-13：根目录 `SECURITY.md` 与 `task_plan.md` 继续退出，分别迁入 `retired-desktop-bridge/` 与 `docs/archive/`。
+9. 2026-03-13：`scripts/build-imsg.sh` 与 `scripts/verify-imsg.sh` 迁入 `retired-imsg-runtime/scripts/`，空的根 `recipes/` 目录同步退出。

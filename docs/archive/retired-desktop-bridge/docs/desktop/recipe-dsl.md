@@ -1,4 +1,6 @@
-# Desktop Recipes v0（规范）
+# [DEPRECATED] Desktop Recipes v0（规范）
+
+> Legacy Desktop Bridge 的 recipe 说明。当前桌面执行主链已切到 `ghost_*`；本文件只保留历史设计参考，不作为现役自动化入口。
 
 > 原则：Recipe 是"流程即数据"，不耦合 Bridge 原语，不改 msgcode 内核。
 

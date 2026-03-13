@@ -1,4 +1,6 @@
-# msgcode Desktop Bridge
+# [DEPRECATED] msgcode Desktop Bridge
+
+> Legacy Desktop Bridge 历史文档。现役桌面能力面已经切到 `ghost_*` 原生工具；本目录只保留旧 bridge 的协议、测试与历史设计记录，不再作为默认安装或上手入口。
 
 macOS 本地 UI 自动化能力（截图/AX树/点击/输入/快捷键）
 

@@ -1,0 +1,58 @@
+---
+id: 0167
+title: 冻结 mac legacy surface 并摘除默认心智
+status: done
+owner: agent
+labels: [docs, refactor, chore]
+risk: low
+scope: mac/docs/package 导航口径收口为 legacy，不改 ghost 主链
+plan_doc: docs/design/plan-260313-mac-legacy-surface-freeze.md
+links:
+  - docs/design/plan-260310-ghost-os-desktop-plugin-replacement.md
+  - issues/0164-retire-legacy-desktop-mainline.md
+---
+
+## Context
+
+`ghost_*` 已经是现役桌面能力面，但仓库里的 `mac/`、`docs/desktop/` 和 `package.json` 仍保留明显的现役叙事，容易让协作者继续把自研 Desktop Bridge 当成默认主链。当前最值钱的清理不是物理删除，而是先冻结 legacy surface，摘掉默认心智。
+
+## Goal / Non-Goals
+
+- Goal: 给 `mac/` 与 `docs/desktop/` 打清晰的 legacy/deprecated 标记。
+- Goal: 把文档导航与脚本入口从“现役 desktop”改成“legacy desktop”。
+- Goal: 不影响 `ghost_*` 现役主链，不引入新层。
+- Non-Goals: 不物理删除 `mac/` 目录。
+- Non-Goals: 不删 `scripts/desktop/` 或历史 contract。
+- Non-Goals: 不改 ghost runtime / bus / tool-loop 行为。
+
+## Plan
+
+- [x] 建 issue / plan，冻结“先降级心智、后物理删除”的范围。
+- [x] 更新 `mac/README.md` 与 `docs/desktop/README.md` 的顶层口径。
+- [x] 更新 `docs/desktop/contract.md` / `recipe-dsl.md` / `docs/README.md` / `README.md` 的导航提示。
+- [x] 将 `package.json` 的 `desktop:smoke` 重命名为 legacy 入口。
+- [x] 更新 `docs/CHANGELOG.md` 并跑 `npm run docs:check`。
+
+## Acceptance Criteria
+
+1. `mac/` 与 `docs/desktop/` 顶部明确说明其为 legacy/deprecated surface。
+2. 根 README 与 docs 导航不再把旧 Desktop Bridge 暗示成现役入口。
+3. `package.json` 不再通过 `desktop:smoke` 这种命名暗示默认主链。
+4. `npm run docs:check` 通过。
+
+## Notes
+
+- Docs: `docs/design/plan-260313-mac-legacy-surface-freeze.md`
+- Changed:
+  - `mac/README.md`
+  - `docs/desktop/{README,contract,recipe-dsl}.md`
+  - `docs/README.md`
+  - `README.md`
+  - `package.json`
+  - `docs/CHANGELOG.md`
+- Verification:
+  - `npm run docs:check`
+
+## Links
+
+- Plan: `docs/design/plan-260313-mac-legacy-surface-freeze.md`

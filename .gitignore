@@ -78,6 +78,12 @@ mac/msgcode-desktopctl/test*.swift
 # Desktop dev binaries (build from sources instead)
 scripts/desktop/test-t8.6-token
 scripts/desktop/test-t8.6.2-desktopctl
+docs/archive/retired-desktop-bridge/mac/**/.build/
+docs/archive/retired-desktop-bridge/mac/**/*.app/
+docs/archive/retired-desktop-bridge/mac/**/Package.resolved
+docs/archive/retired-desktop-bridge/mac/msgcode-desktopctl/test*.swift
+docs/archive/retired-desktop-bridge/scripts/desktop/test-t8.6-token
+docs/archive/retired-desktop-bridge/scripts/desktop/test-t8.6.2-desktopctl
 
 # Local AIDOCS runtime/media artifacts
 AIDOCS/audio/

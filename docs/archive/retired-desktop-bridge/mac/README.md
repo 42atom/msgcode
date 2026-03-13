@@ -1,4 +1,6 @@
-# msgcode Desktop Host (macOS)
+# [DEPRECATED] msgcode Desktop Host (macOS)
+
+> Legacy Desktop Bridge 历史文档。`ghost_*` 已是当前唯一现役桌面能力面；`mac/` 目录只保留为遗留桥接源码与历史参考，不再作为默认上手入口，也不再接受新功能扩展。
 
 Msgcode Desktop Host 是一个 macOS menubar 应用程序，作为 msgcode daemon/CLI 的桌面自动化执行端。
 

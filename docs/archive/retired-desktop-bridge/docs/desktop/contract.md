@@ -1,4 +1,6 @@
-# Desktop Bridge Contract（v2.2）
+# [DEPRECATED] Desktop Bridge Contract（v2.2）
+
+> Legacy Desktop Bridge 合同文档。当前现役桌面主链是 `ghost_*`；本合同仅用于历史排障、归档核对与遗留脚本参考。
 
 > 一句话：`msgcode`（daemon/CLI）通过 XPC 调用 `msgcode-desktop-host.app`，由 Host 持有 macOS TCC 权限并执行桌面原语；所有副作用动作必须显式确认，所有结果必须落盘证据到 workspace。
 
@@ -729,4 +731,3 @@ Client 通过 XPC 连接规则：
 - 若破坏性变更：提升 `schemaVersion`，并在 `desktop.health` 返回中体现
 
 ---
-

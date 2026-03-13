@@ -171,7 +171,7 @@ msgcode start -d
 ## Legacy Desktop Bridge（遗留显式链路）
 
 - 当前默认桌面能力面已切到 `ghost_*` 原生工具。
-- `docs/desktop/` 与 `mac/MsgcodeDesktopHost` 只保留 legacy bridge 历史文档；现役桌面能力以 `ghost_*` 为准。
+- 自研 Desktop Bridge 已整体迁入 `docs/archive/retired-desktop-bridge/`；不要再把旧 `mac/` / `docs/desktop/` 当默认入口，现役桌面能力以 `ghost_*` 为准。
 
 ## 记忆机制（L0/L1/L2）
 
@@ -191,7 +191,7 @@ msgcode start -d
 
 - `docs/README.md` 文档总入口
 - `docs/product/pitch.md` 产品叙事与定位
-- `docs/desktop/` Legacy Desktop Bridge 历史文档
+- `docs/archive/retired-desktop-bridge/` Legacy Desktop Bridge 版本化归档（非现役上手入口）
 - `src/README.md` 代码分层与职责
 - `test/README.md` 测试结构与回归约束
 - `scripts/README.md` 脚本目录说明
