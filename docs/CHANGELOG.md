@@ -3,6 +3,7 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-13
+  - repo/trash: `.trash/` 已回到纯本地坟场语义；历史上误被 Git 跟踪的 `.trash/**` 文件已从版本库移除，今后只由 `.gitignore` 负责忽略，不再出现在仓库树与 GitHub 目录里 (Issue: 0173) [risk: low] [rollback: 仅在确有必要时从本地 `.trash/` 重新 add 指定文件，并回退本条 changelog]
   - github/readme/workflow: GitHub 展示面已统一到 `v2.4.0` 与 `ghost_*` 主链；README 首屏明确当前版本与当前桌面能力面，同时失真的 legacy `desktop-smoke` workflow 已迁出 `.github/workflows/` 到 `.trash/2026-03-13-retired-legacy-github-workflow/`，避免仓库首页与 Actions 继续暗示旧 Desktop Bridge 仍是现役主线 (Issue: 0172, Plan: docs/design/plan-260313-github-surface-align-to-v2-4-0.md) [risk: low] [rollback: 回退 `README.md`、将 workflow 迁回 `.github/workflows/`、回退 `docs/CHANGELOG.md` 与本条 changelog]
   - release/versioning: 现役版本口径已统一升级到 `2.4.0`；`package.json`、`package-lock.json`、`ghost-mcp-client` 的 client version、release 索引与 `docs/release/v2.4.0.md` 已对齐，历史 `v1.0.x` 发布文档继续保留为历史记录，不再与当前代际混淆 (Issue: 0171, Plan: docs/design/plan-260313-release-version-bump-to-2-4-0.md) [risk: low] [rollback: 回退 `package*.json`、`src/runners/ghost-mcp-client.ts`、`docs/release/{README.md,v2.4.0.md}`、`docs/CHANGELOG.md` 与本条 changelog]
   - archive/imsg/root: retired `imsg` 的 `build-imsg.sh` 与 `verify-imsg.sh` 已从现役 `scripts/` 入口迁入 `docs/archive/retired-imsg-runtime/scripts/`；同时空的根 `recipes/` 目录已退出，进一步收紧仓库根结构 (Issue: 0170, Plan: docs/design/plan-260313-archive-retired-imsg-build-scripts.md) [risk: low] [rollback: 将两份脚本迁回 `scripts/`，恢复根 `recipes/` 目录，并回退 archive 索引与本条 changelog]
