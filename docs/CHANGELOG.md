@@ -3,6 +3,7 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-13
+  - release/versioning: 现役版本口径已统一升级到 `2.4.0`；`package.json`、`package-lock.json`、`ghost-mcp-client` 的 client version、release 索引与 `docs/release/v2.4.0.md` 已对齐，历史 `v1.0.x` 发布文档继续保留为历史记录，不再与当前代际混淆 (Issue: 0171, Plan: docs/design/plan-260313-release-version-bump-to-2-4-0.md) [risk: low] [rollback: 回退 `package*.json`、`src/runners/ghost-mcp-client.ts`、`docs/release/{README.md,v2.4.0.md}`、`docs/CHANGELOG.md` 与本条 changelog]
   - archive/imsg/root: retired `imsg` 的 `build-imsg.sh` 与 `verify-imsg.sh` 已从现役 `scripts/` 入口迁入 `docs/archive/retired-imsg-runtime/scripts/`；同时空的根 `recipes/` 目录已退出，进一步收紧仓库根结构 (Issue: 0170, Plan: docs/design/plan-260313-archive-retired-imsg-build-scripts.md) [risk: low] [rollback: 将两份脚本迁回 `scripts/`，恢复根 `recipes/` 目录，并回退 archive 索引与本条 changelog]
   - docs/archive/root: 根目录 `SECURITY.md` 与 `task_plan.md` 已继续退出现役入口；前者迁入 `docs/archive/retired-desktop-bridge/SECURITY.md`，后者迁入 `docs/archive/task-plan-backend-control-plane.md`，根目录进一步只保留当前项目级入口文档 (Issue: 0169, Plan: docs/design/plan-260313-root-doc-slimming-followup.md) [risk: low] [rollback: 将两份文件迁回根目录，并回退 `docs/archive/README.md` 与本条 changelog]
   - archive/desktop: legacy Desktop Bridge 已整体迁入 `docs/archive/retired-desktop-bridge/`；`mac/`、`docs/desktop/`、`scripts/desktop/`、`recipes/desktop/` 与根目录 `RELEASING.md` 已退出现役树，`package.json` 也不再保留 legacy desktop smoke 入口，仓库现役结构只继续承认 `ghost_*` 桌面主链 (Issue: 0168, Plan: docs/design/plan-260313-archive-legacy-desktop-bridge.md) [risk: medium] [rollback: 将 archive 内容迁回原路径，并恢复 `package.json`、`README.md`、`docs/README.md`、`.gitignore` 与本条 changelog]
@@ -187,6 +188,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.4.0] - 2026-03-13
+
+### Added
+- 发布文档：`docs/release/v2.4.0.md`
+
+### Changed
+- 现役发布版本统一升级到 `2.4.0`
+- 当前 release 面明确收口到 ghost 桌面主链、runtime/tool-bus 瘦身与 legacy desktop archive
+- release 索引补齐 `v2.4.0.md`
+
+### Migration
+- legacy `desktop` 已退出现役主链，桌面能力默认使用 `ghost_*`
+- 文件与系统操作请优先使用原生 Unix/macOS 工具，不再依赖已退役 CLI 包装层
+
+### Verification
+- `npx tsc --noEmit`
+- `npm run docs:check`
+
 ## [2.3.0] - 2026-02-17
 
 ### Added
@@ -291,5 +310,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - tools/desktop: 内建 `desktop` 退出默认 `tooling.allow` 与默认 LLM 工具暴露主链，收口为遗留显式工具，为后续开源 desktop 实现替换留出干净边界 (Issue: 0160, Plan: docs/design/plan-260313-desktop-default-off-before-plugin-replacement.md) [risk: medium] [rollback: revert 0160 desktop default-off commit]
   - tools/desktop: legacy desktop runner 删除自管 session 池与长驻子进程，收口为单次 `msgcode-desktopctl rpc` 调用，旧桥进一步退成普通外部命令壳 (Issue: 0161, Plan: docs/design/plan-260313-desktop-legacy-runner-one-shot-cli.md) [risk: medium] [rollback: revert 0161 desktop one-shot runner commit]
 
+[2.4.0]: https://github.com/yourorg/msgcode/releases/tag/v2.4.0
 [2.3.0]: https://github.com/yourorg/msgcode/releases/tag/v2.3.0
 [1.0.0]: https://github.com/yourorg/msgcode/releases/tag/v1.0.0

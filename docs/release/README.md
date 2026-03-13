@@ -10,6 +10,7 @@
 1. `RELEASE_NOTES_v1.0.0.md`
 2. `RELEASE_NOTES_v1.0.1.md`
 3. `v2.3.0.md`
+4. `v2.4.0.md`
 
 ## 维护规则
 
