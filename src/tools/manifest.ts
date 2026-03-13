@@ -63,8 +63,9 @@ export interface LlmToolExposureResult {
  * 默认不再暴露给 LLM 的工具。
  * 保留执行实现，但退出默认模型主链：
  * - mem：当前无 P0 执行实现；长期记忆通过自动注入与 /mem slash 控制，不作为默认 LLM tool
+ * - desktop：内建 bridge 将被开源 desktop plugin 替换；替换完成前退出默认 LLM 主链，只保留显式链路
  */
-export const LLM_DEFAULT_SUPPRESSED_TOOLS: ToolName[] = ["mem"];
+export const LLM_DEFAULT_SUPPRESSED_TOOLS: ToolName[] = ["mem", "desktop"];
 
 export function filterDefaultLlmTools(toolNames: ToolName[]): ToolName[] {
   return toolNames.filter((tool) => !LLM_DEFAULT_SUPPRESSED_TOOLS.includes(tool));

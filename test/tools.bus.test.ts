@@ -901,6 +901,29 @@ describe("Tool Bus", () => {
   });
 
   describe("Scenario E6: desktop 错误预览去解释层", () => {
+    test("desktop 对 llm-tool-call 应退出默认主链", async () => {
+      const configDir = join(tempWorkspace, ".msgcode");
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, "config.json"), JSON.stringify({
+        "tooling.mode": "autonomous",
+        "tooling.allow": ["desktop"],
+        "tooling.require_confirm": [],
+      }));
+
+      const result = await executeTool(
+        "desktop",
+        { method: "desktop.health", params: {} },
+        {
+          workspacePath: tempWorkspace,
+          source: "llm-tool-call",
+          requestId: randomUUID(),
+        }
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error?.code).toBe("TOOL_NOT_ALLOWED");
+    });
+
     test("desktop 缺少 method 应在总线层 fail-closed", async () => {
       const configDir = join(tempWorkspace, ".msgcode");
       mkdirSync(configDir, { recursive: true });
@@ -915,7 +938,7 @@ describe("Tool Bus", () => {
         {},
         {
           workspacePath: tempWorkspace,
-          source: "llm-tool-call",
+          source: "slash-command",
           requestId: randomUUID(),
         }
       );
@@ -946,7 +969,7 @@ describe("Tool Bus", () => {
           { method: "desktop.health", params: {} },
           {
             workspacePath: tempWorkspace,
-            source: "llm-tool-call",
+            source: "slash-command",
             requestId: randomUUID(),
           }
         );

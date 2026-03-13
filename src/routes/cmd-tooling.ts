@@ -5,8 +5,11 @@
 import type { CommandHandlerOptions, CommandResult } from "./cmd-types.js";
 import { resolveCommandRoute } from "./workspace-resolver.js";
 
-const USER_VISIBLE_TOOLS = ["tts", "asr", "bash", "browser", "desktop", "read_file", "write_file", "edit_file", "help_docs", "feishu_list_members", "feishu_list_recent_messages", "feishu_reply_message", "feishu_react_message", "feishu_send_file"] as const;
+const USER_VISIBLE_TOOLS = ["tts", "asr", "bash", "browser", "read_file", "write_file", "edit_file", "help_docs", "feishu_list_members", "feishu_list_recent_messages", "feishu_reply_message", "feishu_react_message", "feishu_send_file"] as const;
+const LEGACY_OPT_IN_TOOLS = ["desktop"] as const;
+const CONFIGURABLE_TOOLS = [...USER_VISIBLE_TOOLS, ...LEGACY_OPT_IN_TOOLS] as const;
 const USER_VISIBLE_TOOLS_TEXT = USER_VISIBLE_TOOLS.join(", ");
+const LEGACY_OPT_IN_TOOLS_TEXT = LEGACY_OPT_IN_TOOLS.join(", ");
 
 export async function handleToolstatsCommand(_options: CommandHandlerOptions): Promise<CommandResult> {
   const { getToolStats } = await import("../tools/telemetry.js");
@@ -89,6 +92,7 @@ export async function handleToolAllowListCommand(options: CommandHandlerOptions)
       `  /tool allow remove <t> 移除工具（需要 /reload 生效）\n` +
       `\n` +
       `可用工具: ${USER_VISIBLE_TOOLS_TEXT}\n` +
+      `遗留显式工具: ${LEGACY_OPT_IN_TOOLS_TEXT}（仅显式 slash/手动链路；不再默认暴露给 LLM）\n` +
       `注：图片预览摘要属于系统内部能力，不作为可手动配置的详细视觉工具`,
   };
 }
@@ -100,11 +104,12 @@ export async function handleToolAllowAddCommand(options: CommandHandlerOptions):
       success: false,
       message: `用法: /tool allow add <tool>\n` +
         `\n` +
-        `可用工具: ${USER_VISIBLE_TOOLS_TEXT}`,
+        `可用工具: ${USER_VISIBLE_TOOLS_TEXT}\n` +
+        `遗留显式工具: ${LEGACY_OPT_IN_TOOLS_TEXT}`,
     };
   }
 
-  const validTools = [...USER_VISIBLE_TOOLS] as readonly string[];
+  const validTools = [...CONFIGURABLE_TOOLS] as readonly string[];
   if (!validTools.includes(toolName)) {
     return {
       success: false,

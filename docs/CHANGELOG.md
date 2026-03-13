@@ -279,6 +279,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - tools/desktop: 将 desktop session/desktopctl 适配外移到独立 runner，并删除 bus 中旧 `subcommand` compat 与 browser 手写前置裁判 (Issue: 0157, Plan: docs/design/plan-260313-tool-bus-desktop-runner-extraction-and-validator-thinning.md) [risk: medium] [rollback: revert 0157 desktop runner extraction commit]
   - tools/feishu: 将 `feishu_*` 的 chatId/appId/messageId 默认推断从 Tool Bus 外移到独立 runner，bus 不再直接读 workspace config 和环境变量做业务猜测 (Issue: 0158, Plan: docs/design/plan-260313-tool-bus-feishu-runner-extraction.md) [risk: medium] [rollback: revert 0158 feishu runner extraction commit]
   - tools/file: 将 `read_file/write_file/edit_file` 的路径解析、`fs_scope`、二进制探测、大文件保护和 patch 语义外移到独立 file runner，Tool Bus 只保留网关与结果包装 (Issue: 0159, Plan: docs/design/plan-260313-tool-bus-file-runner-extraction.md) [risk: medium] [rollback: revert 0159 file runner extraction commit]
+  - tools/desktop: 内建 `desktop` 退出默认 `tooling.allow` 与默认 LLM 工具暴露主链，收口为遗留显式工具，为后续开源 desktop 实现替换留出干净边界 (Issue: 0160, Plan: docs/design/plan-260313-desktop-default-off-before-plugin-replacement.md) [risk: medium] [rollback: revert 0160 desktop default-off commit]
 
 [2.3.0]: https://github.com/yourorg/msgcode/releases/tag/v2.3.0
 [1.0.0]: https://github.com/yourorg/msgcode/releases/tag/v1.0.0

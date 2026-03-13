@@ -41,12 +41,19 @@ describe("P5.6.8-R4g: 命名收口", () => {
     expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).toContain("feishu_reply_message");
     expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).toContain("feishu_react_message");
     expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).not.toContain("mem");
+    expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).not.toContain("desktop");
   });
 
   it("R4g-3: 默认 tooling.allow 不包含 shell", async () => {
     const { DEFAULT_WORKSPACE_CONFIG } = await import("../src/config/workspace.js");
 
     expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).not.toContain("shell");
+  });
+
+  it("R4g-3b: desktop 应退出默认 LLM 工具主链", async () => {
+    const { filterDefaultLlmTools } = await import("../src/tools/manifest.js");
+
+    expect(filterDefaultLlmTools(["desktop", "bash", "read_file"] as any)).toEqual(["bash", "read_file"]);
   });
 });
 
