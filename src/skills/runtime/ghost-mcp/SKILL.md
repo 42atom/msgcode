@@ -48,6 +48,33 @@ ghost status
 5. 还不清楚就 `ghost_screenshot`
 6. Web/视觉退化场景再 `ghost_ground`
 
+### 两个最常见的失败点（必须记住）
+
+#### `ghost_screenshot`（截图）
+
+- **前置条件**：`ghost status` 必须是 `Status: Ready`；Screen Recording 必须已授权。
+- **参数建议**：
+  - `app`: 尽量传目标应用名（例如 `"Safari"`），避免截到别的窗口。
+  - `full_resolution`: 默认 `false`；除非你需要看清小字再开 `true`。
+- **失败时**：
+  - 不要编造“工具没注册/没暴露”。先调用 `ghost_state`，把返回事实贴出来。
+  - 再调用 `ghost_context` 确认前台应用与焦点窗口是否真是目标 app。
+  - 仍失败就把 **原始错误**原样回传（不要系统代答式解释）。
+
+#### `ghost_ground`（视觉定位）
+
+- **必填参数**：`description` **必须提供**。不传就会失败。
+- **前置条件**：优先先 `ghost_context`，把目标 app 拉到前台；否则 grounding 可能对错窗口做推理。
+- **写 `description` 的标准**（越具体越好）：
+  - “它是什么”：按钮/输入框/菜单项/图标/某行表达式
+  - “它在哪”：左侧栏/顶部/某个面板/某行（例如 “Expression 1 输入行”）
+  - “它旁边有什么可见锚点”：文本标签、占位符、相邻按钮文案
+- **参数建议**：
+  - `app`: 传 `"Safari"` / `"Terminal"` 等，减少误定位。
+  - `crop_box`: 只要你能估出大概区域，就传，能显著提速并减少误判。
+- **调用预算**：
+  - 同一目标最多调用 `ghost_ground` 1-2 次。超过就停下让用户确认页面状态，不要死磕。
+
 ### 高风险动作
 
 - `ghost_*` 能力面保持完整；msgcode 不为它额外加 confirm gate
