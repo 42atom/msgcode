@@ -1,0 +1,45 @@
+---
+id: 0165
+title: scripts: add thin chromium cookie export CLI (system profiles)
+status: open
+owner: agent
+labels: [feature, security, tooling]
+risk: high
+scope: scripts/ only (no Tool Bus integration)
+plan_doc: ""
+links: []
+---
+
+## Context
+需要从“用户当前正在使用的系统 Chrome/Edge/Brave profile”抽取 cookies，用于自动化场景复用登录态（多角色、多 profile）。
+
+openclaw 已有同类实现（读 Cookies SQLite + Keychain 解密），证明在 macOS 上可行；msgcode 需要一个遵循 Unix 哲学的最薄工具，不把逻辑塞进 Tool Bus。
+
+## Goal / Non-Goals
+Goal
+- 提供独立 CLI 脚本：扫描系统 Chromium profiles，按 domain 导出 cookies（Playwright cookie JSON 格式）。
+- 默认不在 stdout 打印 cookie value，只输出摘要与 profile 选择信息。
+- 支持多 profile：`--out-dir` 批量导出，每个 profile 一个文件。
+- 防止 secrets 误提交：`.gitignore` 忽略 `*.cookies.json`。
+
+Non-Goals
+- 不把 cookie 提取能力暴露为 LLM 原生工具（不改 Tool Bus / manifest）。
+- 不做“自动注入到 browser 工具”的厚集成；由 skill/脚本组合完成。
+
+## Plan
+- [ ] 添加 `scripts/chromium-cookies-export.mjs`（macOS only；Keychain Safe Storage 解密 v10/v11）。
+- [ ] 更新 `src/skills/runtime/patchright-browser/SKILL.md`：增加多 profile/多角色 cookie 导出 SOP（只做说明书）。
+- [ ] 添加最小 smoke：对 `google.com` 做 summary 扫描，确保能列出 profiles 与 cookie 名（不打印 value）。
+
+## Acceptance Criteria
+- `node scripts/chromium-cookies-export.mjs --list --browser chrome` 能列出 profile dir + display name。
+- `--domain <d>` 能输出每个 profile 的 cookieCount/sampleNames（无 values）。
+- `--out <file> --profile <p>` 能写出 cookies JSON（默认含 values）。
+- `--out-dir <dir>` 能为多 profile 批量写文件。
+
+## Notes
+风险口径：该脚本是“本机凭据抽取器”，默认不接入 Tool Bus，仅作为用户/模型在 bash 下显式执行的能力。
+
+## Links
+N/A
+

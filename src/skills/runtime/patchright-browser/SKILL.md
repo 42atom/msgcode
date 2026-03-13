@@ -151,6 +151,53 @@ sed -n '601,800p' "$RAW_FILE"
 - 复用旧 `tabId` / 旧 `instanceId`
 - 写完文件后不看末尾，直接说“已经整理完成”
 
+## 高级：从系统 Chrome/Edge/Brave 多 Profile 导出 Cookies（多角色）
+
+适用：
+
+- AI 需要扮演多个社媒角色（多个浏览器 profiles）
+- 你已经在系统浏览器里登录好了网站，希望自动化会话复用登录态
+
+核心约束：
+
+- 这是**密钥级数据**（cookies = 登录态）。不要把 cookie value 粘贴到对话里。
+- 本项目提供的是“超薄脚本 + 说明书”，不把提取逻辑塞进 Tool Bus。
+- 默认不在 stdout 打印 cookie value，只输出摘要；如需注入，写入本地文件再使用。
+
+1) 列出 profiles（含 display name）
+
+```bash
+node scripts/chromium-cookies-export.mjs --list --browser chrome
+node scripts/chromium-cookies-export.mjs --list --browser edge
+node scripts/chromium-cookies-export.mjs --list --browser brave
+```
+
+2) 扫描哪个 profile 真的有目标域名 cookies（摘要，不含 values）
+
+```bash
+node scripts/chromium-cookies-export.mjs --browser chrome --domain x.com
+node scripts/chromium-cookies-export.mjs --browser chrome --domain twitter.com
+node scripts/chromium-cookies-export.mjs --browser chrome --domain google.com
+```
+
+3) 单 profile 导出（写入文件，默认包含 values，不在 stdout 打印）
+
+```bash
+OUT="/tmp/chrome-profile1-google.cookies.json"
+node scripts/chromium-cookies-export.mjs --browser chrome --domain google.com --profile "Profile 1" --out "$OUT"
+ls -lh "$OUT"
+```
+
+4) 多 profile 批量导出（每个 profile 一个文件）
+
+```bash
+OUT_DIR="/tmp/chrome-cookies-out"
+node scripts/chromium-cookies-export.mjs --browser chrome --domain google.com --out-dir "$OUT_DIR"
+ls -lah "$OUT_DIR"
+```
+
+如果你担心文件落盘残留，可以用 `--redact` 写出脱敏版本（只用于验证流程，无法用于注入登录态）。
+
 ## 读不到完整正文时怎么做
 
 优先按这个顺序处理：

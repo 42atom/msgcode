@@ -71,6 +71,9 @@ mac/**/Package.resolved
 .msgcode/
 .agent/
 
+# Cookie exports (secrets; must never enter git)
+*.cookies.json
+
 # Local model caches (must not enter git)
 checkpoints/hf_cache/
 
