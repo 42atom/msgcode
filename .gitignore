@@ -48,6 +48,7 @@ refs/
 ref/
 CLAUDE.md
 AGENTS.md
+.claude/
 
 # Built binaries (not tracked)
 vendor/imsg/
