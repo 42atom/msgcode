@@ -1,7 +1,7 @@
 ---
 id: 0175
 title: 停止跟踪本地提示词文件
-status: doing
+status: done
 owner: agent
 labels: [chore, cleanup, repo]
 risk: low
@@ -42,6 +42,11 @@ links: []
 ## Notes
 
 - 这轮只清版本库跟踪状态，不改变本地私有提示词的使用方式。
+- 验证：
+  - `git ls-files 'CLAUDE.md' 'AGENTS.md'`
+  - `npm run docs:check`
+- 提交：
+  - `411ad5c chore: stop tracking local prompt files`
 
 ## Links
 
