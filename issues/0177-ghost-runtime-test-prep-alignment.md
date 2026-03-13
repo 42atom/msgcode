@@ -1,7 +1,7 @@
 ---
 id: 0177
 title: ghost 运行时测试前对齐
-status: doing
+status: done
 owner: agent
 labels: [chore, runtime, tests]
 risk: low
@@ -52,6 +52,8 @@ links: []
   - `PATH="$HOME/.bun/bin:$PATH" bun test test/ghost-mcp-first-cut.test.ts test/tools.bus.test.ts`
   - `npx tsc --noEmit`
   - `npm run docs:check`
+- 提交：
+  - `96a8b28 chore: align ghost runtime test prep`
 
 ## Links
 
