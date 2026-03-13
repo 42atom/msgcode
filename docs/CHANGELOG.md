@@ -3,6 +3,7 @@
 ## Protocol Entries（CLAUDE.md 约束格式）
 
 - 2026-03-13
+  - repo/manual-artifacts: `artifacts/manual-modal-check/` 已改为纯本地人工检查产物目录；历史上误被 Git 跟踪的 JSON evidence 已从版本库移除，不再污染开源仓库主树 (Issue: 0176) [risk: low] [rollback: 仅在确有必要时重新 add 指定 artifact，并回退 `.gitignore` 与本条 changelog]
   - repo/prompt-files: `CLAUDE.md` 与 `AGENTS.md` 已退回本地私有提示词文件语义；它们虽然继续保留在开发机上供本地 agent 使用，但已从开源仓库版本库中移除，不再污染 GitHub 对外代码面 (Issue: 0175) [risk: low] [rollback: 仅在明确需要时重新 add 指定文件，并回退本条 changelog]
   - repo/claude-dir: `.claude/` 已改为纯本地忽略目录；历史上误被 Git 跟踪的 `.claude/**` 文件已从版本库移除，`CLAUDE.md` 继续保留为仓库协议文件，不受本轮影响 (Issue: 0174) [risk: low] [rollback: 从本地 `.claude/` 重新 add 指定文件、回退 `.gitignore` 与本条 changelog]
   - repo/trash: `.trash/` 已回到纯本地坟场语义；历史上误被 Git 跟踪的 `.trash/**` 文件已从版本库移除，今后只由 `.gitignore` 负责忽略，不再出现在仓库树与 GitHub 目录里 (Issue: 0173) [risk: low] [rollback: 仅在确有必要时从本地 `.trash/` 重新 add 指定文件，并回退本条 changelog]
