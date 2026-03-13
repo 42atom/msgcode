@@ -24,16 +24,19 @@ open mac/MsgcodeDesktopHost/MsgcodeDesktopHost.app
 
 ```bash
 # 健康检查
-npx tsx src/cli.ts /desktop health
+npx tsx src/cli.ts /desktop rpc desktop.health {}
 
 # 截图 + AX 树（落盘到 workspace/artifacts/desktop/）
-npx tsx src/cli.ts /desktop observe
+npx tsx src/cli.ts /desktop rpc desktop.observe '{"options":{"includeScreenshot":true}}'
 
 # 查找 UI 元素
-npx tsx src/cli.ts /desktop find --byRole AXButton --titleContains "Send"
+npx tsx src/cli.ts /desktop rpc desktop.find '{"selector":{"byRole":"AXButton","titleContains":"Send"}}'
 
-# 点击元素（需 confirm）
-npx tsx src/cli.ts /desktop click --selector '{"byRole": "AXButton"}' --phrase "CONFIRM"
+# 签发确认 token（有副作用动作先走 confirm.issue）
+npx tsx src/cli.ts /desktop rpc desktop.confirm.issue '{"intent":{"method":"desktop.click","params":{"selector":{"byRole":"AXButton"}}}}'
+
+# 点击元素（需 confirm-token）
+npx tsx src/cli.ts /desktop rpc desktop.click --confirm-token <token> '{"selector":{"byRole":"AXButton"}}'
 ```
 
 **完整 API 文档**: [Contract](./contract.md)
@@ -51,7 +54,7 @@ npx tsx src/cli.ts /desktop click --selector '{"byRole": "AXButton"}' --phrase "
 | **Hotkey** | 发送快捷键（需 confirm token） |
 | **WaitUntil** | 等待 UI 条件成立 |
 | **Abort** | 中止正在执行的请求 |
-| **Confirm** | 签发一次性确认令牌 |
+| **Confirm** | 通过 `desktop.confirm.issue` 签发一次性确认令牌 |
 
 ---
 

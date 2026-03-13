@@ -79,7 +79,7 @@ recipes/desktop/
 
 ## 执行器
 
-v0 执行器可以先做成脚本（Node/TS）读取 recipe，逐步调用 `/desktop rpc`（走 session）。
+v0 执行器可以先做成脚本（Node/TS）读取 recipe，逐步调用 `/desktop rpc`。
 
 ```bash
 # 执行 recipe

@@ -257,11 +257,6 @@ export function isRouteCommand(text: string): boolean {
     trimmed.startsWith("/tool ") ||
     trimmed === "/desktop" ||
     trimmed.startsWith("/desktop ") ||
-    trimmed.startsWith("/desktop find ") ||
-    trimmed.startsWith("/desktop click ") ||
-    trimmed.startsWith("/desktop type ") ||
-    trimmed.startsWith("/desktop hotkey ") ||
-    trimmed.startsWith("/desktop wait ") ||
     trimmed.startsWith("/steer ") ||
     trimmed === "/steer" ||
     trimmed.startsWith("/next ") ||
@@ -454,28 +449,11 @@ export function parseRouteCommand(text: string): { command: string; args: string
     return { command: "toolAllowList", args: [] };
   }
   if (trimmed === "/desktop") {
-    return { command: "desktop", args: ["doctor"] };
+    return { command: "desktop", args: [] };
   }
   if (trimmed.startsWith("/desktop ")) {
-    const parts = trimmed.split(/\s+/);
-    const subcommand = parts[1];
-
-    if (["observe", "find", "click", "type", "hotkey", "wait"].includes(subcommand)) {
-      const jsonPart = trimmed.slice(trimmed.indexOf(subcommand) + subcommand.length).trim();
-      return { command: "desktop", args: ["shortcut", subcommand, jsonPart] };
-    }
-
-    if (subcommand === "confirm") {
-      const m = trimmed.match(/^\/desktop\s+confirm\s+(\S+)(?:\s+--timeout-ms\s+(\S+))?(?:\s+(.*))?$/);
-      if (!m) return { command: "desktop", args: ["confirm"] };
-      const method = m[1] ?? "";
-      const timeoutMs = m[2] ?? "";
-      const paramsJson = (m[3] ?? "").trim();
-      return { command: "desktop", args: ["confirm", method, timeoutMs, paramsJson] };
-    }
-
-    if (subcommand === "rpc") {
-      const m = trimmed.match(/^\/desktop\s+rpc\s+(\S+)(?:\s+--timeout-ms\s+(\S+))?(?:\s+--confirm-token\s+(\S+))?(?:\s+(.*))?$/);
+    if (trimmed.startsWith("/desktop rpc")) {
+      const m = trimmed.match(/^\/desktop\s+rpc(?:\s+(\S+))?(?:\s+--timeout-ms\s+(\S+))?(?:\s+--confirm-token\s+(\S+))?(?:\s+(.*))?$/);
       if (!m) return { command: "desktop", args: ["rpc"] };
       const method = m[1] ?? "";
       const timeoutMs = m[2] ?? "";
@@ -484,11 +462,8 @@ export function parseRouteCommand(text: string): { command: string; args: string
       return { command: "desktop", args: ["rpc", method, timeoutMs, confirmToken, paramsJson] };
     }
 
-    if (["ping", "doctor"].includes(subcommand)) {
-      return { command: "desktop", args: [subcommand] };
-    }
-
-    return { command: "desktop", args: ["doctor"] };
+    const parts = trimmed.split(/\s+/);
+    return { command: "desktop", args: parts.slice(1) };
   }
   if (trimmed.startsWith("/steer ")) {
     const parts = trimmed.split(/\s+/);
