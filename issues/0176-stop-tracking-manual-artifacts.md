@@ -1,7 +1,7 @@
 ---
 id: 0176
 title: 停止跟踪人工检查 artifacts
-status: doing
+status: done
 owner: agent
 labels: [chore, cleanup, repo]
 risk: low
@@ -42,6 +42,12 @@ links: []
 ## Notes
 
 - 这轮只清版本库跟踪状态，不影响本地人工排障继续使用这些 artifact。
+- 验证：
+  - `git ls-files 'artifacts/manual-modal-check/**'`
+  - `npm run docs:check`
+- 提交：
+  - `cbbc605 chore: stop tracking manual artifacts`
+  - `e92ac0b chore: remove tracked manual artifact files`
 
 ## Links
 
