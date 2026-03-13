@@ -1,0 +1,85 @@
+---
+id: 0155
+title: tool bus preview meta 继续收口
+status: done
+owner: agent
+labels: [tools, runtime, refactor, docs]
+risk: medium
+scope: 删除 Tool Bus 成功 preview 中剩余的解释性确认文案
+plan_doc: docs/design/plan-260313-tool-bus-preview-meta-thinning.md
+links: []
+---
+
+## Context
+
+0154 已经删除 `read_file` 的教学式 guidance，但 `bus.ts` 仍有一批成功 preview 在结构化事实之外再拼一句确认文案，例如：
+
+- `文件已写入`
+- `文件补丁已应用`
+- `语音已生成`
+- `语音已转写为文本`
+- `视觉识别结果已落盘`
+- `文件消息已发送`
+- `消息回复已发送`
+- `消息表情回复已发送`
+
+这些句子不提供新的导航字段，只是在执行层重复解释“动作成功了”。
+
+## Goal / Non-Goals
+
+- Goal: 删除 success preview 中不携带新事实的确认句
+- Goal: 保留 `durationMs/fullOutputPath/textPath/status` 等结构化导航事实
+- Goal: 明确哪些 preview/meta 逻辑保留、删除、暂不动
+- Non-Goals: 本轮不改工具集合
+- Non-Goals: 本轮不改 tool-loop / manifest / 能力边界
+- Non-Goals: 本轮不新增 formatter layer
+
+## Plan
+
+- [x] 建立 issue / plan，冻结保留/删除判定
+- [x] 删除 success preview 中无新事实的确认句
+- [x] 更新 `tools.bus` 与 Feishu 直接相关最小回归测试
+- [x] 跑 targeted tests、`npx tsc --noEmit`、`npm run docs:check`
+- [x] 更新 Notes、状态与 `docs/CHANGELOG.md`
+
+## Acceptance Criteria
+
+1. `applyPreviewFooter()`、`buildBashPreviewText()`、`buildHelpDocsPreviewText()` 的保留原因明确记录
+2. write/edit/tts/asr/vision/feishu 成功 preview 不再包含“已发送/已写入/已生成”这类解释句
+3. 结构化事实字段仍保留
+4. 直接相关回归通过
+
+## Notes
+
+- 真相源：
+  - `aidocs/reviews/20260313-msgcode-thin-runtime-review-rewrite.md`
+  - `issues/0154-tool-bus-thin-gateway.md`
+  - `docs/design/plan-260313-tool-bus-thin-gateway.md`
+- 2026-03-13:
+  - 保留的 preview/meta 逻辑：
+    - `applyPreviewFooter()`：统一补足 `durationMs/fullOutputPath`
+    - `buildBashPreviewText()`：`exitCode/stdout/stderr/fullOutputPath`
+    - `buildHelpDocsPreviewText()`：`version/query/matched/commands`
+    - `buildBrowserPreviewText()`：`operation/title/url/instanceId/tabId/textPath/textBytes/status/textPreview`
+    - `buildToolErrorPreviewText()`：错误码外的最小错误事实展示
+    - `buildFeishuListMembersPreviewText()` / `buildFeishuRecentMessagesPreviewText()`：成员与消息事实摘要
+  - 已删除的解释层：
+    - `write_file` 的“文件已写入”
+    - `edit_file` 的“文件补丁已应用”
+    - `tts` 的“语音已生成”
+    - `asr` 的“语音已转写为文本”
+    - `vision` 的“视觉识别结果已落盘”
+    - `feishu_send_file` 的“文件消息已发送”
+    - `feishu_reply_message` 的“消息回复已发送”
+    - `feishu_react_message` 的“消息表情回复已发送”
+  - 暂不动及原因：
+    - browser 的 `textPreview/status` 仍属导航事实，不是教学层
+    - desktop 的 stdout/stderr 展示仍属真实执行事实
+  - 验证：
+    - `PATH="$HOME/.bun/bin:$PATH" bun test test/tools.bus.test.ts test/p5-7-r7a-browser-tool-bus.test.ts test/p5-7-r32-feishu-list-members.test.ts test/p6-feishu-message-context-phase4-actions.test.ts test/p5-7-r12-feishu-send-file.test.ts`
+    - `npx tsc --noEmit`
+    - `npm run docs:check`
+
+## Links
+
+- Plan: /Users/admin/GitProjects/msgcode/docs/design/plan-260313-tool-bus-preview-meta-thinning.md

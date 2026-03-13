@@ -322,10 +322,9 @@ describe("P5.7-R10: MiniMax Anthropic provider", () => {
         }
     });
 
-    it("runLmStudioToolLoop 在 minimax 下工具失败后若模型先复述错误，再继续 tool_use，应在同一轮恢复完成", async () => {
+    it("runLmStudioToolLoop 在 minimax 下工具失败后若模型先复述错误，系统不应再注入恢复提示补打一轮", async () => {
         const originalFetch = globalThis.fetch;
         const workspacePath = await createToolEnabledWorkspace();
-        await writeFile(join(workspacePath, ".msgcode", "recover-minimax.txt"), "hello-minimax-recover", "utf-8");
         let callCount = 0;
         const capturedBodies: Array<Record<string, unknown>> = [];
 
@@ -362,28 +361,7 @@ describe("P5.7-R10: MiniMax Anthropic provider", () => {
                 } satisfies MiniMaxMessagesResponse);
             }
 
-            if (callCount === 3) {
-                return asJsonResponse({
-                    role: "assistant",
-                    content: [
-                        {
-                            type: "tool_use",
-                            id: "toolu_recover_read_2",
-                            name: "read_file",
-                            input: { path: ".msgcode/recover-minimax.txt" },
-                        },
-                    ],
-                    stop_reason: "tool_use",
-                } satisfies MiniMaxMessagesResponse);
-            }
-
-            return asJsonResponse({
-                role: "assistant",
-                content: [
-                    { type: "text", text: "恢复完成：hello-minimax-recover" },
-                ],
-                stop_reason: "end_turn",
-            } satisfies MiniMaxMessagesResponse);
+            throw new Error(`unexpected extra round: ${callCount}`);
         }) as typeof fetch;
 
         try {
@@ -394,17 +372,17 @@ describe("P5.7-R10: MiniMax Anthropic provider", () => {
                 timeoutMs: 10_000,
             });
 
-            expect(callCount).toBe(4);
-            expect(result.answer).toBe("恢复完成：hello-minimax-recover");
+            expect(callCount).toBe(2);
+            expect(result.answer).toContain("工具执行失败");
+            expect(result.answer).toContain("minimax-recover");
             expect(result.actionJournal.map((entry) => `${entry.phase}:${entry.tool}:${entry.ok}`)).toEqual([
                 "act:bash:false",
-                "act:read_file:true",
             ]);
 
-            const thirdRequestMessages = capturedBodies[2]?.messages as Array<Record<string, unknown>>;
-            const recoveryPrompt = thirdRequestMessages[thirdRequestMessages.length - 1];
-            expect(recoveryPrompt.role).toBe("user");
-            expect(String(recoveryPrompt.content)).toContain("上一轮工具调用失败");
+            const secondRequestMessages = capturedBodies[1]?.messages as Array<Record<string, unknown>>;
+            const lastMessage = secondRequestMessages[secondRequestMessages.length - 1];
+            expect(lastMessage.role).toBe("user");
+            expect(JSON.stringify(secondRequestMessages)).not.toContain("上一轮工具调用失败");
         } finally {
             globalThis.fetch = originalFetch;
             await rm(workspacePath, { recursive: true, force: true });

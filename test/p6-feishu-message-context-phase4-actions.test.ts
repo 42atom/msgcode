@@ -98,7 +98,7 @@ describe("P6: feishu message actions", () => {
       replyInThread: true,
     });
     expect(result.previewText).toContain("[feishu_reply_message]");
-    expect(result.previewText).toContain("消息回复已发送");
+    expect(result.previewText).toContain("[replyInThread] true");
   });
 
   it("react 显式 messageId 应优先于上下文默认目标，且支持 emoji 直传", async () => {
@@ -140,6 +140,7 @@ describe("P6: feishu message actions", () => {
     });
     expect(result.previewText).toContain("[feishu_react_message]");
     expect(result.previewText).toContain("[emojiType] HEART");
+    expect(result.previewText).toContain("[reactionId] reaction_1");
   });
 
   it("reply 失败时应提示机器人能力和会话条件", async () => {

@@ -227,10 +227,9 @@ describe("P5.7-R3h: Tool Failure Diagnostics (Behavior Lock)", () => {
             }
         });
 
-        it("工具失败后若模型先复述原始错误，再下一轮继续调用工具，应在同一轮恢复完成", async () => {
+        it("工具失败后若模型先复述原始错误，系统不应再注入恢复提示补打一轮", async () => {
             const originalFetch = globalThis.fetch;
             const workspacePath = await createToolEnabledWorkspace();
-            await writeFile(join(workspacePath, ".msgcode", "recover.txt"), "hello-recover", "utf-8");
             let callCount = 0;
             const capturedBodies: Array<Record<string, unknown>> = [];
 
@@ -273,35 +272,7 @@ describe("P5.7-R3h: Tool Failure Diagnostics (Behavior Lock)", () => {
                     });
                 }
 
-                if (callCount === 3) {
-                    return asJsonResponse({
-                        choices: [{
-                            message: {
-                                role: "assistant",
-                                content: "",
-                                tool_calls: [{
-                                    id: "call_recover_read_file",
-                                    type: "function",
-                                    function: {
-                                        name: "read_file",
-                                        arguments: JSON.stringify({ path: ".msgcode/recover.txt" }),
-                                    },
-                                }],
-                            },
-                            finish_reason: "tool_calls",
-                        }],
-                    });
-                }
-
-                return asJsonResponse({
-                    choices: [{
-                        message: {
-                            role: "assistant",
-                            content: "恢复完成：hello-recover",
-                        },
-                        finish_reason: "stop",
-                    }],
-                });
+                throw new Error(`unexpected extra round: ${callCount}`);
             }) as typeof fetch;
 
             try {
@@ -314,17 +285,17 @@ describe("P5.7-R3h: Tool Failure Diagnostics (Behavior Lock)", () => {
                     backendRuntime: localOpenAiRuntime,
                 });
 
-                expect(callCount).toBe(4);
-                expect(result.answer).toBe("恢复完成：hello-recover");
+                expect(callCount).toBe(2);
+                expect(result.answer).toContain("工具执行失败");
+                expect(result.answer).toContain("recover-boom");
                 expect(result.actionJournal.map((entry) => `${entry.phase}:${entry.tool}:${entry.ok}`)).toEqual([
                     "act:bash:false",
-                    "act:read_file:true",
                 ]);
 
-                const thirdRequestMessages = capturedBodies[2]?.messages as Array<Record<string, unknown>>;
-                const recoveryPrompt = thirdRequestMessages[thirdRequestMessages.length - 1];
-                expect(recoveryPrompt.role).toBe("user");
-                expect(String(recoveryPrompt.content)).toContain("上一轮工具调用失败");
+                const secondRequestMessages = capturedBodies[1]?.messages as Array<Record<string, unknown>>;
+                const lastMessage = secondRequestMessages[secondRequestMessages.length - 1];
+                expect(lastMessage.role).toBe("tool");
+                expect(JSON.stringify(secondRequestMessages)).not.toContain("上一轮工具调用失败");
             } finally {
                 globalThis.fetch = originalFetch;
                 await rm(workspacePath, { recursive: true, force: true });

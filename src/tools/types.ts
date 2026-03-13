@@ -49,7 +49,6 @@ export type ToolDataMap = {
     path: string;
     truncated?: boolean;
     byteLength?: number;
-    guidance?: string;
   };
   help_docs: {
     version: string;

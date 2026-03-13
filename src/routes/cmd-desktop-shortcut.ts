@@ -28,13 +28,19 @@ export async function handleDesktopShortcut(
     };
   }
 
-  const toolArgs: Record<string, unknown> = { subcommand };
+  const toolArgs: Record<string, unknown> = {
+    method: "",
+    params: {},
+  };
+  const rpcParams: Record<string, unknown> = {};
 
   if (subcommand === "find") {
-    if (params.byRole) toolArgs.byRole = params.byRole;
-    if (params.titleContains) toolArgs.titleContains = params.titleContains;
-    if (params.valueContains) toolArgs.valueContains = params.valueContains;
-    if (params.limit) toolArgs.limit = params.limit;
+    toolArgs.method = "desktop.find";
+    if (params.selector) rpcParams.selector = params.selector;
+    if (params.byRole) rpcParams.byRole = params.byRole;
+    if (params.titleContains) rpcParams.titleContains = params.titleContains;
+    if (params.valueContains) rpcParams.valueContains = params.valueContains;
+    if (params.limit) rpcParams.limit = params.limit;
   } else if (subcommand === "click") {
     if (!params.confirm || typeof params.confirm !== "object" || !("token" in params.confirm)) {
       return {
@@ -46,10 +52,11 @@ export async function handleDesktopShortcut(
           `获取 token: /desktop confirm desktop.click {"selector":{...}}`,
       };
     }
-    if (params.selector) toolArgs.selector = params.selector;
-    if (params.byRole) toolArgs.byRole = params.byRole;
-    if (params.titleContains) toolArgs.titleContains = params.titleContains;
-    toolArgs.confirm = (params.confirm as { token: string }).token;
+    toolArgs.method = "desktop.click";
+    if (params.selector) rpcParams.selector = params.selector;
+    if (params.byRole) rpcParams.byRole = params.byRole;
+    if (params.titleContains) rpcParams.titleContains = params.titleContains;
+    rpcParams.confirm = { token: (params.confirm as { token: string }).token };
   } else if (subcommand === "type") {
     if (!params.confirm || typeof params.confirm !== "object" || !("token" in params.confirm)) {
       return {
@@ -61,11 +68,12 @@ export async function handleDesktopShortcut(
           `获取 token: /desktop confirm desktop.typeText {"selector":{...},"text":"..."}`,
       };
     }
-    if (params.text) toolArgs.text = params.text;
-    if (params.selector) toolArgs.selector = params.selector;
-    if (params.byRole) toolArgs.byRole = params.byRole;
-    if (params.titleContains) toolArgs.titleContains = params.titleContains;
-    toolArgs.confirm = (params.confirm as { token: string }).token;
+    toolArgs.method = "desktop.typeText";
+    if (params.text) rpcParams.text = params.text;
+    if (params.selector) rpcParams.selector = params.selector;
+    if (params.byRole) rpcParams.byRole = params.byRole;
+    if (params.titleContains) rpcParams.titleContains = params.titleContains;
+    rpcParams.confirm = { token: (params.confirm as { token: string }).token };
   } else if (subcommand === "hotkey") {
     if (!params.confirm || typeof params.confirm !== "object" || !("token" in params.confirm)) {
       return {
@@ -77,15 +85,23 @@ export async function handleDesktopShortcut(
           `获取 token: /desktop confirm desktop.hotkey {"keys":["cmd","l"]}`,
       };
     }
+    toolArgs.method = "desktop.hotkey";
     if (params.keys) {
       const keysArray = Array.isArray(params.keys) ? params.keys : [params.keys];
-      toolArgs.keys = keysArray.join("+");
+      rpcParams.keys = keysArray.join("+");
     }
-    toolArgs.confirm = (params.confirm as { token: string }).token;
+    rpcParams.confirm = { token: (params.confirm as { token: string }).token };
   } else if (subcommand === "wait") {
-    if (params.condition) toolArgs.condition = params.condition;
-    if (params.timeoutMs) toolArgs.timeoutMs = params.timeoutMs;
+    toolArgs.method = "desktop.waitUntil";
+    if (params.condition) rpcParams.condition = params.condition;
+    if (params.timeoutMs) rpcParams.timeoutMs = params.timeoutMs;
+  } else {
+    return {
+      success: false,
+      message: `无效的 desktop shortcut 子命令: ${subcommand}`,
+    };
   }
+  toolArgs.params = rpcParams;
 
   const { executeTool } = await import("../tools/bus.js");
   const { randomUUID } = await import("node:crypto");
@@ -108,7 +124,7 @@ export async function handleDesktopShortcut(
     if (evidenceDir) {
       await recordDesktopSession({
         messageRequestId,
-        method: subcommand,
+        method: String(toolArgs.method),
         executionId: requestId,
         evidenceDir,
         workspacePath: entry.workspacePath,

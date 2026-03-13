@@ -594,7 +594,7 @@ describe("Tool Bus", () => {
       }));
     });
 
-    test("path=soul 且主路径不存在时应保留原生失败并提示下一步", async () => {
+    test("path=soul 且主路径不存在时应保留原生失败事实", async () => {
       const soulDir = join(tempWorkspace, ".msgcode");
       mkdirSync(soulDir, { recursive: true });
       writeFileSync(join(soulDir, "SOUL.md"), "# SOUL\nworkspace soul content");
@@ -612,7 +612,7 @@ describe("Tool Bus", () => {
       expect(result.ok).toBe(false);
       expect(result.error?.code).toBe("TOOL_EXEC_FAILED");
       expect(result.error?.message).toContain(`文件不存在：${join(tempWorkspace, "soul")}`);
-      expect(result.previewText).toContain("下一步建议：先用 bash 执行 ls、find 或 rg 确认路径");
+      expect(result.previewText).toContain(`文件不存在：${join(tempWorkspace, "soul")}`);
     });
 
     test("path=soul 且主路径存在时应优先读取主路径", async () => {
@@ -637,7 +637,7 @@ describe("Tool Bus", () => {
       expect(data.content).toBe("primary soul file");
     });
 
-    test("read_file 读取大文本时应返回预览与 guidance", async () => {
+    test("read_file 读取大文本时应返回预览与边界事实", async () => {
       const targetPath = join(tempWorkspace, "large.txt");
       writeFileSync(targetPath, "A".repeat(80 * 1024), "utf-8");
 
@@ -657,18 +657,17 @@ describe("Tool Bus", () => {
         path: string;
         truncated?: boolean;
         byteLength?: number;
-        guidance?: string;
       };
       expect(data.path).toBe(targetPath);
       expect(data.truncated).toBe(true);
       expect(data.byteLength).toBeGreaterThan(64 * 1024);
-      expect(data.guidance).toContain("bash");
       expect(data.content.length).toBeLessThan(80 * 1024);
       expect(result.previewText).toContain("[status] truncated-preview");
       expect(result.previewText).toContain("[durationMs]");
+      expect(result.previewText).not.toContain("[guidance]");
     });
 
-    test("read_file 遇到二进制文件时应返回带下一步建议的失败", async () => {
+    test("read_file 遇到二进制文件时应返回结构化失败事实", async () => {
       const targetPath = join(tempWorkspace, "binary.png");
       writeFileSync(targetPath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]));
 
@@ -685,8 +684,9 @@ describe("Tool Bus", () => {
       expect(result.ok).toBe(false);
       expect(result.error?.code).toBe("TOOL_EXEC_FAILED");
       expect(result.error?.message).toContain("PNG 图片");
-      expect(result.error?.message).toContain("bash");
+      expect(result.error?.message).toContain(`path: ${targetPath}`);
       expect(result.previewText).toContain("无法直接按 UTF-8 读取");
+      expect(result.previewText).not.toContain("下一步建议");
     });
   });
 
@@ -756,7 +756,7 @@ describe("Tool Bus", () => {
 
       expect(result.ok).toBe(true);
       expect(result.previewText).toContain("[write_file]");
-      expect(result.previewText).toContain("文件已写入");
+      expect(result.previewText).toContain(`[bytesWritten] ${(result.data as { bytesWritten: number }).bytesWritten}`);
       expect(result.previewText).toContain("[durationMs]");
       expect((result.data as { bytesWritten: number }).bytesWritten).toBeGreaterThan(0);
     });
@@ -776,7 +776,7 @@ describe("Tool Bus", () => {
 
       expect(result.ok).toBe(true);
       expect(result.previewText).toContain("[edit_file]");
-      expect(result.previewText).toContain("文件补丁已应用");
+      expect(result.previewText).toContain("[editsApplied] 1");
       expect(result.previewText).toContain("[durationMs]");
       expect((result.data as { editsApplied: number }).editsApplied).toBe(1);
     });
@@ -881,7 +881,7 @@ describe("Tool Bus", () => {
       );
       expect(reply.ok).toBe(true);
       expect(reply.previewText).toContain("[feishu_reply_message]");
-      expect(reply.previewText).toContain("消息回复已发送");
+      expect(reply.previewText).toContain("[replyInThread] true");
       expect(reply.previewText).toContain("[durationMs]");
 
       const react = await executeTool(
@@ -897,6 +897,73 @@ describe("Tool Bus", () => {
       expect(react.previewText).toContain("[feishu_react_message]");
       expect(react.previewText).toContain("[emojiType] HEART");
       expect(react.previewText).toContain("[durationMs]");
+    });
+  });
+
+  describe("Scenario E6: desktop 错误预览去解释层", () => {
+    test("desktop 缺少 method 应在总线层 fail-closed", async () => {
+      const configDir = join(tempWorkspace, ".msgcode");
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, "config.json"), JSON.stringify({
+        "tooling.mode": "autonomous",
+        "tooling.allow": ["desktop"],
+        "tooling.require_confirm": [],
+      }));
+
+      const result = await executeTool(
+        "desktop",
+        {},
+        {
+          workspacePath: tempWorkspace,
+          source: "llm-tool-call",
+          requestId: randomUUID(),
+        }
+      );
+
+      expect(result.ok).toBe(false);
+      expect(result.error?.code).toBe("TOOL_BAD_ARGS");
+      expect(result.error?.message).toBe("desktop: 'method' must be a non-empty string");
+      expect(result.previewText).toContain("[desktop] error");
+    });
+
+    test("desktop 缺少 desktopctl 时应只返回缺失事实", async () => {
+      const configDir = join(tempWorkspace, ".msgcode");
+      mkdirSync(configDir, { recursive: true });
+      writeFileSync(join(configDir, "config.json"), JSON.stringify({
+        "tooling.mode": "autonomous",
+        "tooling.allow": ["desktop"],
+        "tooling.require_confirm": [],
+      }));
+
+      const originalCwd = process.cwd();
+      const originalDesktopctlPath = process.env.MSGCODE_DESKTOPCTL_PATH;
+      process.chdir(tempWorkspace);
+      delete process.env.MSGCODE_DESKTOPCTL_PATH;
+
+      try {
+        const result = await executeTool(
+          "desktop",
+          { method: "desktop.health", params: {} },
+          {
+            workspacePath: tempWorkspace,
+            source: "llm-tool-call",
+            requestId: randomUUID(),
+          }
+        );
+
+        expect(result.ok).toBe(false);
+        expect(result.error?.code).toBe("TOOL_EXEC_FAILED");
+        expect(result.error?.message).toBe("msgcode-desktopctl not found");
+        expect(result.previewText).toContain("msgcode-desktopctl not found");
+        expect(result.previewText).not.toContain("Build first");
+      } finally {
+        process.chdir(originalCwd);
+        if (originalDesktopctlPath === undefined) {
+          delete process.env.MSGCODE_DESKTOPCTL_PATH;
+        } else {
+          process.env.MSGCODE_DESKTOPCTL_PATH = originalDesktopctlPath;
+        }
+      }
     });
   });
 

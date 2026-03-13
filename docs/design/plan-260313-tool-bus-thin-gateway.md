@@ -1,0 +1,59 @@
+# plan-260313-tool-bus-thin-gateway
+
+## Problem
+
+`Tool Bus` 已经是统一工具执行入口，但 `read_file` 分支仍在网关层承担教学职责：错误里写“下一步建议”，大文件成功结果写 `guidance`，preview 里再重复一遍 `[guidance]`。这让执行层不只是返回事实，而是在结果外再解释一层。
+
+## Occam Check
+
+### 不加它，系统具体坏在哪？
+
+- `Tool Bus` 继续在 `read_file` 分支替模型讲“下一步怎么做”
+- 同一事实在 `data.guidance` 和 preview `[guidance]` 双份存在
+- 执行层继续混入教学文案，而不只是边界保护和导航事实
+
+### 用更少的层能不能解决？
+
+- 能。直接删 `guidance` 字段和“下一步建议”文案，保留 path/bytes/status/fullOutputPath 等事实
+- binary / big-file guard 继续存在，不需要新增别的层
+
+### 这个改动让主链数量变多了还是变少了？
+
+- 变少了。执行网关少一层结果再解释逻辑
+
+## Decision
+
+选定方案：只收口 `read_file` 的解释层，删除 `guidance` 字段和错误长文案，保留参数校验、fs_scope、binary / large-file guard 与结构化导航字段。
+
+核心理由：
+
+1. `read_file` 是目前 bus 中最明显的教学文案残留点
+2. 删除它不会缩减能力边界，只会去掉执行层代解释
+3. `bash` / `help_docs` 当前主要返回结构化事实，本轮不需要扩 scope
+
+## Plan
+
+1. 更新 `issues/0154-tool-bus-thin-gateway.md`
+2. 修改 `src/tools/types.ts`
+   - 移除 `read_file.guidance`
+3. 修改 `src/tools/bus.ts`
+   - 删除 `buildReadFilePreviewText()` 的 `guidance`
+   - 删除二进制 / ENOENT / EISDIR / 非普通文件中的“下一步建议”
+   - 删除大文件成功结果中的 `guidance`
+4. 修改 `test/tools.bus.test.ts`
+   - 更新 read_file 相关断言到“结构化事实，不含 guidance”
+5. 更新 `docs/CHANGELOG.md` 并验证
+
+## Risks
+
+1. `read_file` 结果文案变化属于外显行为变化；回滚策略：只回退 `src/tools/{types,bus}.ts`、`test/tools.bus.test.ts` 与 changelog，不恢复额外解释层以外的逻辑
+2. 如果有别的测试隐式依赖旧文案，需要同步更新到“无 guidance”口径
+
+## Test Plan
+
+- `test/tools.bus.test.ts`
+- `test/p5-7-r3i-fs-scope-policy.test.ts`
+- `npx tsc --noEmit`
+- `npm run docs:check`
+
+（章节级）评审意见：[留空,用户将给出反馈]

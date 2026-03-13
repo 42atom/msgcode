@@ -1,0 +1,54 @@
+# plan-260313-tool-bus-preview-meta-thinning
+
+## Problem
+
+0154 之后，Tool Bus 的 `read_file` 教学层已经收掉，但 success preview 里仍有一批确认句只是在重复“执行成功”，没有新增结构化导航事实。它们让网关继续承担结果解释职责，而不是只返回字段。
+
+## Occam Check
+
+### 不加它，系统具体坏在哪？
+
+- Tool Bus 继续在 success preview 里写“已发送/已写入/已生成”这类确认句
+- preview 仍不是纯事实，而是“事实 + 执行层解释”
+
+### 用更少的层能不能解决？
+
+- 能。直接删除不携带新事实的确认句，保留标签和导航字段
+
+### 这个改动让主链数量变多了还是变少了？
+
+- 变少了。success preview 少一层解释性包装
+
+## Decision
+
+选定方案：保留 `applyPreviewFooter()`、`buildBashPreviewText()`、`buildHelpDocsPreviewText()` 等事实型 preview 组装；删除 write/edit/tts/asr/vision/feishu success preview 中不携带新字段的确认句。
+
+核心理由：
+
+1. 这些句子不提供新证据，只是重复“成功了”
+2. 删除后 preview 仍有足够的 path/id/type/status 导航事实
+3. `applyPreviewFooter()` 仍是事实补足，不属于教学层
+
+## Plan
+
+1. 更新 `issues/0155-tool-bus-preview-meta-thinning.md`
+2. 修改 `src/tools/bus.ts`
+   - 删除 success preview 中无新事实的确认句
+3. 更新测试
+   - `test/tools.bus.test.ts`
+   - `test/p6-feishu-message-context-phase4-actions.test.ts`
+   - `test/p5-7-r12-feishu-send-file.test.ts`
+4. 更新 `docs/CHANGELOG.md` 并验证
+
+## Risks
+
+1. 文案变化属于外显行为变化；回滚策略：只回退 preview helper 和相关测试，不恢复别的层
+2. 若有别的测试锁定旧确认句，需要同步改成字段断言
+
+## Test Plan
+
+- `PATH="$HOME/.bun/bin:$PATH" bun test test/tools.bus.test.ts test/p6-feishu-message-context-phase4-actions.test.ts test/p5-7-r12-feishu-send-file.test.ts`
+- `npx tsc --noEmit`
+- `npm run docs:check`
+
+（章节级）评审意见：[留空,用户将给出反馈]

@@ -81,6 +81,23 @@ describe("P5.7-R7A: browser tool bus", () => {
     expect(result.error?.code).toBe("TOOL_BAD_ARGS");
   });
 
+  it("browser per-operation 缺参应由 runner 返回真实 bad args", async () => {
+    const result = await executeTool(
+      "browser",
+      { operation: "tabs.eval", tabId: "tab_1" },
+      {
+        workspacePath,
+        source: "slash-command",
+        requestId: randomUUID(),
+      }
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.error?.code).toBe("TOOL_EXEC_FAILED");
+    expect(result.error?.message).toContain("BROWSER_BAD_ARGS");
+    expect(result.error?.message).toContain("expression must be a non-empty string");
+  });
+
   it("browser 远端 tab not found 应折叠为 TOOL_EXEC_FAILED 并保留 browser 错误码", async () => {
     __setBrowserPatchrightTestDeps({
       fetchImpl: (async () => {

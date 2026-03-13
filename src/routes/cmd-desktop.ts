@@ -60,7 +60,8 @@ export async function handleDesktopCommand(options: CommandHandlerOptions): Prom
   const { randomUUID } = await import("node:crypto");
 
   const requestId = randomUUID();
-  const result = await executeTool("desktop", { method: `desktop.${subcommand}`, params: {} }, {
+  const method = subcommand === "ping" ? "desktop.health" : `desktop.${subcommand}`;
+  const result = await executeTool("desktop", { method, params: {} }, {
     workspacePath: entry.workspacePath,
     source: "slash-command",
     requestId,
