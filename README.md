@@ -2,6 +2,12 @@
 
 > Feishu-first personal agent runtime on macOS.
 
+当前版本：`v2.4.0`
+
+当前桌面能力面：`ghost_*`
+
+当前发布说明：`docs/release/v2.4.0.md`
+
 msgcode 的目标是把「个人智能体」做成可长期运行的基础设施，而不是一次性的聊天应用。
 
 它有两条执行线：
