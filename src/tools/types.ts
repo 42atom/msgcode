@@ -16,7 +16,6 @@ export type ToolName =
   | "mem"
   | "bash"
   | "browser"
-  // P5.6.13-R1A-EXEC: run_skill 已退役
   | "read_file"  // P5.6.8-R3: PI 四基础工具
   | "help_docs"
   | "write_file"
@@ -42,7 +41,6 @@ export type ToolDataMap = {
     textBytes?: number;
     textTruncated?: boolean;
   };
-  // P5.6.13-R1A-EXEC: run_skill 已退役
   // P5.6.8-R3: PI 四基础工具 data
   read_file: {
     content: string;
@@ -169,7 +167,7 @@ export interface ToolResult<TTool extends ToolName = ToolName> {
   previewText?: string;
   /** artifacts（可选） */
   artifacts?: Array<{
-    kind: "tts" | "asr" | "vision" | "browser" | "log" | "desktop" | "ghost";
+    kind: "tts" | "asr" | "vision" | "browser" | "log" | "ghost";
     path: string;
     digest?: string;
   }>;

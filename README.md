@@ -163,6 +163,23 @@ msgcode start -d
 - `<WORKSPACE>/.msgcode/providers.json`
 - `<WORKSPACE>/.msgcode/SOUL.md`
 
+## 开发必读：真机 Smoke 默认基座
+
+以后凡是说“飞书真机 smoke / live verification”，默认基座固定为这一套：
+
+- **现成群**：优先复用已有 `test-real` 飞书群，不重新建测试群
+- **真实凭据**：优先使用本机 `~/.config/msgcode/.env`，不要看仓库 `.env.example`
+- **默认 workspace**：`/Users/admin/msgcode-workspaces/test-real`
+- **默认方法**：先 `msgcode preflight`，再 `msgcode start`，然后直接去 `test-real` 群发真实消息
+- **默认真相源**：`docs/plan/pl0098.dne.feishu.feishu-live-verification-loop.md`
+- **现成证据**：`AIDOCS/reports/skill-live-run-260312-batch1.md`、`AIDOCS/reports/skill-live-run-260312-batch2.md`
+
+额外约束：
+
+- 不把 bot 自发 API 消息当成完整真机验证
+- 不优先做 Feishu UI 自动化
+- 做 capability live test 前，先检查 `test-real/.msgcode/config.json` 的 `tooling.allow` 是否已打开所需工具面
+
 ## 最小命令集（根 README 口径）
 
 | 命令 | 用途 |
@@ -186,6 +203,13 @@ msgcode start -d
 
 - 当前默认桌面能力面已切到 `ghost_*` 原生工具。
 - 自研 Desktop Bridge 已整体迁入 `docs/archive/retired-desktop-bridge/`；不要再把旧 `mac/` / `docs/desktop/` 当默认入口，现役桌面能力以 `ghost_*` 为准。
+
+## 退役名对照
+
+- `desktop` → `ghost_*`
+- `shell` → `bash`
+- `run_skill` → `SKILL.md + 原生工具/正式 CLI`
+- `mem` → `memory skill + msgcode memory + 自动注入`
 
 ## 记忆机制（L0/L1/L2）
 

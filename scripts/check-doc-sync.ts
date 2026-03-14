@@ -37,12 +37,16 @@ export interface DocSyncReport {
   aidosVerbosePromises: string[];
   /** 协议缺失的必需路径（CLAUDE.md） */
   protocolMissingPaths: string[];
+  /** 禁止的旧目录引用（docs/design/, docs/notes/） */
+  protocolRetiredRefs: string[];
   /** issues 目录中不符合命名规则的文件 */
   protocolInvalidIssueFiles: string[];
   /** docs/design 中不符合命名规则的 Plan 文件 */
   protocolInvalidPlanFiles: string[];
   /** 根 CHANGELOG 兼容提示缺失 */
   protocolRootChangelogCompatibility: string[];
+  /** 现役入口错误使用退役工具名 */
+  protocolRetiredToolNames: string[];
   /** issue 缺失 front matter */
   protocolIssueMissingFrontMatter: string[];
   /** issue 缺失必需 front matter 字段 */
@@ -104,15 +108,12 @@ const AIDOS_REQUIRED_SECTIONS = [
 ];
 
 /**
- * CLAUDE 文档协议必需路径
+ * CLAUDE 文档协议必需路径（新协议）
  */
 const REQUIRED_PROTOCOL_PATHS = [
   "issues",
   "issues/_template.md",
-  "docs/design",
-  "docs/design/plan-template.md",
-  "docs/notes",
-  "docs/notes/research-template.md",
+  "docs/plan",
   "docs/adr",
   "docs/adr/ADR-template.md",
   "docs/CHANGELOG.md",
@@ -335,6 +336,60 @@ function checkAidosVerbosePromises(): string[] {
   return violations;
 }
 
+const RETIRED_TOOL_ENTRY_FILES = [
+  "README.md",
+  "docs/README.md",
+  "prompts/agents-prompt.md",
+  "src/skills/README.md",
+];
+
+const RETIRED_TOOL_NAMES = ["desktop", "run_skill", "shell", "mem"];
+const RETIRED_CONTEXT_HINTS = [
+  "退役",
+  "已退役",
+  "legacy",
+  "历史",
+  "旧",
+  "替代",
+  "不再",
+  "已切到",
+  "已迁入",
+  "对照",
+  "不是工具名",
+];
+
+function checkRetiredToolNamesInActiveEntryDocs(): string[] {
+  const violations: string[] = [];
+
+  for (const relPath of RETIRED_TOOL_ENTRY_FILES) {
+    const absPath = path.join(process.cwd(), relPath);
+    if (!fs.existsSync(absPath)) continue;
+
+    const lines = fs.readFileSync(absPath, "utf-8").split("\n");
+
+    lines.forEach((line, index) => {
+      const context = [lines[index - 5], lines[index - 4], lines[index - 3], lines[index - 2], lines[index - 1], line]
+        .filter(Boolean)
+        .join(" ");
+      const lowered = context.toLowerCase();
+      const hasRetiredContext = RETIRED_CONTEXT_HINTS.some((hint) => lowered.includes(hint.toLowerCase()));
+      if (hasRetiredContext) return;
+
+      for (const retiredName of RETIRED_TOOL_NAMES) {
+        const exactToolNameMention = line.includes(`\`${retiredName}\``);
+        const slashCommandMention = retiredName === "desktop" && /\/desktop\b/.test(line);
+
+        if (exactToolNameMention || slashCommandMention) {
+          violations.push(`${relPath}:${index + 1}: ${line.trim()}`);
+          break;
+        }
+      }
+    });
+  }
+
+  return violations;
+}
+
 /**
  * 检查 CLAUDE 文档协议必需路径
  */
@@ -350,7 +405,60 @@ function checkProtocolRequiredPaths(): string[] {
 }
 
 /**
- * 检查 issues 文件命名规则：NNNN-<slug>.md
+ * 检查禁止的旧目录引用
+ * docs/design/ 和 docs/notes/ 已退役，禁止在任何文档中作为引用路径出现（.md 结尾）
+ */
+function checkRetiredDirectoryReferences(): string[] {
+  const issues: string[] = [];
+  const docs: string[] = [];
+  const excludeDirs = ["AIDOCS", "docs/archive"];
+
+  // 检查 issues 目录
+  const issuesDir = path.join(process.cwd(), "issues");
+  if (fs.existsSync(issuesDir)) {
+    const entries = fs.readdirSync(issuesDir);
+    for (const entry of entries) {
+      if (!entry.endsWith(".md")) continue;
+      const content = fs.readFileSync(path.join(issuesDir, entry), "utf-8");
+      // 只检查真正的路径引用，如 docs/design/xxx.md（不是目录名描述）
+      // 匹配模式: docs/design/xxx.md 或 docs/notes/xxx.md（后面直接跟文件名）
+      if (/docs\/design\/[a-zA-Z][-a-zA-Z0-9_]*\.md\b/.test(content) || /docs\/notes\/[a-zA-Z][-a-zA-Z0-9_]*\.md\b/.test(content)) {
+        issues.push(`issues/${entry}`);
+      }
+    }
+  }
+
+  // 检查 docs 目录（排除 archive 和 tasks 旧归档）
+  const docsDir = path.join(process.cwd(), "docs");
+  if (fs.existsSync(docsDir)) {
+    const entries = fs.readdirSync(docsDir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      // 排除 archive 和 tasks（旧归档目录）
+      if (excludeDirs.includes(entry.name) || entry.name === "tasks") continue;
+
+      const subDir = path.join(docsDir, entry.name);
+      const subEntries = fs.readdirSync(subDir);
+      for (const subEntry of subEntries) {
+        if (!subEntry.endsWith(".md")) continue;
+        const content = fs.readFileSync(path.join(subDir, subEntry), "utf-8");
+        // 只检查真正的路径引用
+        if (/docs\/design\/[a-zA-Z][-a-zA-Z0-9_]*\.md\b/.test(content) || /docs\/notes\/[a-zA-Z][-a-zA-Z0-9_]*\.md\b/.test(content)) {
+          docs.push(`docs/${entry.name}/${subEntry}`);
+        }
+      }
+    }
+  }
+
+  return [...issues, ...docs];
+}
+
+/**
+ * 检查 issues 文件命名规则：tkNNNN.state.board[.prio].slug.md
+ * 新协议格式：tk<id>.<state>.<board>[.<prio>].<slug>.md
+ * 状态：tdo, doi, rvw, bkd, pss, dne, cand, arvd
+ * board：runtime, agent, feishu, browser, ghost, tools, schedule, docs, product, model, release 等
+ * prio（可选）：p0, p1, p2（仅活跃 task 使用）
  */
 function checkIssueFilenameProtocol(): string[] {
   const issuesDir = path.join(process.cwd(), "issues");
@@ -359,11 +467,20 @@ function checkIssueFilenameProtocol(): string[] {
   const invalid: string[] = [];
   const entries = fs.readdirSync(issuesDir, { withFileTypes: true });
 
+  // 新协议正则：tkNNNN.state.board[.prio].slug.md
+  // 格式：tk<id>.<state>.<board>[.p<0-2>].<slug>.md
+  // 示例：tk0004.doi.browser.p0.web-transaction-platform-core.md
+  const newProtocolPattern = /^tk\d{4}\.(tdo|doi|rvw|bkd|pss|dne|cand|arvd)\.[a-z][a-z0-9-]+(\.(p0|p1|p2))?\.[a-z][a-z0-9-]+\.md$/;
+
   for (const entry of entries) {
     if (!entry.isFile()) continue;
     if (!entry.name.endsWith(".md")) continue;
     if (entry.name === "README.md" || entry.name === "_template.md") continue;
-    if (!/^\d{4}-[a-z0-9][a-z0-9-]*\.md$/.test(entry.name)) {
+
+    // 允许模板文件
+    if (entry.name.startsWith("_")) continue;
+
+    if (!newProtocolPattern.test(entry.name)) {
       invalid.push(`issues/${entry.name}`);
     }
   }
@@ -372,21 +489,30 @@ function checkIssueFilenameProtocol(): string[] {
 }
 
 /**
- * 检查 Plan 文件命名规则：plan-YYMMDD-<topic>.md
+ * 检查 Plan/Research/Refactor 文件命名规则（新协议）
+ * 位置：docs/plan/
+ * 格式：pl/rs/rf/rpNNNN.state.board[.prio].slug.md
  */
 function checkPlanFilenameProtocol(): string[] {
-  const designDir = path.join(process.cwd(), "docs", "design");
-  if (!fs.existsSync(designDir)) return [];
+  const planDir = path.join(process.cwd(), "docs", "plan");
+  if (!fs.existsSync(planDir)) return [];
 
   const invalid: string[] = [];
-  const entries = fs.readdirSync(designDir, { withFileTypes: true });
+  const entries = fs.readdirSync(planDir, { withFileTypes: true });
+
+  // 新协议正则：(pl|rs|rf|rp)NNNN.(tdo|doi|rvw|bkd|pss|dne|cand|arvd).board[.prio].slug.md
+  const newProtocolPattern = /^(pl|rs|rf|rp)\d{4}\.(tdo|doi|rvw|bkd|pss|dne|cand|arvd)\.[a-z][a-z0-9-]+(\.(p0|p1|p2))?\.[a-z0-9-]+\.md$/;
 
   for (const entry of entries) {
     if (!entry.isFile()) continue;
     if (!entry.name.endsWith(".md")) continue;
     if (entry.name === "README.md" || entry.name === "plan-template.md") continue;
-    if (!/^plan-\d{6}-[a-z0-9][a-z0-9-]*\.md$/.test(entry.name)) {
-      invalid.push(`docs/design/${entry.name}`);
+
+    // 允许模板文件
+    if (entry.name.startsWith("_")) continue;
+
+    if (!newProtocolPattern.test(entry.name)) {
+      invalid.push(`docs/plan/${entry.name}`);
     }
   }
 
@@ -495,9 +621,13 @@ function checkIssuePlanTaskLinkage(): {
     }
 
     const issueId = extractYamlScalar(frontMatter, "id");
-    const filenamePrefix = entry.name.split("-")[0] ?? "";
-    if (issueId && issueId !== filenamePrefix) {
-      protocolIssueIdMismatch.push(`${issuePath}: id=${issueId}, filename=${filenamePrefix}`);
+
+    // 新协议格式：tkNNNN.state.board[.prio].slug.md
+    // 提取 id：tkNNNN -> NNNN
+    const filenameIdMatch = entry.name.match(/^tk(\d{4})\./);
+    const filenameId = filenameIdMatch ? filenameIdMatch[1] : "";
+    if (issueId && filenameId && issueId !== filenameId) {
+      protocolIssueIdMismatch.push(`${issuePath}: id=${issueId}, filename=tk${filenameId}`);
     }
 
     for (const section of REQUIRED_ISSUE_SECTIONS) {
@@ -513,10 +643,32 @@ function checkIssuePlanTaskLinkage(): {
         protocolIssueInvalidPlanDoc.push(`${issuePath}: plan_doc 为占位符`);
         continue;
       }
-      const absolutePlanPath = path.join(process.cwd(), planDoc);
-      if (!fs.existsSync(absolutePlanPath)) {
-        protocolIssueInvalidPlanDoc.push(`${issuePath}: ${planDoc} 不存在`);
+      let absolutePlanPath = path.join(process.cwd(), planDoc);
+      // 1. 直接检查原路径是否存在
+      if (fs.existsSync(absolutePlanPath)) {
+        continue;
       }
+      // 2. 尝试查找对应的 plan 文件（新协议或旧协议）
+      // 提取 slug: plan-260306-xxx -> xxx (去掉日期前缀)
+      const slugMatch = planDoc.match(/plan-(\d{6}-[^.]+)\.md$/) || planDoc.match(/plan\/plan-(\d{6}-[^.]+)\.md$/);
+      if (slugMatch) {
+        const slug = slugMatch[1].replace(/^\d{6}-/, ""); // 去掉 YYYYMMDD- 前缀
+        // 在 docs/plan/ 中查找包含此 slug 的文件
+        const planDir = path.join(process.cwd(), "docs", "plan");
+        if (fs.existsSync(planDir)) {
+          const files = fs.readdirSync(planDir);
+          const match = files.find(f => f.includes(slug));
+          if (match) {
+            continue; // 找到对应文件
+          }
+        }
+      }
+      // 3. 检查直接路径（去掉旧前缀）
+      const directPath = planDoc.replace("docs/design/", "docs/plan/").replace("docs/plan/plan-", "docs/plan/");
+      if (fs.existsSync(path.join(process.cwd(), directPath))) {
+        continue;
+      }
+      protocolIssueInvalidPlanDoc.push(`${issuePath}: ${planDoc} 不存在`);
     }
   }
 
@@ -556,9 +708,11 @@ export async function checkDocSync(): Promise<DocSyncReport> {
   const aidosBrokenLinks = checkAidosLinksExist();
   const aidosVerbosePromises = checkAidosVerbosePromises();
   const protocolMissingPaths = checkProtocolRequiredPaths();
+  const protocolRetiredRefs = checkRetiredDirectoryReferences();
   const protocolInvalidIssueFiles = checkIssueFilenameProtocol();
   const protocolInvalidPlanFiles = checkPlanFilenameProtocol();
   const protocolRootChangelogCompatibility = checkRootChangelogCompatibility();
+  const protocolRetiredToolNames = checkRetiredToolNamesInActiveEntryDocs();
   const issuePlanTaskLinkage = checkIssuePlanTaskLinkage();
 
   const passed =
@@ -569,9 +723,11 @@ export async function checkDocSync(): Promise<DocSyncReport> {
     aidosBrokenLinks.length === 0 &&
     aidosVerbosePromises.length === 0 &&
     protocolMissingPaths.length === 0 &&
+    protocolRetiredRefs.length === 0 &&
     protocolInvalidIssueFiles.length === 0 &&
     protocolInvalidPlanFiles.length === 0 &&
     protocolRootChangelogCompatibility.length === 0 &&
+    protocolRetiredToolNames.length === 0 &&
     issuePlanTaskLinkage.protocolIssueMissingFrontMatter.length === 0 &&
     issuePlanTaskLinkage.protocolIssueMissingFields.length === 0 &&
     issuePlanTaskLinkage.protocolIssueIdMismatch.length === 0 &&
@@ -586,9 +742,11 @@ export async function checkDocSync(): Promise<DocSyncReport> {
     aidosBrokenLinks,
     aidosVerbosePromises,
     protocolMissingPaths,
+    protocolRetiredRefs,
     protocolInvalidIssueFiles,
     protocolInvalidPlanFiles,
     protocolRootChangelogCompatibility,
+    protocolRetiredToolNames,
     protocolIssueMissingFrontMatter: issuePlanTaskLinkage.protocolIssueMissingFrontMatter,
     protocolIssueMissingFields: issuePlanTaskLinkage.protocolIssueMissingFields,
     protocolIssueIdMismatch: issuePlanTaskLinkage.protocolIssueIdMismatch,
@@ -676,8 +834,16 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       console.error("");
     }
 
+    if (report.protocolRetiredRefs.length > 0) {
+      console.error("禁止的旧目录引用（docs/design/, docs/notes/）：");
+      for (const p of report.protocolRetiredRefs) {
+        console.error(`  - ${p}`);
+      }
+      console.error("");
+    }
+
     if (report.protocolInvalidIssueFiles.length > 0) {
-      console.error("issues 文件命名不合规（应为 NNNN-<slug>.md）：");
+      console.error("issues 文件命名不合规（应为 tkNNNN.state.board[.prio].slug.md）：");
       for (const p of report.protocolInvalidIssueFiles) {
         console.error(`  - ${p}`);
       }
@@ -685,7 +851,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     }
 
     if (report.protocolInvalidPlanFiles.length > 0) {
-      console.error("Plan 文件命名不合规（应为 plan-YYMMDD-<topic>.md）：");
+      console.error("Plan/Research 文件命名不合规（应为 pl/rs/rf/rpNNNN.state.board[.prio].slug.md）：");
       for (const p of report.protocolInvalidPlanFiles) {
         console.error(`  - ${p}`);
       }
@@ -697,6 +863,16 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       for (const p of report.protocolRootChangelogCompatibility) {
         console.error(`  - ${p}`);
       }
+      console.error("");
+    }
+
+    if (report.protocolRetiredToolNames.length > 0) {
+      console.error("现役入口错误使用退役工具名：");
+      for (const p of report.protocolRetiredToolNames) {
+        console.error(`  - ${p}`);
+      }
+      console.error("");
+      console.error("提示：现役入口只能写现役替代名；退役名只能放在历史/迁移/对照语境。");
       console.error("");
     }
 

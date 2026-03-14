@@ -69,7 +69,6 @@ const TOOL_META: Record<ToolName, { sideEffect: SideEffectLevel }> = {
   mem: { sideEffect: "local-write" },
   bash: { sideEffect: "process-control" },
   browser: { sideEffect: "process-control" },
-  // P5.6.13-R1A-EXEC: run_skill 已退役
   read_file: { sideEffect: "read-only" },  // P5.6.8-R3: PI 四基础工具
   help_docs: { sideEffect: "read-only" },
   write_file: { sideEffect: "local-write" },

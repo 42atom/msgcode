@@ -346,6 +346,280 @@ export async function killMsgcodeTmuxSessions(): Promise<string[]> {
   }
 }
 
+// ============================================
+// Batch 3: Runtime Services Initialization
+// ============================================
+
+/**
+ * Lane queue：按 chatGuid 串行化执行（用户消息与 job 注入共享）
+ */
+function enqueueLane<T>(laneId: string, fn: () => Promise<T>): Promise<T> {
+  const prev = perChatQueue.get(laneId) ?? Promise.resolve() as Promise<unknown>;
+  const next = prev.catch(() => {}).then(async () => {
+    if (process.env.DEBUG_TRACE === "1") {
+      logger.debug("Lane 执行开始", { module: "commands", laneId });
+    }
+    try {
+      return await fn();
+    } finally {
+      if (perChatQueue.get(laneId) === next) {
+        perChatQueue.delete(laneId);
+      }
+    }
+  }) as Promise<T>;
+  perChatQueue.set(laneId, next as Promise<void>);
+  return next;
+}
+
+/**
+ * 创建并启动 JobScheduler
+ * 注意：依赖 sendClient，需在 sendClient 初始化后调用
+ */
+async function initJobScheduler(): Promise<void> {
+  const { createJobScheduler, registerActiveJobScheduler } = await import("./jobs/scheduler.js");
+  const { getRouteByChatId } = await import("./routes/store.js");
+  const { executeJob } = await import("./jobs/runner.js");
+
+  jobScheduler = createJobScheduler({
+    getRouteFn: getRouteByChatId,
+    executeJobFn: async (job) => {
+      // 使用 lane queue 串行化同一 chatGuid 的执行
+      return enqueueLane(job.route.chatGuid, () => executeJob(job, {
+        delivery: true,
+        sendReply: async (chatId, text) => {
+          if (!sendClient) {
+            throw new Error("sendClient 未初始化");
+          }
+          await sendClient.send({ chatId, text });
+        },
+      }));
+    },
+    onTick: (info) => {
+      logger.info("Scheduler tick", { module: "commands", dueJobs: info.dueJobs.length });
+    },
+  });
+  registerActiveJobScheduler(jobScheduler);
+
+  await jobScheduler.start();
+  logger.info("JobScheduler 已启动", { module: "commands" });
+}
+
+/**
+ * 初始化并启动 Task Runtime（TaskSupervisor + Heartbeat + Event Queue）
+ */
+async function initTaskRuntime(): Promise<void> {
+  // P5.7-R12-T1: 初始化并启动 Heartbeat Runner
+  const { HeartbeatRunner } = await import("./runtime/heartbeat.js");
+  heartbeatRunner = new HeartbeatRunner({ tag: "msgcode" });
+
+  // P5.7-R12: 初始化并启动 Task Supervisor
+  const { createTaskSupervisor } = await import("./runtime/task-supervisor.js");
+  const { assembleAgentContext } = await import("./runtime/context-policy.js");
+  const { initializeEventQueue, restoreAllQueuesFromDisk } = await import("./steering-queue.js");
+  const { executeAgentTurn } = await import("./agent-backend.js");
+  const taskDir = `${config.workspaceRoot}/.msgcode/tasks`;
+  const eventQueueDir = `${config.workspaceRoot}/.msgcode/event-queue`;
+  initializeEventQueue(eventQueueDir);
+  const restoredQueues = await restoreAllQueuesFromDisk();
+  taskSupervisor = createTaskSupervisor({
+    taskDir,
+    eventQueueDir,
+    heartbeatIntervalMs: 60_000,
+    executeTaskTurn: async (task, runContext) => {
+      const assembledContext = await assembleAgentContext({
+        source: runContext.source,
+        chatId: task.chatId,
+        prompt: task.goal,
+        workspacePath: task.workspacePath,
+        taskGoal: task.goal,
+        checkpoint: task.checkpoint,
+        includeSoulContext: true,
+        runId: runContext.runId,
+        sessionKey: runContext.sessionKey,
+      });
+
+      return executeAgentTurn({
+        prompt: assembledContext.prompt,
+        workspacePath: task.workspacePath,
+        windowMessages: assembledContext.windowMessages,
+        summaryContext: assembledContext.summaryContext,
+        soulContext: assembledContext.soulContext,
+        traceId: runContext.runId,
+        runContext: {
+          runId: runContext.runId,
+          sessionKey: runContext.sessionKey,
+          source: runContext.source,
+        },
+      });
+    },
+  });
+
+  // 启动 Task Supervisor（heartbeat 由 commands 统一接线）
+  await taskSupervisor.start();
+
+  heartbeatRunner.onTick(async (ctx) => {
+    // Heartbeat tick 回调：目前仅做观测日志
+    logger.debug("Heartbeat tick 触发", {
+      module: "commands",
+      tickId: ctx.tickId,
+      reason: ctx.reason,
+    });
+
+    if (taskSupervisor) {
+      await taskSupervisor.handleHeartbeatTick(ctx);
+    }
+  });
+  heartbeatRunner.start();
+  logger.info("Heartbeat 已启动", { module: "commands" });
+  logger.info("Task Supervisor 已启动", {
+    module: "commands",
+    taskDir,
+    eventQueueDir,
+    restoredQueueChats: restoredQueues.chatCount,
+    restoredQueueEvents: restoredQueues.eventCount,
+  });
+}
+
+// ============================================
+// Batch 4: Inbound Dispatcher (Transport + Message Handler)
+// ============================================
+
+/**
+ * 创建消息分发器：启动 Feishu transport 并返回消息处理函数
+ * 依赖：sendClient（需外部传入）
+ * 注意：handleInbound 需要访问模块级 perChatQueue/perChatAbort/CONTROL_READONLY_COMMANDS
+ */
+async function createInboundDispatcher(
+  sendClient: ChannelSendClient
+): Promise<(message: InboundMessage) => void> {
+  const { handleMessage } = await import("./listener.js");
+
+  // 按 chat 串行处理消息，避免"回复错位/滞后一条"的乱序现象
+  // 允许不同 chat 并行，但同一 chat 必须严格有序。
+  // E16: 添加 DEBUG_TRACE 支持以追踪队列状态
+  const handleInbound = (message: InboundMessage) => {
+    const chatKey = message.chatId;
+    const prev = perChatQueue.get(chatKey) ?? Promise.resolve();
+    const text = (message.text ?? "").trim();
+    const textLength = text.length;
+    const textDigest = text ? crypto.createHash("sha256").update(text).digest("hex").slice(0, 12) : "";
+
+    // P0：控制面命令抢占（远程手机端必须能随时 /status /stop /esc）
+    // 规则：只有中断命令才抢占当前任务（/esc /stop /clear）
+    // 其他 slash command（如 /status）排队到任务结束后回复
+    const isInterrupt = /^\/(esc|stop|clear)(\s|$)/.test(text);
+    if (isInterrupt) {
+      const controller = perChatAbort.get(chatKey);
+      if (controller && !controller.signal.aborted) {
+        controller.abort();
+      }
+    }
+
+    // ============================================
+    // Control Lane: 只读命令快车道（/status /where /help）
+    // ============================================
+    const isControlCommand = CONTROL_READONLY_COMMANDS.test(text);
+    if (isControlCommand) {
+      // 快车道：立即异步回复（不等待队列）
+      handleControlCommandInFastLane(message).catch((err: unknown) => {
+        logger.error("Control Lane 快车道处理失败", {
+          module: "commands",
+          chatId: chatKey,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+      // 仍然入队（为了后续按序推进 cursor）
+      // 队列里检测到 wasFastReplied 时会跳过实际处理
+    }
+
+    // E16: trace 队列状态
+    if (process.env.DEBUG_TRACE === "1") {
+      const queueSize = perChatQueue.size;
+      const hasPending = perChatQueue.has(chatKey);
+      logger.debug("消息入队", {
+        module: "commands",
+        chatId: chatKey,
+        rowid: message.rowid,
+        queueSize,
+        hasPending,
+        textLength,
+        textDigest,
+        ...(process.env.DEBUG_TRACE_TEXT === "1" ? { textPreview: text.slice(0, 30) } : {}),
+      });
+    }
+
+    const next = prev
+      .catch(() => {
+        // 上一个任务失败不应阻塞后续
+        if (process.env.DEBUG_TRACE === "1") {
+          logger.debug("队列前置任务失败，继续", {
+            module: "commands",
+            chatId: chatKey,
+          });
+        }
+      })
+      .then(async () => {
+        const controller = new AbortController();
+        perChatAbort.set(chatKey, controller);
+        if (process.env.DEBUG_TRACE === "1") {
+          logger.debug("开始处理消息", {
+            module: "commands",
+            chatId: chatKey,
+            rowid: message.rowid,
+          });
+        }
+        try {
+          await handleMessage(message, { sendClient, signal: controller.signal });
+        } finally {
+          // 只清理自己的 controller（避免并发覆盖）
+          if (perChatAbort.get(chatKey) === controller) {
+            perChatAbort.delete(chatKey);
+          }
+        }
+      })
+      .catch((error: unknown) => {
+        logger.error("处理消息失败", {
+          module: "commands",
+          chatId: chatKey,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      })
+      .finally(() => {
+        if (perChatQueue.get(chatKey) === next) {
+          perChatQueue.delete(chatKey);
+          if (process.env.DEBUG_TRACE === "1") {
+            logger.debug("队列清理完成", {
+              module: "commands",
+              chatId: chatKey,
+            });
+          }
+        }
+      });
+
+    perChatQueue.set(chatKey, next);
+  };
+
+  try {
+    if (!config.feishu) {
+      throw new Error("Feishu-only 主链未配置 FEISHU_APP_ID / FEISHU_APP_SECRET");
+    }
+    const { createFeishuTransport } = await import("./feishu/transport.js");
+    feishuTransport = createFeishuTransport({
+      appId: config.feishu.appId,
+      appSecret: config.feishu.appSecret,
+      encryptKey: config.feishu.encryptKey,
+      onInbound: (m) => handleInbound(m),
+    });
+    await feishuTransport.start();
+    logger.info("Feishu transport 已启用", { module: "commands" });
+  } catch (error) {
+    feishuTransport = null;
+    throw error;
+  }
+
+  return handleInbound;
+}
+
 export async function startBot(): Promise<void> {
   // M4-B: Preflight 校验（启动前检查依赖）
   const { loadManifest } = await import("./deps/load.js");
@@ -434,7 +708,6 @@ export async function startBot(): Promise<void> {
   }
 
   const transports = config.transports;
-  const activeTransports: RuntimeTransport[] = [];
 
   // 统一发送口径：当前正式主链只允许 Feishu chatId（feishu:oc_xxx）。
   sendClient = {
@@ -450,252 +723,14 @@ export async function startBot(): Promise<void> {
     },
   };
 
-  // M3.2-2: 初始化 JobScheduler（daemon 自动调度）
-  const { createJobScheduler, registerActiveJobScheduler } = await import("./jobs/scheduler.js");
-  const { getRouteByChatId } = await import("./routes/store.js");
-  const { executeJob } = await import("./jobs/runner.js");
+  // Batch 3: Runtime Services
+  await initJobScheduler();
+  await initTaskRuntime();
 
-  // Lane queue：按 chatGuid 串行化执行（用户消息与 job 注入共享）
-  function enqueueLane<T>(laneId: string, fn: () => Promise<T>): Promise<T> {
-    const prev = perChatQueue.get(laneId) ?? Promise.resolve() as Promise<unknown>;
-    const next = prev.catch(() => {}).then(async () => {
-      if (process.env.DEBUG_TRACE === "1") {
-        logger.debug("Lane 执行开始", { module: "commands", laneId });
-      }
-      try {
-        return await fn();
-      } finally {
-        if (perChatQueue.get(laneId) === next) {
-          perChatQueue.delete(laneId);
-        }
-      }
-    }) as Promise<T>;
-    perChatQueue.set(laneId, next as Promise<void>);
-    return next;
-  }
+  // Batch 4: Inbound Dispatcher
+  await createInboundDispatcher(sendClient);
 
-  jobScheduler = createJobScheduler({
-    getRouteFn: getRouteByChatId,
-    executeJobFn: async (job) => {
-      // 使用 lane queue 串行化同一 chatGuid 的执行
-      return enqueueLane(job.route.chatGuid, () => executeJob(job, {
-        delivery: true,
-        sendReply: async (chatId, text) => {
-          if (!sendClient) {
-            throw new Error("sendClient 未初始化");
-          }
-          await sendClient.send({ chatId, text });
-        },
-      }));
-    },
-    onTick: (info) => {
-      logger.info("Scheduler tick", { module: "commands", dueJobs: info.dueJobs.length });
-    },
-  });
-  registerActiveJobScheduler(jobScheduler);
-
-  await jobScheduler.start();
-  logger.info("JobScheduler 已启动", { module: "commands" });
-
-  // P5.7-R12-T1: 初始化并启动 Heartbeat Runner
-  const { HeartbeatRunner } = await import("./runtime/heartbeat.js");
-  heartbeatRunner = new HeartbeatRunner({ tag: "msgcode" });
-
-  // P5.7-R12: 初始化并启动 Task Supervisor
-  const { createTaskSupervisor } = await import("./runtime/task-supervisor.js");
-  const { assembleAgentContext } = await import("./runtime/context-policy.js");
-  const { initializeEventQueue, restoreAllQueuesFromDisk } = await import("./steering-queue.js");
-  const { executeAgentTurn } = await import("./agent-backend.js");
-  const taskDir = `${config.workspaceRoot}/.msgcode/tasks`;
-  const eventQueueDir = `${config.workspaceRoot}/.msgcode/event-queue`;
-  initializeEventQueue(eventQueueDir);
-  const restoredQueues = await restoreAllQueuesFromDisk();
-  taskSupervisor = createTaskSupervisor({
-    taskDir,
-    eventQueueDir,
-    heartbeatIntervalMs: 60_000,
-    executeTaskTurn: async (task, runContext) => {
-      const assembledContext = await assembleAgentContext({
-        source: runContext.source,
-        chatId: task.chatId,
-        prompt: task.goal,
-        workspacePath: task.workspacePath,
-        taskGoal: task.goal,
-        checkpoint: task.checkpoint,
-        includeSoulContext: true,
-        runId: runContext.runId,
-        sessionKey: runContext.sessionKey,
-      });
-
-      return executeAgentTurn({
-        prompt: assembledContext.prompt,
-        workspacePath: task.workspacePath,
-        windowMessages: assembledContext.windowMessages,
-        summaryContext: assembledContext.summaryContext,
-        soulContext: assembledContext.soulContext,
-        traceId: runContext.runId,
-        runContext: {
-          runId: runContext.runId,
-          sessionKey: runContext.sessionKey,
-          source: runContext.source,
-        },
-      });
-    },
-  });
-
-  // 启动 Task Supervisor（heartbeat 由 commands 统一接线）
-  await taskSupervisor.start();
-
-  heartbeatRunner.onTick(async (ctx) => {
-    // Heartbeat tick 回调：目前仅做观测日志
-    logger.debug("Heartbeat tick 触发", {
-      module: "commands",
-      tickId: ctx.tickId,
-      reason: ctx.reason,
-    });
-
-    if (taskSupervisor) {
-      await taskSupervisor.handleHeartbeatTick(ctx);
-    }
-  });
-  heartbeatRunner.start();
-  logger.info("Heartbeat 已启动", { module: "commands" });
-  logger.info("Task Supervisor 已启动", {
-    module: "commands",
-    taskDir,
-    eventQueueDir,
-    restoredQueueChats: restoredQueues.chatCount,
-    restoredQueueEvents: restoredQueues.eventCount,
-  });
-
-  const { handleMessage } = await import("./listener.js");
-
-  // 按 chat 串行处理消息，避免"回复错位/滞后一条"的乱序现象
-  // 允许不同 chat 并行，但同一 chat 必须严格有序。
-  // E16: 添加 DEBUG_TRACE 支持以追踪队列状态
-  const handleInbound = (message: InboundMessage) => {
-    const chatKey = message.chatId;
-    const prev = perChatQueue.get(chatKey) ?? Promise.resolve();
-    const text = (message.text ?? "").trim();
-    const textLength = text.length;
-    const textDigest = text ? crypto.createHash("sha256").update(text).digest("hex").slice(0, 12) : "";
-
-    // P0：控制面命令抢占（远程手机端必须能随时 /status /stop /esc）
-    // 规则：只有中断命令才抢占当前任务（/esc /stop /clear）
-    // 其他 slash command（如 /status）排队到任务结束后回复
-    const isInterrupt = /^\/(esc|stop|clear)(\s|$)/.test(text);
-    if (isInterrupt) {
-      const controller = perChatAbort.get(chatKey);
-      if (controller && !controller.signal.aborted) {
-        controller.abort();
-      }
-    }
-
-    // ============================================
-    // Control Lane: 只读命令快车道（/status /where /help）
-    // ============================================
-    const isControlCommand = CONTROL_READONLY_COMMANDS.test(text);
-    if (isControlCommand) {
-      // 快车道：立即异步回复（不等待队列）
-      handleControlCommandInFastLane(message).catch((err: unknown) => {
-        logger.error("Control Lane 快车道处理失败", {
-          module: "commands",
-          chatId: chatKey,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      });
-      // 仍然入队（为了后续按序推进 cursor）
-      // 队列里检测到 wasFastReplied 时会跳过实际处理
-    }
-
-    // E16: trace 队列状态
-    if (process.env.DEBUG_TRACE === "1") {
-      const queueSize = perChatQueue.size;
-      const hasPending = perChatQueue.has(chatKey);
-      logger.debug("消息入队", {
-        module: "commands",
-        chatId: chatKey,
-        rowid: message.rowid,
-        queueSize,
-        hasPending,
-        textLength,
-        textDigest,
-        ...(process.env.DEBUG_TRACE_TEXT === "1" ? { textPreview: text.slice(0, 30) } : {}),
-      });
-    }
-
-    const next = prev
-      .catch(() => {
-        // 上一个任务失败不应阻塞后续
-        if (process.env.DEBUG_TRACE === "1") {
-          logger.debug("队列前置任务失败，继续", {
-            module: "commands",
-            chatId: chatKey,
-          });
-        }
-      })
-      .then(async () => {
-        const controller = new AbortController();
-        perChatAbort.set(chatKey, controller);
-        if (process.env.DEBUG_TRACE === "1") {
-          logger.debug("开始处理消息", {
-            module: "commands",
-            chatId: chatKey,
-            rowid: message.rowid,
-          });
-        }
-        try {
-          if (!sendClient) {
-            throw new Error("sendClient 未初始化");
-          }
-          await handleMessage(message, { sendClient, signal: controller.signal });
-        } finally {
-          // 只清理自己的 controller（避免并发覆盖）
-          if (perChatAbort.get(chatKey) === controller) {
-            perChatAbort.delete(chatKey);
-          }
-        }
-      })
-      .catch((error: unknown) => {
-        logger.error("处理消息失败", {
-          module: "commands",
-          chatId: chatKey,
-          error: error instanceof Error ? error.message : String(error),
-        });
-      })
-      .finally(() => {
-        if (perChatQueue.get(chatKey) === next) {
-          perChatQueue.delete(chatKey);
-          if (process.env.DEBUG_TRACE === "1") {
-            logger.debug("队列清理完成", {
-              module: "commands",
-              chatId: chatKey,
-            });
-          }
-        }
-      });
-
-    perChatQueue.set(chatKey, next);
-  };
-
-  try {
-    if (!config.feishu) {
-      throw new Error("Feishu-only 主链未配置 FEISHU_APP_ID / FEISHU_APP_SECRET");
-    }
-    const { createFeishuTransport } = await import("./feishu/transport.js");
-    feishuTransport = createFeishuTransport({
-      appId: config.feishu.appId,
-      appSecret: config.feishu.appSecret,
-      encryptKey: config.feishu.encryptKey,
-      onInbound: (m) => handleInbound(m),
-    });
-    await feishuTransport.start();
-    activeTransports.push("feishu");
-    logger.info("Feishu transport 已启用", { module: "commands" });
-  } catch (error) {
-    feishuTransport = null;
-    throw error;
-  }
+  const activeTransports: RuntimeTransport[] = ["feishu"];
 
   console.log(`msgcode 已启动（transports: ${activeTransports.join(",")}）`);
   logger.info("msgcode 已启动", {

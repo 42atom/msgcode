@@ -6,7 +6,7 @@ owner: agent
 labels: [docs]
 risk: low
 scope: <受影响模块/边界一句话>
-plan_doc: docs/design/plan-YYMMDD-<topic>.md
+plan_doc: docs/plan/pl0000.<state>.<board>.<slug>.md
 links: []
 ---
 
@@ -36,6 +36,6 @@ links: []
 
 ## Links
 
-- Plan: <docs/design/plan-...>
+- Plan: <docs/plan/pl...>
 - Task: <docs/tasks/...>
 

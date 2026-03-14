@@ -20,7 +20,15 @@ test/
 2. 禁止新增 `.only` / `.skip`。
 3. 失败定位优先输出错误码与合同字段，避免只校验文案文本。
 
+## 开发必读：真实通道回归
+
+1. 飞书真机 smoke 默认使用已有 `test-real` 群。
+2. 默认 workspace：`/Users/admin/msgcode-workspaces/test-real`。
+3. 默认凭据来源：`~/.config/msgcode/.env`。
+4. 默认流程：`msgcode preflight` → `msgcode start` → 在 `test-real` 群发真实测试消息。
+5. 默认方法论真相源：`docs/plan/pl0098.dne.feishu.feishu-live-verification-loop.md`。
+6. 若测 skill / browser / file 回传，先检查 `test-real/.msgcode/config.json` 的 `tooling.allow`。
+
 ## 变更日志
 
 1. 2026-02-23：新增本文件，明确测试层结构与回归锁约束。
-

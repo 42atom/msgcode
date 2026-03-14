@@ -23,7 +23,7 @@
 
 如果一个结论已经进入正式决策，请把它固化到：
 - `issues/`
-- `docs/design/`
+- `docs/plan/`
 - `docs/CHANGELOG.md`
 
 不要让关键规则只停留在 `AIDOCS/`。
@@ -71,5 +71,5 @@ npm run docs:check
 如果你改了对外能力、运行时行为或正式口径，记得同步：
 
 - `issues/`
-- `docs/design/`
+- `docs/plan/`
 - `docs/CHANGELOG.md`

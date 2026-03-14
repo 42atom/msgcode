@@ -12,7 +12,7 @@ docs/adr/
 ## 架构决策
 
 1. ADR 用于记录长期有效、跨阶段的架构决策。
-2. 非长期决策优先写到 `docs/design/plan-*.md`。
+2. 非长期决策优先写到 `docs/plan/pl*.md`。
 
 ## 开发规范
 

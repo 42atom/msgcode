@@ -1,0 +1,3433 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>msgcode 任务进度视图</title>
+    <style>
+      :root {
+        --bg: #0a0a0b;
+        --bg-2: #111112;
+        --panel: rgba(18, 18, 20, 0.94);
+        --panel-strong: rgba(16, 16, 18, 0.98);
+        --ink: #f2eee8;
+        --muted: #a19689;
+        --line: rgba(255, 255, 255, 0.09);
+        --accent: #ff8a3d;
+        --accent-soft: rgba(255, 138, 61, 0.12);
+        --accent-line: rgba(255, 138, 61, 0.28);
+        --shadow: 0 18px 42px rgba(0, 0, 0, 0.34);
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family: "Avenir Next", "Segoe UI", "PingFang SC", sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 0% 0%, rgba(255, 138, 61, 0.08), transparent 22%),
+          linear-gradient(180deg, #05060a 0%, var(--bg) 100%);
+      }
+
+      main {
+        max-width: 1240px;
+        margin: 0 auto;
+        padding: 40px 24px 72px;
+      }
+
+      .hero {
+        background: var(--panel-strong);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 22px;
+        box-shadow: var(--shadow);
+        padding: 22px 24px;
+      }
+
+      h1, h2, h3 {
+        margin: 0;
+        font-weight: 700;
+      }
+
+      h1 {
+        font-size: clamp(30px, 4vw, 48px);
+        letter-spacing: -0.03em;
+      }
+
+      h2 {
+        font-size: 22px;
+        margin-bottom: 14px;
+      }
+
+      h3 {
+        font-size: 17px;
+      }
+
+      p {
+        margin: 10px 0 0;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+
+      .hero-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: end;
+        gap: 20px;
+      }
+
+      .hero-meta {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .meter {
+        margin-top: 18px;
+      }
+
+      .meter-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: baseline;
+      }
+
+      .meter-head strong {
+        font-size: clamp(40px, 5.2vw, 64px);
+        line-height: 1;
+        letter-spacing: -0.05em;
+      }
+
+      .meter-head span {
+        color: var(--muted);
+      }
+
+      .meter-track,
+      .segment-bar {
+        width: 100%;
+        height: 12px;
+        border-radius: 999px;
+        overflow: hidden;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+      }
+
+      .meter-track {
+        margin-top: 14px;
+        height: 14px;
+      }
+
+      .meter-fill {
+        height: 100%;
+        border-radius: inherit;
+        background: var(--accent);
+      }
+
+      .meter-notes {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .meter-note {
+        padding: 12px 14px;
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.025);
+        border: 1px solid rgba(255, 255, 255, 0.06);
+      }
+
+      .meter-note strong {
+        display: block;
+        font-size: 18px;
+      }
+
+      .meter-note span {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      section {
+        background: var(--panel);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 18px;
+        box-shadow: var(--shadow);
+      }
+
+      section {
+        padding: 22px;
+        background: rgba(255,255,255,0.02);
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th, td {
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+        font-size: 14px;
+      }
+
+      th {
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--muted);
+      }
+
+      tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .tabbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .tab-button {
+        appearance: none;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--ink);
+        border-radius: 999px;
+        padding: 10px 14px;
+        font: inherit;
+        cursor: pointer;
+      }
+
+      .tab-button.is-active {
+        background: var(--accent-soft);
+        border-color: var(--accent-line);
+      }
+
+      .tab-button strong {
+        font-weight: 600;
+      }
+
+      .tab-button span {
+        color: var(--muted);
+        margin-left: 6px;
+        font-size: 12px;
+      }
+
+      .toolbar input,
+      .toolbar select,
+      .toolbar button {
+        appearance: none;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.04);
+        color: var(--ink);
+        border-radius: 999px;
+        padding: 10px 14px;
+        font: inherit;
+      }
+
+      .toolbar button {
+        cursor: pointer;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-size: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+
+      .badge.kind {
+        background: rgba(255, 255, 255, 0.05);
+      }
+
+      .state-tdo { background: rgba(201, 138, 46, 0.14); color: #deb06b; }
+      .state-doi { background: rgba(255, 138, 61, 0.14); color: #ffab73; }
+      .state-rvw { background: rgba(213, 112, 58, 0.14); color: #e8a17a; }
+      .state-bkd { background: rgba(164, 74, 47, 0.18); color: #d38b6e; }
+      .state-pss { background: rgba(122, 133, 148, 0.14); color: #bac2cb; }
+      .state-dne { background: rgba(92, 101, 112, 0.16); color: #9ea7b2; }
+      .state-cand, .state-arvd { background: rgba(70, 76, 83, 0.18); color: #8d97a2; }
+
+      .seg-tdo { background: #43342a; }
+      .seg-doi { background: #5a3b2a; }
+      .seg-rvw { background: #6b412c; }
+      .seg-bkd { background: #4a2d28; }
+      .seg-pss { background: #cf7438; }
+      .seg-dne { background: #ff8a3d; }
+      .seg-cand { background: #464c53; }
+      .seg-arvd { background: #2f353b; }
+      .seg-empty { background: rgba(255, 255, 255, 0.04); }
+
+      .segment-bar {
+        display: flex;
+      }
+
+      .segment {
+        display: block;
+        height: 100%;
+      }
+
+      .slug {
+        min-width: 260px;
+        font-family: ui-monospace, "SFMono-Regular", monospace;
+        font-size: 13px;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      .meta {
+        margin-top: 12px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+
+      .hidden {
+        display: none;
+      }
+
+      .result-count {
+        margin-bottom: 12px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      a {
+        color: var(--accent);
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      code {
+        color: #ffb27e;
+      }
+
+      @media (max-width: 980px) {
+        .meter-notes {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .hero-head {
+          display: block;
+        }
+
+        main {
+          padding: 24px 14px 48px;
+        }
+
+        section, .hero {
+          padding: 18px;
+        }
+
+        th, td {
+          padding: 9px 8px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="hero">
+        <div class="hero-head">
+          <div>
+            <h1>msgcode 任务进度</h1>
+            <p>顶部只保留总览。任务真相源只认 <code>issues/</code> 文件名状态槽位。</p>
+          </div>
+          <div class="hero-meta">生成时间: 2026年3月14日 18:49:16 | 仓库路径: /Users/admin/GitProjects/msgcode</div>
+        </div>
+        <div class="meter">
+          <div class="meter-head">
+            <div>
+              <strong>89.7%</strong>
+              <span>完成线占比</span>
+            </div>
+            <div>
+              <strong style="font-size:28px;">166 / 185</strong>
+              <span>Pass + Done</span>
+            </div>
+          </div>
+          <div class="meter-track">
+            <div class="meter-fill" style="width:89.7%;"></div>
+          </div>
+          <div class="meter-notes">
+            <div class="meter-note">
+              <strong>185</strong>
+              <span>总任务</span>
+            </div>
+            <div class="meter-note">
+              <strong>19</strong>
+              <span>未完成 · 10.3%</span>
+            </div>
+            <div class="meter-note">
+              <strong>1</strong>
+              <span>Review</span>
+            </div>
+            <div class="meter-note">
+              <strong>0</strong>
+              <span>Blocked</span>
+            </div>
+          </div>
+        </div>
+        <div class="segment-bar"><span class="segment seg-tdo" style="width:7.568%" title="Todo 14"></span><span class="segment seg-doi" style="width:2.162%" title="Doing 4"></span><span class="segment seg-rvw" style="width:0.541%" title="Review 1"></span><span class="segment seg-pss" style="width:7.027%" title="Pass 13"></span><span class="segment seg-dne" style="width:82.703%" title="Done 153"></span></div>
+      </div>
+
+      <section style="margin-top: 18px;">
+        <h2>任务明细</h2>
+        <div class="tabbar">
+          <button type="button" class="tab-button is-active" data-state-filter="open"><strong>未完成</strong><span>19</span></button>
+          <button type="button" class="tab-button" data-state-filter="done"><strong>已完成</strong><span>166</span></button>
+          <button type="button" class="tab-button" data-state-filter="all"><strong>全部</strong><span>185</span></button>
+          <button type="button" class="tab-button" data-state-filter="cand"><strong>已取消</strong><span>0</span></button>
+        </div>
+        <div class="toolbar">
+          <select id="board-filter">
+            <option value="all">全部板块</option>
+            <option value="agent">agent</option><option value="browser">browser</option><option value="docs">docs</option><option value="feishu">feishu</option><option value="ghost">ghost</option><option value="memory">memory</option><option value="model">model</option><option value="product">product</option><option value="release">release</option><option value="runtime">runtime</option><option value="schedule">schedule</option><option value="tools">tools</option>
+          </select>
+          <input id="search" type="search" placeholder="搜索 id / board / slug / path">
+        </div>
+        <div id="result-count" class="result-count"></div>
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Kind</th>
+              <th>State</th>
+              <th>Board</th>
+              <th>Prio</th>
+              <th>Slug</th>
+              <th>Path</th>
+            </tr>
+          </thead>
+          <tbody id="issue-table-body">
+            
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0001 tk dne agent  r9-t8-repo-protocol-alignment issues/tk0001.dne.agent.r9-t8-repo-protocol-alignment.md"
+          data-active="no"
+        >
+          <td>0001</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">r9-t8-repo-protocol-alignment</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0001.dne.agent.r9-t8-repo-protocol-alignment.md">issues/tk0001.dne.agent.r9-t8-repo-protocol-alignment.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0002 tk dne agent  r9-t7-agent-backend-core-extraction issues/tk0002.dne.agent.r9-t7-agent-backend-core-extraction.md"
+          data-active="no"
+        >
+          <td>0002</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">r9-t7-agent-backend-core-extraction</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0002.dne.agent.r9-t7-agent-backend-core-extraction.md">issues/tk0002.dne.agent.r9-t7-agent-backend-core-extraction.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="feishu"
+          data-search="0003 tk pss feishu p1 feishu-ws-transport-default-workspace issues/tk0003.pss.feishu.p1.feishu-ws-transport-default-workspace.md"
+          data-active="no"
+        >
+          <td>0003</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>feishu</td>
+          <td>p1</td>
+          <td class="slug">feishu-ws-transport-default-workspace</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0003.pss.feishu.p1.feishu-ws-transport-default-workspace.md">issues/tk0003.pss.feishu.p1.feishu-ws-transport-default-workspace.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="browser"
+          data-search="0005 tk dne browser  browser-tool-not-exposed-to-llm issues/tk0005.dne.browser.browser-tool-not-exposed-to-llm.md"
+          data-active="no"
+        >
+          <td>0005</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>browser</td>
+          <td>-</td>
+          <td class="slug">browser-tool-not-exposed-to-llm</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0005.dne.browser.browser-tool-not-exposed-to-llm.md">issues/tk0005.dne.browser.browser-tool-not-exposed-to-llm.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0006 tk dne agent  agent-relentless-task-closure issues/tk0006.dne.agent.agent-relentless-task-closure.md"
+          data-active="no"
+        >
+          <td>0006</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">agent-relentless-task-closure</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0006.dne.agent.agent-relentless-task-closure.md">issues/tk0006.dne.agent.agent-relentless-task-closure.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0008 tk dne tools  mainline-quota-continuation-smoke issues/tk0008.dne.tools.mainline-quota-continuation-smoke.md"
+          data-active="no"
+        >
+          <td>0008</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">mainline-quota-continuation-smoke</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0008.dne.tools.mainline-quota-continuation-smoke.md">issues/tk0008.dne.tools.mainline-quota-continuation-smoke.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="rvw"
+          data-board="agent"
+          data-search="0009 tk rvw agent p0 unix-mainline-refactor issues/tk0009.rvw.agent.p0.unix-mainline-refactor.md"
+          data-active="yes"
+        >
+          <td>0009</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-rvw">Review</span></td>
+          <td>agent</td>
+          <td>p0</td>
+          <td class="slug">unix-mainline-refactor</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0009.rvw.agent.p0.unix-mainline-refactor.md">issues/tk0009.rvw.agent.p0.unix-mainline-refactor.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0010 tk dne agent  minimax-anthropic-provider issues/tk0010.dne.agent.minimax-anthropic-provider.md"
+          data-active="no"
+        >
+          <td>0010</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">minimax-anthropic-provider</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0010.dne.agent.minimax-anthropic-provider.md">issues/tk0010.dne.agent.minimax-anthropic-provider.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="feishu"
+          data-search="0011 tk pss feishu p1 feishu-send-file-runtime-context issues/tk0011.pss.feishu.p1.feishu-send-file-runtime-context.md"
+          data-active="no"
+        >
+          <td>0011</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>feishu</td>
+          <td>p1</td>
+          <td class="slug">feishu-send-file-runtime-context</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0011.pss.feishu.p1.feishu-send-file-runtime-context.md">issues/tk0011.pss.feishu.p1.feishu-send-file-runtime-context.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="feishu"
+          data-search="0012 tk pss feishu p1 feishu-inbound-attachments-and-channel-provider-boundary issues/tk0012.pss.feishu.p1.feishu-inbound-attachments-and-channel-provider-boundary.md"
+          data-active="no"
+        >
+          <td>0012</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>feishu</td>
+          <td>p1</td>
+          <td class="slug">feishu-inbound-attachments-and-channel-provider-boundary</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0012.pss.feishu.p1.feishu-inbound-attachments-and-channel-provider-boundary.md">issues/tk0012.pss.feishu.p1.feishu-inbound-attachments-and-channel-provider-boundary.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="browser"
+          data-search="0013 tk dne browser  pinchtab-single-browser-substrate-bootstrap issues/tk0013.dne.browser.pinchtab-single-browser-substrate-bootstrap.md"
+          data-active="no"
+        >
+          <td>0013</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>browser</td>
+          <td>-</td>
+          <td class="slug">pinchtab-single-browser-substrate-bootstrap</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0013.dne.browser.pinchtab-single-browser-substrate-bootstrap.md">issues/tk0013.dne.browser.pinchtab-single-browser-substrate-bootstrap.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="runtime"
+          data-search="0014 tk dne runtime  runtime-skill-source-sync issues/tk0014.dne.runtime.runtime-skill-source-sync.md"
+          data-active="no"
+        >
+          <td>0014</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>runtime</td>
+          <td>-</td>
+          <td class="slug">runtime-skill-source-sync</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0014.dne.runtime.runtime-skill-source-sync.md">issues/tk0014.dne.runtime.runtime-skill-source-sync.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="browser"
+          data-search="0015 tk dne browser  patchright-phase-a-validation issues/tk0015.dne.browser.patchright-phase-a-validation.md"
+          data-active="no"
+        >
+          <td>0015</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>browser</td>
+          <td>-</td>
+          <td class="slug">patchright-phase-a-validation</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0015.dne.browser.patchright-phase-a-validation.md">issues/tk0015.dne.browser.patchright-phase-a-validation.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="browser"
+          data-search="0016 tk dne browser  patchright-browser-cutover issues/tk0016.dne.browser.patchright-browser-cutover.md"
+          data-active="no"
+        >
+          <td>0016</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>browser</td>
+          <td>-</td>
+          <td class="slug">patchright-browser-cutover</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0016.dne.browser.patchright-browser-cutover.md">issues/tk0016.dne.browser.patchright-browser-cutover.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0017 tk dne agent  tool-success-over-protocol-friction issues/tk0017.dne.agent.tool-success-over-protocol-friction.md"
+          data-active="no"
+        >
+          <td>0017</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">tool-success-over-protocol-friction</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0017.dne.agent.tool-success-over-protocol-friction.md">issues/tk0017.dne.agent.tool-success-over-protocol-friction.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0018 tk dne agent  tool-surface-slimming-for-llm issues/tk0018.dne.agent.tool-surface-slimming-for-llm.md"
+          data-active="no"
+        >
+          <td>0018</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">tool-surface-slimming-for-llm</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0018.dne.agent.tool-surface-slimming-for-llm.md">issues/tk0018.dne.agent.tool-surface-slimming-for-llm.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0019 tk dne agent  tool-bridge-runtime-hardening issues/tk0019.dne.agent.tool-bridge-runtime-hardening.md"
+          data-active="no"
+        >
+          <td>0019</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">tool-bridge-runtime-hardening</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0019.dne.agent.tool-bridge-runtime-hardening.md">issues/tk0019.dne.agent.tool-bridge-runtime-hardening.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="browser"
+          data-search="0020 tk dne browser  browser-open-happy-path issues/tk0020.dne.browser.browser-open-happy-path.md"
+          data-active="no"
+        >
+          <td>0020</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>browser</td>
+          <td>-</td>
+          <td class="slug">browser-open-happy-path</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0020.dne.browser.browser-open-happy-path.md">issues/tk0020.dne.browser.browser-open-happy-path.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="tdo"
+          data-board="agent"
+          data-search="0021 tk tdo agent p2 prompt-message-stratification-experiment issues/tk0021.tdo.agent.p2.prompt-message-stratification-experiment.md"
+          data-active="yes"
+        >
+          <td>0021</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-tdo">Todo</span></td>
+          <td>agent</td>
+          <td>p2</td>
+          <td class="slug">prompt-message-stratification-experiment</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0021.tdo.agent.p2.prompt-message-stratification-experiment.md">issues/tk0021.tdo.agent.p2.prompt-message-stratification-experiment.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0024 tk dne tools  skill-single-source-runtime issues/tk0024.dne.tools.skill-single-source-runtime.md"
+          data-active="no"
+        >
+          <td>0024</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">skill-single-source-runtime</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0024.dne.tools.skill-single-source-runtime.md">issues/tk0024.dne.tools.skill-single-source-runtime.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="schedule"
+          data-search="0025 tk dne schedule  schedule-route-dependency-explicit issues/tk0025.dne.schedule.schedule-route-dependency-explicit.md"
+          data-active="no"
+        >
+          <td>0025</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>schedule</td>
+          <td>-</td>
+          <td class="slug">schedule-route-dependency-explicit</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0025.dne.schedule.schedule-route-dependency-explicit.md">issues/tk0025.dne.schedule.schedule-route-dependency-explicit.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0026 tk dne agent  agent-read-skill-bridge issues/tk0026.dne.agent.agent-read-skill-bridge.md"
+          data-active="no"
+        >
+          <td>0026</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">agent-read-skill-bridge</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0026.dne.agent.agent-read-skill-bridge.md">issues/tk0026.dne.agent.agent-read-skill-bridge.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="agent"
+          data-search="0027 tk pss agent p0 llm-skill-directory-open-loop issues/tk0027.pss.agent.p0.llm-skill-directory-open-loop.md"
+          data-active="no"
+        >
+          <td>0027</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>agent</td>
+          <td>p0</td>
+          <td class="slug">llm-skill-directory-open-loop</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0027.pss.agent.p0.llm-skill-directory-open-loop.md">issues/tk0027.pss.agent.p0.llm-skill-directory-open-loop.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="schedule"
+          data-search="0029 tk dne schedule  schedule-chat-delivery-not-tmux issues/tk0029.dne.schedule.schedule-chat-delivery-not-tmux.md"
+          data-active="no"
+        >
+          <td>0029</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>schedule</td>
+          <td>-</td>
+          <td class="slug">schedule-chat-delivery-not-tmux</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0029.dne.schedule.schedule-chat-delivery-not-tmux.md">issues/tk0029.dne.schedule.schedule-chat-delivery-not-tmux.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0030 tk dne agent  scheduling-skill-pointer-only issues/tk0030.dne.agent.scheduling-skill-pointer-only.md"
+          data-active="no"
+        >
+          <td>0030</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">scheduling-skill-pointer-only</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0030.dne.agent.scheduling-skill-pointer-only.md">issues/tk0030.dne.agent.scheduling-skill-pointer-only.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="schedule"
+          data-search="0034 tk pss schedule p0 schedule-stop-workspace-and-projection-sync issues/tk0034.pss.schedule.p0.schedule-stop-workspace-and-projection-sync.md"
+          data-active="no"
+        >
+          <td>0034</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>schedule</td>
+          <td>p0</td>
+          <td class="slug">schedule-stop-workspace-and-projection-sync</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0034.pss.schedule.p0.schedule-stop-workspace-and-projection-sync.md">issues/tk0034.pss.schedule.p0.schedule-stop-workspace-and-projection-sync.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="schedule"
+          data-search="0035 tk pss schedule p0 schedule-cli-contract-and-delete-consistency issues/tk0035.pss.schedule.p0.schedule-cli-contract-and-delete-consistency.md"
+          data-active="no"
+        >
+          <td>0035</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>schedule</td>
+          <td>p0</td>
+          <td class="slug">schedule-cli-contract-and-delete-consistency</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0035.pss.schedule.p0.schedule-cli-contract-and-delete-consistency.md">issues/tk0035.pss.schedule.p0.schedule-cli-contract-and-delete-consistency.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="agent"
+          data-search="0036 tk pss agent p1 openclaw-tool-loop-alignment issues/tk0036.pss.agent.p1.openclaw-tool-loop-alignment.md"
+          data-active="no"
+        >
+          <td>0036</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>agent</td>
+          <td>p1</td>
+          <td class="slug">openclaw-tool-loop-alignment</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0036.pss.agent.p1.openclaw-tool-loop-alignment.md">issues/tk0036.pss.agent.p1.openclaw-tool-loop-alignment.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="agent"
+          data-search="0037 tk pss agent p1 openclaw-direct-tool-loop-port issues/tk0037.pss.agent.p1.openclaw-direct-tool-loop-port.md"
+          data-active="no"
+        >
+          <td>0037</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>agent</td>
+          <td>p1</td>
+          <td class="slug">openclaw-direct-tool-loop-port</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0037.pss.agent.p1.openclaw-direct-tool-loop-port.md">issues/tk0037.pss.agent.p1.openclaw-direct-tool-loop-port.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="schedule"
+          data-search="0038 tk dne schedule  schedule-scheduler-refresh-on-mutation issues/tk0038.dne.schedule.schedule-scheduler-refresh-on-mutation.md"
+          data-active="no"
+        >
+          <td>0038</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>schedule</td>
+          <td>-</td>
+          <td class="slug">schedule-scheduler-refresh-on-mutation</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0038.dne.schedule.schedule-scheduler-refresh-on-mutation.md">issues/tk0038.dne.schedule.schedule-scheduler-refresh-on-mutation.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="schedule"
+          data-search="0039 tk dne schedule  scheduler-refresh-storm-diagnosis issues/tk0039.dne.schedule.scheduler-refresh-storm-diagnosis.md"
+          data-active="no"
+        >
+          <td>0039</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>schedule</td>
+          <td>-</td>
+          <td class="slug">scheduler-refresh-storm-diagnosis</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0039.dne.schedule.scheduler-refresh-storm-diagnosis.md">issues/tk0039.dne.schedule.scheduler-refresh-storm-diagnosis.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0040 tk dne agent  minimal-finish-supervisor issues/tk0040.dne.agent.minimal-finish-supervisor.md"
+          data-active="no"
+        >
+          <td>0040</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">minimal-finish-supervisor</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0040.dne.agent.minimal-finish-supervisor.md">issues/tk0040.dne.agent.minimal-finish-supervisor.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0041 tk dne agent  llm-unshackle-phase2-remove-control-logic issues/tk0041.dne.agent.llm-unshackle-phase2-remove-control-logic.md"
+          data-active="no"
+        >
+          <td>0041</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">llm-unshackle-phase2-remove-control-logic</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0041.dne.agent.llm-unshackle-phase2-remove-control-logic.md">issues/tk0041.dne.agent.llm-unshackle-phase2-remove-control-logic.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0042 tk dne agent  routed-chat-unshackle-phase3 issues/tk0042.dne.agent.routed-chat-unshackle-phase3.md"
+          data-active="no"
+        >
+          <td>0042</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">routed-chat-unshackle-phase3</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0042.dne.agent.routed-chat-unshackle-phase3.md">issues/tk0042.dne.agent.routed-chat-unshackle-phase3.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0043 tk dne tools  scheduler-add-tz-contract issues/tk0043.dne.tools.scheduler-add-tz-contract.md"
+          data-active="no"
+        >
+          <td>0043</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">scheduler-add-tz-contract</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0043.dne.tools.scheduler-add-tz-contract.md">issues/tk0043.dne.tools.scheduler-add-tz-contract.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0044 tk dne agent  finish-supervisor-failure-paths issues/tk0044.dne.agent.finish-supervisor-failure-paths.md"
+          data-active="no"
+        >
+          <td>0044</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">finish-supervisor-failure-paths</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0044.dne.agent.finish-supervisor-failure-paths.md">issues/tk0044.dne.agent.finish-supervisor-failure-paths.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="runtime"
+          data-search="0045 tk dne runtime  cleanup-simplification-program issues/tk0045.dne.runtime.cleanup-simplification-program.md"
+          data-active="no"
+        >
+          <td>0045</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>runtime</td>
+          <td>-</td>
+          <td class="slug">cleanup-simplification-program</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0045.dne.runtime.cleanup-simplification-program.md">issues/tk0045.dne.runtime.cleanup-simplification-program.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0046 tk dne tools  asr-tool-contract-mismatch issues/tk0046.dne.tools.asr-tool-contract-mismatch.md"
+          data-active="no"
+        >
+          <td>0046</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">asr-tool-contract-mismatch</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0046.dne.tools.asr-tool-contract-mismatch.md">issues/tk0046.dne.tools.asr-tool-contract-mismatch.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="model"
+          data-search="0047 tk dne model  model-path-hardcode-purge issues/tk0047.dne.model.model-path-hardcode-purge.md"
+          data-active="no"
+        >
+          <td>0047</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>model</td>
+          <td>-</td>
+          <td class="slug">model-path-hardcode-purge</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0047.dne.model.model-path-hardcode-purge.md">issues/tk0047.dne.model.model-path-hardcode-purge.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0048 tk dne tools  help-command-consistency-audit issues/tk0048.dne.tools.help-command-consistency-audit.md"
+          data-active="no"
+        >
+          <td>0048</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">help-command-consistency-audit</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0048.dne.tools.help-command-consistency-audit.md">issues/tk0048.dne.tools.help-command-consistency-audit.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0050 tk dne tools  where-command-runtime-display-sync issues/tk0050.dne.tools.where-command-runtime-display-sync.md"
+          data-active="no"
+        >
+          <td>0050</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">where-command-runtime-display-sync</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0050.dne.tools.where-command-runtime-display-sync.md">issues/tk0050.dne.tools.where-command-runtime-display-sync.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="schedule"
+          data-search="0051 tk dne schedule  default-workspace-initial-binding issues/tk0051.dne.schedule.default-workspace-initial-binding.md"
+          data-active="no"
+        >
+          <td>0051</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>schedule</td>
+          <td>-</td>
+          <td class="slug">default-workspace-initial-binding</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0051.dne.schedule.default-workspace-initial-binding.md">issues/tk0051.dne.schedule.default-workspace-initial-binding.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0052 tk dne agent  finish-supervisor-false-block issues/tk0052.dne.agent.finish-supervisor-false-block.md"
+          data-active="no"
+        >
+          <td>0052</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">finish-supervisor-false-block</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0052.dne.agent.finish-supervisor-false-block.md">issues/tk0052.dne.agent.finish-supervisor-false-block.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="model"
+          data-search="0053 tk dne model  vision-auto-summary-mainline issues/tk0053.dne.model.vision-auto-summary-mainline.md"
+          data-active="no"
+        >
+          <td>0053</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>model</td>
+          <td>-</td>
+          <td class="slug">vision-auto-summary-mainline</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0053.dne.model.vision-auto-summary-mainline.md">issues/tk0053.dne.model.vision-auto-summary-mainline.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="doi"
+          data-board="model"
+          data-search="0054 tk doi model p1 vision-detail-skill-first-provider-neutral issues/tk0054.doi.model.p1.vision-detail-skill-first-provider-neutral.md"
+          data-active="yes"
+        >
+          <td>0054</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-doi">Doing</span></td>
+          <td>model</td>
+          <td>p1</td>
+          <td class="slug">vision-detail-skill-first-provider-neutral</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0054.doi.model.p1.vision-detail-skill-first-provider-neutral.md">issues/tk0054.doi.model.p1.vision-detail-skill-first-provider-neutral.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="doi"
+          data-board="runtime"
+          data-search="0055 tk doi runtime p1 local-model-load-retry issues/tk0055.doi.runtime.p1.local-model-load-retry.md"
+          data-active="yes"
+        >
+          <td>0055</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-doi">Doing</span></td>
+          <td>runtime</td>
+          <td>p1</td>
+          <td class="slug">local-model-load-retry</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0055.doi.runtime.p1.local-model-load-retry.md">issues/tk0055.doi.runtime.p1.local-model-load-retry.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="browser"
+          data-search="0056 tk dne browser  browser-instanceid-contract-drift issues/tk0056.dne.browser.browser-instanceid-contract-drift.md"
+          data-active="no"
+        >
+          <td>0056</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>browser</td>
+          <td>-</td>
+          <td class="slug">browser-instanceid-contract-drift</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0056.dne.browser.browser-instanceid-contract-drift.md">issues/tk0056.dne.browser.browser-instanceid-contract-drift.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0057 tk dne tools  plan-files-runtime-skill issues/tk0057.dne.tools.plan-files-runtime-skill.md"
+          data-active="no"
+        >
+          <td>0057</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">plan-files-runtime-skill</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0057.dne.tools.plan-files-runtime-skill.md">issues/tk0057.dne.tools.plan-files-runtime-skill.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0058 tk dne agent  long-running-agent-context-smoothing issues/tk0058.dne.agent.long-running-agent-context-smoothing.md"
+          data-active="no"
+        >
+          <td>0058</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">long-running-agent-context-smoothing</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0058.dne.agent.long-running-agent-context-smoothing.md">issues/tk0058.dne.agent.long-running-agent-context-smoothing.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="runtime"
+          data-search="0059 tk dne runtime  review-fixes-task-status-and-runtime-skill-index issues/tk0059.dne.runtime.review-fixes-task-status-and-runtime-skill-index.md"
+          data-active="no"
+        >
+          <td>0059</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>runtime</td>
+          <td>-</td>
+          <td class="slug">review-fixes-task-status-and-runtime-skill-index</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0059.dne.runtime.review-fixes-task-status-and-runtime-skill-index.md">issues/tk0059.dne.runtime.review-fixes-task-status-and-runtime-skill-index.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="model"
+          data-search="0060 tk dne model  retire-zai-vision-mcp-runtime-skill issues/tk0060.dne.model.retire-zai-vision-mcp-runtime-skill.md"
+          data-active="no"
+        >
+          <td>0060</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>model</td>
+          <td>-</td>
+          <td class="slug">retire-zai-vision-mcp-runtime-skill</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0060.dne.model.retire-zai-vision-mcp-runtime-skill.md">issues/tk0060.dne.model.retire-zai-vision-mcp-runtime-skill.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="runtime"
+          data-search="0061 tk dne runtime  msgcode-daemon-keepalive-via-launchd issues/tk0061.dne.runtime.msgcode-daemon-keepalive-via-launchd.md"
+          data-active="no"
+        >
+          <td>0061</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>runtime</td>
+          <td>-</td>
+          <td class="slug">msgcode-daemon-keepalive-via-launchd</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0061.dne.runtime.msgcode-daemon-keepalive-via-launchd.md">issues/tk0061.dne.runtime.msgcode-daemon-keepalive-via-launchd.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="feishu"
+          data-search="0062 tk dne feishu  feishu-first-imsg-optional issues/tk0062.dne.feishu.feishu-first-imsg-optional.md"
+          data-active="no"
+        >
+          <td>0062</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>feishu</td>
+          <td>-</td>
+          <td class="slug">feishu-first-imsg-optional</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0062.dne.feishu.feishu-first-imsg-optional.md">issues/tk0062.dne.feishu.feishu-first-imsg-optional.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="feishu"
+          data-search="0063 tk dne feishu  preflight-transport-aware-startup-deps issues/tk0063.dne.feishu.preflight-transport-aware-startup-deps.md"
+          data-active="no"
+        >
+          <td>0063</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>feishu</td>
+          <td>-</td>
+          <td class="slug">preflight-transport-aware-startup-deps</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0063.dne.feishu.preflight-transport-aware-startup-deps.md">issues/tk0063.dne.feishu.preflight-transport-aware-startup-deps.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="feishu"
+          data-search="0064 tk dne feishu  permissions-probe-imsg-conditional issues/tk0064.dne.feishu.permissions-probe-imsg-conditional.md"
+          data-active="no"
+        >
+          <td>0064</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>feishu</td>
+          <td>-</td>
+          <td class="slug">permissions-probe-imsg-conditional</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0064.dne.feishu.permissions-probe-imsg-conditional.md">issues/tk0064.dne.feishu.permissions-probe-imsg-conditional.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="tdo"
+          data-board="feishu"
+          data-search="0065 tk tdo feishu p2 post-imessage-channel-strategy issues/tk0065.tdo.feishu.p2.post-imessage-channel-strategy.md"
+          data-active="yes"
+        >
+          <td>0065</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-tdo">Todo</span></td>
+          <td>feishu</td>
+          <td>p2</td>
+          <td class="slug">post-imessage-channel-strategy</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0065.tdo.feishu.p2.post-imessage-channel-strategy.md">issues/tk0065.tdo.feishu.p2.post-imessage-channel-strategy.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="agent"
+          data-search="0066 tk pss agent p1 openclaw-agent-core-gap-analysis issues/tk0066.pss.agent.p1.openclaw-agent-core-gap-analysis.md"
+          data-active="no"
+        >
+          <td>0066</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>agent</td>
+          <td>p1</td>
+          <td class="slug">openclaw-agent-core-gap-analysis</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0066.pss.agent.p1.openclaw-agent-core-gap-analysis.md">issues/tk0066.pss.agent.p1.openclaw-agent-core-gap-analysis.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="tdo"
+          data-board="ghost"
+          data-search="0067 tk tdo ghost p1 ghost-os-desktop-plugin-replacement issues/tk0067.tdo.ghost.p1.ghost-os-desktop-plugin-replacement.md"
+          data-active="yes"
+        >
+          <td>0067</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-tdo">Todo</span></td>
+          <td>ghost</td>
+          <td>p1</td>
+          <td class="slug">ghost-os-desktop-plugin-replacement</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0067.tdo.ghost.p1.ghost-os-desktop-plugin-replacement.md">issues/tk0067.tdo.ghost.p1.ghost-os-desktop-plugin-replacement.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0068 tk dne agent  character-identity-skill-for-multi-speaker-chat issues/tk0068.dne.agent.character-identity-skill-for-multi-speaker-chat.md"
+          data-active="no"
+        >
+          <td>0068</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">character-identity-skill-for-multi-speaker-chat</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0068.dne.agent.character-identity-skill-for-multi-speaker-chat.md">issues/tk0068.dne.agent.character-identity-skill-for-multi-speaker-chat.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="feishu"
+          data-search="0069 tk dne feishu  feishu-member-roster-tool-and-mention-guidance issues/tk0069.dne.feishu.feishu-member-roster-tool-and-mention-guidance.md"
+          data-active="no"
+        >
+          <td>0069</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>feishu</td>
+          <td>-</td>
+          <td class="slug">feishu-member-roster-tool-and-mention-guidance</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0069.dne.feishu.feishu-member-roster-tool-and-mention-guidance.md">issues/tk0069.dne.feishu.feishu-member-roster-tool-and-mention-guidance.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="runtime"
+          data-search="0070 tk dne runtime  optional-runtime-skills-on-demand issues/tk0070.dne.runtime.optional-runtime-skills-on-demand.md"
+          data-active="no"
+        >
+          <td>0070</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>runtime</td>
+          <td>-</td>
+          <td class="slug">optional-runtime-skills-on-demand</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0070.dne.runtime.optional-runtime-skills-on-demand.md">issues/tk0070.dne.runtime.optional-runtime-skills-on-demand.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="tdo"
+          data-board="docs"
+          data-search="0071 tk tdo docs p2 skill-layering-and-conflict-policy-review issues/tk0071.tdo.docs.p2.skill-layering-and-conflict-policy-review.md"
+          data-active="yes"
+        >
+          <td>0071</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-tdo">Todo</span></td>
+          <td>docs</td>
+          <td>p2</td>
+          <td class="slug">skill-layering-and-conflict-policy-review</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0071.tdo.docs.p2.skill-layering-and-conflict-policy-review.md">issues/tk0071.tdo.docs.p2.skill-layering-and-conflict-policy-review.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="memory"
+          data-search="0072 tk dne memory  memory-skill-toolcall-and-skill-discovery-fix issues/tk0072.dne.memory.memory-skill-toolcall-and-skill-discovery-fix.md"
+          data-active="no"
+        >
+          <td>0072</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>memory</td>
+          <td>-</td>
+          <td class="slug">memory-skill-toolcall-and-skill-discovery-fix</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0072.dne.memory.memory-skill-toolcall-and-skill-discovery-fix.md">issues/tk0072.dne.memory.memory-skill-toolcall-and-skill-discovery-fix.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="feishu"
+          data-search="0073 tk dne feishu  feishu-message-context-and-message-actions issues/tk0073.dne.feishu.feishu-message-context-and-message-actions.md"
+          data-active="no"
+        >
+          <td>0073</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>feishu</td>
+          <td>-</td>
+          <td class="slug">feishu-message-context-and-message-actions</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0073.dne.feishu.feishu-message-context-and-message-actions.md">issues/tk0073.dne.feishu.feishu-message-context-and-message-actions.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0074 tk dne tools  tool-exposure-default-and-skill-runtime-terminology-cleanup issues/tk0074.dne.tools.tool-exposure-default-and-skill-runtime-terminology-cleanup.md"
+          data-active="no"
+        >
+          <td>0074</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">tool-exposure-default-and-skill-runtime-terminology-cleanup</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0074.dne.tools.tool-exposure-default-and-skill-runtime-terminology-cleanup.md">issues/tk0074.dne.tools.tool-exposure-default-and-skill-runtime-terminology-cleanup.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="browser"
+          data-search="0075 tk dne browser  feishu-group-observability-and-pinchtab-retirement issues/tk0075.dne.browser.feishu-group-observability-and-pinchtab-retirement.md"
+          data-active="no"
+        >
+          <td>0075</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>browser</td>
+          <td>-</td>
+          <td class="slug">feishu-group-observability-and-pinchtab-retirement</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0075.dne.browser.feishu-group-observability-and-pinchtab-retirement.md">issues/tk0075.dne.browser.feishu-group-observability-and-pinchtab-retirement.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0076 tk dne tools  legacy-active-skills-and-artifact-path-cleanup issues/tk0076.dne.tools.legacy-active-skills-and-artifact-path-cleanup.md"
+          data-active="no"
+        >
+          <td>0076</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">legacy-active-skills-and-artifact-path-cleanup</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0076.dne.tools.legacy-active-skills-and-artifact-path-cleanup.md">issues/tk0076.dne.tools.legacy-active-skills-and-artifact-path-cleanup.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="model"
+          data-search="0077 tk dne model  local-vision-lmstudio-self-contained issues/tk0077.dne.model.local-vision-lmstudio-self-contained.md"
+          data-active="no"
+        >
+          <td>0077</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>model</td>
+          <td>-</td>
+          <td class="slug">local-vision-lmstudio-self-contained</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0077.dne.model.local-vision-lmstudio-self-contained.md">issues/tk0077.dne.model.local-vision-lmstudio-self-contained.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0078 tk dne tools  skill-self-contained-distribution-rule issues/tk0078.dne.tools.skill-self-contained-distribution-rule.md"
+          data-active="no"
+        >
+          <td>0078</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">skill-self-contained-distribution-rule</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0078.dne.tools.skill-self-contained-distribution-rule.md">issues/tk0078.dne.tools.skill-self-contained-distribution-rule.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="model"
+          data-search="0079 tk dne model  local-backend-control-plane-mvp issues/tk0079.dne.model.local-backend-control-plane-mvp.md"
+          data-active="no"
+        >
+          <td>0079</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>model</td>
+          <td>-</td>
+          <td class="slug">local-backend-control-plane-mvp</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0079.dne.model.local-backend-control-plane-mvp.md">issues/tk0079.dne.model.local-backend-control-plane-mvp.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0080 tk dne agent  backend-command-lanes-v1 issues/tk0080.dne.agent.backend-command-lanes-v1.md"
+          data-active="no"
+        >
+          <td>0080</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">backend-command-lanes-v1</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0080.dne.agent.backend-command-lanes-v1.md">issues/tk0080.dne.agent.backend-command-lanes-v1.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="model"
+          data-search="0081 tk dne model  qwen-only-tts-mainline issues/tk0081.dne.model.qwen-only-tts-mainline.md"
+          data-active="no"
+        >
+          <td>0081</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>model</td>
+          <td>-</td>
+          <td class="slug">qwen-only-tts-mainline</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0081.dne.model.qwen-only-tts-mainline.md">issues/tk0081.dne.model.qwen-only-tts-mainline.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="docs"
+          data-search="0082 tk dne docs  indextts-archive-cleanup-and-merge-prep issues/tk0082.dne.docs.indextts-archive-cleanup-and-merge-prep.md"
+          data-active="no"
+        >
+          <td>0082</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>docs</td>
+          <td>-</td>
+          <td class="slug">indextts-archive-cleanup-and-merge-prep</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0082.dne.docs.indextts-archive-cleanup-and-merge-prep.md">issues/tk0082.dne.docs.indextts-archive-cleanup-and-merge-prep.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="runtime"
+          data-search="0083 tk dne runtime  merge-prep-worktree-cleanup issues/tk0083.dne.runtime.merge-prep-worktree-cleanup.md"
+          data-active="no"
+        >
+          <td>0083</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>runtime</td>
+          <td>-</td>
+          <td class="slug">merge-prep-worktree-cleanup</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0083.dne.runtime.merge-prep-worktree-cleanup.md">issues/tk0083.dne.runtime.merge-prep-worktree-cleanup.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="model"
+          data-search="0084 tk dne model  tool-manifest-single-source-export-cleanup issues/tk0084.dne.model.tool-manifest-single-source-export-cleanup.md"
+          data-active="no"
+        >
+          <td>0084</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>model</td>
+          <td>-</td>
+          <td class="slug">tool-manifest-single-source-export-cleanup</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0084.dne.model.tool-manifest-single-source-export-cleanup.md">issues/tk0084.dne.model.tool-manifest-single-source-export-cleanup.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0085 tk dne tools  pi-corpse-cleanup-and-tooling-mode-wireup issues/tk0085.dne.tools.pi-corpse-cleanup-and-tooling-mode-wireup.md"
+          data-active="no"
+        >
+          <td>0085</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">pi-corpse-cleanup-and-tooling-mode-wireup</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0085.dne.tools.pi-corpse-cleanup-and-tooling-mode-wireup.md">issues/tk0085.dne.tools.pi-corpse-cleanup-and-tooling-mode-wireup.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0086 tk dne tools  fs-scope-real-config-and-boundary-check issues/tk0086.dne.tools.fs-scope-real-config-and-boundary-check.md"
+          data-active="no"
+        >
+          <td>0086</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">fs-scope-real-config-and-boundary-check</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0086.dne.tools.fs-scope-real-config-and-boundary-check.md">issues/tk0086.dne.tools.fs-scope-real-config-and-boundary-check.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0087 tk dne tools  skill-legacy-cleanup-and-provider-truth-source issues/tk0087.dne.tools.skill-legacy-cleanup-and-provider-truth-source.md"
+          data-active="no"
+        >
+          <td>0087</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">skill-legacy-cleanup-and-provider-truth-source</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0087.dne.tools.skill-legacy-cleanup-and-provider-truth-source.md">issues/tk0087.dne.tools.skill-legacy-cleanup-and-provider-truth-source.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="feishu"
+          data-search="0088 tk dne feishu  typecheck-merge-prep-existing-errors issues/tk0088.dne.feishu.typecheck-merge-prep-existing-errors.md"
+          data-active="no"
+        >
+          <td>0088</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>feishu</td>
+          <td>-</td>
+          <td class="slug">typecheck-merge-prep-existing-errors</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0088.dne.feishu.typecheck-merge-prep-existing-errors.md">issues/tk0088.dne.feishu.typecheck-merge-prep-existing-errors.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0089 tk dne agent  release-gate-alignment-docsync-and-bdd issues/tk0089.dne.agent.release-gate-alignment-docsync-and-bdd.md"
+          data-active="no"
+        >
+          <td>0089</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">release-gate-alignment-docsync-and-bdd</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0089.dne.agent.release-gate-alignment-docsync-and-bdd.md">issues/tk0089.dne.agent.release-gate-alignment-docsync-and-bdd.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="browser"
+          data-search="0090 tk dne browser  retire-gmail-readonly-tests-from-release-gate issues/tk0090.dne.browser.retire-gmail-readonly-tests-from-release-gate.md"
+          data-active="no"
+        >
+          <td>0090</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>browser</td>
+          <td>-</td>
+          <td class="slug">retire-gmail-readonly-tests-from-release-gate</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0090.dne.browser.retire-gmail-readonly-tests-from-release-gate.md">issues/tk0090.dne.browser.retire-gmail-readonly-tests-from-release-gate.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="browser"
+          data-search="0091 tk dne browser  release-gate-stale-regression-lock-alignment issues/tk0091.dne.browser.release-gate-stale-regression-lock-alignment.md"
+          data-active="no"
+        >
+          <td>0091</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>browser</td>
+          <td>-</td>
+          <td class="slug">release-gate-stale-regression-lock-alignment</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0091.dne.browser.release-gate-stale-regression-lock-alignment.md">issues/tk0091.dne.browser.release-gate-stale-regression-lock-alignment.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0092 tk dne tools  test-suite-modernization-after-core-refactor issues/tk0092.dne.tools.test-suite-modernization-after-core-refactor.md"
+          data-active="no"
+        >
+          <td>0092</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">test-suite-modernization-after-core-refactor</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0092.dne.tools.test-suite-modernization-after-core-refactor.md">issues/tk0092.dne.tools.test-suite-modernization-after-core-refactor.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="feishu"
+          data-search="0093 tk dne feishu  feishu-only-channel-simplification-and-imsg-sunset issues/tk0093.dne.feishu.feishu-only-channel-simplification-and-imsg-sunset.md"
+          data-active="no"
+        >
+          <td>0093</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>feishu</td>
+          <td>-</td>
+          <td class="slug">feishu-only-channel-simplification-and-imsg-sunset</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0093.dne.feishu.feishu-only-channel-simplification-and-imsg-sunset.md">issues/tk0093.dne.feishu.feishu-only-channel-simplification-and-imsg-sunset.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="tdo"
+          data-board="ghost"
+          data-search="0094 tk tdo ghost p2 heavy-resource-admission-mvp issues/tk0094.tdo.ghost.p2.heavy-resource-admission-mvp.md"
+          data-active="yes"
+        >
+          <td>0094</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-tdo">Todo</span></td>
+          <td>ghost</td>
+          <td>p2</td>
+          <td class="slug">heavy-resource-admission-mvp</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0094.tdo.ghost.p2.heavy-resource-admission-mvp.md">issues/tk0094.tdo.ghost.p2.heavy-resource-admission-mvp.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="docs"
+          data-search="0095 tk dne docs  imsg-sunset-followup-archive-and-naming-cleanup issues/tk0095.dne.docs.imsg-sunset-followup-archive-and-naming-cleanup.md"
+          data-active="no"
+        >
+          <td>0095</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>docs</td>
+          <td>-</td>
+          <td class="slug">imsg-sunset-followup-archive-and-naming-cleanup</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0095.dne.docs.imsg-sunset-followup-archive-and-naming-cleanup.md">issues/tk0095.dne.docs.imsg-sunset-followup-archive-and-naming-cleanup.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="runtime"
+          data-search="0096 tk dne runtime  launchd-feishu-only-env-sanitization issues/tk0096.dne.runtime.launchd-feishu-only-env-sanitization.md"
+          data-active="no"
+        >
+          <td>0096</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>runtime</td>
+          <td>-</td>
+          <td class="slug">launchd-feishu-only-env-sanitization</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0096.dne.runtime.launchd-feishu-only-env-sanitization.md">issues/tk0096.dne.runtime.launchd-feishu-only-env-sanitization.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="doi"
+          data-board="runtime"
+          data-search="0097 tk doi runtime p1 runtime-skill-wrapper-slimming issues/tk0097.doi.runtime.p1.runtime-skill-wrapper-slimming.md"
+          data-active="yes"
+        >
+          <td>0097</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-doi">Doing</span></td>
+          <td>runtime</td>
+          <td>p1</td>
+          <td class="slug">runtime-skill-wrapper-slimming</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0097.doi.runtime.p1.runtime-skill-wrapper-slimming.md">issues/tk0097.doi.runtime.p1.runtime-skill-wrapper-slimming.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="feishu"
+          data-search="0098 tk dne feishu  feishu-live-verification-loop issues/tk0098.dne.feishu.feishu-live-verification-loop.md"
+          data-active="no"
+        >
+          <td>0098</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>feishu</td>
+          <td>-</td>
+          <td class="slug">feishu-live-verification-loop</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0098.dne.feishu.feishu-live-verification-loop.md">issues/tk0098.dne.feishu.feishu-live-verification-loop.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0099 tk dne tools  skill-live-prompt-corpus-v1 issues/tk0099.dne.tools.skill-live-prompt-corpus-v1.md"
+          data-active="no"
+        >
+          <td>0099</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">skill-live-prompt-corpus-v1</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0099.dne.tools.skill-live-prompt-corpus-v1.md">issues/tk0099.dne.tools.skill-live-prompt-corpus-v1.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0100 tk dne tools  skill-guidance-fixes-from-live-batch1 issues/tk0100.dne.tools.skill-guidance-fixes-from-live-batch1.md"
+          data-active="no"
+        >
+          <td>0100</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">skill-guidance-fixes-from-live-batch1</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0100.dne.tools.skill-guidance-fixes-from-live-batch1.md">issues/tk0100.dne.tools.skill-guidance-fixes-from-live-batch1.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0101 tk dne agent  tool-loop-failure-feedback-to-model issues/tk0101.dne.agent.tool-loop-failure-feedback-to-model.md"
+          data-active="no"
+        >
+          <td>0101</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">tool-loop-failure-feedback-to-model</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0101.dne.agent.tool-loop-failure-feedback-to-model.md">issues/tk0101.dne.agent.tool-loop-failure-feedback-to-model.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="runtime"
+          data-search="0102 tk dne runtime  llm-execution-authority-charter issues/tk0102.dne.runtime.llm-execution-authority-charter.md"
+          data-active="no"
+        >
+          <td>0102</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>runtime</td>
+          <td>-</td>
+          <td class="slug">llm-execution-authority-charter</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0102.dne.runtime.llm-execution-authority-charter.md">issues/tk0102.dne.runtime.llm-execution-authority-charter.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="tdo"
+          data-board="product"
+          data-search="0103 tk tdo product p2 ai-os-foundation-roadmap issues/tk0103.tdo.product.p2.ai-os-foundation-roadmap.md"
+          data-active="yes"
+        >
+          <td>0103</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-tdo">Todo</span></td>
+          <td>product</td>
+          <td>p2</td>
+          <td class="slug">ai-os-foundation-roadmap</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0103.tdo.product.p2.ai-os-foundation-roadmap.md">issues/tk0103.tdo.product.p2.ai-os-foundation-roadmap.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0104 tk dne agent  tool-loop-remove-fallback-answer issues/tk0104.dne.agent.tool-loop-remove-fallback-answer.md"
+          data-active="no"
+        >
+          <td>0104</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">tool-loop-remove-fallback-answer</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0104.dne.agent.tool-loop-remove-fallback-answer.md">issues/tk0104.dne.agent.tool-loop-remove-fallback-answer.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0105 tk dne agent  finish-supervisor-observability-only issues/tk0105.dne.agent.finish-supervisor-observability-only.md"
+          data-active="no"
+        >
+          <td>0105</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">finish-supervisor-observability-only</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0105.dne.agent.finish-supervisor-observability-only.md">issues/tk0105.dne.agent.finish-supervisor-observability-only.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="runtime"
+          data-search="0106 tk dne runtime  default-workspace-no-auto-persist issues/tk0106.dne.runtime.default-workspace-no-auto-persist.md"
+          data-active="no"
+        >
+          <td>0106</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>runtime</td>
+          <td>-</td>
+          <td class="slug">default-workspace-no-auto-persist</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0106.dne.runtime.default-workspace-no-auto-persist.md">issues/tk0106.dne.runtime.default-workspace-no-auto-persist.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0107 tk dne agent  remove-feishu-delivery-claim-rewrite issues/tk0107.dne.agent.remove-feishu-delivery-claim-rewrite.md"
+          data-active="no"
+        >
+          <td>0107</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">remove-feishu-delivery-claim-rewrite</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0107.dne.agent.remove-feishu-delivery-claim-rewrite.md">issues/tk0107.dne.agent.remove-feishu-delivery-claim-rewrite.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0108 tk dne agent  remove-dead-forced-final-state issues/tk0108.dne.agent.remove-dead-forced-final-state.md"
+          data-active="no"
+        >
+          <td>0108</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">remove-dead-forced-final-state</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0108.dne.agent.remove-dead-forced-final-state.md">issues/tk0108.dne.agent.remove-dead-forced-final-state.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0109 tk dne agent  remove-soul-path-mutation issues/tk0109.dne.agent.remove-soul-path-mutation.md"
+          data-active="no"
+        >
+          <td>0109</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">remove-soul-path-mutation</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0109.dne.agent.remove-soul-path-mutation.md">issues/tk0109.dne.agent.remove-soul-path-mutation.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0110 tk dne agent  remove-final-answer-auto-retry issues/tk0110.dne.agent.remove-final-answer-auto-retry.md"
+          data-active="no"
+        >
+          <td>0110</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">remove-final-answer-auto-retry</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0110.dne.agent.remove-final-answer-auto-retry.md">issues/tk0110.dne.agent.remove-final-answer-auto-retry.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0111 tk dne agent  stop-sanitizing-final-answers issues/tk0111.dne.agent.stop-sanitizing-final-answers.md"
+          data-active="no"
+        >
+          <td>0111</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">stop-sanitizing-final-answers</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0111.dne.agent.stop-sanitizing-final-answers.md">issues/tk0111.dne.agent.stop-sanitizing-final-answers.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0112 tk dne agent  remove-finish-supervisor-hot-path issues/tk0112.dne.agent.remove-finish-supervisor-hot-path.md"
+          data-active="no"
+        >
+          <td>0112</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">remove-finish-supervisor-hot-path</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0112.dne.agent.remove-finish-supervisor-hot-path.md">issues/tk0112.dne.agent.remove-finish-supervisor-hot-path.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="runtime"
+          data-search="0113 tk dne runtime  demote-verify-to-evidence-only issues/tk0113.dne.runtime.demote-verify-to-evidence-only.md"
+          data-active="no"
+        >
+          <td>0113</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>runtime</td>
+          <td>-</td>
+          <td class="slug">demote-verify-to-evidence-only</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0113.dne.runtime.demote-verify-to-evidence-only.md">issues/tk0113.dne.runtime.demote-verify-to-evidence-only.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0114 tk dne agent  remove-tool-loop-verify-hot-path issues/tk0114.dne.agent.remove-tool-loop-verify-hot-path.md"
+          data-active="no"
+        >
+          <td>0114</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">remove-tool-loop-verify-hot-path</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0114.dne.agent.remove-tool-loop-verify-hot-path.md">issues/tk0114.dne.agent.remove-tool-loop-verify-hot-path.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="runtime"
+          data-search="0115 tk dne runtime  unbound-chat-fail-closed-for-normal-messages issues/tk0115.dne.runtime.unbound-chat-fail-closed-for-normal-messages.md"
+          data-active="no"
+        >
+          <td>0115</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>runtime</td>
+          <td>-</td>
+          <td class="slug">unbound-chat-fail-closed-for-normal-messages</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0115.dne.runtime.unbound-chat-fail-closed-for-normal-messages.md">issues/tk0115.dne.runtime.unbound-chat-fail-closed-for-normal-messages.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="feishu"
+          data-search="0116 tk dne feishu  feishu-live-bdd-acceptance-suite issues/tk0116.dne.feishu.feishu-live-bdd-acceptance-suite.md"
+          data-active="no"
+        >
+          <td>0116</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>feishu</td>
+          <td>-</td>
+          <td class="slug">feishu-live-bdd-acceptance-suite</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0116.dne.feishu.feishu-live-bdd-acceptance-suite.md">issues/tk0116.dne.feishu.feishu-live-bdd-acceptance-suite.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0117 tk dne agent  tool-loop-failure-recovery-nudge issues/tk0117.dne.agent.tool-loop-failure-recovery-nudge.md"
+          data-active="no"
+        >
+          <td>0117</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">tool-loop-failure-recovery-nudge</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0117.dne.agent.tool-loop-failure-recovery-nudge.md">issues/tk0117.dne.agent.tool-loop-failure-recovery-nudge.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="feishu"
+          data-search="0118 tk dne feishu  feishu-send-file-natural-language-action-mainline issues/tk0118.dne.feishu.feishu-send-file-natural-language-action-mainline.md"
+          data-active="no"
+        >
+          <td>0118</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>feishu</td>
+          <td>-</td>
+          <td class="slug">feishu-send-file-natural-language-action-mainline</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0118.dne.feishu.feishu-send-file-natural-language-action-mainline.md">issues/tk0118.dne.feishu.feishu-send-file-natural-language-action-mainline.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0119 tk dne tools  cli-reference-vs-runtime-gap-review issues/tk0119.dne.tools.cli-reference-vs-runtime-gap-review.md"
+          data-active="no"
+        >
+          <td>0119</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">cli-reference-vs-runtime-gap-review</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0119.dne.tools.cli-reference-vs-runtime-gap-review.md">issues/tk0119.dne.tools.cli-reference-vs-runtime-gap-review.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0120 tk dne tools  read-file-contract-and-preview-layering issues/tk0120.dne.tools.read-file-contract-and-preview-layering.md"
+          data-active="no"
+        >
+          <td>0120</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">read-file-contract-and-preview-layering</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0120.dne.tools.read-file-contract-and-preview-layering.md">issues/tk0120.dne.tools.read-file-contract-and-preview-layering.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0121 tk dne tools  help-tool-and-quota-hot-path-thinning issues/tk0121.dne.tools.help-tool-and-quota-hot-path-thinning.md"
+          data-active="no"
+        >
+          <td>0121</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">help-tool-and-quota-hot-path-thinning</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0121.dne.tools.help-tool-and-quota-hot-path-thinning.md">issues/tk0121.dne.tools.help-tool-and-quota-hot-path-thinning.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0122 tk dne tools  first-class-file-tools-and-write-preview-layering issues/tk0122.dne.tools.first-class-file-tools-and-write-preview-layering.md"
+          data-active="no"
+        >
+          <td>0122</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">first-class-file-tools-and-write-preview-layering</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0122.dne.tools.first-class-file-tools-and-write-preview-layering.md">issues/tk0122.dne.tools.first-class-file-tools-and-write-preview-layering.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0123 tk dne tools  tool-preview-single-source-thinning issues/tk0123.dne.tools.tool-preview-single-source-thinning.md"
+          data-active="no"
+        >
+          <td>0123</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">tool-preview-single-source-thinning</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0123.dne.tools.tool-preview-single-source-thinning.md">issues/tk0123.dne.tools.tool-preview-single-source-thinning.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0124 tk dne tools  native-tool-first-prompt-and-skill-contract issues/tk0124.dne.tools.native-tool-first-prompt-and-skill-contract.md"
+          data-active="no"
+        >
+          <td>0124</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">native-tool-first-prompt-and-skill-contract</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0124.dne.tools.native-tool-first-prompt-and-skill-contract.md">issues/tk0124.dne.tools.native-tool-first-prompt-and-skill-contract.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="memory"
+          data-search="0125 tk dne memory  remove-read-file-soul-alias-remap issues/tk0125.dne.memory.remove-read-file-soul-alias-remap.md"
+          data-active="no"
+        >
+          <td>0125</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>memory</td>
+          <td>-</td>
+          <td class="slug">remove-read-file-soul-alias-remap</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0125.dne.memory.remove-read-file-soul-alias-remap.md">issues/tk0125.dne.memory.remove-read-file-soul-alias-remap.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="model"
+          data-search="0126 tk dne model  tool-loop-quota-hot-path-dedup issues/tk0126.dne.model.tool-loop-quota-hot-path-dedup.md"
+          data-active="no"
+        >
+          <td>0126</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>model</td>
+          <td>-</td>
+          <td class="slug">tool-loop-quota-hot-path-dedup</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0126.dne.model.tool-loop-quota-hot-path-dedup.md">issues/tk0126.dne.model.tool-loop-quota-hot-path-dedup.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0127 tk dne tools  remove-hidden-tool-baseline-from-get-tools-for-llm issues/tk0127.dne.tools.remove-hidden-tool-baseline-from-get-tools-for-llm.md"
+          data-active="no"
+        >
+          <td>0127</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">remove-hidden-tool-baseline-from-get-tools-for-llm</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0127.dne.tools.remove-hidden-tool-baseline-from-get-tools-for-llm.md">issues/tk0127.dne.tools.remove-hidden-tool-baseline-from-get-tools-for-llm.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0128 tk dne tools  tool-preview-metadata-footer-unification issues/tk0128.dne.tools.tool-preview-metadata-footer-unification.md"
+          data-active="no"
+        >
+          <td>0128</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">tool-preview-metadata-footer-unification</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0128.dne.tools.tool-preview-metadata-footer-unification.md">issues/tk0128.dne.tools.tool-preview-metadata-footer-unification.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0129 tk dne tools  vision-tool-surface-single-truth issues/tk0129.dne.tools.vision-tool-surface-single-truth.md"
+          data-active="no"
+        >
+          <td>0129</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">vision-tool-surface-single-truth</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0129.dne.tools.vision-tool-surface-single-truth.md">issues/tk0129.dne.tools.vision-tool-surface-single-truth.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="model"
+          data-search="0130 tk dne model  api-backend-local-vision-policy issues/tk0130.dne.model.api-backend-local-vision-policy.md"
+          data-active="no"
+        >
+          <td>0130</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>model</td>
+          <td>-</td>
+          <td class="slug">api-backend-local-vision-policy</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0130.dne.model.api-backend-local-vision-policy.md">issues/tk0130.dne.model.api-backend-local-vision-policy.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="doi"
+          data-board="browser"
+          data-search="0131 tk doi browser p1 browser-text-artifact-and-skill-contract issues/tk0131.doi.browser.p1.browser-text-artifact-and-skill-contract.md"
+          data-active="yes"
+        >
+          <td>0131</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-doi">Doing</span></td>
+          <td>browser</td>
+          <td>p1</td>
+          <td class="slug">browser-text-artifact-and-skill-contract</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0131.doi.browser.p1.browser-text-artifact-and-skill-contract.md">issues/tk0131.doi.browser.p1.browser-text-artifact-and-skill-contract.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0132 tk dne tools  cli-command-surface-unification issues/tk0132.dne.tools.cli-command-surface-unification.md"
+          data-active="no"
+        >
+          <td>0132</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">cli-command-surface-unification</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0132.dne.tools.cli-command-surface-unification.md">issues/tk0132.dne.tools.cli-command-surface-unification.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0133 tk dne tools  help-docs-memory-canonical-coverage issues/tk0133.dne.tools.help-docs-memory-canonical-coverage.md"
+          data-active="no"
+        >
+          <td>0133</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">help-docs-memory-canonical-coverage</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0133.dne.tools.help-docs-memory-canonical-coverage.md">issues/tk0133.dne.tools.help-docs-memory-canonical-coverage.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0134 tk dne tools  retire-placeholder-skill-cli-surface issues/tk0134.dne.tools.retire-placeholder-skill-cli-surface.md"
+          data-active="no"
+        >
+          <td>0134</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">retire-placeholder-skill-cli-surface</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0134.dne.tools.retire-placeholder-skill-cli-surface.md">issues/tk0134.dne.tools.retire-placeholder-skill-cli-surface.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0135 tk dne tools  hide-retired-file-send-from-public-file-surface issues/tk0135.dne.tools.hide-retired-file-send-from-public-file-surface.md"
+          data-active="no"
+        >
+          <td>0135</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">hide-retired-file-send-from-public-file-surface</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0135.dne.tools.hide-retired-file-send-from-public-file-surface.md">issues/tk0135.dne.tools.hide-retired-file-send-from-public-file-surface.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0136 tk dne tools  subagent-skill-guidance-and-install-hint issues/tk0136.dne.tools.subagent-skill-guidance-and-install-hint.md"
+          data-active="no"
+        >
+          <td>0136</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">subagent-skill-guidance-and-install-hint</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0136.dne.tools.subagent-skill-guidance-and-install-hint.md">issues/tk0136.dne.tools.subagent-skill-guidance-and-install-hint.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0137 tk dne agent  subagent-cli-runtime-mvp issues/tk0137.dne.agent.subagent-cli-runtime-mvp.md"
+          data-active="no"
+        >
+          <td>0137</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">subagent-cli-runtime-mvp</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0137.dne.agent.subagent-cli-runtime-mvp.md">issues/tk0137.dne.agent.subagent-cli-runtime-mvp.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0138 tk dne agent  subagent-watch-must-require-completion-marker issues/tk0138.dne.agent.subagent-watch-must-require-completion-marker.md"
+          data-active="no"
+        >
+          <td>0138</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">subagent-watch-must-require-completion-marker</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0138.dne.agent.subagent-watch-must-require-completion-marker.md">issues/tk0138.dne.agent.subagent-watch-must-require-completion-marker.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0139 tk dne agent  codex-fresh-session-jsonl-wait issues/tk0139.dne.agent.codex-fresh-session-jsonl-wait.md"
+          data-active="no"
+        >
+          <td>0139</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">codex-fresh-session-jsonl-wait</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0139.dne.agent.codex-fresh-session-jsonl-wait.md">issues/tk0139.dne.agent.codex-fresh-session-jsonl-wait.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0140 tk dne tools  skill-live-testing-cognition-gate issues/tk0140.dne.tools.skill-live-testing-cognition-gate.md"
+          data-active="no"
+        >
+          <td>0140</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">skill-live-testing-cognition-gate</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0140.dne.tools.skill-live-testing-cognition-gate.md">issues/tk0140.dne.tools.skill-live-testing-cognition-gate.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0141 tk dne agent  subagent-list-observability-mvp issues/tk0141.dne.agent.subagent-list-observability-mvp.md"
+          data-active="no"
+        >
+          <td>0141</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">subagent-list-observability-mvp</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0141.dne.agent.subagent-list-observability-mvp.md">issues/tk0141.dne.agent.subagent-list-observability-mvp.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0142 tk dne tools  retire-file-system-cli-wrappers issues/tk0142.dne.tools.retire-file-system-cli-wrappers.md"
+          data-active="no"
+        >
+          <td>0142</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">retire-file-system-cli-wrappers</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0142.dne.tools.retire-file-system-cli-wrappers.md">issues/tk0142.dne.tools.retire-file-system-cli-wrappers.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0143 tk dne tools  retire-system-info-auto-skill issues/tk0143.dne.tools.retire-system-info-auto-skill.md"
+          data-active="no"
+        >
+          <td>0143</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">retire-system-info-auto-skill</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0143.dne.tools.retire-system-info-auto-skill.md">issues/tk0143.dne.tools.retire-system-info-auto-skill.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0144 tk dne tools  retire-web-cli-wrappers issues/tk0144.dne.tools.retire-web-cli-wrappers.md"
+          data-active="no"
+        >
+          <td>0144</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">retire-web-cli-wrappers</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0144.dne.tools.retire-web-cli-wrappers.md">issues/tk0144.dne.tools.retire-web-cli-wrappers.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0145 tk dne tools  retire-media-screenshot-and-skill-run-residuals issues/tk0145.dne.tools.retire-media-screenshot-and-skill-run-residuals.md"
+          data-active="no"
+        >
+          <td>0145</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">retire-media-screenshot-and-skill-run-residuals</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0145.dne.tools.retire-media-screenshot-and-skill-run-residuals.md">issues/tk0145.dne.tools.retire-media-screenshot-and-skill-run-residuals.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0146 tk dne tools  retire-gen-image-audio-hidden-roots issues/tk0146.dne.tools.retire-gen-image-audio-hidden-roots.md"
+          data-active="no"
+        >
+          <td>0146</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">retire-gen-image-audio-hidden-roots</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0146.dne.tools.retire-gen-image-audio-hidden-roots.md">issues/tk0146.dne.tools.retire-gen-image-audio-hidden-roots.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0147 tk dne tools  retire-browser-gmail-readonly-compat-entry issues/tk0147.dne.tools.retire-browser-gmail-readonly-compat-entry.md"
+          data-active="no"
+        >
+          <td>0147</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">retire-browser-gmail-readonly-compat-entry</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0147.dne.tools.retire-browser-gmail-readonly-compat-entry.md">issues/tk0147.dne.tools.retire-browser-gmail-readonly-compat-entry.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0148 tk dne tools  retire-jobs-plural-alias-root issues/tk0148.dne.tools.retire-jobs-plural-alias-root.md"
+          data-active="no"
+        >
+          <td>0148</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">retire-jobs-plural-alias-root</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0148.dne.tools.retire-jobs-plural-alias-root.md">issues/tk0148.dne.tools.retire-jobs-plural-alias-root.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0149 tk dne tools  retire-memory-remember-status-aliases issues/tk0149.dne.tools.retire-memory-remember-status-aliases.md"
+          data-active="no"
+        >
+          <td>0149</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">retire-memory-remember-status-aliases</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0149.dne.tools.retire-memory-remember-status-aliases.md">issues/tk0149.dne.tools.retire-memory-remember-status-aliases.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0150 tk dne tools  retire-skills-plural-alias-root issues/tk0150.dne.tools.retire-skills-plural-alias-root.md"
+          data-active="no"
+        >
+          <td>0150</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">retire-skills-plural-alias-root</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0150.dne.tools.retire-skills-plural-alias-root.md">issues/tk0150.dne.tools.retire-skills-plural-alias-root.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0151 tk dne tools  remove-last-normalize-legacy-cli-shims issues/tk0151.dne.tools.remove-last-normalize-legacy-cli-shims.md"
+          data-active="no"
+        >
+          <td>0151</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">remove-last-normalize-legacy-cli-shims</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0151.dne.tools.remove-last-normalize-legacy-cli-shims.md">issues/tk0151.dne.tools.remove-last-normalize-legacy-cli-shims.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0152 tk dne tools  ban-history-debt-inheritance-and-purge-cli-tombstones issues/tk0152.dne.tools.ban-history-debt-inheritance-and-purge-cli-tombstones.md"
+          data-active="no"
+        >
+          <td>0152</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">ban-history-debt-inheritance-and-purge-cli-tombstones</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0152.dne.tools.ban-history-debt-inheritance-and-purge-cli-tombstones.md">issues/tk0152.dne.tools.ban-history-debt-inheritance-and-purge-cli-tombstones.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0153 tk dne agent  tool-loop-heat-path-decontrol issues/tk0153.dne.agent.tool-loop-heat-path-decontrol.md"
+          data-active="no"
+        >
+          <td>0153</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">tool-loop-heat-path-decontrol</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0153.dne.agent.tool-loop-heat-path-decontrol.md">issues/tk0153.dne.agent.tool-loop-heat-path-decontrol.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0154 tk dne tools  tool-bus-thin-gateway issues/tk0154.dne.tools.tool-bus-thin-gateway.md"
+          data-active="no"
+        >
+          <td>0154</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">tool-bus-thin-gateway</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0154.dne.tools.tool-bus-thin-gateway.md">issues/tk0154.dne.tools.tool-bus-thin-gateway.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0155 tk dne tools  tool-bus-preview-meta-thinning issues/tk0155.dne.tools.tool-bus-preview-meta-thinning.md"
+          data-active="no"
+        >
+          <td>0155</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">tool-bus-preview-meta-thinning</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0155.dne.tools.tool-bus-preview-meta-thinning.md">issues/tk0155.dne.tools.tool-bus-preview-meta-thinning.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0156 tk dne tools  tool-bus-desktop-error-preview-thinning issues/tk0156.dne.tools.tool-bus-desktop-error-preview-thinning.md"
+          data-active="no"
+        >
+          <td>0156</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">tool-bus-desktop-error-preview-thinning</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0156.dne.tools.tool-bus-desktop-error-preview-thinning.md">issues/tk0156.dne.tools.tool-bus-desktop-error-preview-thinning.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0157 tk dne tools  tool-bus-desktop-runner-extraction-and-validator-thinning issues/tk0157.dne.tools.tool-bus-desktop-runner-extraction-and-validator-thinning.md"
+          data-active="no"
+        >
+          <td>0157</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">tool-bus-desktop-runner-extraction-and-validator-thinning</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0157.dne.tools.tool-bus-desktop-runner-extraction-and-validator-thinning.md">issues/tk0157.dne.tools.tool-bus-desktop-runner-extraction-and-validator-thinning.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0158 tk dne tools  tool-bus-feishu-runner-extraction issues/tk0158.dne.tools.tool-bus-feishu-runner-extraction.md"
+          data-active="no"
+        >
+          <td>0158</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">tool-bus-feishu-runner-extraction</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0158.dne.tools.tool-bus-feishu-runner-extraction.md">issues/tk0158.dne.tools.tool-bus-feishu-runner-extraction.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0159 tk dne tools  tool-bus-file-runner-extraction issues/tk0159.dne.tools.tool-bus-file-runner-extraction.md"
+          data-active="no"
+        >
+          <td>0159</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">tool-bus-file-runner-extraction</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0159.dne.tools.tool-bus-file-runner-extraction.md">issues/tk0159.dne.tools.tool-bus-file-runner-extraction.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="tools"
+          data-search="0160 tk dne tools  desktop-default-off-before-plugin-replacement issues/tk0160.dne.tools.desktop-default-off-before-plugin-replacement.md"
+          data-active="no"
+        >
+          <td>0160</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>tools</td>
+          <td>-</td>
+          <td class="slug">desktop-default-off-before-plugin-replacement</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0160.dne.tools.desktop-default-off-before-plugin-replacement.md">issues/tk0160.dne.tools.desktop-default-off-before-plugin-replacement.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="ghost"
+          data-search="0161 tk dne ghost  desktop-legacy-runner-one-shot-cli issues/tk0161.dne.ghost.desktop-legacy-runner-one-shot-cli.md"
+          data-active="no"
+        >
+          <td>0161</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>ghost</td>
+          <td>-</td>
+          <td class="slug">desktop-legacy-runner-one-shot-cli</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0161.dne.ghost.desktop-legacy-runner-one-shot-cli.md">issues/tk0161.dne.ghost.desktop-legacy-runner-one-shot-cli.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="ghost"
+          data-search="0162 tk dne ghost  desktop-route-rpc-only-thinning issues/tk0162.dne.ghost.desktop-route-rpc-only-thinning.md"
+          data-active="no"
+        >
+          <td>0162</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>ghost</td>
+          <td>-</td>
+          <td class="slug">desktop-route-rpc-only-thinning</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0162.dne.ghost.desktop-route-rpc-only-thinning.md">issues/tk0162.dne.ghost.desktop-route-rpc-only-thinning.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="ghost"
+          data-search="0164 tk dne ghost  retire-legacy-desktop-mainline issues/tk0164.dne.ghost.retire-legacy-desktop-mainline.md"
+          data-active="no"
+        >
+          <td>0164</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>ghost</td>
+          <td>-</td>
+          <td class="slug">retire-legacy-desktop-mainline</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0164.dne.ghost.retire-legacy-desktop-mainline.md">issues/tk0164.dne.ghost.retire-legacy-desktop-mainline.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="tdo"
+          data-board="browser"
+          data-search="0165 tk tdo browser p2 chromium-cookie-export-cli issues/tk0165.tdo.browser.p2.chromium-cookie-export-cli.md"
+          data-active="yes"
+        >
+          <td>0165</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-tdo">Todo</span></td>
+          <td>browser</td>
+          <td>p2</td>
+          <td class="slug">chromium-cookie-export-cli</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0165.tdo.browser.p2.chromium-cookie-export-cli.md">issues/tk0165.tdo.browser.p2.chromium-cookie-export-cli.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="ghost"
+          data-search="0166 tk dne ghost  ban-ghost-hard-gates-and-sharpen-skill-contract issues/tk0166.dne.ghost.ban-ghost-hard-gates-and-sharpen-skill-contract.md"
+          data-active="no"
+        >
+          <td>0166</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>ghost</td>
+          <td>-</td>
+          <td class="slug">ban-ghost-hard-gates-and-sharpen-skill-contract</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0166.dne.ghost.ban-ghost-hard-gates-and-sharpen-skill-contract.md">issues/tk0166.dne.ghost.ban-ghost-hard-gates-and-sharpen-skill-contract.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="ghost"
+          data-search="0167 tk dne ghost  mac-legacy-surface-freeze issues/tk0167.dne.ghost.mac-legacy-surface-freeze.md"
+          data-active="no"
+        >
+          <td>0167</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>ghost</td>
+          <td>-</td>
+          <td class="slug">mac-legacy-surface-freeze</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0167.dne.ghost.mac-legacy-surface-freeze.md">issues/tk0167.dne.ghost.mac-legacy-surface-freeze.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="ghost"
+          data-search="0168 tk dne ghost  archive-legacy-desktop-bridge issues/tk0168.dne.ghost.archive-legacy-desktop-bridge.md"
+          data-active="no"
+        >
+          <td>0168</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>ghost</td>
+          <td>-</td>
+          <td class="slug">archive-legacy-desktop-bridge</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0168.dne.ghost.archive-legacy-desktop-bridge.md">issues/tk0168.dne.ghost.archive-legacy-desktop-bridge.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="docs"
+          data-search="0169 tk dne docs  root-doc-slimming-followup issues/tk0169.dne.docs.root-doc-slimming-followup.md"
+          data-active="no"
+        >
+          <td>0169</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>docs</td>
+          <td>-</td>
+          <td class="slug">root-doc-slimming-followup</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0169.dne.docs.root-doc-slimming-followup.md">issues/tk0169.dne.docs.root-doc-slimming-followup.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="docs"
+          data-search="0170 tk dne docs  archive-retired-imsg-build-scripts issues/tk0170.dne.docs.archive-retired-imsg-build-scripts.md"
+          data-active="no"
+        >
+          <td>0170</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>docs</td>
+          <td>-</td>
+          <td class="slug">archive-retired-imsg-build-scripts</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0170.dne.docs.archive-retired-imsg-build-scripts.md">issues/tk0170.dne.docs.archive-retired-imsg-build-scripts.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="release"
+          data-search="0171 tk dne release  release-version-bump-to-2-4-0 issues/tk0171.dne.release.release-version-bump-to-2-4-0.md"
+          data-active="no"
+        >
+          <td>0171</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>release</td>
+          <td>-</td>
+          <td class="slug">release-version-bump-to-2-4-0</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0171.dne.release.release-version-bump-to-2-4-0.md">issues/tk0171.dne.release.release-version-bump-to-2-4-0.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="ghost"
+          data-search="0172 tk dne ghost  github-surface-align-to-v2-4-0 issues/tk0172.dne.ghost.github-surface-align-to-v2-4-0.md"
+          data-active="no"
+        >
+          <td>0172</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>ghost</td>
+          <td>-</td>
+          <td class="slug">github-surface-align-to-v2-4-0</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0172.dne.ghost.github-surface-align-to-v2-4-0.md">issues/tk0172.dne.ghost.github-surface-align-to-v2-4-0.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="runtime"
+          data-search="0173 tk dne runtime  stop-tracking-trash-directory issues/tk0173.dne.runtime.stop-tracking-trash-directory.md"
+          data-active="no"
+        >
+          <td>0173</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>runtime</td>
+          <td>-</td>
+          <td class="slug">stop-tracking-trash-directory</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0173.dne.runtime.stop-tracking-trash-directory.md">issues/tk0173.dne.runtime.stop-tracking-trash-directory.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0174 tk dne agent  stop-tracking-claude-directory issues/tk0174.dne.agent.stop-tracking-claude-directory.md"
+          data-active="no"
+        >
+          <td>0174</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">stop-tracking-claude-directory</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0174.dne.agent.stop-tracking-claude-directory.md">issues/tk0174.dne.agent.stop-tracking-claude-directory.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0175 tk dne agent  stop-tracking-local-prompt-files issues/tk0175.dne.agent.stop-tracking-local-prompt-files.md"
+          data-active="no"
+        >
+          <td>0175</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">stop-tracking-local-prompt-files</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0175.dne.agent.stop-tracking-local-prompt-files.md">issues/tk0175.dne.agent.stop-tracking-local-prompt-files.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="runtime"
+          data-search="0176 tk dne runtime  stop-tracking-manual-artifacts issues/tk0176.dne.runtime.stop-tracking-manual-artifacts.md"
+          data-active="no"
+        >
+          <td>0176</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>runtime</td>
+          <td>-</td>
+          <td class="slug">stop-tracking-manual-artifacts</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0176.dne.runtime.stop-tracking-manual-artifacts.md">issues/tk0176.dne.runtime.stop-tracking-manual-artifacts.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="runtime"
+          data-search="0177 tk dne runtime  ghost-runtime-test-prep-alignment issues/tk0177.dne.runtime.ghost-runtime-test-prep-alignment.md"
+          data-active="no"
+        >
+          <td>0177</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>runtime</td>
+          <td>-</td>
+          <td class="slug">ghost-runtime-test-prep-alignment</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0177.dne.runtime.ghost-runtime-test-prep-alignment.md">issues/tk0177.dne.runtime.ghost-runtime-test-prep-alignment.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="docs"
+          data-search="0178 tk dne docs  aidocs-active-archive-layering issues/tk0178.dne.docs.aidocs-active-archive-layering.md"
+          data-active="no"
+        >
+          <td>0178</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>docs</td>
+          <td>-</td>
+          <td class="slug">aidocs-active-archive-layering</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0178.dne.docs.aidocs-active-archive-layering.md">issues/tk0178.dne.docs.aidocs-active-archive-layering.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="docs"
+          data-search="0179 tk dne docs  readme-and-contributing-truth-alignment issues/tk0179.dne.docs.readme-and-contributing-truth-alignment.md"
+          data-active="no"
+        >
+          <td>0179</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>docs</td>
+          <td>-</td>
+          <td class="slug">readme-and-contributing-truth-alignment</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0179.dne.docs.readme-and-contributing-truth-alignment.md">issues/tk0179.dne.docs.readme-and-contributing-truth-alignment.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="runtime"
+          data-search="0180 tk pss runtime p1 ghost-permission-host-facts-and-error-diagnostics issues/tk0180.pss.runtime.p1.ghost-permission-host-facts-and-error-diagnostics.md"
+          data-active="no"
+        >
+          <td>0180</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>runtime</td>
+          <td>p1</td>
+          <td class="slug">ghost-permission-host-facts-and-error-diagnostics</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0180.pss.runtime.p1.ghost-permission-host-facts-and-error-diagnostics.md">issues/tk0180.pss.runtime.p1.ghost-permission-host-facts-and-error-diagnostics.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="runtime"
+          data-search="0181 tk pss runtime p1 ghost-permission-preflight-and-auto-open issues/tk0181.pss.runtime.p1.ghost-permission-preflight-and-auto-open.md"
+          data-active="no"
+        >
+          <td>0181</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>runtime</td>
+          <td>p1</td>
+          <td class="slug">ghost-permission-preflight-and-auto-open</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0181.pss.runtime.p1.ghost-permission-preflight-and-auto-open.md">issues/tk0181.pss.runtime.p1.ghost-permission-preflight-and-auto-open.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="runtime"
+          data-search="0182 tk pss runtime p1 desktop-permissions-preauth-on-daemon-start issues/tk0182.pss.runtime.p1.desktop-permissions-preauth-on-daemon-start.md"
+          data-active="no"
+        >
+          <td>0182</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>runtime</td>
+          <td>p1</td>
+          <td class="slug">desktop-permissions-preauth-on-daemon-start</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0182.pss.runtime.p1.desktop-permissions-preauth-on-daemon-start.md">issues/tk0182.pss.runtime.p1.desktop-permissions-preauth-on-daemon-start.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="ghost"
+          data-search="0186 tk dne ghost  ghost-skill-risk-confirmation-guidance issues/tk0186.dne.ghost.ghost-skill-risk-confirmation-guidance.md"
+          data-active="no"
+        >
+          <td>0186</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>ghost</td>
+          <td>-</td>
+          <td class="slug">ghost-skill-risk-confirmation-guidance</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0186.dne.ghost.ghost-skill-risk-confirmation-guidance.md">issues/tk0186.dne.ghost.ghost-skill-risk-confirmation-guidance.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="agent"
+          data-search="0190 tk dne agent  run-events-skill-read-path-audit issues/tk0190.dne.agent.run-events-skill-read-path-audit.md"
+          data-active="no"
+        >
+          <td>0190</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>agent</td>
+          <td>-</td>
+          <td class="slug">run-events-skill-read-path-audit</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0190.dne.agent.run-events-skill-read-path-audit.md">issues/tk0190.dne.agent.run-events-skill-read-path-audit.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="docs"
+          data-search="0191 tk dne docs  doc-protocol-post-migration-closure issues/tk0191.dne.docs.doc-protocol-post-migration-closure.md"
+          data-active="no"
+        >
+          <td>0191</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>docs</td>
+          <td>-</td>
+          <td class="slug">doc-protocol-post-migration-closure</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0191.dne.docs.doc-protocol-post-migration-closure.md">issues/tk0191.dne.docs.doc-protocol-post-migration-closure.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="tdo"
+          data-board="docs"
+          data-search="0192 tk tdo docs p1 doc-directory-closure-and-active-link-cleanup issues/tk0192.tdo.docs.p1.doc-directory-closure-and-active-link-cleanup.md"
+          data-active="yes"
+        >
+          <td>0192</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-tdo">Todo</span></td>
+          <td>docs</td>
+          <td>p1</td>
+          <td class="slug">doc-directory-closure-and-active-link-cleanup</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0192.tdo.docs.p1.doc-directory-closure-and-active-link-cleanup.md">issues/tk0192.tdo.docs.p1.doc-directory-closure-and-active-link-cleanup.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="docs"
+          data-search="0193 tk dne docs  doc-surface-polish-and-trash-cleanup issues/tk0193.dne.docs.doc-surface-polish-and-trash-cleanup.md"
+          data-active="no"
+        >
+          <td>0193</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>docs</td>
+          <td>-</td>
+          <td class="slug">doc-surface-polish-and-trash-cleanup</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0193.dne.docs.doc-surface-polish-and-trash-cleanup.md">issues/tk0193.dne.docs.doc-surface-polish-and-trash-cleanup.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="docs"
+          data-search="0194 tk dne docs  historical-backlink-cleanup-and-archive-alignment issues/tk0194.dne.docs.historical-backlink-cleanup-and-archive-alignment.md"
+          data-active="no"
+        >
+          <td>0194</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>docs</td>
+          <td>-</td>
+          <td class="slug">historical-backlink-cleanup-and-archive-alignment</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0194.dne.docs.historical-backlink-cleanup-and-archive-alignment.md">issues/tk0194.dne.docs.historical-backlink-cleanup-and-archive-alignment.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="tdo"
+          data-board="docs"
+          data-search="0195 tk tdo docs p2 tasks-directory-archive-physical-closure issues/tk0195.tdo.docs.p2.tasks-directory-archive-physical-closure.md"
+          data-active="yes"
+        >
+          <td>0195</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-tdo">Todo</span></td>
+          <td>docs</td>
+          <td>p2</td>
+          <td class="slug">tasks-directory-archive-physical-closure</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0195.tdo.docs.p2.tasks-directory-archive-physical-closure.md">issues/tk0195.tdo.docs.p2.tasks-directory-archive-physical-closure.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="tdo"
+          data-board="docs"
+          data-search="0196 tk tdo docs p2 aidocs-structure-closure-and-archive-cleanup issues/tk0196.tdo.docs.p2.aidocs-structure-closure-and-archive-cleanup.md"
+          data-active="yes"
+        >
+          <td>0196</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-tdo">Todo</span></td>
+          <td>docs</td>
+          <td>p2</td>
+          <td class="slug">aidocs-structure-closure-and-archive-cleanup</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0196.tdo.docs.p2.aidocs-structure-closure-and-archive-cleanup.md">issues/tk0196.tdo.docs.p2.aidocs-structure-closure-and-archive-cleanup.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="feishu"
+          data-search="0197 tk pss feishu p2 feishu-inbound-temp-file-cleanup issues/tk0197.pss.feishu.p2.feishu-inbound-temp-file-cleanup.md"
+          data-active="no"
+        >
+          <td>0197</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>feishu</td>
+          <td>p2</td>
+          <td class="slug">feishu-inbound-temp-file-cleanup</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0197.pss.feishu.p2.feishu-inbound-temp-file-cleanup.md">issues/tk0197.pss.feishu.p2.feishu-inbound-temp-file-cleanup.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="tdo"
+          data-board="tools"
+          data-search="0198 tk tdo tools p1 managed-bash-runner-mainline issues/tk0198.tdo.tools.p1.managed-bash-runner-mainline.md"
+          data-active="yes"
+        >
+          <td>0198</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-tdo">Todo</span></td>
+          <td>tools</td>
+          <td>p1</td>
+          <td class="slug">managed-bash-runner-mainline</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0198.tdo.tools.p1.managed-bash-runner-mainline.md">issues/tk0198.tdo.tools.p1.managed-bash-runner-mainline.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="tdo"
+          data-board="runtime"
+          data-search="0199 tk tdo runtime p1 managed-bash-bootstrap-contract issues/tk0199.tdo.runtime.p1.managed-bash-bootstrap-contract.md"
+          data-active="yes"
+        >
+          <td>0199</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-tdo">Todo</span></td>
+          <td>runtime</td>
+          <td>p1</td>
+          <td class="slug">managed-bash-bootstrap-contract</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0199.tdo.runtime.p1.managed-bash-bootstrap-contract.md">issues/tk0199.tdo.runtime.p1.managed-bash-bootstrap-contract.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="tdo"
+          data-board="agent"
+          data-search="0200 tk tdo agent p1 shell-contract-doc-and-prompt-alignment issues/tk0200.tdo.agent.p1.shell-contract-doc-and-prompt-alignment.md"
+          data-active="yes"
+        >
+          <td>0200</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-tdo">Todo</span></td>
+          <td>agent</td>
+          <td>p1</td>
+          <td class="slug">shell-contract-doc-and-prompt-alignment</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0200.tdo.agent.p1.shell-contract-doc-and-prompt-alignment.md">issues/tk0200.tdo.agent.p1.shell-contract-doc-and-prompt-alignment.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="tdo"
+          data-board="runtime"
+          data-search="0201 tk tdo runtime p2 optional-agent-toolset-bootstrap-pack issues/tk0201.tdo.runtime.p2.optional-agent-toolset-bootstrap-pack.md"
+          data-active="yes"
+        >
+          <td>0201</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-tdo">Todo</span></td>
+          <td>runtime</td>
+          <td>p2</td>
+          <td class="slug">optional-agent-toolset-bootstrap-pack</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0201.tdo.runtime.p2.optional-agent-toolset-bootstrap-pack.md">issues/tk0201.tdo.runtime.p2.optional-agent-toolset-bootstrap-pack.md</a></td>
+        </tr>
+      
+          </tbody>
+        </table>
+      </section>
+    </main>
+
+    <script>
+      const rows = Array.from(document.querySelectorAll("#issue-table-body tr"));
+      const resultCount = document.getElementById("result-count");
+      const boardFilter = document.getElementById("board-filter");
+      const searchInput = document.getElementById("search");
+      const tabs = Array.from(document.querySelectorAll(".tab-button"));
+      let stateFilter = "open";
+
+      function applyFilters() {
+        const board = boardFilter.value;
+        const query = searchInput.value.trim().toLowerCase();
+        let visible = 0;
+
+        for (const row of rows) {
+          const rowState = row.dataset.state;
+          const rowBoard = row.dataset.board;
+          const rowSearch = row.dataset.search || "";
+          const isActive = row.dataset.active === "yes";
+
+          const stateOk =
+            stateFilter === "all" ? true :
+            stateFilter === "open" ? isActive :
+            stateFilter === "done" ? (rowState === "pss" || rowState === "dne") :
+            rowState === stateFilter;
+
+          const boardOk = board === "all" || rowBoard === board;
+          const searchOk = query === "" || rowSearch.includes(query);
+          const show = stateOk && boardOk && searchOk;
+
+          row.classList.toggle("hidden", !show);
+          if (show) visible += 1;
+        }
+
+        resultCount.textContent = "当前显示 " + visible + " / " + rows.length + " 条任务";
+      }
+
+      for (const tab of tabs) {
+        tab.addEventListener("click", () => {
+          stateFilter = tab.dataset.stateFilter || "open";
+          for (const item of tabs) item.classList.remove("is-active");
+          tab.classList.add("is-active");
+          applyFilters();
+        });
+      }
+
+      boardFilter.addEventListener("change", applyFilters);
+      searchInput.addEventListener("input", applyFilters);
+      applyFilters();
+    </script>
+  </body>
+</html>

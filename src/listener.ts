@@ -18,6 +18,7 @@ import {
   parseRouteCommand,
 } from "./routes/commands.js";
 import { logger } from "./logger/index.js";
+import { unlink } from "node:fs/promises";
 import { updateLastSeen } from "./state/store.js";
 import { getMemoryInjectConfig, saveCurrentSessionContext } from "./config/workspace.js";
 import { AutoTtsLane } from "./runners/tts/auto-lane.js";
@@ -737,6 +738,16 @@ export async function handleMessage(
           error: copyResult.error,
         });
         continue;
+      }
+
+      // 清理飞书入站临时文件（成功复制到 vault 后）
+      const sourceTempPath = attachment.path;
+      if (sourceTempPath && sourceTempPath.includes("msgcode-feishu-inbound")) {
+        try {
+          await unlink(sourceTempPath);
+        } catch {
+          // 删除失败不阻塞，忽略即可
+        }
       }
 
       // 格式化附件信息注入 tmux

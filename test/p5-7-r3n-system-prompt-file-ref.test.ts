@@ -67,6 +67,9 @@ describe("P5.7-R3n: system prompt file reference", () => {
     expect(content).toContain("探索 CLI 合同时优先使用 help_docs");
     expect(content).toContain("CLI 是正式能力边界之一，但不是所有任务都先绕 bash");
     expect(content).toContain("skill 是说明书，不是默认执行入口");
+    expect(content).toContain("音频附件优先使用 asr");
+    expect(content).toContain("若当前正式工具面未暴露 vision，就先读 {{MSGCODE_SKILLS_DIR}}/vision-index/SKILL.md");
+    expect(content).toContain("src 不是你的正式操作面");
     expect(content).toContain("凡是 AI 生成的图片、音频、视频以及其他生成产物，优先在当前 workspace 的 `AIDOCS/` 目录下查找");
   });
 

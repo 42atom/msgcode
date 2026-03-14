@@ -113,20 +113,19 @@ description: This skill should be used when the task is complex enough to benefi
 
 ### A. 当前仓库已经有正式协议
 
-如果当前项目已经有 `issues/`、`docs/design/`、`docs/notes/` 这类协议，优先遵守仓库协议，不另起炉灶。
+如果当前项目已经有 `issues/`、`docs/plan/` 这类协议，优先遵守仓库协议，不另起炉灶。
 
 例如在 `msgcode` 仓库：
 
-- 任务事实：`issues/NNNN-<slug>.md`
-- 设计计划：`docs/design/plan-YYMMDD-<topic>.md`
-- 研究记录：`docs/notes/research-YYMMDD-<topic>.md`
+- 任务事实：`issues/tkNNNN.<state>.<board>.<slug>[.prio].md`
+- 设计计划：`docs/plan/plNNNN.<state>.<board>.<slug>[.prio].md`
 
 ### B. 当前任务只是工作区内的临时复杂任务
 
 优先使用：
 
-- `aidocs/task_plan-YYMMDD-<topic>.md`
-- `aidocs/notes/research-YYMMDD-<topic>.md`
+- `AIDOCS/tasks/tkNNNN.<state>.<board>.<slug>[.prio].md`
+- `AIDOCS/notes/rsNNNN.<state>.<board>.<slug>.md`
 
 保持文件可读、可追踪，不要创建过深目录树。
 
