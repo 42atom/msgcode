@@ -17,6 +17,7 @@ import path from "node:path";
 import type { TaskRecord, TaskStatus } from "./task-types.js";
 import { isLegalTransition } from "./task-types.js";
 import { logger } from "../logger/index.js";
+import { atomicWriteFile } from "./fs-atomic.js";
 
 // ============================================
 // 任务存储配置
@@ -271,7 +272,7 @@ export class TaskStore {
     private async saveTask(task: TaskRecord): Promise<void> {
         const filePath = this.getTaskFilePath(task.chatId);
         const content = JSON.stringify(task, null, 2);
-        fs.writeFileSync(filePath, content, "utf-8");
+        await atomicWriteFile(filePath, content);
     }
 
     /**

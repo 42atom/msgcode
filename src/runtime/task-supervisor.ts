@@ -28,9 +28,11 @@ import { createTaskRecord, toDiagnostics } from "./task-types.js";
 import { TaskStore } from "./task-store.js";
 import { logger } from "../logger/index.js";
 import type { TickContext } from "./heartbeat.js";
+import { executeWakeTick } from "./wake-tick.js";
 import { beginRun, toRunErrorMessage } from "./run-store.js";
 import { emitRunEvent } from "./run-events.js";
 import type { RunSource } from "./run-types.js";
+import type { WakeWorkCapsule } from "./wake-consume.js";
 
 // ============================================
 // Task Supervisor 类
@@ -38,13 +40,22 @@ import type { RunSource } from "./run-types.js";
 
 export class TaskSupervisor {
     private taskStore: TaskStore;
-    private config: Required<Omit<TaskSupervisorConfig, "executeTaskTurn">>;
+    private config: Required<Omit<TaskSupervisorConfig, "executeTaskTurn" | "workspacePath" | "wakeConfig">>;
     private executeTaskTurn: TaskTurnExecutor;
     private isRunning = false;
-
     // P5.7-R12-T8: 冻结的总预算限制
     private readonly SAME_TOOL_SAME_ARGS_RETRY_LIMIT = 2;
     private readonly SAME_ERROR_CODE_STREAK_LIMIT = 3;
+
+    // Wake 配置（可选）
+    private readonly workspacePath?: string;
+    private readonly wakeMaxConsume?: number;
+    private readonly wakeOnConsume?: (params: {
+        wakeId: string;
+        taskId?: string;
+        hint?: string;
+        capsule?: WakeWorkCapsule;
+    }) => Promise<void>;
 
     constructor(config: TaskSupervisorConfig) {
         this.config = {
@@ -54,6 +65,11 @@ export class TaskSupervisor {
             taskDir: config.taskDir,
             eventQueueDir: config.eventQueueDir,
         };
+
+        // Wake 配置
+        this.workspacePath = config.workspacePath;
+        this.wakeMaxConsume = config.wakeConfig?.maxConsumePerTick;
+        this.wakeOnConsume = config.wakeConfig?.onConsume;
 
         this.taskStore = new TaskStore({
             taskDir: this.config.taskDir,
@@ -327,9 +343,39 @@ export class TaskSupervisor {
      * Heartbeat tick 回调
      *
      * 扫描并继续可执行任务
+     *
+     * 执行顺序（固定）：
+     * 1. 先检查 wake records（优先）
+     * 2. 再检查 runnable tasks
+     * 3. 两者都无时静默结束
      */
     private async onHeartbeatTick(ctx: TickContext): Promise<void> {
         try {
+            // ========================================
+            // 1. 先执行 wake tick（优先）
+            // ========================================
+            if (this.workspacePath) {
+                const wakeResult = await executeWakeTick(
+                    {
+                        workspacePath: this.workspacePath,
+                        maxConsumePerTick: this.wakeMaxConsume,
+                        onWakeConsume: this.wakeOnConsume,
+                    },
+                    ctx
+                );
+
+                // 如果 wake 有执行动作，跳过 runnable tasks
+                if (wakeResult.hasActions) {
+                    logger.debug("[HeartbeatTick] wake 已执行动作，跳过 task 扫描", {
+                        tickId: ctx.tickId,
+                    });
+                    return;
+                }
+            }
+
+            // ========================================
+            // 2. 再检查 runnable tasks
+            // ========================================
             logger.debug("Heartbeat tick 扫描任务", {
                 module: "task-supervisor",
                 tickId: ctx.tickId,

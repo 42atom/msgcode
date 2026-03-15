@@ -13,6 +13,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { RunSource } from "./run-types.js";
+import type { WakeWorkCapsule } from "./wake-consume.js";
 
 // ============================================
 // 任务状态枚举
@@ -278,6 +279,20 @@ export interface TaskSupervisorConfig {
     taskDir: string;
     /** 事件队列目录路径 */
     eventQueueDir: string;
+    /** 工作空间路径（用于 wake consume） */
+    workspacePath?: string;
+    /** Wake consume 配置 */
+    wakeConfig?: {
+        /** 最大一次 tick 消费的 wake 数量 */
+        maxConsumePerTick?: number;
+        /** Wake 消费回调 - 包含完整的 work capsule */
+        onConsume?: (params: {
+            wakeId: string;
+            taskId?: string;
+            hint?: string;
+            capsule?: WakeWorkCapsule;
+        }) => Promise<void>;
+    };
     /** 外部注入的任务执行器；supervisor 只负责调度，不负责 agent 实现细节 */
     executeTaskTurn?: TaskTurnExecutor;
 }

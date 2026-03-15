@@ -8,7 +8,7 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { getWorkspacePath } from "../cli/command-runner.js";
@@ -16,6 +16,7 @@ import { logger } from "../logger/index.js";
 import { handleTmuxSend } from "../tmux/responder.js";
 import { sendEscape, sendMessage } from "../tmux/sender.js";
 import { TmuxSession } from "../tmux/session.js";
+import { atomicWriteFile } from "./fs-atomic.js";
 
 export type SubagentClient = "codex" | "claude-code";
 export type SubagentTaskStatus = "running" | "completed" | "failed" | "stopped";
@@ -155,7 +156,7 @@ async function ensureSubagentDir(workspacePath: string): Promise<void> {
 
 async function writeTaskRecord(record: SubagentTaskRecord): Promise<void> {
   await ensureSubagentDir(record.workspacePath);
-  await writeFile(record.taskFile, JSON.stringify(record, null, 2), "utf8");
+  await atomicWriteFile(record.taskFile, JSON.stringify(record, null, 2));
 }
 
 async function readTaskRecord(taskFile: string): Promise<SubagentTaskRecord> {

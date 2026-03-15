@@ -45,6 +45,7 @@ export const SCHEDULE_ERROR_CODES = {
   REMOVE_FAILED: "SCHEDULE_REMOVE_FAILED",
   ENABLE_FAILED: "SCHEDULE_ENABLE_FAILED",
   DISABLE_FAILED: "SCHEDULE_DISABLE_FAILED",
+  MIGRATION_FAILED: "SCHEDULE_MIGRATION_FAILED",
 } as const;
 
 /**
@@ -690,6 +691,108 @@ export function createScheduleDisableCommand(): Command {
   return cmd;
 }
 
+/**
+ * migrate-v1-to-v2 命令 - 迁移旧 schedule 到 v2
+ */
+export function createScheduleMigrateV1ToV2Command(): Command {
+  const cmd = new Command("migrate-v1-to-v2");
+
+  cmd
+    .description("迁移旧 v1 schedule 到 v2（只改 schedules/*.json）")
+    .requiredOption("--workspace <id|path>", "Workspace ID、相对路径或绝对路径")
+    .option("--schedule-id <id>", "只迁移/回滚指定 schedule")
+    .option("--rollback", "从 .json.v1.bak 回滚到 v1")
+    .option("--json", "JSON 格式输出")
+    .action(async (options) => {
+      const startTime = Date.now();
+      const command = "msgcode schedule migrate-v1-to-v2";
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      try {
+        const workspacePath = await resolveWorkspacePathParam(options.workspace);
+        const migration = await import("../runtime/schedule-migration.js");
+        const result = options.rollback
+          ? await migration.rollbackWorkspaceSchedulesFromV1Backups({
+              workspacePath,
+              scheduleId: options.scheduleId,
+            })
+          : await migration.migrateWorkspaceSchedulesV1ToV2({
+              workspacePath,
+              scheduleId: options.scheduleId,
+            });
+
+        const migratedIds = result.items.filter((item) => item.status === "migrated").map((item) => item.scheduleId);
+        const restoredIds = result.items.filter((item) => item.status === "restored").map((item) => item.scheduleId);
+        const skippedIds = result.items.filter((item) => item.status === "skipped").map((item) => item.scheduleId);
+
+        if (result.failures.length > 0) {
+          for (const failure of result.failures) {
+            errors.push(
+              createScheduleDiagnostic(
+                SCHEDULE_ERROR_CODES.MIGRATION_FAILED,
+                `${failure.scheduleId}: ${failure.error}`
+              )
+            );
+          }
+        }
+
+        const data = {
+          workspacePath,
+          rollback: options.rollback === true,
+          scheduleId: options.scheduleId || null,
+          migrated: migratedIds,
+          restored: restoredIds,
+          skipped: skippedIds,
+          backups: result.items
+            .filter((item) => typeof item.backupPath === "string")
+            .map((item) => ({ scheduleId: item.scheduleId, backupPath: item.backupPath! })),
+        };
+
+        const status = errors.length > 0 ? "error" : "pass";
+        const envelope = createEnvelope(command, startTime, status, data, warnings, errors);
+
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else if (options.rollback) {
+          console.log(`v1 回滚完成: restored=${restoredIds.length} failed=${result.failures.length}`);
+          if (restoredIds.length > 0) {
+            console.log(`  restored: ${restoredIds.join(", ")}`);
+          }
+        } else {
+          console.log(`v1 -> v2 迁移完成: migrated=${migratedIds.length} skipped=${skippedIds.length} failed=${result.failures.length}`);
+          if (migratedIds.length > 0) {
+            console.log(`  migrated: ${migratedIds.join(", ")}`);
+          }
+          if (skippedIds.length > 0) {
+            console.log(`  skipped: ${skippedIds.join(", ")}`);
+          }
+        }
+
+        process.exit(errors.length > 0 ? 1 : 0);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        errors.push(
+          createScheduleDiagnostic(
+            SCHEDULE_ERROR_CODES.MIGRATION_FAILED,
+            `schedule 迁移失败: ${message}`,
+            undefined,
+            { workspace: options.workspace, scheduleId: options.scheduleId ?? null, rollback: options.rollback === true }
+          )
+        );
+        const envelope = createEnvelope(command, startTime, "error", {}, warnings, errors);
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.error("错误:", message);
+        }
+        process.exit(1);
+      }
+    });
+
+  return cmd;
+}
+
 export function createScheduleCommand(): Command {
   const cmd = new Command("schedule");
 
@@ -700,6 +803,7 @@ export function createScheduleCommand(): Command {
   cmd.addCommand(createScheduleRemoveCommand());
   cmd.addCommand(createScheduleEnableCommand());
   cmd.addCommand(createScheduleDisableCommand());
+  cmd.addCommand(createScheduleMigrateV1ToV2Command());
 
   return cmd;
 }
@@ -843,6 +947,34 @@ export function getScheduleDisableContract() {
       "SCHEDULE_NOT_FOUND",
       "SCHEDULE_WORKSPACE_NOT_FOUND",
       "SCHEDULE_DISABLE_FAILED",
+    ],
+  };
+}
+
+export function getScheduleMigrateV1ToV2Contract() {
+  return {
+    name: "msgcode schedule migrate-v1-to-v2",
+    description: "迁移旧 v1 schedule 到 v2，或从备份回滚",
+    options: {
+      required: {
+        "--workspace": "Workspace ID、相对路径或绝对路径",
+      },
+      optional: {
+        "--schedule-id": "只迁移/回滚指定 schedule",
+        "--rollback": "从 .json.v1.bak 回滚到 v1",
+        "--json": "JSON 格式输出",
+      },
+    },
+    output: {
+      workspacePath: "工作区绝对路径",
+      migrated: "成功迁移到 v2 的 scheduleId 列表",
+      restored: "成功回滚到 v1 的 scheduleId 列表",
+      skipped: "已是 v2 而跳过的 scheduleId 列表",
+      backups: "对应的 v1 备份路径列表",
+    },
+    errorCodes: [
+      "SCHEDULE_WORKSPACE_NOT_FOUND",
+      "SCHEDULE_MIGRATION_FAILED",
     ],
   };
 }

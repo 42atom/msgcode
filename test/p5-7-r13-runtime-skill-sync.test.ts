@@ -193,8 +193,8 @@ describe("P5.7-R13: runtime skill sync", () => {
     expect(planFilesDoc).toContain("`memory`：跨任务长期保留的信息");
     expect(planFilesDoc).toContain("不要因为用了 plan 文件，就再发明新的监督器");
     expect(planFilesDoc).toContain("默认只建一份 plan 文件");
-    expect(planFilesDoc).toContain("issues/NNNN-<slug>.md");
-    expect(planFilesDoc).toContain("aidocs/task_plan-YYMMDD-<topic>.md");
+    expect(planFilesDoc).toContain("tkNNNN.<state>.<board>.<slug>[.prio].md");
+    expect(planFilesDoc).toContain("AIDOCS/tasks/tkNNNN.<state>.<board>.<slug>[.prio].md");
     expect(characterIdentityDoc).toContain("character-identity skill");
     expect(characterIdentityDoc).toContain("当前 workspace 的 CSV");
     expect(characterIdentityDoc).toContain("先查表，不要猜");

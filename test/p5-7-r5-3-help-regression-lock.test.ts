@@ -354,7 +354,7 @@ describe("P5.7-R5-3: Help-Docs 回归锁", () => {
       const scheduleCommands = commands.filter((cmd) => cmd.name.startsWith("msgcode schedule"));
 
       expect(todoCommands.length).toBe(3); // add, list, done
-      expect(scheduleCommands.length).toBe(5); // add, list, remove, enable, disable
+      expect(scheduleCommands.length).toBe(6); // add, list, remove, enable, disable, migrate-v1-to-v2
     });
   });
 });

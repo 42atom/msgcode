@@ -10,6 +10,26 @@
 
 msgcode 的目标是把「个人智能体」做成可长期运行的基础设施，而不是一次性的聊天应用。
 
+## 产品理念
+
+**不是 AI 要家，是让 AI 工作的人，应该给它一个像样的家。**
+
+如果只是一次性问答、一次性命令，轻量消息流当然够用。  
+但如果你希望 AI 持续推进任务、跨 session 续跑、派单、巡检、交付，那就不能让它每次都像第一天上班。
+
+所以 msgcode 要做的，不是只给现有 agent 加渠道外壳。  
+msgcode 要做的是给 AI 一套像样的工作条件：
+
+- 一个工位：`workspace + dispatch + schedules`
+- 一套记忆：`issues + AIDOCS + memory`
+- 一个节律：`heartbeat + alarm + reflection`
+- 一层自保：`vitals + backpressure`
+- 一份家底：`skills + diary + assets`
+
+仓库级工程原则也因此收口成一句：
+
+- **能落成文件真相源的，先落文件。不能落成真相源的，只做薄 runtime。**
+
 它有两条执行线：
 - `Agent 线`（默认）：本地模型 + 记忆 + SOUL + skills + tool loop
 - `Tmux 线`：把复杂工程任务交给 `codex` / `claude-code` 等终端代理执行
@@ -53,6 +73,7 @@ msgcode 的默认原则不是“约束 LLM”，而是“支持 LLM 完成任务
 - 默认工具结果应先忠实回给模型；原始错误细节优先留在日志与证据中，而不是先由系统抢答给用户。
 - 系统只保留三类硬边界：安全、预算、物理。除此之外，不新增隐藏裁判、猜测式 fallback、规则化代答。
 - 默认能力主链：`LLM 先读 runtime skill -> 再用工具 / CLI / 文件协议执行`。
+- 能落成文件真相源的，先落文件；不能落成真相源的，只做薄 runtime，不抢状态地位。
 
 ## Skill 与工具边界
 
