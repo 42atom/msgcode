@@ -2,6 +2,32 @@ import { describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
 import path from "node:path";
 
+function coerceOpenAIMessageContentToText(content: unknown): string {
+  if (typeof content === "string") return content;
+
+  // OpenAI-style multi-part content: [{ type: "text", text: "..." }, ...]
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (part && typeof part === "object") {
+          const text = (part as any).text;
+          if (typeof text === "string") return text;
+        }
+        return "";
+      })
+      .join("");
+  }
+
+  // Some runners might send a single object part: { type: "text", text: "..." }
+  if (content && typeof content === "object") {
+    const text = (content as any).text;
+    if (typeof text === "string") return text;
+  }
+
+  return "";
+}
+
 function runIsolatedListenerCase(mode: "search" | "fail-open"): {
   vectorAvailable?: boolean;
   requestBody?: Record<string, unknown>;
@@ -39,6 +65,25 @@ function runIsolatedListenerCase(mode: "search" | "fail-open"): {
     process.env.OPENAI_MODEL = "gpt-test";
     process.env.MEMORY_DEBUG = "1";
     process.env.NODE_ENV = "test";
+
+    // listener 主链要求显式绑定（allowDefaultFallback=false），测试里写入一条临时 routes.json
+    const nowIso = new Date().toISOString();
+    const chatId = mode === "search" ? "chat-r4-search" : "chat-r4-fail-open";
+    fs.writeFileSync(routesPath, JSON.stringify({
+      version: 1,
+      routes: {
+        [chatId]: {
+          chatGuid: chatId,
+          chatId,
+          workspacePath,
+          label: "default",
+          botType: "agent-backend",
+          status: "active",
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        },
+      },
+    }, null, 2), "utf8");
 
     const { saveWorkspaceConfig } = await import(${JSON.stringify(path.join(repoRoot, "src/config/workspace.ts"))});
     await saveWorkspaceConfig(workspacePath, {
@@ -172,13 +217,14 @@ describe("P5.6.13-R4: listener 记忆检索触发收口", () => {
   it("enabled=true 时即使没有关键词，也应直接检索并把 memoryMode/vectorAvailable 打进 debug", () => {
     const result = runIsolatedListenerCase("search");
     const messages = Array.isArray(result.requestBody?.messages)
-      ? (result.requestBody?.messages as Array<{ role?: string; content?: string }>)
+      ? (result.requestBody?.messages as Array<{ role?: string; content?: unknown }>)
       : [];
     const userMessage = messages.findLast((message) => message.role === "user");
+    const userText = coerceOpenAIMessageContentToText(userMessage?.content);
 
-    expect(userMessage?.content).toContain("相关记忆：");
-    expect(userMessage?.content).toContain("[记忆] notes/alpha.md:12-14");
-    expect(userMessage?.content).toContain("用户问题：\n继续");
+    expect(userText).toContain("相关记忆：");
+    expect(userText).toContain("[记忆] notes/alpha.md:12-14");
+    expect(userText).toContain("用户问题：\n继续");
     expect(result.sent?.[0]?.text).toBe("处理完成");
 
     const debugEntry = result.debugLogs?.find(([message]) => message === "记忆注入结果");
@@ -195,12 +241,13 @@ describe("P5.6.13-R4: listener 记忆检索触发收口", () => {
   it("搜索失败时应 fail-open，保留原始内容并继续主流程", () => {
     const result = runIsolatedListenerCase("fail-open");
     const messages = Array.isArray(result.requestBody?.messages)
-      ? (result.requestBody?.messages as Array<{ role?: string; content?: string }>)
+      ? (result.requestBody?.messages as Array<{ role?: string; content?: unknown }>)
       : [];
     const userMessage = messages.findLast((message) => message.role === "user");
+    const userText = coerceOpenAIMessageContentToText(userMessage?.content);
 
-    expect(userMessage?.content).toContain("请继续原样处理");
-    expect(userMessage?.content).not.toContain("相关记忆：");
+    expect(userText).toContain("请继续原样处理");
+    expect(userText).not.toContain("相关记忆：");
     expect(result.sent?.[0]?.text).toBe("原样继续");
 
     const warnEntry = result.warnLogs?.find(([message]) => message === "记忆注入失败");

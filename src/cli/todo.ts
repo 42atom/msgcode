@@ -223,7 +223,7 @@ export function createTodoAddCommand(): Command {
             createTodoDiagnostic(
               TODO_ERROR_CODES.WORKSPACE_NOT_FOUND,
               `Workspace 不存在: ${options.workspace}`,
-              "使用 msgcode routes list 查看可用的 workspace"
+              "使用 msgcode thread list 查看可用的 workspace"
             )
           );
         } else {
@@ -322,7 +322,7 @@ export function createTodoListCommand(): Command {
             createTodoDiagnostic(
               TODO_ERROR_CODES.WORKSPACE_NOT_FOUND,
               `Workspace 不存在: ${options.workspace}`,
-              "使用 msgcode routes list 查看可用的 workspace"
+              "使用 msgcode thread list 查看可用的 workspace"
             )
           );
         } else {
@@ -430,7 +430,7 @@ export function createTodoDoneCommand(): Command {
             createTodoDiagnostic(
               TODO_ERROR_CODES.WORKSPACE_NOT_FOUND,
               `Workspace 不存在: ${options.workspace}`,
-              "使用 msgcode routes list 查看可用的 workspace"
+              "使用 msgcode thread list 查看可用的 workspace"
             )
           );
         } else {

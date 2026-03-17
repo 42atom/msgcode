@@ -410,10 +410,10 @@ export async function getSubagentTaskStatus(input: {
   const detectedStatus = record.status === "running" ? detectTaskCompletion(record, paneTail) : null;
   const next = detectedStatus
     ? await updateTaskStatus(record, {
-        status: detectedStatus,
-        completedAt: new Date().toISOString(),
-        lastPaneTail: paneTail,
-      })
+      status: detectedStatus,
+      completedAt: new Date().toISOString(),
+      lastPaneTail: paneTail,
+    })
     : await updateTaskStatus(record, { lastPaneTail: paneTail });
 
   return {

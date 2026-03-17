@@ -60,6 +60,9 @@ export class MemoryStore {
 
     // 打开数据库
     this.db = new Database(this.config.indexPath);
+    // 默认 busy_timeout=0，遇到瞬时写锁会直接抛错（“偶发卡壳”）。
+    // 记忆索引是可重建派生物，等待一小段时间比失败更符合主链体验。
+    this.db.pragma("busy_timeout = 5000");
     this.db.pragma("journal_mode = WAL");
 
     // 尝试加载 sqlite-vec 扩展（P5.6.13-R1）

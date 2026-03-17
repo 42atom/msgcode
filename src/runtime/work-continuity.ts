@@ -336,6 +336,17 @@ export async function loadDispatchRecords(
         });
       }
     }
+    records.sort((a, b) => {
+      const createdDiff = a.createdAt.localeCompare(b.createdAt);
+      if (createdDiff !== 0) {
+        return createdDiff;
+      }
+      const updatedDiff = a.updatedAt.localeCompare(b.updatedAt);
+      if (updatedDiff !== 0) {
+        return updatedDiff;
+      }
+      return a.dispatchId.localeCompare(b.dispatchId);
+    });
     return { records, errors };
   } catch (error) {
     errors.push({
@@ -548,7 +559,8 @@ export async function updateDispatchStatus(
   workspacePath: string,
   dispatchId: string,
   status: DispatchStatus,
-  result?: DispatchRecord["result"]
+  result?: DispatchRecord["result"],
+  checkpoint?: DispatchRecord["checkpoint"]
 ): Promise<DispatchRecord | null> {
   const { records } = await loadDispatchRecords(workspacePath);
   const record = records.find((r) => r.dispatchId === dispatchId);
@@ -561,6 +573,7 @@ export async function updateDispatchStatus(
     ...record,
     status,
     result: result ?? record.result,
+    checkpoint: checkpoint ?? record.checkpoint,
     updatedAt: new Date().toISOString(),
   };
 
@@ -568,6 +581,8 @@ export async function updateDispatchStatus(
   await writeDispatchRecord({
     workspacePath,
     dispatchId: updatedRecord.dispatchId,
+    createdAt: updatedRecord.createdAt,
+    filePath: updatedRecord.filePath,
     parentTaskId: updatedRecord.parentTaskId,
     childTaskId: updatedRecord.childTaskId,
     client: updatedRecord.client,

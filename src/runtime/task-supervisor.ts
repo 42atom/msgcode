@@ -33,10 +33,31 @@ import { beginRun, toRunErrorMessage } from "./run-store.js";
 import { emitRunEvent } from "./run-events.js";
 import type { RunSource } from "./run-types.js";
 import type { WakeWorkCapsule } from "./wake-consume.js";
+import {
+    buildWorkRecoverySnapshot,
+    getDispatchRecordsByStatus,
+    updateDispatchStatus,
+} from "./work-continuity.js";
+import type { DispatchRecord, WorkCapsule } from "./work-continuity.js";
 
 // ============================================
 // Task Supervisor 类
 // ============================================
+
+interface DispatchWorkItem {
+    dispatch: DispatchRecord;
+    capsule: WorkCapsule;
+    task: TaskRecord;
+}
+
+function mapCapsulePhaseToTaskStatus(phase: string): TaskStatus {
+    if (phase === "running") return "running";
+    if (phase === "blocked") return "blocked";
+    if (phase === "cancelled") return "cancelled";
+    if (phase === "done" || phase === "passed") return "completed";
+    if (phase === "pending" || phase === "review" || phase === "unknown") return "pending";
+    return "pending";
+}
 
 export class TaskSupervisor {
     private taskStore: TaskStore;
@@ -374,17 +395,39 @@ export class TaskSupervisor {
             }
 
             // ========================================
-            // 2. 再检查 runnable tasks
+            // 2. 先检查 actionable dispatch（doc-first）
             // ========================================
-            logger.debug("Heartbeat tick 扫描任务", {
+            const dispatchWorkItem = this.workspacePath
+                ? await this.resolveDispatchWorkItem(this.workspacePath)
+                : null;
+
+            if (dispatchWorkItem) {
+                logger.info("发现 actionable dispatch，优先走 doc-first 执行", {
+                    module: "task-supervisor",
+                    tickId: ctx.tickId,
+                    dispatchId: dispatchWorkItem.dispatch.dispatchId,
+                    parentTaskId: dispatchWorkItem.dispatch.parentTaskId,
+                    childTaskId: dispatchWorkItem.dispatch.childTaskId,
+                });
+
+                await this.executeTask(dispatchWorkItem.task, {
+                    source: "heartbeat",
+                    triggerId: ctx.tickId,
+                    capsule: dispatchWorkItem.capsule,
+                    dispatch: dispatchWorkItem.dispatch,
+                });
+                return;
+            }
+
+            // ========================================
+            // 3. 再回退到 runtime runnable tasks
+            // ========================================
+            logger.debug("Heartbeat tick 扫描 runtime 任务缓存", {
                 module: "task-supervisor",
                 tickId: ctx.tickId,
             });
 
-            // 获取所有活跃任务
             const activeTasks = await this.taskStore.getAllActiveTasks();
-
-            // 过滤可执行任务（pending 且到达唤醒时间）
             const now = Date.now();
             const runnableTasks = activeTasks.filter((task) => {
                 const isActiveRunnable = task.status === "pending" || task.status === "running";
@@ -399,13 +442,12 @@ export class TaskSupervisor {
                 return;
             }
 
-            logger.info("发现可执行任务", {
+            logger.info("发现 runtime 可执行任务", {
                 module: "task-supervisor",
                 tickId: ctx.tickId,
                 count: runnableTasks.length,
             });
 
-            // 执行任务（当前 MVP 只支持单任务，取第一个）
             for (const task of runnableTasks) {
                 await this.executeTask(task, {
                     source: "heartbeat",
@@ -421,6 +463,106 @@ export class TaskSupervisor {
         }
     }
 
+    private buildRuntimeCheckpointFromCapsule(capsule: WorkCapsule): TaskCheckpoint {
+        return {
+            currentPhase: mapCapsulePhaseToTaskStatus(capsule.phase),
+            summary: capsule.checkpoint.summary,
+            nextAction: capsule.checkpoint.nextAction || "继续根据 work capsule 推进",
+            verifyEvidence: capsule.checkpoint.evidenceRefs?.join("\n"),
+            updatedAt: Date.now(),
+        };
+    }
+
+    private async ensureRuntimeCacheTask(workspacePath: string, capsule: WorkCapsule): Promise<TaskRecord> {
+        const cacheKey = capsule.taskId;
+        const activeTask = await this.taskStore.getActiveTask(cacheKey);
+        const checkpoint = this.buildRuntimeCheckpointFromCapsule(capsule);
+
+        if (activeTask) {
+            const updated = await this.taskStore.updateTask(activeTask.taskId, {
+                checkpoint,
+                nextWakeAtMs: Date.now(),
+            });
+            return updated.ok ? updated.task : {
+                ...activeTask,
+                checkpoint,
+                nextWakeAtMs: Date.now(),
+            };
+        }
+
+        const latestTask = await this.taskStore.getLatestTask(cacheKey);
+        if (latestTask && (latestTask.status === "completed" || latestTask.status === "failed" || latestTask.status === "cancelled")) {
+            const cacheTask: TaskRecord = {
+                ...createTaskRecord({
+                    chatId: cacheKey,
+                    workspacePath,
+                    goal: capsule.checkpoint.summary,
+                    maxAttempts: this.config.defaultMaxAttempts,
+                }),
+                taskId: cacheKey,
+                checkpoint,
+            };
+            const created = await this.taskStore.createTask(cacheTask);
+            if (created.ok) {
+                return created.task;
+            }
+        }
+
+        if (latestTask) {
+            return {
+                ...latestTask,
+                checkpoint,
+                nextWakeAtMs: Date.now(),
+            };
+        }
+
+        const cacheTask: TaskRecord = {
+            ...createTaskRecord({
+                chatId: cacheKey,
+                workspacePath,
+                goal: capsule.checkpoint.summary,
+                maxAttempts: this.config.defaultMaxAttempts,
+            }),
+            taskId: cacheKey,
+            checkpoint,
+        };
+        const created = await this.taskStore.createTask(cacheTask);
+        if (created.ok) {
+            return created.task;
+        }
+        throw new Error(created.error);
+    }
+
+    private async resolveDispatchWorkItem(workspacePath: string): Promise<DispatchWorkItem | null> {
+        const actionableDispatches = await getDispatchRecordsByStatus(workspacePath, ["pending", "running"]);
+        const dispatch = actionableDispatches[0];
+        if (!dispatch) {
+            return null;
+        }
+
+        const snapshot = await buildWorkRecoverySnapshot({
+            workspacePath,
+            parentTaskId: dispatch.parentTaskId,
+        });
+        const task = await this.ensureRuntimeCacheTask(workspacePath, snapshot.workCapsule);
+
+        return {
+            dispatch,
+            capsule: snapshot.workCapsule,
+            task,
+        };
+    }
+
+    private async syncDispatchExecution(
+        workspacePath: string,
+        dispatch: DispatchRecord,
+        status: "running" | "completed" | "failed",
+        checkpoint?: TaskCheckpoint,
+        result?: DispatchRecord["result"]
+    ): Promise<void> {
+        await updateDispatchStatus(workspacePath, dispatch.dispatchId, status, result, checkpoint);
+    }
+
     /**
      * 执行单个任务
      *
@@ -431,14 +573,21 @@ export class TaskSupervisor {
      */
     private async executeTask(
         task: TaskRecord,
-        runContext: { source: Extract<RunSource, "task" | "heartbeat">; triggerId?: string }
+        runContext: {
+            source: Extract<RunSource, "task" | "heartbeat">;
+            triggerId?: string;
+            capsule?: WorkCapsule;
+            dispatch?: DispatchRecord;
+        }
     ): Promise<void> {
+        const taskId = runContext.capsule?.taskId ?? task.taskId;
+        const goal = runContext.capsule?.checkpoint.summary ?? task.goal;
         const run = beginRun({
             source: runContext.source,
             kind: "task",
             chatId: task.chatId,
             workspacePath: task.workspacePath,
-            taskId: task.taskId,
+            taskId,
             triggerId: runContext.triggerId,
         });
 
@@ -446,8 +595,8 @@ export class TaskSupervisor {
             module: "task-supervisor",
             runId: run.runId,
             source: runContext.source,
-            taskId: task.taskId,
-            goal: task.goal,
+            taskId,
+            goal,
             attemptCount: task.attemptCount,
             maxAttempts: task.maxAttempts,
         });
@@ -472,11 +621,21 @@ export class TaskSupervisor {
             return;
         }
 
+        if (runContext.dispatch && this.workspacePath) {
+            await this.syncDispatchExecution(
+                this.workspacePath,
+                runContext.dispatch,
+                "running",
+                updateResult.task.checkpoint
+            );
+        }
+
         try {
             const result = await this.executeTaskTurn(task, {
                 runId: run.runId,
                 sessionKey: run.sessionKey,
                 source: runContext.source,
+                capsule: runContext.capsule,
             });
 
             // P5.7-R12-T8: 检查是否可续跑
@@ -564,6 +723,15 @@ export class TaskSupervisor {
 
                 await this.taskStore.updateTask(task.taskId, updates);
 
+                if (runContext.dispatch && this.workspacePath) {
+                    await this.syncDispatchExecution(
+                        this.workspacePath,
+                        runContext.dispatch,
+                        "running",
+                        updates.checkpoint
+                    );
+                }
+
                 logger.info("任务续跑准备下一轮", {
                     module: "task-supervisor",
                     runId: run.runId,
@@ -611,6 +779,20 @@ export class TaskSupervisor {
             }
 
             await this.updateTaskResult(task.taskId, executionResult);
+
+            if (runContext.dispatch && this.workspacePath) {
+                await this.syncDispatchExecution(
+                    this.workspacePath,
+                    runContext.dispatch,
+                    executionResult.status === "completed" ? "completed" : "running",
+                    executionResult.checkpoint,
+                    {
+                        completed: executionResult.status === "completed",
+                        evidence: executionResult.verifyEvidence ? [executionResult.verifyEvidence] : undefined,
+                        summary: executionResult.checkpoint?.summary,
+                    }
+                );
+            }
 
             if (executionResult.status === "blocked") {
                 emitRunEvent({
@@ -670,6 +852,19 @@ export class TaskSupervisor {
                 errorMessage: errorMessage,
                 checkpoint: this.buildFailureCheckpoint(task, executionFailedErrorCode, error),
             });
+            if (runContext.dispatch && this.workspacePath) {
+                await this.syncDispatchExecution(
+                    this.workspacePath,
+                    runContext.dispatch,
+                    "failed",
+                    this.buildFailureCheckpoint(task, executionFailedErrorCode, error),
+                    {
+                        completed: false,
+                        summary: errorMessage,
+                        evidence: [errorMessage],
+                    }
+                );
+            }
             run.finish({
                 status: "failed",
                 error: errorMessage,

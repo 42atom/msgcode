@@ -353,6 +353,19 @@ data 建议字段：
 - `job.onComplete.remember.enabled: false`
 - `job.payload.kind="memoryIndex"`（jobs 触发索引维护）
 
+### 3) 索引刷新（运维口径，P0 可用）
+背景：当前运行时仅“读索引”，不会自动重建 `index.sqlite`；如果只写 `memory/*.md` 但不重建索引，检索会用旧数据。
+
+建议：每天定时全量重建索引（例如 01:00 与 13:00 各一次，时区按机器本地时间）。
+
+做法（所有 workspace，依次跑）：
+1) `msgcode thread list --json` 获取 `data.threads[*].workspacePath` 去重
+2) 对每个 workspacePath 执行：`msgcode memory index --workspace "<path>" --json`
+
+约束：
+- 单个 workspace 失败不应阻塞后续 workspace；最后汇总失败列表即可。
+- `index.sqlite` 是可丢弃派生物：损坏时删除后重建即可（真相源仍是 `memory/*.md`）。
+
 ---
 
 ## 验收清单（v2.1）

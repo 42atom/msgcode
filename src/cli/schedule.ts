@@ -305,7 +305,7 @@ export function createScheduleAddCommand(): Command {
             createScheduleDiagnostic(
               SCHEDULE_ERROR_CODES.WORKSPACE_NOT_FOUND,
               `Workspace 不存在: ${options.workspace}`,
-              "使用 msgcode routes list 查看可用的 workspace"
+              "使用 msgcode thread list 查看可用的 workspace"
             )
           );
         } else {
@@ -394,7 +394,7 @@ export function createScheduleListCommand(): Command {
             createScheduleDiagnostic(
               SCHEDULE_ERROR_CODES.WORKSPACE_NOT_FOUND,
               `Workspace 不存在: ${options.workspace}`,
-              "使用 msgcode routes list 查看可用的 workspace"
+              "使用 msgcode thread list 查看可用的 workspace"
             )
           );
         } else {
@@ -501,7 +501,7 @@ export function createScheduleRemoveCommand(): Command {
             createScheduleDiagnostic(
               SCHEDULE_ERROR_CODES.WORKSPACE_NOT_FOUND,
               `Workspace 不存在: ${options.workspace}`,
-              "使用 msgcode routes list 查看可用的 workspace"
+              "使用 msgcode thread list 查看可用的 workspace"
             )
           );
         } else {

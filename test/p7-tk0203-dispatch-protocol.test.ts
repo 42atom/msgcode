@@ -10,6 +10,7 @@ import {
   hasActionableDispatches,
   loadDispatchRecords,
 } from "../src/runtime/work-continuity.js";
+import { createTaskSupervisor } from "../src/runtime/task-supervisor.js";
 import { ensureScheduleDir, getSchedulesDir } from "../src/runtime/schedule-wake.js";
 
 function createTempWorkspace(): string {
@@ -25,6 +26,12 @@ function cleanupTempWorkspace(root: string): void {
   if (fs.existsSync(root)) {
     fs.rmSync(root, { recursive: true, force: true });
   }
+}
+
+function writeTaskDoc(workspace: string, fileName: string): string {
+  const filePath = path.join(workspace, "issues", fileName);
+  fs.writeFileSync(filePath, "# task\n", "utf8");
+  return filePath;
 }
 
 describe("Doc-First Dispatch Protocol", () => {
@@ -257,6 +264,39 @@ describe("Doc-First Dispatch Protocol", () => {
       expect(records[0].goal).toBe("Task for heartbeat");
     });
 
+    it("dispatch records are loaded in stable createdAt order", async () => {
+      await writeDispatchRecord({
+        workspacePath: workspace,
+        dispatchId: "dispatch-newer",
+        createdAt: "2026-03-16T10:10:00.000Z",
+        parentTaskId: "tk0001",
+        childTaskId: "tk0003",
+        client: "codex",
+        goal: "Newer dispatch",
+        cwd: "/workspace",
+        acceptance: ["done"],
+      });
+
+      await writeDispatchRecord({
+        workspacePath: workspace,
+        dispatchId: "dispatch-older",
+        createdAt: "2026-03-16T10:00:00.000Z",
+        parentTaskId: "tk0001",
+        childTaskId: "tk0002",
+        client: "codex",
+        goal: "Older dispatch",
+        cwd: "/workspace",
+        acceptance: ["done"],
+      });
+
+      const { records, errors } = await loadDispatchRecords(workspace);
+      expect(errors.length).toBe(0);
+      expect(records.map((record) => record.dispatchId)).toEqual([
+        "dispatch-older",
+        "dispatch-newer",
+      ]);
+    });
+
     it("completed dispatch does not count as actionable", async () => {
       const dispatch = await writeDispatchRecord({
         workspacePath: workspace,
@@ -273,6 +313,135 @@ describe("Doc-First Dispatch Protocol", () => {
 
       const hasAction = await hasActionableDispatches(workspace);
       expect(hasAction).toBe(false);
+    });
+  });
+
+  describe("TaskSupervisor Integration", () => {
+    it("heartbeat 会优先扫描 actionable dispatch，并把 WorkCapsule 透传给执行器", async () => {
+      writeTaskDoc(workspace, "tk0001.doi.runtime.parent-task.md");
+      writeTaskDoc(workspace, "tk0002.tdo.runtime.child-task.md");
+
+      await writeDispatchRecord({
+        workspacePath: workspace,
+        parentTaskId: "tk0001",
+        childTaskId: "tk0002",
+        client: "codex",
+        goal: "继续推进父任务",
+        cwd: workspace,
+        acceptance: ["done"],
+        checkpoint: {
+          summary: "父任务待继续",
+          nextAction: "先检查子任务交付",
+          updatedAt: Date.now(),
+        },
+      });
+
+      const taskDir = path.join(workspace, ".msgcode", "tasks");
+      const eventQueueDir = path.join(workspace, ".msgcode", "event-queue");
+      fs.mkdirSync(taskDir, { recursive: true });
+      fs.mkdirSync(eventQueueDir, { recursive: true });
+
+      let observedTaskId: string | undefined;
+      let observedCapsuleTaskId: string | undefined;
+      let observedSubtasks: string[] = [];
+
+      const supervisor = createTaskSupervisor({
+        taskDir,
+        eventQueueDir,
+        workspacePath: workspace,
+        heartbeatIntervalMs: 0,
+        executeTaskTurn: async (task, context) => {
+          observedTaskId = task.taskId;
+          observedCapsuleTaskId = context.capsule?.taskId;
+          observedSubtasks = context.capsule?.activeDispatch.subtaskIds ?? [];
+          return {
+            answer: "任务已完成",
+            actionJournal: [],
+            verifyResult: {
+              ok: true,
+              evidence: "dispatch-ok",
+            },
+          };
+        },
+      });
+
+      await supervisor.start();
+      try {
+        await supervisor.handleHeartbeatTick({
+          tickId: "tick-dispatch-1",
+          reason: "manual",
+          startTime: Date.now(),
+        });
+      } finally {
+        await supervisor.stop();
+      }
+
+      expect(observedTaskId).toBe("tk0001");
+      expect(observedCapsuleTaskId).toBe("tk0001");
+      expect(observedSubtasks).toEqual(["tk0002"]);
+
+      const { records } = await loadDispatchRecords(workspace);
+      expect(records[0]?.status).toBe("completed");
+      expect(records[0]?.checkpoint?.summary).toBe("任务已完成");
+    });
+
+    it("有 actionable dispatch 时，优先于旧的 runtime active task", async () => {
+      writeTaskDoc(workspace, "tk0001.doi.runtime.parent-task.md");
+      writeTaskDoc(workspace, "tk0002.tdo.runtime.child-task.md");
+
+      await writeDispatchRecord({
+        workspacePath: workspace,
+        parentTaskId: "tk0001",
+        childTaskId: "tk0002",
+        client: "codex",
+        goal: "先处理 dispatch",
+        cwd: workspace,
+        acceptance: ["done"],
+      });
+
+      const taskDir = path.join(workspace, ".msgcode", "tasks");
+      const eventQueueDir = path.join(workspace, ".msgcode", "event-queue");
+      fs.mkdirSync(taskDir, { recursive: true });
+      fs.mkdirSync(eventQueueDir, { recursive: true });
+
+      const executedTaskIds: string[] = [];
+      const supervisor = createTaskSupervisor({
+        taskDir,
+        eventQueueDir,
+        workspacePath: workspace,
+        heartbeatIntervalMs: 0,
+        executeTaskTurn: async (task) => {
+          executedTaskIds.push(task.taskId);
+          return {
+            answer: "done",
+            actionJournal: [],
+            verifyResult: {
+              ok: true,
+              evidence: "ok",
+            },
+          };
+        },
+      });
+
+      await supervisor.start();
+      try {
+        const created = await supervisor.createTask("chat-legacy", workspace, "旧 runtime task");
+        expect(created.ok).toBe(true);
+
+        await supervisor.handleHeartbeatTick({
+          tickId: "tick-dispatch-priority",
+          reason: "manual",
+          startTime: Date.now(),
+        });
+
+        expect(executedTaskIds[0]).toBe("tk0001");
+        if (created.ok) {
+          const legacyTask = await supervisor.getTaskStatus(created.task.taskId);
+          expect(legacyTask?.status).toBe("pending");
+        }
+      } finally {
+        await supervisor.stop();
+      }
     });
   });
 });

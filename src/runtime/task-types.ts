@@ -14,6 +14,7 @@
 import { randomUUID } from "node:crypto";
 import type { RunSource } from "./run-types.js";
 import type { WakeWorkCapsule } from "./wake-consume.js";
+import type { WorkCapsule } from "./work-continuity.js";
 
 // ============================================
 // 任务状态枚举
@@ -357,6 +358,7 @@ export interface TaskTurnContext {
     runId: string;
     sessionKey: string;
     source: Extract<RunSource, "task" | "heartbeat">;
+    capsule?: WorkCapsule | WakeWorkCapsule;
 }
 
 export type TaskTurnExecutor = (task: TaskRecord, context: TaskTurnContext) => Promise<TaskTurnResult>;
