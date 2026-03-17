@@ -418,7 +418,17 @@ async function listInstanceStates(): Promise<BrowserInstanceState[]> {
     states.push(state);
   }
 
-  return states;
+  // Stable ordering:
+  // - Prefer most recently used instances to minimize wasted CDP probes
+  // - Keep deterministic tie-break to avoid "random first file blocks the whole scan"
+  return states.sort((a, b) => {
+    const aTs = parseIsoMs(a.lastUsedAt ?? a.startTime) ?? 0;
+    const bTs = parseIsoMs(b.lastUsedAt ?? b.startTime) ?? 0;
+    if (aTs !== bTs) {
+      return bTs - aTs;
+    }
+    return a.id.localeCompare(b.id);
+  });
 }
 
 function buildChromeLaunchArgs(
@@ -442,6 +452,27 @@ function buildChromeLaunchArgs(
 
   args.push("about:blank");
   return args;
+}
+
+async function connectBrowserIfReady(
+  state: BrowserInstanceState,
+  timeoutMs: number
+): Promise<PatchrightBrowserLike | null> {
+  const port = Number(state.port);
+  if (!Number.isInteger(port) || port <= 0) {
+    return null;
+  }
+
+  // `tabs.*` scans instance state files; a single stale/unreachable port must not block the whole operation.
+  if (!(await isCdpReady(port, 250))) {
+    return null;
+  }
+
+  try {
+    return await connectBrowser(port, timeoutMs);
+  } catch {
+    return null;
+  }
 }
 
 async function connectBrowser(port: number, timeoutMs: number): Promise<PatchrightBrowserLike> {
@@ -1005,7 +1036,10 @@ export async function executeBrowserOperation(
       const tabId = requireNonEmptyString(input.tabId, "tabId");
       const states = await listInstanceStates();
       for (const state of states) {
-        const browser = await connectBrowser(Number(state.port), getTimeoutMs(input));
+        const browser = await connectBrowserIfReady(state, getTimeoutMs(input));
+        if (!browser) {
+          continue;
+        }
         try {
           const context = await getDefaultContext(browser);
           const page = await resolvePageByTabId(context, tabId).catch(() => null);
@@ -1041,7 +1075,10 @@ export async function executeBrowserOperation(
       const tabId = requireNonEmptyString(input.tabId, "tabId");
       const states = await listInstanceStates();
       for (const state of states) {
-        const browser = await connectBrowser(Number(state.port), getTimeoutMs(input));
+        const browser = await connectBrowserIfReady(state, getTimeoutMs(input));
+        if (!browser) {
+          continue;
+        }
         try {
           const context = await getDefaultContext(browser);
           const page = await resolvePageByTabId(context, tabId).catch(() => null);
@@ -1076,7 +1113,10 @@ export async function executeBrowserOperation(
       const kind = requireNonEmptyString(input.kind, "kind");
       const states = await listInstanceStates();
       for (const state of states) {
-        const browser = await connectBrowser(Number(state.port), getTimeoutMs(input));
+        const browser = await connectBrowserIfReady(state, getTimeoutMs(input));
+        if (!browser) {
+          continue;
+        }
         try {
           const context = await getDefaultContext(browser);
           const page = await resolvePageByTabId(context, tabId).catch(() => null);
@@ -1163,7 +1203,10 @@ export async function executeBrowserOperation(
       const expression = requireNonEmptyString(input.expression, "expression");
       const states = await listInstanceStates();
       for (const state of states) {
-        const browser = await connectBrowser(Number(state.port), getTimeoutMs(input));
+        const browser = await connectBrowserIfReady(state, getTimeoutMs(input));
+        if (!browser) {
+          continue;
+        }
         try {
           const context = await getDefaultContext(browser);
           const page = await resolvePageByTabId(context, tabId).catch(() => null);

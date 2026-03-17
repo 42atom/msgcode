@@ -255,6 +255,15 @@ msgcode browser action --tab-id <real-tab-id> --kind click --ref '{"role":"link"
 - `tabs.snapshot` 可带 `--interactive`
 - `instances.launch` 可带 `--port` 指定调试端口（默认 `9222`）
 
+## 端口与进程管理（必须遵守）
+
+结论：不要“咬死 9222”。端口不是协议真相源，`instanceId` 才是。
+
+- 任何时候不要假设 CDP 端口是 `9222`；只以 `instances.launch` / `instances.list` / `tabs.open` 的结构化返回为准。
+- `instanceId` 形如 `chrome:<rootName>:<port>`，其中 `<port>` 就是当前实例真实 CDP 端口；后续所有 `tabs.*` / `instances.stop` 都必须复用这个 `instanceId`。
+- 若报错出现端口不匹配（例如 9223 vs 9222）：先 `instances list --json`，拿真实 `instanceId`，不要猜端口重试。
+- 每次任务结束必须收尾：如果你显式 `instances.launch` 启动了实例，最后要 `instances stop` 释放端口，避免后续任务误连到旧实例或端口被占用。
+
 ## 验证与排障
 
 推荐顺序：

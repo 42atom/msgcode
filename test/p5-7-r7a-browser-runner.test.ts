@@ -275,6 +275,87 @@ describe("P5.7-R7A: browser runner", () => {
     expect(Array.isArray(result.data.refs)).toBe(true);
   });
 
+  it("tabs.text 应跳过不可达的实例状态（例如旧端口 9223），继续扫描并命中可用实例", async () => {
+    const stateDir = join(tempWorkspaceRoot, ".msgcode", "chrome-profiles", ".browser");
+    await mkdir(stateDir, { recursive: true });
+    const now = Date.now();
+
+    // Deliberately make the stale one "more recent" so it is tried first.
+    await writeFile(join(stateDir, "gmail-test-9223.json"), JSON.stringify({
+      id: "chrome:gmail-test:9223",
+      rootName: "gmail-test",
+      chromeRoot: "/tmp/fake-gmail",
+      port: "9223",
+      headless: true,
+      status: "running",
+      mode: "headless",
+      startTime: new Date(now - 2_000).toISOString(),
+      lastUsedAt: new Date(now).toISOString(),
+    }), "utf-8");
+    await writeFile(join(stateDir, "work-default-9222.json"), JSON.stringify({
+      id: "chrome:work-default:9222",
+      rootName: "work-default",
+      chromeRoot: "/tmp/fake-work",
+      port: "9222",
+      headless: true,
+      status: "running",
+      mode: "headless",
+      startTime: new Date(now - 3_000).toISOString(),
+      lastUsedAt: new Date(now - 1_000).toISOString(),
+    }), "utf-8");
+
+    const page = createPageStub({
+      targetId: "target_text_1",
+      title: "Example Domain",
+      url: "https://example.com/",
+    });
+
+    const connectUrls: string[] = [];
+    __setBrowserPatchrightTestDeps({
+      fetchImpl: (async (url: string) => {
+        const raw = String(url);
+        if (raw.includes(":9223/")) {
+          throw new Error("connect ECONNREFUSED");
+        }
+        return jsonResponse({ webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/test" });
+      }) as any,
+      resolvePatchright: () => ({
+        async connectOverCDP(url: string) {
+          connectUrls.push(url);
+          if (String(url).includes(":9223")) {
+            throw new Error("should not connect to 9223");
+          }
+          return {
+            contexts() {
+              return [{
+                pages() {
+                  return [page];
+                },
+                async newPage() {
+                  return page;
+                },
+              }];
+            },
+            async close() {
+              return undefined;
+            },
+          };
+        },
+      }),
+    });
+
+    const result = await executeBrowserOperation({
+      operation: "tabs.text",
+      tabId: "target_text_1",
+      timeoutMs: 500,
+    });
+
+    expect(result.data.title).toBe("Example Domain");
+    expect(String(result.data.text)).toContain("Example body text");
+    expect(connectUrls.some((item) => item.includes(":9222"))).toBe(true);
+    expect(connectUrls.some((item) => item.includes(":9223"))).toBe(false);
+  });
+
   it("无效 instanceId 应返回 BROWSER_BAD_ARGS", async () => {
     await expect(
       executeBrowserOperation({
