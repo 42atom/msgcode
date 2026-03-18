@@ -106,10 +106,12 @@ function runIsolatedListenerCase(mode: "search" | "fail-open" | "missing-index")
     let vectorAvailable = false;
     if (mode === "search") {
       const { createMemoryStore } = await import(${JSON.stringify(path.join(repoRoot, "src/memory/store.ts"))});
+      const { deriveWorkspaceId } = await import(${JSON.stringify(path.join(repoRoot, "src/memory/types.ts"))});
       const store = createMemoryStore();
       vectorAvailable = store.isVectorAvailable();
+      const workspaceId = deriveWorkspaceId(workspacePath);
       const docId = store.upsertDocument({
-        workspaceId: "default",
+        workspaceId,
         path: "notes/alpha.md",
         mtimeMs: Date.now(),
         sha256: crypto.createHash("sha256").update("继续推进").digest("hex"),
@@ -229,6 +231,7 @@ describe("P5.6.13-R4: listener 记忆检索触发收口", () => {
     const userText = coerceOpenAIMessageContentToText(userMessage?.content);
 
     expect(userText).toContain("相关记忆：");
+    expect(userText).toContain("当前消息事实");
     expect(userText).toContain("[记忆] notes/alpha.md:12-14");
     expect(userText).toContain("用户问题：\n继续");
     expect(result.sent?.[0]?.text).toBe("处理完成");
