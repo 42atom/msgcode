@@ -8,114 +8,36 @@
 
 当前发布说明：`docs/release/v2.4.0.md`
 
-msgcode 的目标是把「个人智能体」做成可长期运行的基础设施，而不是一次性的聊天应用。
-
 一句话定义：
 
 - **msgcode = AI 的操作系统化工作底座：在用户授权下，给一个可靠主脑完整、真实、可验证的电脑能力，让它按 persona 工作、管理子代理，并通过文件真相源持续完成真实任务。**
 
-## 产品理念
+msgcode 的目标是把「个人智能体」做成可长期运行的基础设施，而不是一次性的聊天应用。
 
-**不是 AI 要家，是让 AI 工作的人，应该给它一个像样的家。**
+## 主管道
 
-如果只是一次性问答、一次性命令，轻量消息流当然够用。  
-但如果你希望 AI 持续推进任务、跨 session 续跑、派单、巡检、交付，那就不能让它每次都像第一天上班。
+```text
+Feishu / CLI
+    |
+    v
+msgcode
+  I/O -----------> 输入、命令、回复、产物回传
+    |
+    v
+  调度 ----------> heartbeat / wake / dispatch / subagent
+    |
+    v
+  资源 ----------> LLM / files / memory / browser / ghost_*
+    |
+    v
+workspace files / issues / AIDOCS
+```
 
-所以 msgcode 要做的，不是只给现有 agent 加渠道外壳。  
-msgcode 要做的是把上面这句定义落成一套像样的工作条件：
+入口理解先抓这条主链：
 
-- 一个工位：`workspace + dispatch + schedules`
-- 一套记忆：`issues + AIDOCS + memory`
-- 一个节律：`heartbeat + alarm + reflection`
-- 一层自保：`vitals + backpressure`
-- 一份家底：`skills + diary + assets`
-
-仓库级工程原则也因此收口成一句：
-
-- **能落成文件真相源的，先落文件。不能落成真相源的，只做薄 runtime。**
-- **新增的人类可读、可巡检、带生命周期的文件面，优先沿用 `issues/` 命名哲学；机器协议和运行时缓存保持稳定 ID + JSON，不为巡检体验改主链。**
-
-它有两条执行线：
-- `Agent 线`（默认）：本地模型 + 记忆 + SOUL + skills + tool loop
-- `Tmux 线`：把复杂工程任务交给 `codex` / `claude-code` 等终端代理执行
-
-产品叙事版文档：`docs/product/pitch.md`
-
-## 当前方向
-
-- 当前实现目标：薄 runtime，默认把真实电脑能力暴露给 LLM
-- 当前桌面桥：`ghost-os`，这是默认且唯一的桌面自动化桥
-- 最终产品方向：`menu App + 单面板 + web系统面板`
-- msgcode 不再自研点击、识别、视觉定位这一类“自动化供应”逻辑；这些能力由上游桌面执行引擎提供，msgcode 只做薄桥接、配置收口和结果回传
-
-## 三大板块
-
-后续主线默认都归到这三块，不再散着长：
-
-1. 资源管理
-- `LLM`
-- 文件系统
-- tools / browser / desktop / memory
-
-2. 调度系统
-- `heartbeat`
-- `cron / wake`
-- 分步执行
-- `dispatch / subagent`
-
-3. I/O 系统
-- Feishu / mail / voice / browser / desktop
-- 多模态输入
-- 多模态输出
-
-工程口径：
-
-- 资源管理回答“能用什么”
+- I/O 系统回答“怎么进来、怎么出去”
 - 调度系统回答“什么时候做、拆给谁做”
-- I/O 系统回答“怎么感知世界、怎么把结果送回去”
-
-## 系统模型（先看这段）
-
-| 维度 | Agent 线（默认） | Tmux 线（复杂任务） |
-|---|---|---|
-| 角色 | 会话中枢（理解/记忆/编排） | 执行通道（终端代理转发） |
-| 能力 | SOUL、记忆注入、tool loop、TTS | Shell / Git / 代码编辑 / 长任务 |
-| 状态管理 | msgcode 管理会话上下文 | tmux 会话保持执行状态 |
-| 典型触发 | 日常对话、轻任务 | 多步骤编程、重型工程任务 |
-| 切换方式 | `/model agent-backend` | `/model codex` 或 `/model claude-code` |
-
-固定边界：
-- `Agent 线`承载业务语义（记忆、人格、技能）。
-- `Tmux 线`只做忠实转发与回传，不隐式注入业务语义。
-
-## 架构铁律（LLM 支持优先）
-
-msgcode 的默认原则不是“约束 LLM”，而是“支持 LLM 完成任务”。
-
-- msgcode 的定位是把这台电脑的真实能力暴露给 AI 使用的薄 runtime,不是替 AI 做主的代理平台。
-- AI 是默认主执行者。系统负责提供工具、上下文、状态、日志和证据,不默认代替 AI 宣布“完成”或“失败”。
-- 严禁框架自作主张给 LLM 加约束。
-- 框架职责是桥接，不是裁判；默认提供能力、上下文与真实结果，不替 LLM 做主。
-- 只要风险没有明确越界，框架必须优先放行主链，不得人为拆断合理步骤。
-- skill 场景必须支持完整闭环：`读 skill -> 执行 skill -> 失败后继续循环`。
-- 严禁只开放半套能力，把 LLM 引到一半再拦住。
-- 限制只能来自明确风险边界，不能来自主观偏好、协议洁癖或“为了更可控”。
-- 当 LLM 遇到困难时，框架必须继续给它工具、上下文和循环机会，不得中途判死。
-- 默认工具结果应先忠实回给模型；原始错误细节优先留在日志与证据中，而不是先由系统抢答给用户。
-- 系统只保留三类硬边界：安全、预算、物理。除此之外，不新增隐藏裁判、猜测式 fallback、规则化代答。
-- 默认能力主链：`LLM 先读 runtime skill -> 再用工具 / CLI / 文件协议执行`。
-- 能落成文件真相源的，先落文件；不能落成真相源的，只做薄 runtime，不抢状态地位。
-- 人类巡检面与机器协议面要分开：
-  - 人类可读、可巡检、带生命周期的文件面，优先沿用 `issues/` 这套命名哲学
-  - 机器协议和运行时缓存，优先保持稳定 ID + JSON
-  - 可观测性优先通过只读派生视图补，不回头改协议主链
-
-## Skill 与工具边界
-
-- `skill` 的首要职责是说明书：告诉模型何时用、怎么用、如何验证，不替模型做决定。
-- `wrapper` 只在跨语言、外部脚本、脏环境桥接等少数场景保留；不能把 `main.sh -> msgcode ...` 套壳当成默认模式。
-- `msgcode` 二进制和原生工具是第一公民能力边界。只要正式 CLI/工具合同已经稳定，就不应再在外面加一层 alias 壳抢掉它的价值。
-- 真正的工程底线不是“多加控制层”，而是“大权限 + 薄主链 + 强日志 + 强证据”。
+- 资源系统回答“能用什么”
 
 ## 快速开始
 
@@ -128,6 +50,15 @@ msgcode 的默认原则不是“约束 LLM”，而是“支持 LLM 完成任务
 - Chrome/Chromium（供浏览器自动化底座使用）
 - `ghost-os`（默认且唯一的桌面自动化桥，供 `ghost_*` 使用）
 
+先安装 `ghost-os`：
+
+```bash
+brew install ghostwright/ghost-os/ghost-os
+ghost setup
+ghost doctor
+ghost status
+```
+
 ### 2. 安装依赖
 
 ```bash
@@ -136,20 +67,10 @@ npm install
 ```
 
 说明：
-- `npm install` 现在会安装 `patchright` 依赖，正式浏览器主链通过 `connectOverCDP` 连接共享工作 Chrome。
+
+- `npm install` 会安装 `patchright` 依赖
+- 正式浏览器主链通过 `connectOverCDP` 连接共享工作 Chrome
 - 共享工作 Chrome 数据根默认落在：`$WORKSPACE_ROOT/.msgcode/chrome-profiles/<name>`
-- 当前正式浏览器主链：Patchright + Chrome-as-State
-
-### 开发运行时边界
-
-- 日常 CLI：优先用 `msgcode ...` 或 `./bin/msgcode ...`。这条入口天然走 Node。
-- 开发直跑源码：用 `node --import tsx src/cli.ts ...`，或 `npm run cli:node -- ...`。
-- `npm test` / `npm run test:bun` 只跑 Bun 安全子集。
-- 任何会触达 `better-sqlite3` 的路径，都不要直接塞进 Bun 进程。
-- 当前明确属于 Node 边界的能力：
-  - `memory index`
-  - memory sqlite 检索/调试
-  - 历史 `todo.db` 一次性导入
 
 ### 3. 初始化配置
 
@@ -162,6 +83,7 @@ npm exec msgcode -- init
 ```
 
 初始化会补齐：
+
 - `~/.config/msgcode/souls/default/SOUL.md`
 - `~/.config/msgcode/souls/active.json`
 - `~/.config/msgcode/skills/`
@@ -176,33 +98,22 @@ WORKSPACE_ROOT=/Users/<you>/msgcode-workspaces
 ```
 
 默认 transport 口径：
+
 - 当前主链固定为 `feishu`
 - 未配置飞书凭据时，`preflight/start` 会明确报缺 `FEISHU_APP_ID / FEISHU_APP_SECRET`
 
-Browser Core 配置口径：
-- 正式浏览器主链不再依赖 PinchTab orchestrator/baseUrl/binary 环境变量。
-- 正式连接方式固定为 Patchright `connectOverCDP` + 共享工作 Chrome root。
+浏览器与桌面口径：
+
+- 正式浏览器主链固定为 Patchright `connectOverCDP` + 共享工作 Chrome root
 - Chrome 工作数据根默认放在：`$WORKSPACE_ROOT/.msgcode/chrome-profiles/<name>`
 - 默认工作根名：`work-default`
 - 如需查看或创建默认路径，可执行：
   - `npx tsx src/cli.ts browser root --json`
   - `npx tsx src/cli.ts browser root --ensure --json`
-
-Ghost OS 安装与健康检查（`ghost_*` 默认依赖它）：
-
-```bash
-brew install ghostwright/ghost-os/ghost-os
-ghost setup
-ghost doctor
-ghost status
-```
-
-说明：
-- msgcode 会直接暴露 `ghost_*` 原生工具，不再长期保留 `desktop.* -> ghost_*` 翻译层。
-- msgcode 不自己实现点击、识别、标注、grounding 等桌面自动化细节；这些能力由 `ghost-os` 提供，msgcode 只做薄桥接。
-- 未安装 `ghost-os` 时，`ghost_*` 工具会 fail-closed 返回真实缺失事实和安装指引。
-- `ghost status` 未 ready 时，msgcode 会补跑一次 `ghost doctor`，把最小诊断事实回给模型。
-- 高风险动作默认通过 skill / prompt 约束模型先询问用户；msgcode 不额外新增 confirm gate 或审批层。
+- msgcode 会直接暴露 `ghost_*` 原生工具，不再长期保留 `desktop.* -> ghost_*` 翻译层
+- msgcode 不自己实现点击、识别、标注、grounding 等桌面自动化细节；这些能力由 `ghost-os` 提供，msgcode 只做薄桥接
+- 未安装 `ghost-os` 时，`ghost_*` 工具会 fail-closed 返回真实缺失事实和安装指引
+- `ghost status` 未 ready 时，msgcode 会补跑一次 `ghost doctor`，把最小诊断事实回给模型
 
 ### 5. 启动服务
 
@@ -226,28 +137,75 @@ msgcode start -d
 ```
 
 `/bind` 后会创建：
+
 - `<WORKSPACE>/.msgcode/config.json`
 - `<WORKSPACE>/.msgcode/providers.json`
 - `<WORKSPACE>/.msgcode/SOUL.md`
 
-## 开发必读：真机 Smoke 默认基座
+### 7. 开发与测试边界
 
-以后凡是说“飞书真机 smoke / live verification”，默认基座固定为这一套：
+- 日常 CLI：优先用 `msgcode ...` 或 `./bin/msgcode ...`
+- 开发直跑源码：用 `node --import tsx src/cli.ts ...`，或 `npm run cli:node -- ...`
+- `npm test` / `npm run test:bun` 只跑 Bun 安全子集
+- 任何会触达 `better-sqlite3` 的路径，不要直接塞进 Bun 进程
+- 飞书真机 smoke 基座见：`docs/testing/feishu-live-smoke.md`
 
-- **现成群**：优先复用已有 `test-real` 飞书群，不重新建测试群
-- **真实凭据**：优先使用本机 `~/.config/msgcode/.env`，不要看仓库 `.env.example`
-- **默认 workspace**：`/Users/admin/msgcode-workspaces/test-real`
-- **默认方法**：先 `msgcode preflight`，再 `msgcode start`，然后直接去 `test-real` 群发真实消息
-- **默认真相源**：`docs/plan/pl0098.dne.feishu.feishu-live-verification-loop.md`
-- **现成证据**：`AIDOCS/reports/skill-live-run-260312-batch1.md`、`AIDOCS/reports/skill-live-run-260312-batch2.md`
+## 当前主链
 
-额外约束：
+### 三大板块
 
-- 不把 bot 自发 API 消息当成完整真机验证
-- 不优先做 Feishu UI 自动化
-- 做 capability live test 前，先检查 `test-real/.msgcode/config.json` 的 `tooling.allow` 是否已打开所需工具面
+1. 资源管理
+- `LLM`
+- 文件系统
+- tools / browser / ghost / memory
 
-## 最小命令集（根 README 口径）
+2. 调度系统
+- `heartbeat`
+- `cron / wake`
+- `dispatch / subagent`
+
+3. I/O 系统
+- Feishu / mail / voice / browser / desktop
+- 多模态输入
+- 多模态输出
+
+### 双执行线
+
+| 维度 | Agent 线（默认） | Tmux 线（复杂任务） |
+|---|---|---|
+| 角色 | 会话中枢（理解/记忆/编排） | 执行通道（终端代理转发） |
+| 能力 | SOUL、记忆注入、tool loop、TTS | Shell / Git / 代码编辑 / 长任务 |
+| 状态管理 | msgcode 管理会话上下文 | tmux 会话保持执行状态 |
+| 典型触发 | 日常对话、轻任务 | 多步骤编程、重型工程任务 |
+| 切换方式 | `/model agent-backend` | `/model codex` 或 `/model claude-code` |
+
+固定边界：
+
+- `Agent 线`承载业务语义（记忆、人格、技能）
+- `Tmux 线`只做忠实转发与回传，不隐式注入业务语义
+
+## 设计原则
+
+**不是 AI 要家，是让 AI 工作的人，应该给它一个像样的家。**
+
+- msgcode 的定位是薄 runtime，不是替 AI 做主的控制平台
+- 默认主链是：`模型 -> 工具/CLI/文件 -> 真实结果 -> 模型`
+- 能落成文件真相源的，先落文件；不能落的，只做薄 runtime
+- `skill` 首先是说明书，不是替模型做决定的控制器
+
+当前产品口径：
+
+- 当前桌面桥：`ghost-os`
+- 当前实现目标：薄 runtime，默认把真实电脑能力暴露给 LLM
+- 最终产品方向：`menu App + 单面板 + web系统面板`
+
+延伸阅读：
+
+- `docs/product/pitch.md`
+- `CONTRIBUTING.md`
+- `docs/README.md`
+
+## 最小命令集
 
 | 命令 | 用途 |
 |---|---|
@@ -266,16 +224,11 @@ msgcode start -d
 
 更多命令请以运行时 `/help` 输出为准。
 
-## 测试口径
-
-- `npm test`：等价于 `npm run test:bun`，用于 Bun 安全子集回归。
-- 需要验证 SQLite 路径时，优先直接跑 `msgcode ...`、`./bin/msgcode ...` 或 `npm run cli:node -- ...`。
-- 不要把 `better-sqlite3` 相关路径强行放进 `bun test`。
-
 ## Legacy Desktop Bridge（遗留显式链路）
 
-- 当前默认桌面能力面已切到 `ghost_*` 原生工具。
-- 自研 Desktop Bridge 已整体迁入 `docs/archive/retired-desktop-bridge/`；不要再把旧 `mac/` / `docs/desktop/` 当默认入口，现役桌面能力以 `ghost_*` 为准。
+- 当前默认桌面能力面已切到 `ghost_*` 原生工具
+- 自研 Desktop Bridge 已整体迁入 `docs/archive/retired-desktop-bridge/`
+- 不要再把旧 `mac/` / `docs/desktop/` 当默认入口，现役桌面能力以 `ghost_*` 为准
 
 ## 退役名对照
 
@@ -293,19 +246,21 @@ msgcode start -d
 `/clear` 只清理 `L0/L1`，不清理 `L2`。
 
 开发补充：
-- `L2` 的文件真相源可以直接读写。
-- `index.sqlite` 只是派生索引；坏了可以删后重建。
-- 若要直跑源码执行 `memory index`，请走 `node --import tsx src/cli.ts memory index ...`。
+
+- `L2` 的文件真相源可以直接读写
+- `index.sqlite` 只是派生索引；坏了可以删后重建
+- 若要直跑源码执行 `memory index`，请走 `node --import tsx src/cli.ts memory index ...`
 
 ## Known Limits
 
-- 当前正式消息通道只有飞书；未来 app/web client 会接在更薄的 channel seam 上，而不是恢复旧 iMessage 主链。
-- Tmux 代理属于“终端通道”，输出质量受上游 CLI 工具更新影响。
-- 命令在不同运行态可见性不同，出现分歧时一律以 `/help` 输出为准。
+- 当前正式消息通道只有飞书；未来 app/web client 会接在更薄的 channel seam 上，而不是恢复旧 iMessage 主链
+- Tmux 代理属于“终端通道”，输出质量受上游 CLI 工具更新影响
+- 命令在不同运行态可见性不同，出现分歧时一律以 `/help` 输出为准
 
 ## 文档索引
 
 - `docs/README.md` 文档总入口
+- `docs/testing/feishu-live-smoke.md` 飞书真机 smoke 默认基座
 - `docs/product/pitch.md` 产品叙事与定位
 - `docs/archive/retired-desktop-bridge/` Legacy Desktop Bridge 版本化归档（非现役上手入口）
 - `CONTRIBUTING.md` 开源协作与文档边界说明
