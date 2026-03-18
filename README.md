@@ -190,18 +190,19 @@ msgcode start -d
 
 - Agent 到底通过哪些文件“认识你”、记住工作、继续推进任务
 
-文件多不等于更好。关键是把真相源摊开，让人和模型都能一眼看懂。
+这里只放**面向人类**的文件面。
+
+- `.json / .jsonl / .ndjson` 这类机器协议面不放进这张表
+- 机器协议与运行时状态，另看 `docs/protocol/*`
+
+文件多不等于更好。关键是把真相源摊开，让人能一眼看懂。
 
 | 文件面 | 具体文件名 / 文件模式 | 作用 | 真相级别 | 生命周期 |
 |---|---|---|---|---|
 | 灵魂 | `~/.config/msgcode/souls/default/SOUL.md` `/<workspace>/.msgcode/SOUL.md` | 定义人格、风格、边界 | 认知真相源 | 长期 |
 | 长期记忆 | `/<workspace>/memory/YYYY-MM-DD.md` | 记录稳定事实、偏好、经验 | 记忆真相源 | 长期 |
-| 会话原始记录 | `/<workspace>/.msgcode/sessions/<chatId>.jsonl` | 保存原始对话与短期上下文 | 会话真相源 | 会话期 |
 | 会话摘要 | `/<workspace>/.msgcode/sessions/<chatId>/summary.md` | 服务压缩与恢复阅读 | 派生视图 | 可重建 |
 | 原始请求 inbox | `/<workspace>/.msgcode/inbox/rq0001.new.<transport>.<slug>.md` `/<workspace>/.msgcode/inbox/rq0001.triaged.<transport>.<slug>.md` | 记录新请求和分拣状态 | I/O 真相源 | 短中期 |
-| 派单执行 | `/<workspace>/.msgcode/dispatch/<dispatchId>.json` | 记录派单、执行进度、checkpoint | 运行真相源 | 任务期 |
-| 子代理状态 | `/<workspace>/.msgcode/subagents/<taskId>.json` | 记录子代理执行状态 | 运行真相源 | 任务期 |
-| 子代理消息 | `/<workspace>/.msgcode/subagents/<taskId>.messages.ndjson` | 记录 supervisor 和子代理继续对话 | 执行证据 | 任务期 |
 | heartbeat 草稿 | `/<workspace>/.msgcode/HEARTBEAT.md` | 记录巡检提示、checklist、notes | 草稿面 | 可覆盖 |
 | 每日日记 | `/<workspace>/AIDOCS/reports/daily/YYYY-MM-DD.md` | 记录当天完成、阻塞、下一步 | reflection 真相 | 每日追加 |
 | 记忆候选 | `/<workspace>/.msgcode/reflection/memory-candidates/memory-<category>-<YYYYMMDD>-<seq>.md` | 记录待审核的长期经验 | reflection 真相 | 阶段性 |
@@ -211,9 +212,14 @@ msgcode start -d
 
 一句话收口：
 
-- `SOUL + memory + sessions` 负责“认识你”
-- `inbox + dispatch + subagents + issues` 负责“接活并推进”
+- `SOUL + memory + summary` 负责“认识你”
+- `inbox + issues` 负责“接活并推进”
 - `reflection + AIDOCS` 负责“回收经验和保留证据”
+
+补充：
+
+- `dispatch / subagents / sessions raw log` 这些机器协议面仍然存在
+- 只是它们不属于 README 这张“人类认知文件表”
 
 ## 设计原则
 
