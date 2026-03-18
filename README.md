@@ -184,6 +184,37 @@ msgcode start -d
 - `Agent 线`承载业务语义（记忆、人格、技能）
 - `Tmux 线`只做忠实转发与回传，不隐式注入业务语义
 
+## Agent 认知文件表
+
+这张表只回答一件事：
+
+- Agent 到底通过哪些文件“认识你”、记住工作、继续推进任务
+
+文件多不等于更好。关键是把真相源摊开，让人和模型都能一眼看懂。
+
+| 文件面 | 具体文件名 / 文件模式 | 作用 | 真相级别 | 生命周期 |
+|---|---|---|---|---|
+| 灵魂 | `~/.config/msgcode/souls/default/SOUL.md` `/<workspace>/.msgcode/SOUL.md` | 定义人格、风格、边界 | 认知真相源 | 长期 |
+| 长期记忆 | `/<workspace>/memory/YYYY-MM-DD.md` | 记录稳定事实、偏好、经验 | 记忆真相源 | 长期 |
+| 会话原始记录 | `/<workspace>/.msgcode/sessions/<chatId>.jsonl` | 保存原始对话与短期上下文 | 会话真相源 | 会话期 |
+| 会话摘要 | `/<workspace>/.msgcode/sessions/<chatId>/summary.md` | 服务压缩与恢复阅读 | 派生视图 | 可重建 |
+| 原始请求 inbox | `/<workspace>/.msgcode/inbox/rq0001.new.<transport>.<slug>.md` `/<workspace>/.msgcode/inbox/rq0001.triaged.<transport>.<slug>.md` | 记录新请求和分拣状态 | I/O 真相源 | 短中期 |
+| 派单执行 | `/<workspace>/.msgcode/dispatch/<dispatchId>.json` | 记录派单、执行进度、checkpoint | 运行真相源 | 任务期 |
+| 子代理状态 | `/<workspace>/.msgcode/subagents/<taskId>.json` | 记录子代理执行状态 | 运行真相源 | 任务期 |
+| 子代理消息 | `/<workspace>/.msgcode/subagents/<taskId>.messages.ndjson` | 记录 supervisor 和子代理继续对话 | 执行证据 | 任务期 |
+| heartbeat 草稿 | `/<workspace>/.msgcode/HEARTBEAT.md` | 记录巡检提示、checklist、notes | 草稿面 | 可覆盖 |
+| 每日日记 | `/<workspace>/AIDOCS/reports/daily/YYYY-MM-DD.md` | 记录当天完成、阻塞、下一步 | reflection 真相 | 每日追加 |
+| 记忆候选 | `/<workspace>/.msgcode/reflection/memory-candidates/memory-<category>-<YYYYMMDD>-<seq>.md` | 记录待审核的长期经验 | reflection 真相 | 阶段性 |
+| skill 候选 | `/<workspace>/.msgcode/reflection/skill-candidates/skill-<category>-<YYYYMMDD>-<seq>.md` | 记录待沉淀的 skill/workflow | reflection 真相 | 阶段性 |
+| 任务状态 | `/issues/tkNNNN.<state>.<board>[.prio].<slug>.md` | 记录任务状态、责任、验收口径 | 任务真相源 | 生命周期完整 |
+| 交付与证据 | `/AIDOCS/reports/*` `/AIDOCS/artifacts/*` | 放报告、素材、补充证据 | 证据面 | 按需保留 |
+
+一句话收口：
+
+- `SOUL + memory + sessions` 负责“认识你”
+- `inbox + dispatch + subagents + issues` 负责“接活并推进”
+- `reflection + AIDOCS` 负责“回收经验和保留证据”
+
 ## 设计原则
 
 **不是 AI 要家，是让 AI 工作的人，应该给它一个像样的家。**
