@@ -64,6 +64,24 @@ async function flushAsyncWork(): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+async function waitForCondition(
+  predicate: () => boolean,
+  options?: { timeoutMs?: number; intervalMs?: number }
+): Promise<boolean> {
+  const timeoutMs = options?.timeoutMs ?? 1000;
+  const intervalMs = options?.intervalMs ?? 10;
+  const deadline = Date.now() + timeoutMs;
+
+  while (Date.now() <= deadline) {
+    if (predicate()) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+
+  return predicate();
+}
+
 describe("Schedule -> Wake Job -> Wake Record 幂等生成", () => {
   let workspace: string;
 
@@ -616,10 +634,11 @@ describe("Schedule -> Wake Job -> Wake Record 幂等生成", () => {
 
       const job = syncScheduleToWakeJob(workspace, getSchedule(workspace, "mode-heartbeat-now")!);
       const record = triggerWakeJob(workspace, job!.id, Date.now() - 1000);
-      await flushAsyncWork();
+      const passedTaskPath = path.join(workspace, "issues", "tk9201.pss.frontend.schedule-now.md");
+      const completed = await waitForCondition(() => fs.existsSync(passedTaskPath));
 
       expect(record).not.toBeNull();
-      expect(fs.existsSync(path.join(workspace, "issues", "tk9201.pss.frontend.schedule-now.md"))).toBe(true);
+      expect(completed).toBe(true);
     });
   });
 

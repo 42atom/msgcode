@@ -23,6 +23,7 @@ import { updateLastSeen } from "./state/store.js";
 import { getMemoryInjectConfig, saveCurrentSessionContext } from "./config/workspace.js";
 import { AutoTtsLane } from "./runners/tts/auto-lane.js";
 import crypto from "node:crypto";
+import { advanceInboxRequestState, createInboxRequest, type InboxRequestRecord } from "./runtime/inbox-store.js";
 
 export interface ListenerConfig {
   // 统一发送口径：按 chatId 前缀路由到具体 transport
@@ -547,6 +548,23 @@ export async function handleMessage(
   // 但为了不丢消息：只有在本次消息完成处理/明确忽略后才推进（finally 执行）
   let shouldAdvanceCursor = false;
   const startedAtMs = Date.now();
+  let inboxRequest: InboxRequestRecord | null = null;
+
+  const markInboxTriaged = async (): Promise<void> => {
+    if (!inboxRequest || inboxRequest.state === "triaged") {
+      return;
+    }
+    try {
+      inboxRequest = await advanceInboxRequestState(inboxRequest, "triaged");
+    } catch (error) {
+      logger.warn("inbox 请求推进 triaged 失败", {
+        module: "listener",
+        chatId: message.chatId,
+        requestId: message.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
 
   try {
     // E17: 预处理文本（用于后续检查）
@@ -707,6 +725,18 @@ export async function handleMessage(
         error: error instanceof Error ? error.message : String(error),
       });
     }
+
+    try {
+      inboxRequest = await createInboxRequest(route.projectDir, message);
+    } catch (error) {
+      logger.warn("inbox 请求落盘失败", {
+        module: "listener",
+        chatId: message.chatId,
+        projectDir: route.projectDir,
+        requestId: message.id,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   // 命令/转发交给对应 bot handler（默认 bot 直接走 tmux）
@@ -857,6 +887,7 @@ export async function handleMessage(
 
       if (hasOcrError) {
         // P0: OCR 失败直接固定文案回复，不喂给 4.7（避免元叙事）
+        await markInboxTriaged();
         await sendText(ctx.sendClient, message.chatId, "图片识别失败。");
         shouldAdvanceCursor = true;
         return;
@@ -895,6 +926,7 @@ export async function handleMessage(
 
       // 如果既没有文本也没有可处理的附件，跳过
       if (!contentToHandle.trim()) {
+        await markInboxTriaged();
         shouldAdvanceCursor = true;
         return;
       }
@@ -918,6 +950,7 @@ export async function handleMessage(
 
       // 如果既没有文本也没有可处理的附件，跳过
       if (!contentToHandle.trim()) {
+        await markInboxTriaged();
         shouldAdvanceCursor = true;
         return;
       }
@@ -961,6 +994,7 @@ export async function handleMessage(
           module: "listener",
           chatId: message.chatId,
         });
+        await markInboxTriaged();
         shouldAdvanceCursor = true;
         return;
       }
@@ -975,6 +1009,7 @@ export async function handleMessage(
         message.chatId,
         result.error ? `错误: ${result.error}` : "错误: 处理失败"
       );
+      await markInboxTriaged();
       shouldAdvanceCursor = true;
       return;
     }
@@ -1044,6 +1079,7 @@ export async function handleMessage(
       }
     }
 
+    await markInboxTriaged();
     shouldAdvanceCursor = true;
     return;
   } catch (handlerError: unknown) {
@@ -1061,6 +1097,7 @@ export async function handleMessage(
       message.chatId,
       `Handler 异常: ${handlerError instanceof Error ? handlerError.message : String(handlerError)}`
     );
+    await markInboxTriaged();
     shouldAdvanceCursor = true;
     return;
   }

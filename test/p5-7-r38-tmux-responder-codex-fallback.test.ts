@@ -47,7 +47,7 @@ mock.module("../src/tmux/sender.js", () => ({
   sendEscape: sendEscapeMock,
 }));
 
-const { handleTmuxSend } = await import("../src/tmux/responder.js");
+const { handleTmuxSend } = await import(`../src/tmux/responder.js?case=r38-${Date.now()}`);
 
 describe("P5.7-R38: tmux responder codex fallback", () => {
   beforeEach(() => {
