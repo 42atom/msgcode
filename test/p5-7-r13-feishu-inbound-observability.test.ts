@@ -114,4 +114,30 @@ describe("P5.7-R13: feishu inbound observability", () => {
     expect(resolveIsGroup!("p2p")).toBe(false);
     expect(resolveIsGroup!(undefined)).toBeUndefined();
   });
+
+  it("应把飞书入站基础字段收成稳定事件", () => {
+    const buildBase = feishuTransportTest?.buildFeishuInboundBaseMessage;
+    expect(buildBase).toBeDefined();
+
+    const result = buildBase!({
+      messageId: "om_in_123",
+      chatId: "oc_chat_123",
+      text: "你好",
+      sender: "ou_user_123",
+      chatType: " group ",
+      messageType: " image ",
+    });
+
+    expect(result).toMatchObject({
+      id: "om_in_123",
+      transport: "feishu",
+      chatId: "feishu:oc_chat_123",
+      text: "你好",
+      sender: "ou_user_123",
+      handle: "ou_user_123",
+      isFromMe: false,
+      isGroup: true,
+      messageType: "image",
+    });
+  });
 });

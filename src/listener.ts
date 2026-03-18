@@ -95,6 +95,8 @@ async function sendText(
       module: "listener",
       chatId,
       ok: result.ok,
+      receipt: result.receipt ?? null,
+      fallbackTextSent: result.fallbackTextSent ?? false,
     });
   } catch (error) {
     logger.error("回复发送失败", {
@@ -372,21 +374,38 @@ async function injectMemory(
   try {
     // 5. 调用 memory_search
     const { createMemoryStore } = await import("./memory/store.js");
+    const { existsSync, readdirSync } = await import("node:fs");
     const path = await import("node:path");
     const store = createMemoryStore();
 
     // P5.6.13-R4: 获取向量可用状态
     const vectorAvailable = store.isVectorAvailable();
 
-    // 使用 workspace basename 作为 workspaceId（与 memory index 一致，避免跨 workspace 泄露）
-    const workspaceId = path.basename(projectDir);
+    const { deriveWorkspaceId } = await import("./memory/types.js");
+    const workspaceId = deriveWorkspaceId(projectDir);
     const results = store.search(workspaceId, query, memConfig.topK);
+    const indexedFiles = store.getWorkspaceDocumentCount(workspaceId);
     store.close();
 
     const latencyMs = Date.now() - startTime;
-    const memoryMode = vectorAvailable ? "hybrid" : "fts-only"; // P5.6.13-R5: 模式标识
+    const memoryMode = "fts-only"; // 当前主链实际只调用 BM25/FTS 检索
+    const memoryDir = path.join(projectDir, "memory");
+    const hasMemoryFiles = existsSync(memoryDir) && readdirSync(memoryDir).some((file) => file.endsWith(".md"));
 
     if (results.length === 0) {
+      const skippedReason = hasMemoryFiles && indexedFiles === 0
+        ? `memory 索引缺失；先执行 msgcode memory index --workspace ${projectDir}`
+        : "无搜索结果";
+
+      if (hasMemoryFiles && indexedFiles === 0) {
+        logger.warn("记忆索引缺失", {
+          module: "listener",
+          workspaceId,
+          projectDir,
+          recommended: `msgcode memory index --workspace ${projectDir}`,
+        });
+      }
+
       if (debug) {
         return {
           injected: false,
@@ -399,7 +418,7 @@ async function injectMemory(
             memoryInjected: false,
             memoryInjectedChars: 0,
             usedPaths: [],
-            skippedReason: "无搜索结果",
+            skippedReason,
             forced: force,
             memoryLatencyMs: latencyMs,
           },
@@ -807,12 +826,12 @@ export async function handleMessage(
     const memResult = await injectMemory(text, route.projectDir, memForceFlag);
     if (memResult.injected) {
       baseContent = memResult.content;
-      if (memResult.debug && process.env.MEMORY_DEBUG === "1") {
-        logger.debug("记忆注入结果", {
-          module: "listener",
-          ...memResult.debug,
-        });
-      }
+    }
+    if (memResult.debug && process.env.MEMORY_DEBUG === "1") {
+      logger.debug("记忆注入结果", {
+        module: "listener",
+        ...memResult.debug,
+      });
     }
   }
 

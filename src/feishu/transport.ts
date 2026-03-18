@@ -54,6 +54,28 @@ type FeishuInboundAttachmentSpec = {
 
 type FeishuResourceDownloadType = "image" | "file";
 
+function buildFeishuInboundBaseMessage(params: {
+  messageId: string;
+  chatId: string;
+  text?: string;
+  sender?: string;
+  chatType?: unknown;
+  messageType?: string;
+}): InboundMessage {
+  return {
+    id: params.messageId,
+    transport: "feishu",
+    chatId: toFeishuChatGuid(params.chatId),
+    text: params.text,
+    isFromMe: false,
+    sender: params.sender,
+    handle: params.sender,
+    senderName: undefined,
+    isGroup: resolveFeishuIsGroup(params.chatType),
+    messageType: normalizeFeishuMessageType(params.messageType),
+  };
+}
+
 function parseFeishuTextContent(content: unknown): string | undefined {
   if (!content) return undefined;
 
@@ -346,6 +368,18 @@ function getFeishuErrorMessage(error: unknown): string {
   return parts.length > 0 ? parts.join(" ") : error.message;
 }
 
+function extractFeishuMessageReceipt(response: unknown): string | undefined {
+  if (!response || typeof response !== "object") return undefined;
+  const record = response as { message_id?: unknown; data?: { message_id?: unknown } };
+  if (typeof record.message_id === "string" && record.message_id.trim()) {
+    return record.message_id.trim();
+  }
+  if (typeof record.data?.message_id === "string" && record.data.message_id.trim()) {
+    return record.data.message_id.trim();
+  }
+  return undefined;
+}
+
 export function createFeishuTransport(config: FeishuTransportConfig): FeishuTransport {
   const baseConfig = {
     appId: config.appId,
@@ -394,21 +428,16 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
         }
         const contentInspection = inspectFeishuContent(message?.content);
 
-        const messageTypeLabel = normalizeFeishuMessageType(msgType);
-
-        const chatTypeLabel = normalizeFeishuChatType(message?.chat_type);
-        const inboundBase: InboundMessage = {
-          id: String(messageId),
-          chatId: toFeishuChatGuid(String(chatId)),
+        const inboundBase = buildFeishuInboundBaseMessage({
+          messageId: String(messageId),
+          chatId: String(chatId),
           text,
-          isFromMe: false,
-          // 飞书事件时间为字符串毫秒（部分场景为秒），这里不强依赖，先不填
           sender: sender?.open_id || sender?.user_id || sender?.union_id,
-          handle: sender?.open_id || sender?.user_id || sender?.union_id,
-          senderName: undefined,
-          isGroup: resolveFeishuIsGroup(message?.chat_type),
-          messageType: messageTypeLabel,
-        };
+          chatType: message?.chat_type,
+          messageType: typeof msgType === "string" ? msgType : undefined,
+        });
+        const messageTypeLabel = inboundBase.messageType ?? "unknown";
+        const chatTypeLabel = normalizeFeishuChatType(message?.chat_type);
 
         logger.info(
           `Feishu 入站事件 msgType=${messageTypeLabel} messageId=${String(messageId)} contentKind=${contentInspection.contentKind} resourceKeyField=${contentInspection.resourceKeyField ?? "none"} resourceKey=${contentInspection.resourceKey ?? "none"} fileName=${contentInspection.fileName ?? "none"}`,
@@ -460,6 +489,7 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
               ...inboundBase,
               attachments: [
                 {
+                  transport: "feishu",
                   filename: attachmentSpec.filename,
                   transfer_name: attachmentSpec.filename,
                   mime: attachmentSpec.mime,
@@ -643,6 +673,7 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
     let fileError: string | undefined;
     let attachmentType: "file" | "image" | undefined;
     let attachmentKey: string | undefined;
+    let receipt: string | undefined;
 
     if (params.file) {
       const treatAsImage = isImageFile(params.file);
@@ -667,7 +698,7 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
         attachmentKey = resourceKey;
 
         try {
-          await apiClient.im.message.create({
+          const attachmentResponse: any = await apiClient.im.message.create({
             params: {
               receive_id_type: "chat_id",
             },
@@ -681,10 +712,11 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
               ),
             },
           } as any);
+          receipt = extractFeishuMessageReceipt(attachmentResponse);
 
           // 如果有文本，也一起发送
           if (text) {
-            await apiClient.im.message.create({
+            const textResponse: any = await apiClient.im.message.create({
               params: {
                 receive_id_type: "chat_id",
               },
@@ -694,6 +726,7 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
                 content: JSON.stringify({ text }),
               },
             } as any);
+            receipt = extractFeishuMessageReceipt(textResponse) ?? receipt;
           }
 
           logger.info(treatAsImage ? "Feishu 图片消息发送成功" : "Feishu 文件消息发送成功", {
@@ -707,6 +740,7 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
             ok: true,
             attachmentType,
             attachmentKey,
+            receipt,
           };
         } catch (error) {
           const errorMessage = getFeishuErrorMessage(error);
@@ -733,7 +767,7 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
     }
 
     try {
-      await apiClient.im.message.create({
+      const textResponse: any = await apiClient.im.message.create({
         params: {
           receive_id_type: "chat_id",
         },
@@ -743,12 +777,14 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
           content: JSON.stringify({ text: finalText }),
         },
       } as any);
+      receipt = extractFeishuMessageReceipt(textResponse) ?? receipt;
 
       return {
         ok: true,
         error: fileError,
         attachmentType,
         attachmentKey,
+        receipt,
         fallbackTextSent: Boolean(fileError),
       };
     } catch (error) {
@@ -758,7 +794,7 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
         chatGuid,
         error: errorMessage,
       });
-      return { ok: false, error: errorMessage, attachmentType, attachmentKey };
+      return { ok: false, error: errorMessage, attachmentType, attachmentKey, receipt };
     }
   }
 
@@ -767,6 +803,7 @@ export function createFeishuTransport(config: FeishuTransportConfig): FeishuTran
 
 export const __test = process.env.NODE_ENV === "test"
   ? {
+      buildFeishuInboundBaseMessage,
       inspectFeishuContent,
       normalizeFeishuMessageType,
       normalizeFeishuChatType,

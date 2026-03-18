@@ -14,14 +14,16 @@
  */
 
 import { Command } from "commander";
+import { createHash } from "node:crypto";
 import path from "node:path";
-import { existsSync, mkdirSync, appendFileSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, appendFileSync, readFileSync, readdirSync } from "node:fs";
 import type { Diagnostic } from "../memory/types.js";
 import {
   parseWorkspaceParam,
   MEMORY_ERROR_CODES,
   createMemoryDiagnostic,
   checkPathTraversal,
+  deriveWorkspaceId,
 } from "../memory/types.js";
 import { createMemoryStore, getDefaultIndexPath } from "../memory/store.js";
 import { createChunker } from "../memory/chunker.js";
@@ -40,6 +42,10 @@ const DEFAULT_GET_LINES = 40;
 
 /** 最大获取行数 */
 const MAX_GET_LINES = 200;
+
+function calculateSha256Sync(filePath: string): string {
+  return createHash("sha256").update(readFileSync(filePath)).digest("hex");
+}
 
 // ============================================
 // 辅助函数
@@ -95,6 +101,17 @@ function getTodayMemoryPath(workspacePath: string): string {
   return path.join(workspacePath, "memory", `${today}.md`);
 }
 
+function listMemoryMarkdownFiles(workspacePath: string): string[] {
+  const memoryDir = path.join(workspacePath, "memory");
+  if (!existsSync(memoryDir)) {
+    return [];
+  }
+
+  return readdirSync(memoryDir)
+    .filter((file) => file.endsWith(".md"))
+    .map((file) => path.join(memoryDir, file));
+}
+
 // ============================================
 // 命令实现
 // ============================================
@@ -119,37 +136,45 @@ export function createMemoryIndexCommand(): Command {
       try {
         // 解析 workspace
         const workspacePath = await resolveWorkspacePathParam(options.workspace);
-        const workspaceId = path.basename(workspacePath); // 简化：用目录名作为 ID
+        const workspaceId = deriveWorkspaceId(workspacePath);
 
         // 打开 store
         const store = createMemoryStore();
 
         // 查找 memory 文件
-        const memoryDir = path.join(workspacePath, "memory");
-        const memoryFiles: string[] = [];
-
-        if (existsSync(memoryDir)) {
-          const { readdirSync } = await import("node:fs");
-          const files = readdirSync(memoryDir);
-          for (const file of files) {
-            if (file.endsWith(".md")) {
-              memoryFiles.push(path.join(memoryDir, file));
-            }
-          }
-        }
+        const memoryFiles = listMemoryMarkdownFiles(workspacePath);
 
         // 索引文件
         let indexedCount = 0;
+        let skippedFiles = 0;
+        let refreshedMetadata = 0;
         const chunker = createChunker();
+        store.upsertWorkspaceRoot(workspaceId, workspacePath);
 
         for (const filePath of memoryFiles) {
           const relativePath = path.relative(workspacePath, filePath);
           const { statSync } = await import("node:fs");
           const stat = statSync(filePath);
+          const existingDoc = store.getDocument(workspaceId, relativePath);
 
-          // TODO: 检查是否需要重新索引（mtime/sha256）
-          // TODO: 计算 sha256
-          const sha256 = ""; // 暂时留空
+          if (!options.force && existingDoc && existingDoc.mtimeMs === stat.mtimeMs && existingDoc.sha256) {
+            skippedFiles++;
+            continue;
+          }
+
+          const sha256 = calculateSha256Sync(filePath);
+
+          if (!options.force && existingDoc && existingDoc.sha256 === sha256) {
+            store.upsertDocument({
+              workspaceId,
+              path: relativePath,
+              mtimeMs: stat.mtimeMs,
+              sha256,
+              createdAtMs: existingDoc.createdAtMs,
+            });
+            refreshedMetadata++;
+            continue;
+          }
 
           // 添加文档
           const docId = store.upsertDocument({
@@ -157,7 +182,7 @@ export function createMemoryIndexCommand(): Command {
             path: relativePath,
             mtimeMs: stat.mtimeMs,
             sha256,
-            createdAtMs: Date.now(),
+            createdAtMs: existingDoc?.createdAtMs ?? Date.now(),
           });
 
           // 读取内容并分块
@@ -181,6 +206,8 @@ export function createMemoryIndexCommand(): Command {
           workspaceId,
           workspacePath,
           indexedFiles: indexedCount,
+          skippedFiles,
+          refreshedMetadata,
           indexPath: getDefaultIndexPath(),
         };
 
@@ -189,7 +216,7 @@ export function createMemoryIndexCommand(): Command {
         if (options.json) {
           console.log(JSON.stringify(envelope, null, 2));
         } else {
-          console.log(`已索引 ${indexedCount} 个文件`);
+          console.log(`已索引 ${indexedCount} 个文件，跳过 ${skippedFiles} 个未变化文件，刷新 ${refreshedMetadata} 个元数据`);
         }
 
         process.exit(0);
@@ -259,7 +286,8 @@ export function createMemorySearchCommand(): Command {
 
         // 解析 workspace
         const workspacePath = await resolveWorkspacePathParam(options.workspace);
-        const workspaceId = path.basename(workspacePath);
+        const workspaceId = deriveWorkspaceId(workspacePath);
+        const memoryFiles = listMemoryMarkdownFiles(workspacePath);
 
         // 打开 store
         const store = createMemoryStore();
@@ -267,8 +295,22 @@ export function createMemorySearchCommand(): Command {
         // 搜索
         const limit = parseInt(options.limit, 10);
         const results = store.search(workspaceId, query, limit);
+        const indexedFiles = store.getWorkspaceDocumentCount(workspaceId);
 
         store.close();
+
+        if (results.length === 0 && memoryFiles.length > 0 && indexedFiles === 0) {
+          warnings.push({
+            code: MEMORY_ERROR_CODES.INDEX_MISSING,
+            message: "当前 workspace 存在 memory 文件，但还没有可用索引",
+            hint: `先执行 msgcode memory index --workspace ${workspacePath}`,
+            details: {
+              workspaceId,
+              workspacePath,
+              memoryFiles: memoryFiles.length,
+            },
+          });
+        }
 
         const data = {
           query,
@@ -279,7 +321,14 @@ export function createMemorySearchCommand(): Command {
           count: results.length,
         };
 
-        const envelope = createEnvelope(command, startTime, "pass", data, warnings, errors);
+        const envelope = createEnvelope(
+          command,
+          startTime,
+          warnings.length > 0 ? "warning" : "pass",
+          data,
+          warnings,
+          errors
+        );
 
         if (options.json) {
           console.log(JSON.stringify(envelope, null, 2));
@@ -612,6 +661,9 @@ export function createMemoryStatsCommand(): Command {
 
         store.close();
 
+        const dirtyWorkspaces = dirtyFiles
+          .map((file) => file.workspacePath)
+          .filter((value): value is string => typeof value === "string" && value.length > 0);
         const data = {
           store: {
             indexPath: status.indexPath,
@@ -620,11 +672,13 @@ export function createMemoryStatsCommand(): Command {
             indexedFiles: status.indexedFiles,
             indexedChunks: status.indexedChunks,
             ftsAvailable: status.ftsAvailable,
+            vectorAvailable: status.vectorAvailable,
+            documentsWithoutSha256: status.documentsWithoutSha256,
           },
           dirty: {
-            workspaces: dirtyFiles.length > 0 ? [...new Set(dirtyFiles.map((f: { workspaceId: string }) => f.workspaceId))] : [],
+            workspaces: dirtyFiles.length > 0 ? [...new Set(dirtyWorkspaces)] : [],
             files: dirtyFiles,
-            recommended: (dirtyFiles.length > 0 ? `msgcode memory index --workspace ${dirtyFiles[0].workspaceId}` : undefined) as string | undefined,
+            recommended: (dirtyFiles[0]?.workspacePath ? `msgcode memory index --workspace ${dirtyFiles[0].workspacePath}` : undefined) as string | undefined,
             reason: (dirtyFiles.length > 0 ? `${dirtyFiles.length} 个文件有变更` : undefined) as string | undefined,
           },
         };
@@ -641,6 +695,8 @@ export function createMemoryStatsCommand(): Command {
           console.log(`  已索引文件: ${status.indexedFiles}`);
           console.log(`  已索引 Chunks: ${status.indexedChunks}`);
           console.log(`  FTS5 可用: ${status.ftsAvailable ? "是" : "否"}`);
+          console.log(`  Vector 可用: ${status.vectorAvailable ? "是" : "否"}`);
+          console.log(`  空 SHA 文档: ${status.documentsWithoutSha256}`);
 
           if (dirtyFiles.length > 0) {
             console.log(`\n需要重新索引的文件: ${dirtyFiles.length}`);
@@ -758,6 +814,7 @@ export function getMemorySearchContract() {
     errorCodes: [
       "MEMORY_EMPTY_QUERY",
       "MEMORY_WORKSPACE_NOT_FOUND",
+      "MEMORY_INDEX_MISSING",
       "MEMORY_SEARCH_FAILED",
     ],
   };

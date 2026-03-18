@@ -410,6 +410,8 @@ async function initJobScheduler(): Promise<void> {
 async function initTaskRuntime(): Promise<void> {
   // P5.7-R12-T1: 初始化并启动 Heartbeat Runner
   const { HeartbeatRunner } = await import("./runtime/heartbeat.js");
+  const { createHeartbeatTickHandler } = await import("./runtime/heartbeat-tick.js");
+  const { setTriggerNowHook } = await import("./runtime/schedule-wake.js");
   heartbeatRunner = new HeartbeatRunner({ tag: "msgcode" });
 
   // P5.7-R12: 初始化并启动 Task Supervisor
@@ -456,6 +458,23 @@ async function initTaskRuntime(): Promise<void> {
 
   // 启动 Task Supervisor（heartbeat 由 commands 统一接线）
   await taskSupervisor.start();
+
+  // schedule mode=now 的默认主链：
+  // schedule-v2 -> wake record -> workspace heartbeat
+  setTriggerNowHook(async ({ workspacePath }) => {
+    const heartbeatTick = createHeartbeatTickHandler({
+      workspacePath,
+      issuesDir: `${workspacePath}/issues`,
+    });
+
+    await heartbeatTick({
+      tickId: crypto.randomUUID().slice(0, 8),
+      reason: "manual",
+      startTime: Date.now(),
+    });
+
+    return true;
+  });
 
   heartbeatRunner.onTick(async (ctx) => {
     // Heartbeat tick 回调：目前仅做观测日志

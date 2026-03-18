@@ -13,19 +13,29 @@
  * 5. 能推进就推进，不能就 HEARTBEAT_OK
  */
 
-import { randomUUID } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { execSync } from "node:child_process";
 import path from "node:path";
 import { HeartbeatRunner, type TickContext } from "./heartbeat.js";
-import { loadTaskDocuments, loadDispatchRecords, loadSubagentRecords, type TaskDocumentRecord, type DispatchRecord } from "./work-continuity.js";
+import { listWakeJobs, listWakeRecords } from "./wake-store.js";
+import {
+  loadTaskDocuments,
+  loadDispatchRecords,
+  loadSubagentRecords,
+  parseTaskDocumentFilename,
+  type TaskDocumentRecord,
+  type DispatchRecord,
+} from "./work-continuity.js";
 import {
   runSubagentTask,
   getSubagentTaskStatus,
+  sendSubagentMessage,
   type SubagentTaskRecord,
   type SubagentStatusResult,
 } from "./subagent.js";
 import { logger } from "../logger/index.js";
+import { runBashCommand } from "../runners/bash-runner.js";
 
 /**
  * Heartbeat Tick 配置
@@ -43,6 +53,8 @@ export interface HeartbeatTickConfig {
   mockSubagentFn?: (dispatch: DispatchRecord) => Promise<{ success: boolean; error?: string }>;
   /** 模拟子代理状态查询（用于测试后续 tick 监督） */
   mockSubagentStatusFn?: (dispatch: DispatchRecord) => Promise<SubagentStatusResult>;
+  /** 模拟继续向运行中子代理发消息（用于测试 heartbeat follow-up） */
+  mockSubagentSayFn?: (dispatch: DispatchRecord, message: string) => Promise<{ success: boolean; response?: string; error?: string }>;
   /** 在执行 subagent 前回调（用于测试验证参数） */
   beforeDispatch?: (params: {
     client: string;
@@ -68,26 +80,6 @@ export interface HeartbeatTickResult {
 }
 
 /**
- * 扫描任务文档，找可推进的子任务
- */
-async function scanRunnableTasks(issuesDir: string): Promise<TaskDocumentRecord[]> {
-  if (!existsSync(issuesDir)) {
-    return [];
-  }
-
-  const tasks = await loadTaskDocuments(issuesDir);
-
-  // 找状态为 tdo 或 doi 的子任务（有明确 assignee）
-  return tasks.filter((t) => {
-    // 子任务：有 assignee 且非 user
-    if (t.assignee && t.assignee !== "user" && t.assignee !== "agent") {
-      return t.state === "tdo" || t.state === "doi";
-    }
-    return false;
-  });
-}
-
-/**
  * 扫描派单记录，找 pending/running
  */
 async function scanDispatchRecords(workspacePath: string): Promise<DispatchRecord[]> {
@@ -101,6 +93,58 @@ async function scanDispatchRecords(workspacePath: string): Promise<DispatchRecor
 async function scanSubagentRecords(workspacePath: string): Promise<SubagentTaskRecord[]> {
   const result = await loadSubagentRecords(workspacePath);
   return result.records;
+}
+
+function extractTaskIds(value: string | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+  return Array.from(new Set(value.match(/\btk\d{4}\b/gi)?.map((id) => id.toLowerCase()) ?? []));
+}
+
+function readTaskContent(taskPath: string): string {
+  try {
+    return readFileSync(taskPath, "utf-8");
+  } catch {
+    return "";
+  }
+}
+
+function parseParentTaskId(task: TaskDocumentRecord): string | undefined {
+  const content = readTaskContent(task.path);
+  if (!content) {
+    return undefined;
+  }
+
+  const parentSectionMatch = content.match(/##\s+Parent Task\s*\n([\s\S]*?)(?=\n#|\n##|$)/i);
+  const parentIds = extractTaskIds(parentSectionMatch?.[1]);
+  if (parentIds.length > 0) {
+    return parentIds[0];
+  }
+
+  const frontMatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+  const linkedIds = extractTaskIds(frontMatterMatch?.[1]).filter((id) => id !== task.id);
+  if (linkedIds.length > 0) {
+    return linkedIds[0];
+  }
+
+  return undefined;
+}
+
+function parseChildTaskIds(task: TaskDocumentRecord): string[] {
+  const content = readTaskContent(task.path);
+  const childIds = new Set<string>();
+
+  const childSectionMatch = content.match(/##\s+Child Tasks\s*\n([\s\S]*?)(?=\n#|\n##|$)/i);
+  for (const id of extractTaskIds(childSectionMatch?.[1])) {
+    childIds.add(id);
+  }
+
+  for (const id of extractTaskIds(task.implicit?.waiting_for)) {
+    childIds.add(id);
+  }
+
+  return Array.from(childIds);
 }
 
 /**
@@ -125,16 +169,287 @@ function selectPersona(task: TaskDocumentRecord): string {
   return "frontend-builder";
 }
 
+function extractVerificationCommands(taskContent: string): string[] | undefined {
+  const sectionMatch = taskContent.match(/##\s+(?:Verify|Verification|验证命令|验证)\s*\n([\s\S]*?)(?=\n#{1,2}\s|$)/);
+  if (!sectionMatch?.[1]) {
+    return undefined;
+  }
+
+  const commands: string[] = [];
+  const lines = sectionMatch[1].split("\n");
+  let inShellFence = false;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+
+    if (line.startsWith("```")) {
+      inShellFence = !inShellFence;
+      continue;
+    }
+
+    if (inShellFence) {
+      commands.push(line);
+      continue;
+    }
+
+    const bulletMatch = line.match(/^[-*]\s+`?(.+?)`?$/);
+    if (bulletMatch?.[1]) {
+      commands.push(bulletMatch[1].trim());
+      continue;
+    }
+
+    const numberedMatch = line.match(/^\d+\.\s+`?(.+?)`?$/);
+    if (numberedMatch?.[1]) {
+      commands.push(numberedMatch[1].trim());
+    }
+  }
+
+  return commands.length > 0 ? commands : undefined;
+}
+
+function extractSupervisorMessage(taskContent: string): string | undefined {
+  const sectionMatch = taskContent.match(/##\s+(?:Follow-up|Supervisor Message|继续说明|补充说明)\s*\n([\s\S]*?)(?=\n#{1,2}\s|$)/);
+  if (!sectionMatch?.[1]) {
+    return undefined;
+  }
+  const message = sectionMatch[1].trim();
+  return message.length > 0 ? message : undefined;
+}
+
+function hashSupervisorMessage(message: string): string {
+  return createHash("sha1").update(message.trim()).digest("hex");
+}
+
+function getStatusSnapshotPath(workspacePath: string): string {
+  return path.join(workspacePath, ".msgcode", "STATUS");
+}
+
+function formatRelativeMs(isoTime: string | undefined): string {
+  if (!isoTime) {
+    return "-";
+  }
+  const diffMs = Math.max(0, Date.now() - Date.parse(isoTime));
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) {
+    return "just-now";
+  }
+  if (minutes < 60) {
+    return `${minutes}m ago`;
+  }
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) {
+    return `${hours}h ago`;
+  }
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function summarizeWakeSchedule(job: { kind: string; schedule: { kind: string } }): string {
+  if (job.schedule.kind === "at") {
+    return "at";
+  }
+  if (job.schedule.kind === "every") {
+    return "every";
+  }
+  if (job.schedule.kind === "cron") {
+    return "cron";
+  }
+  return job.kind;
+}
+
+async function writeStatusSnapshot(
+  workspacePath: string,
+  heartbeatResult: HeartbeatTickResult
+): Promise<void> {
+  const dispatchResult = await loadDispatchRecords(workspacePath);
+  const subagentResult = await loadSubagentRecords(workspacePath);
+  const wakeRecords = listWakeRecords(workspacePath);
+  const wakeJobs = listWakeJobs(workspacePath);
+  const lines: string[] = [`# msgcode status @ ${new Date().toISOString()}`, ""];
+
+  lines.push("## dispatch");
+  if (dispatchResult.records.length === 0) {
+    lines.push("(none)");
+  } else {
+    for (const record of dispatchResult.records) {
+      lines.push(`${record.dispatchId}  ${record.status.padEnd(9)}  ${record.childTaskId}  ${record.goal}`);
+    }
+  }
+  lines.push("");
+
+  lines.push("## wakes");
+  if (wakeRecords.length > 0) {
+    for (const record of wakeRecords) {
+      lines.push(`${record.id}  ${record.status.padEnd(9)}  ${record.path}  ${record.taskId ?? record.hint ?? "-"}`);
+    }
+  } else if (wakeJobs.length > 0) {
+    for (const job of wakeJobs.filter((item) => item.enabled)) {
+      lines.push(`${job.id}  enabled    ${summarizeWakeSchedule(job)}  ${job.taskId ?? job.hint ?? "-"}`);
+    }
+  } else {
+    lines.push("(none)");
+  }
+  lines.push("");
+
+  lines.push("## subagents");
+  if (subagentResult.records.length === 0) {
+    lines.push("(none)");
+  } else {
+    for (const record of subagentResult.records) {
+      lines.push(`${record.client}  ${record.status.padEnd(9)}  ${record.taskId}  since ${formatRelativeMs(record.createdAt)}`);
+    }
+  }
+  lines.push("");
+
+  lines.push("## heartbeat");
+  if (heartbeatResult.summary.length === 0 && heartbeatResult.errors.length === 0) {
+    lines.push("HEARTBEAT_OK");
+  } else {
+    for (const item of heartbeatResult.summary) {
+      lines.push(`- ${item}`);
+    }
+    for (const item of heartbeatResult.errors) {
+      lines.push(`! ${item}`);
+    }
+  }
+  lines.push("");
+
+  const statusPath = getStatusSnapshotPath(workspacePath);
+  mkdirSync(path.dirname(statusPath), { recursive: true });
+  writeFileSync(statusPath, `${lines.join("\n")}\n`);
+}
+
+function getEvidenceFilePath(workspacePath: string, taskId: string): string {
+  return path.join(workspacePath, ".msgcode", "evidence", `${taskId}.json`);
+}
+
+function readVerificationEvidence(workspacePath: string, taskId: string): {
+  taskId: string;
+  ok: boolean;
+  exitCode: number;
+  timestamp: string;
+} | null {
+  const evidencePath = getEvidenceFilePath(workspacePath, taskId);
+  if (!existsSync(evidencePath)) {
+    return null;
+  }
+  try {
+    return JSON.parse(readFileSync(evidencePath, "utf8")) as {
+      taskId: string;
+      ok: boolean;
+      exitCode: number;
+      timestamp: string;
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function writeVerificationEvidence(
+  workspacePath: string,
+  taskId: string,
+  evidence: {
+    taskId: string;
+    ok: boolean;
+    exitCode: number;
+    timestamp: string;
+    commands: Array<{
+      command: string;
+      exitCode: number;
+      ok: boolean;
+      stdout: string;
+      stderr: string;
+      durationMs: number;
+    }>;
+  }
+): Promise<string> {
+  const evidenceDir = path.join(workspacePath, ".msgcode", "evidence");
+  mkdirSync(evidenceDir, { recursive: true });
+  const evidencePath = getEvidenceFilePath(workspacePath, taskId);
+  writeFileSync(evidencePath, JSON.stringify(evidence, null, 2));
+  return evidencePath;
+}
+
+async function runTaskVerification(task: TaskDocumentRecord, workspacePath: string): Promise<{
+  ok: boolean;
+  exitCode: number;
+  cachedFailure?: boolean;
+  evidencePath?: string;
+}> {
+  const commands = task.verificationCommands ?? [];
+  if (commands.length === 0) {
+    return { ok: true, exitCode: 0 };
+  }
+
+  const existingEvidence = readVerificationEvidence(workspacePath, task.id);
+  if (existingEvidence && existingEvidence.exitCode !== 0) {
+    return {
+      ok: false,
+      exitCode: existingEvidence.exitCode,
+      cachedFailure: true,
+      evidencePath: getEvidenceFilePath(workspacePath, task.id),
+    };
+  }
+
+  const commandEnv: NodeJS.ProcessEnv = { ...process.env, NODE_OPTIONS: "" };
+  const commandResults: Array<{
+    command: string;
+    exitCode: number;
+    ok: boolean;
+    stdout: string;
+    stderr: string;
+    durationMs: number;
+  }> = [];
+
+  for (const command of commands) {
+    const result = await runBashCommand({
+      command,
+      cwd: workspacePath,
+      env: commandEnv,
+      timeoutMs: 120000,
+    });
+    commandResults.push({
+      command,
+      exitCode: result.exitCode,
+      ok: result.ok,
+      stdout: result.stdoutTail,
+      stderr: result.stderrTail,
+      durationMs: result.durationMs,
+    });
+    if (!result.ok) {
+      break;
+    }
+  }
+
+  const failing = commandResults.find((item) => !item.ok);
+  const evidence = {
+    taskId: task.id,
+    ok: !failing,
+    exitCode: failing?.exitCode ?? 0,
+    timestamp: new Date().toISOString(),
+    commands: commandResults,
+  };
+  const evidencePath = await writeVerificationEvidence(workspacePath, task.id, evidence);
+  return {
+    ok: evidence.ok,
+    exitCode: evidence.exitCode,
+    cachedFailure: false,
+    evidencePath,
+  };
+}
+
 /**
  * 创建派单记录
  */
 function createDispatchRecord(workspacePath: string, task: TaskDocumentRecord, persona: string): DispatchRecord {
   const dispatchId = `dispatch-${randomUUID().slice(0, 8)}`;
   const now = new Date().toISOString();
+  const parentTaskId = parseParentTaskId(task) ?? task.id;
 
   // P1修复: 从任务文档内容提取 goal，而不是简单从 slug 还原
   let goal = task.slug.replace(/-/g, " "); // 默认从 slug 还原
   let acceptance: string[] = task.accept ? [task.accept] : ["任务完成"];
+  let verificationCommands: string[] | undefined;
   let expectedArtifacts: string[] | undefined;
 
   // 尝试读取任务文档内容
@@ -179,6 +494,8 @@ function createDispatchRecord(workspacePath: string, task: TaskDocumentRecord, p
       }
     }
 
+    verificationCommands = extractVerificationCommands(taskContent);
+
     // 提取产物路径
     const artifactMatch = taskContent.match(/##\s+产物路径\s*\n\s*`?([^`\n]+)`?\s*\n/m);
     if (artifactMatch && artifactMatch[1]) {
@@ -193,13 +510,14 @@ function createDispatchRecord(workspacePath: string, task: TaskDocumentRecord, p
 
   const record: DispatchRecord = {
     dispatchId,
-    parentTaskId: task.id,
+    parentTaskId,
     childTaskId: task.id,
     client: task.assignee || "codex",
     persona,
     goal,
     cwd: workspacePath,
     acceptance,
+    verificationCommands,
     expectedArtifacts,
     status: "pending",
     createdAt: now,
@@ -221,7 +539,7 @@ function createDispatchRecord(workspacePath: string, task: TaskDocumentRecord, p
 function advanceTaskState(
   workspacePath: string,
   taskId: string,
-  newState: "doi" | "pss" | "dne"
+  newState: "doi" | "rvw" | "bkd" | "pss" | "dne"
 ): boolean {
   const issuesDir = path.join(workspacePath, "issues");
 
@@ -231,7 +549,7 @@ function advanceTaskState(
 
   try {
     // 找当前状态
-    const entries = require("fs").readdirSync(issuesDir);
+    const entries = readdirSync(issuesDir);
     const currentFile = entries.find((e: string) =>
       e.startsWith(`${taskId}.`) && e.endsWith(".md")
     );
@@ -267,7 +585,7 @@ function advanceTaskState(
     } catch {
       // 非 git workspace，使用普通文件重命名
       try {
-        require("fs").renameSync(oldPath, newPath);
+        renameSync(oldPath, newPath);
         logger.info("[HeartbeatTick] 任务状态已推进(非git)", {
           taskId,
           from: currentState,
@@ -296,6 +614,57 @@ function advanceTaskState(
   }
 }
 
+function advanceParentTaskIfReady(workspacePath: string, parentTaskId: string, childTaskId: string): boolean {
+  if (!parentTaskId || parentTaskId === childTaskId) {
+    return false;
+  }
+
+  const issuesDir = path.join(workspacePath, "issues");
+  if (!existsSync(issuesDir)) {
+    return false;
+  }
+
+  try {
+    const entries = readdirSync(issuesDir);
+    const taskDocs = entries
+      .filter((entry: string) => entry.endsWith(".md"))
+      .map((entry: string) => parseTaskDocumentFilename(path.join(issuesDir, entry)))
+      .filter((record: TaskDocumentRecord | null): record is TaskDocumentRecord => Boolean(record));
+
+    const parentTask = taskDocs.find((task: TaskDocumentRecord) => task.id === parentTaskId);
+    if (!parentTask) {
+      return false;
+    }
+
+    const childTaskIds = parseChildTaskIds(parentTask);
+    if (childTaskIds.length === 0) {
+      return false;
+    }
+
+    const allChildrenPassed = childTaskIds.every((taskId) => {
+      const childTask = taskDocs.find((task: TaskDocumentRecord) => task.id === taskId);
+      return childTask && (childTask.state === "pss" || childTask.state === "dne");
+    });
+
+    if (!allChildrenPassed) {
+      return false;
+    }
+
+    if (parentTask.state === "tdo" || parentTask.state === "doi") {
+      return advanceTaskState(workspacePath, parentTaskId, "rvw");
+    }
+
+    return false;
+  } catch (error) {
+    logger.warn("[HeartbeatTick] 推进父任务失败", {
+      parentTaskId,
+      childTaskId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return false;
+  }
+}
+
 /**
  * 执行派单
  */
@@ -314,6 +683,7 @@ async function executeDispatch(
         cwd: dispatch.cwd,
         constraints: dispatch.constraints,
         acceptance: dispatch.acceptance,
+        verification: dispatch.verificationCommands,
         artifacts: dispatch.expectedArtifacts,
         parentTask: dispatch.childTaskId,
       },
@@ -326,7 +696,31 @@ async function executeDispatch(
     }
 
     try {
-      return await config.mockSubagentFn(dispatch);
+      const mockResult = await config.mockSubagentFn(dispatch) as {
+        success: boolean;
+        error?: string;
+        task?: { taskId?: string };
+        watchResult?: { success?: boolean; response?: string };
+      };
+
+      if (mockResult.success) {
+        dispatch.status = "completed";
+        if (mockResult.task?.taskId) {
+          dispatch.subagentTaskId = mockResult.task.taskId;
+        }
+        dispatch.result = {
+          completed: mockResult.watchResult?.success ?? true,
+          summary: mockResult.watchResult?.response?.slice(0, 500) || "",
+        };
+        dispatch.updatedAt = new Date().toISOString();
+        writeFileSync(dispatch.filePath!, JSON.stringify(dispatch, null, 2));
+
+        if (dispatch.result.completed) {
+          advanceTaskState(config.workspacePath, dispatch.childTaskId, "rvw");
+        }
+      }
+
+      return mockResult;
     } catch (error) {
       // P1修复: mock 超时也要走完整的超时处理逻辑
       const errorMsg = error instanceof Error ? error.message : String(error);
@@ -390,6 +784,7 @@ async function executeDispatch(
         cwd: dispatch.cwd,
         constraints: dispatch.constraints,
         acceptance: dispatch.acceptance,
+        verification: dispatch.verificationCommands,
         artifacts: dispatch.expectedArtifacts,
         parentTask: dispatch.childTaskId,
       },
@@ -417,7 +812,7 @@ async function executeDispatch(
 
     // 推进子任务文档状态（tdo -> pss 表示完成待验收）
     if (result.watchResult?.success) {
-      advanceTaskState(config.workspacePath, dispatch.childTaskId, "pss");
+      advanceTaskState(config.workspacePath, dispatch.childTaskId, "rvw");
     }
 
     return { success: true };
@@ -460,14 +855,14 @@ async function executeDispatch(
           try {
             const subagentDir = path.join(config.workspacePath, ".msgcode", "subagents");
             if (existsSync(subagentDir)) {
-              const entries = require("fs").readdirSync(subagentDir);
+              const entries = readdirSync(subagentDir);
               const jsonFiles = entries.filter((e: string) => e.endsWith(".json"));
               if (jsonFiles.length > 0) {
                 // 按修改时间排序，取最新
                 const sortedFiles = jsonFiles
                   .map((f: string) => ({
                     file: f,
-                    mtime: require("fs").statSync(path.join(subagentDir, f)).mtime.getTime(),
+                    mtime: statSync(path.join(subagentDir, f)).mtime.getTime(),
                   }))
                   .sort((a: any, b: any) => b.mtime - a.mtime);
 
@@ -550,7 +945,7 @@ async function checkSubagentCompletion(
       if (dispatch.filePath) {
         writeFileSync(dispatch.filePath, JSON.stringify(dispatch, null, 2));
       }
-      advanceTaskState(workspacePath, dispatch.childTaskId, "pss");
+      advanceTaskState(workspacePath, dispatch.childTaskId, "rvw");
       return "completed";
     }
 
@@ -573,6 +968,67 @@ async function checkSubagentCompletion(
   }
 }
 
+async function continueRunningDispatchIfNeeded(
+  dispatch: DispatchRecord,
+  taskDocs: TaskDocumentRecord[],
+  workspacePath: string,
+  config?: HeartbeatTickConfig
+): Promise<boolean> {
+  if (dispatch.status !== "running" || !dispatch.subagentTaskId || !dispatch.filePath) {
+    return false;
+  }
+
+  const childTask = taskDocs.find((task) => task.id === dispatch.childTaskId);
+  if (!childTask) {
+    return false;
+  }
+
+  const supervisorMessage = extractSupervisorMessage(readTaskContent(childTask.path));
+  if (!supervisorMessage) {
+    return false;
+  }
+
+  const messageHash = hashSupervisorMessage(supervisorMessage);
+  if (dispatch.lastSupervisorMessageHash === messageHash) {
+    return false;
+  }
+
+  const sayResult = config?.mockSubagentSayFn
+    ? await config.mockSubagentSayFn(dispatch, supervisorMessage)
+    : await sendSubagentMessage({
+        taskId: dispatch.subagentTaskId,
+        message: supervisorMessage,
+        workspace: workspacePath,
+        watch: false,
+      }).then((result) => ({
+        success: true,
+        response: result.response,
+        error: undefined,
+      })).catch((error: unknown) => ({
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      }));
+
+  if (!sayResult.success) {
+    logger.warn("[HeartbeatTick] 继续向子代理发消息失败", {
+      dispatchId: dispatch.dispatchId,
+      childTaskId: dispatch.childTaskId,
+      error: sayResult.error,
+    });
+    return false;
+  }
+
+  dispatch.lastSupervisorMessageHash = messageHash;
+  dispatch.lastSupervisorMessageAt = new Date().toISOString();
+  dispatch.updatedAt = dispatch.lastSupervisorMessageAt;
+  writeFileSync(dispatch.filePath, JSON.stringify(dispatch, null, 2));
+  logger.info("[HeartbeatTick] 已向运行中的子代理发送 follow-up", {
+    dispatchId: dispatch.dispatchId,
+    childTaskId: dispatch.childTaskId,
+  });
+  return true;
+}
+
 /**
  * 创建 heartbeat tick 处理器
  */
@@ -592,6 +1048,8 @@ export function createHeartbeatTickHandler(config: HeartbeatTickConfig) {
         workspace: config.workspacePath,
       });
 
+      const taskDocs = await loadTaskDocuments(issuesDir);
+
       // 1. 扫描 dispatch 记录 - 优先检查 pending/running
       const dispatchRecords = await scanDispatchRecords(config.workspacePath);
 
@@ -602,14 +1060,39 @@ export function createHeartbeatTickHandler(config: HeartbeatTickConfig) {
           if (completion === "completed" || completion === "failed") {
             result.hadAction = true;
             result.summary.push(`子代理 ${dispatch.subagentTaskId} 已${completion}`);
+          } else {
+            const continued = await continueRunningDispatchIfNeeded(dispatch, taskDocs, config.workspacePath, config);
+            if (continued) {
+              result.hadAction = true;
+              result.summary.push(`已继续追问运行中的子代理 ${dispatch.subagentTaskId}`);
+            }
           }
         }
       }
 
-      // 3. 如果没有 pending dispatch，找可执行的子任务
-      const pendingDispatches = dispatchRecords.filter((d) => d.status === "pending");
-      if (pendingDispatches.length === 0) {
-        const runnableTasks = await scanRunnableTasks(issuesDir);
+      const currentDispatchRecords = await scanDispatchRecords(config.workspacePath);
+      const currentTaskDocs = await loadTaskDocuments(issuesDir);
+
+      // 3. 如果没有 active dispatch，找可执行的子任务
+      const activeDispatches = currentDispatchRecords.filter((d) => d.status === "pending" || d.status === "running");
+      if (activeDispatches.length === 0) {
+        const taskById = new Map(currentTaskDocs.map((task) => [task.id, task]));
+        const runnableTasks = currentTaskDocs.filter((t) => {
+          if (!(t.assignee && t.assignee !== "user" && t.assignee !== "agent")) {
+            return false;
+          }
+          if (!(t.state === "tdo" || t.state === "doi")) {
+            return false;
+          }
+          const dependencies = extractTaskIds(t.implicit?.waiting_for);
+          if (dependencies.length === 0) {
+            return true;
+          }
+          return dependencies.every((taskId) => {
+            const dependency = taskById.get(taskId);
+            return dependency && (dependency.state === "pss" || dependency.state === "dne");
+          });
+        });
         if (runnableTasks.length > 0) {
           // 取第一个可执行任务
           const task = runnableTasks[0];
@@ -629,10 +1112,53 @@ export function createHeartbeatTickHandler(config: HeartbeatTickConfig) {
           result.hadAction = true;
         }
       } else {
-        result.summary.push(`${pendingDispatches.length} 个 pending dispatch 待处理`);
+        result.summary.push(`${activeDispatches.length} 个 active dispatch 待处理`);
       }
 
-      // 4. 输出结果
+      // 4. 扫描 rvw 子任务，按 Verify 合同推进到 pss
+      const reviewTaskDocs = await loadTaskDocuments(issuesDir);
+      const reviewableTasks = reviewTaskDocs.filter((task) => {
+        if (!task.assignee || task.assignee === "user" || task.assignee === "agent") {
+          return false;
+        }
+        return task.state === "rvw";
+      });
+      if (reviewableTasks.length > 0) {
+        const allDispatchResult = await loadDispatchRecords(config.workspacePath);
+        for (const task of reviewableTasks) {
+          const verifyResult = await runTaskVerification(task, config.workspacePath);
+          if (!verifyResult.ok) {
+            if (verifyResult.evidencePath) {
+              result.summary.push(`任务 ${task.id} 验证未过，证据已写入 ${verifyResult.evidencePath}`);
+              result.hadAction = true;
+            }
+            if (verifyResult.cachedFailure) {
+              const blocked = advanceTaskState(config.workspacePath, task.id, "bkd");
+              if (blocked) {
+                result.summary.push(`任务 ${task.id} 验证连续失败，已推进到 bkd`);
+                result.hadAction = true;
+              }
+            }
+            continue;
+          }
+
+          const advanced = advanceTaskState(config.workspacePath, task.id, "pss");
+          if (!advanced) {
+            continue;
+          }
+
+          const latestDispatch = allDispatchResult.records
+            .filter((record) => record.childTaskId === task.id)
+            .sort((lhs, rhs) => Date.parse(rhs.updatedAt || rhs.createdAt) - Date.parse(lhs.updatedAt || lhs.createdAt))[0];
+          if (latestDispatch) {
+            advanceParentTaskIfReady(config.workspacePath, latestDispatch.parentTaskId, latestDispatch.childTaskId);
+          }
+          result.summary.push(`任务 ${task.id} 已通过验证并推进到 pss`);
+          result.hadAction = true;
+        }
+      }
+
+      // 5. 输出结果
       if (!result.hadAction) {
         logger.info("[HeartbeatTick] HEARTBEAT_OK - 无待处理任务");
       } else {
@@ -642,6 +1168,15 @@ export function createHeartbeatTickHandler(config: HeartbeatTickConfig) {
       const errorMsg = error instanceof Error ? error.message : String(error);
       logger.error("[HeartbeatTick] 巡检失败", { error: errorMsg });
       result.errors.push(errorMsg);
+    }
+
+    try {
+      await writeStatusSnapshot(config.workspacePath, result);
+    } catch (error) {
+      logger.warn("[HeartbeatTick] 写 STATUS 快照失败", {
+        workspace: config.workspacePath,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   };
 }

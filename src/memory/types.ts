@@ -1,3 +1,6 @@
+import { createHash } from "node:crypto";
+import path from "node:path";
+
 /**
  * msgcode: Memory 模块类型定义（v2.1）
  *
@@ -172,6 +175,17 @@ export function resolveWorkspacePath(param: WorkspaceParam): string {
   throw new Error("未实现");
 }
 
+/**
+ * 从绝对路径生成稳定 workspaceId。
+ * 同一路径跨 agent 一致；不同路径即使目录同名也不会撞 ID。
+ */
+export function deriveWorkspaceId(workspacePath: string): string {
+  const resolvedPath = path.resolve(workspacePath);
+  const hash = createHash("sha1").update(resolvedPath).digest("hex").slice(0, 12);
+  const base = path.basename(resolvedPath).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "workspace";
+  return `${base}-${hash}`;
+}
+
 // ============================================
 // 错误码（对齐 cli_contract_v2.1.md 4.9）
 // ============================================
@@ -180,6 +194,7 @@ export const MEMORY_ERROR_CODES = {
   WORKSPACE_NOT_FOUND: "MEMORY_WORKSPACE_NOT_FOUND",
   FILE_NOT_FOUND: "MEMORY_FILE_NOT_FOUND",
   INDEX_CORRUPTED: "MEMORY_INDEX_CORRUPTED",
+  INDEX_MISSING: "MEMORY_INDEX_MISSING",
   FTS_DISABLED: "MEMORY_FTS_DISABLED",
   PATH_TRAVERSAL: "MEMORY_PATH_TRAVERSAL",
   // 参数错误

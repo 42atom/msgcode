@@ -60,8 +60,8 @@ describe("P5.6.8-R4h-2: 失败防幻想", () => {
       "utf-8"
     );
 
-    // 验证：检测 error 时直接返回结构化失败文案
-    expect(toolLoopContent).toContain("工具执行失败");
+    expect(toolLoopContent).toContain("if (!result.ok)");
+    expect(toolLoopContent).toContain("errorCode: result.error?.code || \"TOOL_EXEC_FAILED\"");
   });
 
   it("R4h-2.3: 短路返回结构化错误格式", async () => {
@@ -70,10 +70,9 @@ describe("P5.6.8-R4h-2: 失败防幻想", () => {
       "utf-8"
     );
 
-    // 验证：错误格式包含工具名、错误码、错误消息
-    expect(toolLoopContent).toContain("工具执行失败");
-    expect(toolLoopContent).toContain("错误码");
-    expect(toolLoopContent).toContain("错误");
+    expect(toolLoopContent).toContain("previewText: result.previewText");
+    expect(toolLoopContent).toContain("fullOutputPath: result.fullOutputPath");
+    expect(toolLoopContent).toContain("stderrTail: result.stderrTail ?? \"\"");
   });
 });
 
@@ -106,14 +105,13 @@ describe("P5.6.8-R4h-3: bash 唯一命名锁", () => {
     expect(workspaceContent).not.toContain('"shell"');
   });
 
-  it("R4h-3.3: TOOL_META 不包含 shell", async () => {
-    const busContent = await readFile(
-      join(process.cwd(), "src", "tools", "bus.ts"),
+  it("R4h-3.3: tool registry 不包含 shell", async () => {
+    const registryContent = await readFile(
+      join(process.cwd(), "src", "tools", "registry.ts"),
       "utf-8"
     );
 
-    // 验证：TOOL_META 不包含 shell
-    const toolMetaMatch = busContent.match(/const TOOL_META[\s\S]*?^};/m);
+    const toolMetaMatch = registryContent.match(/export const TOOL_META[\s\S]*?^};/m);
     expect(toolMetaMatch).not.toBeNull();
     expect(toolMetaMatch![0]).not.toContain('shell:');
     expect(toolMetaMatch![0]).toContain('bash:');
@@ -154,8 +152,7 @@ describe("P5.6.8-R4h-4: 观测补全", () => {
       "utf-8"
     );
 
-    // 验证：代码处理 toolErrorMessage
-    expect(toolLoopContent).toContain("toolErrorMessage");
+    expect(toolLoopContent).toContain("errorMessage: normalizeToolErrorMessage(toolResult.error)");
   });
 
   it("R4h-4.3: 日志包含 exitCode", async () => {

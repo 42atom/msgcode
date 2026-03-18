@@ -2,333 +2,357 @@
 
 ## Purpose
 
-Define the reflection review protocol for workspace, including:
-- Daily report structure
-- Memory candidate naming and location
-- Skill candidate naming and location
-- Reflection review checklist for heartbeat
+定义 workspace reflection 的最小文件协议，只回答三件事：
+
+- 日记落哪
+- candidate 落哪
+- 下一轮 heartbeat 怎么 review
+
+硬规则：
+
+- reflection 先产出文件
+- candidate 不自动升级成正式 memory / skill
+- append 是真相，summary / index 只是派生层
 
 ---
 
-## 1. Reflection Trigger Moments
+## 1. Trigger Moments
 
-Reflection happens at two fixed moments:
+reflection 只在两个固定时机发生：
 
-1. **Task Complete**: When a parent/subtask reaches `completed` status
-2. **Daily Heartbeat**: When daily heartbeat runs (e.g., 18:00)
+1. 任务完成时
+2. 每日收口 heartbeat 时
 
----
-
-## 2. Daily Report Structure
-
-**File location**: `<workspace>/AIDOCS/reports/daily/<YYYY-MM-DD>.md`
-
-### Template
-
-```markdown
-# Daily Report - YYYY-MM-DD
-
-## Summary
-- 今日完成的主要任务
-- 遇到的主要问题
-
-## Tasks
-| Task ID | Status | Notes |
-|---------|--------|-------|
-| tk-xxx  | done   | 备注  |
-
-## Reflection Candidates
-
-### Memory Candidates
-- [ ] memory_pattern_20260315: 什么经验值得记住
-
-### Skill Candidates
-- [ ] skill_cli_20260315: 什么操作可以固化成 skill
-
-## Tomorrow
-- 明天计划
-```
-
-### Field Definitions
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| Summary | Yes | Brief summary of the day |
-| Tasks | No | List of tasks worked on |
-| Reflection Candidates | No | Candidates for review |
-| Tomorrow | No | Plans for next day |
+不把 reflection 混进每一轮普通执行。
 
 ---
 
-## 3. Memory Candidate
+## 2. Output Files
 
-### Naming Convention
+最小只产出三类文件：
 
-```
-memory_<category>_<timestamp>
-```
+1. daily log / diary
+2. memory candidate
+3. skill candidate
 
-Examples:
-- `memory_pattern_20260315`
-- `memory_error_20260315`
-- `memory_workflow_20260315`
+### Directory Layout
 
-Categories:
-- `pattern`: Recurring pattern discovered
-- `error`: Error handling insight
-- `workflow`: Workflow improvement
-- `tool`: Tool usage insight
-- `general`: General learning
-
-### Location
-
-**Primary**: Inside daily report (under ## Reflection Candidates)
-**Staging**: `<workspace>/.msgcode/reflection/memory-candidates/<candidate-id>.md`
-
-### Candidate Structure
-
-```markdown
----
-status: pending
-createdAt: 1700000000000
-updatedAt: 1700000000000
----
-
-# Memory Candidate: memory_pattern_20260315
-
-## Type
-pattern
-
-## Content
-发现了什么模式/经验
-
-## Context
-- 任务: tk-xxx
-- 场景: 什么场景下发现
-
-## Evidence
-支撑这个发现的证据
-
-## Suggested Action
-- merge: 合并到现有 memory
-- keep: 保留待后续审核
-- discard: 可以丢弃
-```
-
-> **Status Field**: Must be in front matter. Values: `pending` | `approved` | `merged` | `rejected`
-
-### Status
-
-| Status | Meaning |
-|--------|---------|
-| pending | Awaiting review |
-| approved | Approved for merge |
-| merged | Successfully merged |
-| rejected | Rejected |
-
----
-
-## 4. Skill Candidate
-
-### Naming Convention
-
-```
-skill_<category>_<timestamp>
-```
-
-Examples:
-- `skill_cli_20260315`
-- `skill_debug_20260315`
-- `skill_workflow_20260315`
-
-Categories:
-- `cli`: Command line improvement
-- `debug`: Debugging workflow
-- `workflow`: Process automation
-- `prompt`: Prompt engineering
-- `general`: General skill
-
-### Location
-
-**Primary**: Inside daily report (under ## Reflection Candidates)
-**Staging**: `<workspace>/.msgcode/reflection/skill-candidates/<candidate-id>.md`
-
-### Candidate Structure
-
-```markdown
----
-status: pending
-createdAt: 1700000000000
-updatedAt: 1700000000000
----
-
-# Skill Candidate: skill_cli_20260315
-
-## Category
-cli
-
-## Skill Summary
-一句话描述这个 skill
-
-## Trigger
-When should this skill be used?
-
-## Steps
-1. Step one
-2. Step two
-
-## Evidence
-Evidence that this skill works
-
-## Suggested Action
-- create_skill: 创建正式 skill 单
-- keep: 保留待后续审核
-- discard: 可以丢弃
-```
-
-> **Status Field**: Must be in front matter. Values: `pending` | `approved` | `created` | `rejected`
-
-### Status
-
-| Status | Meaning |
-|--------|---------|
-| pending | Awaiting review |
-| approved | Approved for creation |
-| created | Skill created from candidate |
-| rejected | Rejected |
-
----
-
-## 5. Reflection Review Checklist
-
-When heartbeat runs, it should check for pending candidates:
-
-### Checklist
-
-```
-1. Scan .msgcode/reflection/memory-candidates/*.md
-   - Filter: status = pending
-
-2. Scan .msgcode/reflection/skill-candidates/*.md
-   - Filter: status = pending
-
-3. For each pending candidate:
-   a. Review content
-   b. Decide: approve / reject / keep_pending
-   c. Update status
-
-4. If approved:
-   - memory: Queue for memory merge (manual or future system)
-   - skill: Create task for skill creation
-
-5. If rejected:
-   - Move to .msgcode/reflection/archived/
-
-6. If keep_pending:
-   - Leave for next review cycle
-```
-
-### Review Criteria
-
-| Question | Decision Guide |
-|----------|----------------|
-| Is this reusable? | If yes, approve |
-| Is this specific to one task? | If yes, likely discard |
-| Is there evidence? | Without evidence, keep pending |
-| Is this a pattern? | If pattern, approve as memory |
-| Is this a repeatable action? | If repeatable, approve as skill |
-
----
-
-## 6. Candidate Not Auto-Upgrade
-
-### Hard Rule
-
-> **Candidate is NOT automatically upgraded to formal memory/skill.**
-
-Rules:
-1. Candidate must be reviewed by heartbeat
-2. Only explicit approval triggers upgrade
-3. No automatic merging without review
-
-### Upgrade Workflow
-
-```
-Candidate Created
-     |
-     v
-Heartbeat Review
-     |
-     +-- approve --> Update status to "approved"
-     |                   |
-     |                   v
-     |               Queue for action
-     |
-     +-- reject --> Update status to "rejected"
-     |                   |
-     |                   v
-     |               Move to archive
-     |
-     +-- keep_pending --> Leave as pending
-                               |
-                               v
-                         Next heartbeat
-```
-
----
-
-## 7. Integration with HEARTBEAT.md
-
-### HEARTBEAT.md Updates
-
-After reflection review, heartbeat can update HEARTBEAT.md:
-
-```markdown
-## Pending Review
-- memory_pattern_20260315 (approved - merge pending)
-- skill_cli_20260315 (pending)
-```
-
-### Priority Rules
-
-1. Heartbeat checks pending candidates first
-2. After review, proceeds to normal wake/task scan
-3. If no pending candidates and no wake/tasks, output HEARTBEAT_OK
-
----
-
-## 8. Directory Structure
-
-```
+```text
 <workspace>/
   AIDOCS/
     reports/
       daily/
-        YYYY-MM-DD.md      # Daily reports
+        YYYY-MM-DD.md
   .msgcode/
     reflection/
       memory-candidates/
-        memory_*.md        # Memory candidates
+        memory-*.md
       skill-candidates/
-        skill_*.md         # Skill candidates
+        skill-*.md
       archived/
-        memory_*.md         # Rejected memory
-        skill_*.md          # Rejected skill
+        *.md
 ```
 
----
+一句话：
 
-## 9. Not Covered in This Spec
-
-- Memory merge implementation (future task)
-- SKILL.md creation automation (future task)
-- Vitals integration
-- Task dispatch workflow
+- diary 放 `AIDOCS`
+- candidate 放 `.msgcode/reflection`
 
 ---
 
-## 10. References
+## 3. Daily Log / Diary
+
+### Location
+
+`<workspace>/AIDOCS/reports/daily/<YYYY-MM-DD>.md`
+
+### Purpose
+
+daily log 是 reflection 的主叙事文件。
+
+它负责：
+
+- 记录当天完成什么
+- 记录今天卡在哪
+- 记录下一步
+- 汇总 candidate 索引
+
+它不负责：
+
+- 充当正式 memory
+- 直接改 skill
+- 承载任务状态真相
+
+### Template
+
+```markdown
+# Daily Log - YYYY-MM-DD
+
+## Summary
+- 今天完成了什么
+- 今天最大的阻塞是什么
+
+## Completed
+- tkxxxx: 一句话结果
+
+## Evidence
+- 产物:
+- 文档:
+- 日志:
+
+## Reflection
+- 哪个判断是对的
+- 哪个动作该下次避免
+
+## Memory Candidates
+- memory-pattern-YYYYMMDD-001
+
+## Skill Candidates
+- skill-workflow-YYYYMMDD-001
+
+## Next
+- 下一步最该做什么
+```
+
+### Rules
+
+- 每天最多一份 daily log
+- 可追加，不覆盖旧内容
+- candidate 只在这里挂索引，不把正式内容塞进一处大杂烩
+
+---
+
+## 4. Memory Candidate
+
+### Location
+
+`<workspace>/.msgcode/reflection/memory-candidates/<candidate-id>.md`
+
+### Naming
+
+```text
+memory-<category>-<YYYYMMDD>-<seq>
+```
+
+例子：
+
+- `memory-pattern-20260318-001`
+- `memory-error-20260318-001`
+
+### Categories
+
+- `pattern`
+- `error`
+- `workflow`
+- `tool`
+- `general`
+
+### Template
+
+```markdown
+---
+status: pending
+createdAt: 1700000000000
+updatedAt: 1700000000000
+sourceTaskIds: []
+sourceDiary: AIDOCS/reports/daily/2026-03-18.md
+---
+
+# Memory Candidate: memory-pattern-20260318-001
+
+## Summary
+一句话说明这条经验
+
+## Decision
+这次学到了什么
+
+## Evidence
+- task:
+- artifact:
+- log:
+
+## Why Reusable
+为什么它值得长期记住
+
+## Suggested Action
+- approve
+- keep-pending
+- reject
+```
+
+### Status
+
+- `pending`
+- `approved`
+- `merged`
+- `rejected`
+
+---
+
+## 5. Skill Candidate
+
+### Location
+
+`<workspace>/.msgcode/reflection/skill-candidates/<candidate-id>.md`
+
+### Naming
+
+```text
+skill-<category>-<YYYYMMDD>-<seq>
+```
+
+例子：
+
+- `skill-cli-20260318-001`
+- `skill-workflow-20260318-001`
+
+### Categories
+
+- `cli`
+- `debug`
+- `workflow`
+- `prompt`
+- `general`
+
+### Template
+
+```markdown
+---
+status: pending
+createdAt: 1700000000000
+updatedAt: 1700000000000
+sourceTaskIds: []
+sourceDiary: AIDOCS/reports/daily/2026-03-18.md
+---
+
+# Skill Candidate: skill-workflow-20260318-001
+
+## Summary
+一句话说明这个可复用方法
+
+## Trigger
+什么时候该用
+
+## Steps
+1. 第一步
+2. 第二步
+
+## Evidence
+- task:
+- artifact:
+- log:
+
+## Suggested Action
+- approve
+- keep-pending
+- reject
+```
+
+### Status
+
+- `pending`
+- `approved`
+- `created`
+- `rejected`
+
+---
+
+## 6. Heartbeat Review
+
+下一轮 heartbeat 的 reflection review 只做极薄 checklist：
+
+1. 扫 `memory-candidates/*.md`
+2. 扫 `skill-candidates/*.md`
+3. 只看 `status: pending`
+4. 做三种决定：
+   - `approve`
+   - `keep-pending`
+   - `reject`
+
+### Review Rules
+
+#### approve
+
+- candidate 有证据
+- candidate 不只是一次性碎片
+- candidate 有复用价值
+
+结果：
+
+- 更新状态为 `approved`
+- 保留文件
+- 后续再由独立动作合并到正式 memory / skill
+
+#### keep-pending
+
+- 有价值，但证据还不够
+- 或暂时还不值得升格
+
+结果：
+
+- 保持 `pending`
+- 等下一轮 heartbeat 再看
+
+#### reject
+
+- 没证据
+- 只是一时情绪
+- 只对单次任务成立
+
+结果：
+
+- 更新状态为 `rejected`
+- 移到 `.msgcode/reflection/archived/`
+
+---
+
+## 7. Hard Boundaries
+
+### Candidate Not Auto-Upgrade
+
+硬规则：
+
+- memory candidate 不是正式 memory
+- skill candidate 不是正式 skill
+- daily log 不是任务真相源
+
+所以默认不允许：
+
+- 自动写入 `memory/*.md`
+- 自动改 `SKILL.md`
+- 自动创建一堆新控制面
+
+### Truth Source Boundary
+
+| 文件 | 作用 | 是否真相源 |
+|------|------|------------|
+| `AIDOCS/reports/daily/*.md` | 叙事与回顾 | reflection 真相 |
+| `.msgcode/reflection/memory-candidates/*.md` | 记忆候选 | reflection 真相 |
+| `.msgcode/reflection/skill-candidates/*.md` | skill 候选 | reflection 真相 |
+| `memory/*.md` | 正式记忆 append | memory 真相 |
+| `issues/*.md` | 任务状态 | 任务真相 |
+
+一句话：
+
+- reflection 文件是真相
+- 但它们不是任务状态真相，也不是正式 memory 真相
+
+---
+
+## 8. Not Covered
+
+这份协议不覆盖：
+
+- memory merge 具体实现
+- skill 创建自动化
+- vitals 集成
+- 反思内容生成质量
+
+---
+
+## 9. References
 
 - Plan: `docs/plan/pl0204.tdo.runtime.heartbeat-alarm-and-reflection-mainline.md`
-- HEARTBEAT Protocol: `docs/protocol/HEARTBEAT.md`
-- SCHEDULE Protocol: `docs/protocol/SCHEDULE.md`
+- Mainline: `issues/tk0217.rvw.runtime.p1.reflection-candidate-review-and-daily-log-mainline.md`
+- Heartbeat: `docs/protocol/HEARTBEAT.md`
+- Memory Audit: `issues/tk0208.rvw.memory.p1.memory-file-truth-and-index-layer-demotion-audit.md`

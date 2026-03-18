@@ -46,6 +46,7 @@ export interface TaskDocumentRecord {
   accept?: string;
   scope?: string;
   why?: string;
+  verificationCommands?: string[];
   implicit?: {
     waiting_for?: string;
     next_check?: string;
@@ -64,6 +65,7 @@ export interface DispatchRecord {
   cwd: string;
   constraints?: string[];
   acceptance: string[];
+  verificationCommands?: string[];
   expectedArtifacts?: string[];
   status: "pending" | "running" | "completed" | "failed";
   result?: {
@@ -75,6 +77,8 @@ export interface DispatchRecord {
   checkpoint?: TaskCheckpoint;
   artifactRefs?: string[];
   evidenceRefs?: string[];
+  lastSupervisorMessageHash?: string;
+  lastSupervisorMessageAt?: string;
   createdAt: string;
   updatedAt: string;
   filePath?: string;
@@ -142,6 +146,7 @@ export interface WorkRecoverySnapshot {
   subagentRecords: SubagentTaskRecord[];
   runtimeTask?: TaskRecord | null;
   workCapsule: WorkCapsule;
+  drift?: DriftReport;
 }
 
 export class WorkContinuityError extends Error {
@@ -196,6 +201,39 @@ function toTaskDocState(value: string): TaskDocState | null {
   return null;
 }
 
+function extractVerificationCommands(taskContent: string): string[] | undefined {
+  const sectionMatch = taskContent.match(/##\s+(?:Verify|Verification|验证命令|验证)\s*\n([\s\S]*?)(?=\n#{1,2}\s|$)/);
+  if (!sectionMatch?.[1]) return undefined;
+
+  const commands: string[] = [];
+  const lines = sectionMatch[1].split("\n");
+  let inShellFence = false;
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line.startsWith("```")) {
+      inShellFence = !inShellFence;
+      continue;
+    }
+    if (inShellFence) {
+      commands.push(line);
+      continue;
+    }
+    const bulletMatch = line.match(/^[-*]\s+`?(.+?)`?$/);
+    if (bulletMatch?.[1]) {
+      commands.push(bulletMatch[1].trim());
+      continue;
+    }
+    const numberedMatch = line.match(/^\d+\.\s+`?(.+?)`?$/);
+    if (numberedMatch?.[1]) {
+      commands.push(numberedMatch[1].trim());
+    }
+  }
+
+  return commands.length > 0 ? commands : undefined;
+}
+
 export function parseTaskDocumentFilename(filePath: string): TaskDocumentRecord | null {
   const fileName = path.basename(filePath);
   const match = TASK_DOC_PATTERN.exec(fileName);
@@ -212,11 +250,13 @@ export function parseTaskDocumentFilename(filePath: string): TaskDocumentRecord 
   let accept: string | undefined;
   let scope: string | undefined;
   let why: string | undefined;
+  let verificationCommands: string[] | undefined;
   let implicit: { waiting_for?: string; next_check?: string; stale_since?: string } | undefined;
 
   try {
     if (existsSync(filePath)) {
       const content = readFileSync(filePath, "utf-8");
+      verificationCommands = extractVerificationCommands(content);
       const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
       if (fmMatch) {
         const fmContent = fmMatch[1];
@@ -280,6 +320,7 @@ export function parseTaskDocumentFilename(filePath: string): TaskDocumentRecord 
     accept,
     scope,
     why,
+    verificationCommands,
     implicit,
   };
 }
@@ -493,6 +534,7 @@ export async function writeDispatchRecord(
     cwd: record.cwd,
     constraints: record.constraints,
     acceptance: record.acceptance,
+    verificationCommands: record.verificationCommands,
     expectedArtifacts: record.expectedArtifacts,
     status: record.status ?? "pending",
     result: record.result,
@@ -592,6 +634,7 @@ export async function updateDispatchStatus(
     cwd: updatedRecord.cwd,
     constraints: updatedRecord.constraints,
     acceptance: updatedRecord.acceptance,
+    verificationCommands: updatedRecord.verificationCommands,
     expectedArtifacts: updatedRecord.expectedArtifacts,
     status,
     result: updatedRecord.result,
@@ -601,6 +644,51 @@ export async function updateDispatchStatus(
   });
 
   return updatedRecord;
+}
+
+export async function appendDispatchVerificationEvidence(
+  workspacePath: string,
+  dispatchId: string,
+  params: {
+    evidence: string;
+    evidenceRefs?: string[];
+  }
+): Promise<DispatchRecord | null> {
+  const { records } = await loadDispatchRecords(workspacePath);
+  const record = records.find((r) => r.dispatchId === dispatchId);
+
+  if (!record) {
+    return null;
+  }
+
+  const mergedEvidence = [...(record.result?.evidence ?? []), params.evidence];
+  const mergedEvidenceRefs = Array.from(new Set([...(record.evidenceRefs ?? []), ...(params.evidenceRefs ?? [])]));
+
+  return await writeDispatchRecord({
+    workspacePath,
+    dispatchId: record.dispatchId,
+    createdAt: record.createdAt,
+    filePath: record.filePath,
+    parentTaskId: record.parentTaskId,
+    childTaskId: record.childTaskId,
+    client: record.client,
+    persona: record.persona,
+    subagentTaskId: record.subagentTaskId,
+    goal: record.goal,
+    cwd: record.cwd,
+    constraints: record.constraints,
+    acceptance: record.acceptance,
+    verificationCommands: record.verificationCommands,
+    expectedArtifacts: record.expectedArtifacts,
+    status: record.status,
+    result: {
+      ...(record.result ?? { completed: false }),
+      evidence: mergedEvidence,
+    },
+    checkpoint: record.checkpoint,
+    artifactRefs: record.artifactRefs,
+    evidenceRefs: mergedEvidenceRefs,
+  });
 }
 
 export type RequestPath = "run" | "task";
@@ -624,7 +712,7 @@ function buildCheckpointSummary(
   if (runtimeTask?.checkpoint) {
     return { checkpointSource: "runtime", checkpoint: runtimeTask.checkpoint };
   }
-  const dispatchCheckpoint = dispatchRecords.find((record) => record.checkpoint)?.checkpoint;
+  const dispatchCheckpoint = [...dispatchRecords].reverse().find((record) => record.checkpoint)?.checkpoint;
   if (dispatchCheckpoint) {
     return { checkpointSource: "dispatch", checkpoint: dispatchCheckpoint };
   }
@@ -719,6 +807,32 @@ function mapRuntimeStatusToPhase(status?: TaskStatus): string {
   return status;
 }
 
+function extractTaskIds(value: string | undefined): string[] {
+  if (!value) return [];
+  return Array.from(new Set(value.match(/\btk\d{4}\b/gi)?.map((id) => id.toLowerCase()) ?? []));
+}
+
+function parseChildTaskIdsFromParentDoc(parentDoc?: TaskDocumentRecord): string[] {
+  if (!parentDoc) return [];
+
+  const childIds = new Set<string>();
+  for (const id of extractTaskIds(parentDoc.implicit?.waiting_for)) {
+    childIds.add(id);
+  }
+
+  try {
+    const content = readFileSync(parentDoc.path, "utf8");
+    const childSectionMatch = content.match(/##\s+Child Tasks\s*\n([\s\S]*?)(?=\n#|\n##|$)/i);
+    for (const id of extractTaskIds(childSectionMatch?.[1])) {
+      childIds.add(id);
+    }
+  } catch {
+    // best-effort: parent doc parse failure should not block rebuild
+  }
+
+  return Array.from(childIds);
+}
+
 export async function buildWorkRecoverySnapshot(params: {
   workspacePath: string;
   parentTaskId?: string;
@@ -740,8 +854,13 @@ export async function buildWorkRecoverySnapshot(params: {
     ? dispatchRecords.filter((record) => record.parentTaskId === parentDoc.id)
     : dispatchRecords;
 
-  const childTasks = activeDispatch
-    .map((record) => taskDocuments.find((doc) => doc.id === record.childTaskId))
+  const childTaskIds = new Set<string>([
+    ...activeDispatch.map((record) => record.childTaskId),
+    ...parseChildTaskIdsFromParentDoc(parentDoc),
+  ]);
+
+  const childTasks = Array.from(childTaskIds)
+    .map((taskId) => taskDocuments.find((doc) => doc.id === taskId))
     .filter((doc): doc is TaskDocumentRecord => Boolean(doc))
     .map((doc) => ({
       taskId: doc.id,
@@ -750,8 +869,12 @@ export async function buildWorkRecoverySnapshot(params: {
       path: doc.path,
     }));
 
+  const nextPendingChildTask = childTasks.find((task) => task.workStatus === "pending");
   const checkpointSummary = buildCheckpointSummary(params.runtimeTask ?? null, activeDispatch, parentDoc);
-  const nextAction = checkpointSummary.checkpoint?.nextAction || "检查任务文档与派单记录，确定下一步";
+  const nextAction =
+    checkpointSummary.checkpointSource === "none" && nextPendingChildTask
+      ? `派发子任务 ${nextPendingChildTask.taskId}`
+      : (checkpointSummary.checkpoint?.nextAction || "检查任务文档与派单记录，确定下一步");
 
   const drift = detectDrift({
     parentDoc,
@@ -779,9 +902,13 @@ export async function buildWorkRecoverySnapshot(params: {
         .filter((value): value is string => Boolean(value)),
     },
     nextAction: {
-      type: checkpointSummary.checkpointSource === "none" ? "manual" : "resume",
+      type:
+        checkpointSummary.checkpointSource === "none"
+          ? (nextPendingChildTask ? "dispatch" : "manual")
+          : "resume",
       params: {
         nextAction,
+        ...(nextPendingChildTask ? { childTaskId: nextPendingChildTask.taskId } : {}),
       },
     },
     checkpointSource: checkpointSummary.checkpointSource,
@@ -802,5 +929,6 @@ export async function buildWorkRecoverySnapshot(params: {
     subagentRecords,
     runtimeTask: params.runtimeTask,
     workCapsule: capsule,
+    drift: drift.ok ? undefined : drift,
   };
 }

@@ -310,7 +310,7 @@ describe("P5.7-R12: Agent Relentless Task Closure", () => {
             expect(resumeResult.task?.status).toBe("running");
             expect(resumeResult.task?.attemptCount).toBe(0);
             expect(resumeResult.task?.checkpoint?.currentPhase).toBe("running");
-            expect(resumeResult.task?.checkpoint?.nextAction).toContain("继续执行");
+            expect(resumeResult.task?.checkpoint?.nextAction).toBe("等用户确认后继续");
         });
 
         it("heartbeat 会继续推进 running 任务", async () => {

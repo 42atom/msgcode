@@ -64,7 +64,7 @@ export async function assembleWakeCapsule(params: {
   const dispatchUpdatedAt = snapshot.dispatchRecords.map((r) =>
     new Date(r.updatedAt).getTime()
   );
-  const issueStateNames = snapshot.taskDocuments.map((doc) => doc.slug);
+  const issueStateNames = snapshot.taskDocuments.map((doc) => doc.fileName);
 
   const wakeCapsule: WakeWorkCapsule = {
     ...snapshot.workCapsule,

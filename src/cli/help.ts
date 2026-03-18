@@ -16,7 +16,7 @@ import { getScheduleAddContract, getScheduleListContract, getScheduleRemoveContr
 import { getGenImageContract, getGenSelfieContract } from "./gen-image.js";
 import { getGenTtsContract, getGenMusicContract } from "./gen-audio.js";
 import { getBrowserCommandContracts } from "./browser.js";
-import { getSubagentRunContract, getSubagentListContract, getSubagentStatusContract, getSubagentStopContract } from "./subagent.js";
+import { getSubagentRunContract, getSubagentSayContract, getSubagentListContract, getSubagentStatusContract, getSubagentStopContract } from "./subagent.js";
 import { getGhostPermissionsContract } from "./ghost.js";
 
 // ============================================
@@ -225,6 +225,7 @@ function getAllHelpCommandContracts(): Record<string, unknown>[] {
     getGhostPermissionsContract() as Record<string, unknown>,
     // Subagent 命令组（P5.7-R36）
     getSubagentRunContract() as Record<string, unknown>,
+    getSubagentSayContract() as Record<string, unknown>,
     getSubagentListContract() as Record<string, unknown>,
     getSubagentStatusContract() as Record<string, unknown>,
     getSubagentStopContract() as Record<string, unknown>,

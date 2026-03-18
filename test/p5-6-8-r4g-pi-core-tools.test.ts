@@ -146,21 +146,34 @@ describe("P5.6.8-R4g: 集成测试", () => {
     expect(cmdToolingContent).toContain("edit_file");
   });
 
-  it("R4g-9: Tool Bus TOOL_META 定义 bash", async () => {
-    const busContent = await import("fs/promises").then(fs =>
-      fs.readFile("src/tools/bus.ts", "utf-8")
+  it("R4g-9: Tool registry 定义 bash", async () => {
+    const registryContent = await import("fs/promises").then(fs =>
+      fs.readFile("src/tools/registry.ts", "utf-8")
     );
 
-    expect(busContent).toMatch(/bash.*sideEffect.*process-control/);
+    expect(registryContent).toMatch(/bash.*sideEffect.*process-control/);
   });
 
-  it("R4g-10: Tool Bus TOOL_META 不包含 shell", async () => {
+  it("R4g-10: Tool registry 不包含 shell", async () => {
+    const registryContent = await import("fs/promises").then(fs =>
+      fs.readFile("src/tools/registry.ts", "utf-8")
+    );
+
+    expect(registryContent).not.toMatch(/shell.*sideEffect/);
+  });
+
+  it("R4g-10b: 文件与飞书 preview formatter 已外提", async () => {
     const busContent = await import("fs/promises").then(fs =>
       fs.readFile("src/tools/bus.ts", "utf-8")
     );
+    const previewsContent = await import("fs/promises").then(fs =>
+      fs.readFile("src/tools/previews.ts", "utf-8")
+    );
 
-    // 确保 TOOL_META 中没有 "shell": {
-    expect(busContent).not.toMatch(/shell.*sideEffect/);
+    expect(busContent).not.toContain("function buildWriteFilePreviewText");
+    expect(busContent).not.toContain("function buildFeishuReplyPreviewText");
+    expect(previewsContent).toContain("export function buildWriteFilePreviewText");
+    expect(previewsContent).toContain("export function buildFeishuReplyPreviewText");
   });
 });
 

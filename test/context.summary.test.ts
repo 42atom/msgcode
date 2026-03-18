@@ -114,6 +114,9 @@ describe("Summary Layer", () => {
       const markdown = formatSummaryMarkdown(summary);
 
       expect(markdown).toContain("# Chat Summary");
+      expect(markdown).toContain("> Derived view only.");
+      expect(markdown).toContain("> Does not replace append truth in workspace files.");
+      expect(markdown).toContain("> Promotion to long-term memory must go through explicit review.");
       expect(markdown).toContain("## Goal");
       expect(markdown).toContain("## Constraints");
       expect(markdown).toContain("## Decisions");
@@ -151,6 +154,27 @@ describe("Summary Layer", () => {
       expect(summary.decisions).toEqual(["采用 React 框架"]);
       expect(summary.openItems).toEqual(["如何处理错误？"]);
       expect(summary.toolFacts).toEqual(["path: /home/user/project"]);
+    });
+
+    test("派生视图声明不应污染摘要解析结果", async () => {
+      const { parseSummaryMarkdown } = await import("../src/summary");
+
+      const markdown = `# Chat Summary
+
+> Derived view only.
+> Does not replace append truth in workspace files.
+> Promotion to long-term memory must go through explicit review.
+
+## Goal
+- 实现用户认证功能
+`;
+
+      const summary = parseSummaryMarkdown(markdown);
+      expect(summary.goal).toEqual(["实现用户认证功能"]);
+      expect(summary.constraints).toEqual([]);
+      expect(summary.decisions).toEqual([]);
+      expect(summary.openItems).toEqual([]);
+      expect(summary.toolFacts).toEqual([]);
     });
   });
 

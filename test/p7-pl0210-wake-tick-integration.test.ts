@@ -6,6 +6,8 @@ import { tmpdir } from "node:os";
 import { createTaskSupervisor, type TaskSupervisor } from "../src/runtime/task-supervisor.js";
 import { createWakeRecord } from "../src/runtime/wake-store.js";
 import type { TickContext } from "../src/runtime/heartbeat.js";
+import { TaskStore } from "../src/runtime/task-store.js";
+import { createTaskRecord } from "../src/runtime/task-types.js";
 
 function createTempWorkspace(): string {
   const root = path.join(tmpdir(), `msgcode-wake-tick-integration-${randomUUID()}`);
@@ -311,5 +313,73 @@ describe("P7-4: Wake 主链接进 Heartbeat Tick (tk0204 phase-b)", () => {
     expect(receivedCapsule).toHaveProperty("taskId", taskId);
     expect(receivedCapsule).toHaveProperty("wake");
     expect((receivedCapsule as any).wake.id).toBe(wakeId);
+  });
+
+  it("E8: wake 消费应把现有 runtime checkpoint 带进 capsule", async () => {
+    const wakeId = randomUUID();
+    const taskId = "tk-runtime-capsule-" + randomUUID();
+
+    createWakeRecord(workspace, {
+      id: wakeId,
+      status: "pending",
+      path: "task",
+      taskId,
+      hint: "测试 runtime checkpoint",
+      latePolicy: "run-if-missed",
+    }, Date.now() - 1000);
+
+    const taskStore = new TaskStore({ taskDir });
+    const runtimeTask = {
+      ...createTaskRecord({
+        chatId: taskId,
+        workspacePath: workspace,
+        goal: "runtime cache task",
+      }),
+      taskId,
+    };
+    const created = await taskStore.createTask(runtimeTask);
+    expect(created.ok).toBe(true);
+    const running = await taskStore.updateTask(taskId, { status: "running" });
+    expect(running.ok).toBe(true);
+    const blocked = await taskStore.updateTask(taskId, {
+      status: "blocked",
+      checkpoint: {
+        currentPhase: "blocked",
+        summary: "等待恢复",
+        nextAction: "补齐 wake 前证据后继续",
+        updatedAt: Date.now(),
+      },
+    });
+    expect(blocked.ok).toBe(true);
+
+    let receivedCapsule: any = null;
+
+    supervisor = createTaskSupervisor({
+      taskDir,
+      eventQueueDir,
+      workspacePath: workspace,
+      wakeConfig: {
+        maxConsumePerTick: 1,
+        onConsume: async ({ capsule }) => {
+          receivedCapsule = capsule ?? null;
+        },
+      },
+      heartbeatIntervalMs: 60000,
+      executeTaskTurn: async () => {},
+    });
+
+    await supervisor.start();
+
+    const ctx: TickContext = {
+      tickId: "test-8",
+      reason: "interval",
+      startTime: Date.now(),
+    };
+
+    await supervisor.handleHeartbeatTick(ctx);
+
+    expect(receivedCapsule).not.toBeNull();
+    expect(receivedCapsule.checkpoint.nextAction).toBe("补齐 wake 前证据后继续");
+    expect(receivedCapsule.sourceStamp.taskCheckpointUpdatedAt).toBeDefined();
   });
 });

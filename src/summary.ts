@@ -318,6 +318,10 @@ export function formatSummaryMarkdown(summary: ChatSummary): string {
 
     lines.push("# Chat Summary");
     lines.push("");
+    lines.push("> Derived view only.");
+    lines.push("> Does not replace append truth in workspace files.");
+    lines.push("> Promotion to long-term memory must go through explicit review.");
+    lines.push("");
     lines.push(`> Generated: ${new Date().toISOString()}`);
     lines.push("");
 

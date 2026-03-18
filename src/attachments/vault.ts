@@ -22,6 +22,7 @@ import { homedir } from "node:os";
  * 统一附件元数据（Vault 主链消费的最小字段集）
  */
 export interface VaultAttachment {
+  transport?: string;
   filename?: string;
   mime?: string;
   path?: string;
@@ -106,7 +107,11 @@ function generateFilename(
 
   // 移除原始文件名的特殊字符
   const safeName = originalName.replace(/[^a-zA-Z0-9._-]/g, "_");
-  return `${msgId}_${safeName}${ext}`;
+  const safeTransport = typeof attachment.transport === "string"
+    ? attachment.transport.trim().replace(/[^a-zA-Z0-9._-]/g, "_")
+    : "";
+  const namePrefix = safeTransport ? `${safeTransport}_${msgId}` : msgId;
+  return `${namePrefix}_${safeName}${ext}`;
 }
 
 // ============================================

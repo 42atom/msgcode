@@ -26,6 +26,14 @@ function cleanupTempWorkspace(root: string): void {
   }
 }
 
+function writeTaskDoc(workspace: string, fileName: string, content = "# task\n"): string {
+  const issuesDir = path.join(workspace, "issues");
+  fs.mkdirSync(issuesDir, { recursive: true });
+  const filePath = path.join(issuesDir, fileName);
+  fs.writeFileSync(filePath, content, "utf8");
+  return filePath;
+}
+
 describe("P7-2: Wake Consume -> Work Capsule (pl0210 第二刀)", () => {
   let workspace: string;
 
@@ -135,5 +143,31 @@ describe("P7-2: Wake Consume -> Work Capsule (pl0210 第二刀)", () => {
         wakeRecordId: "non-existent-id",
       })
     ).rejects.toThrow("not found");
+  });
+
+  it("C6: sourceStamp.issueStateNames 应记录 issue 文件名，而不是 slug", async () => {
+    writeTaskDoc(workspace, "tk4100.doi.runtime.parent-task.md");
+    writeTaskDoc(workspace, "tk4101.tdo.web.child-task.md");
+
+    const record = createWakeRecord(workspace, {
+      id: randomUUID(),
+      status: "pending",
+      path: "task",
+      taskId: "tk4100",
+      hint: "检查 source stamp",
+      latePolicy: "run-if-missed",
+    });
+
+    const capsule = await assembleWakeCapsule({
+      workspacePath: workspace,
+      wakeRecord: record,
+      runtimeTask: null,
+    });
+
+    expect(capsule).not.toBeNull();
+    expect(capsule?.sourceStamp.issueStateNames).toContain("tk4100.doi.runtime.parent-task.md");
+    expect(capsule?.sourceStamp.issueStateNames).toContain("tk4101.tdo.web.child-task.md");
+    expect(capsule?.sourceStamp.issueStateNames).not.toContain("parent-task");
+    expect(capsule?.sourceStamp.issueStateNames).not.toContain("child-task");
   });
 });

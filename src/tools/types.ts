@@ -87,7 +87,7 @@ export type ToolDataMap = {
     emojiType: string;
   };
   // 飞书文件发送工具
-  feishu_send_file: { chatId: string; attachmentType?: "file" | "image"; attachmentKey?: string };
+  feishu_send_file: { chatId: string; attachmentType?: "file" | "image"; attachmentKey?: string; receipt?: string };
 } & Record<GhostToolName, {
   rawResult: Record<string, unknown>;
   structuredContent?: Record<string, unknown>;

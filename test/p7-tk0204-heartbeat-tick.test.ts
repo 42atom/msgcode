@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { createHeartbeatTickHandler, type HeartbeatTickResult } from "../src/runtime/heartbeat-tick.js";
 import { type TickContext } from "../src/runtime/heartbeat.js";
 import { loadDispatchRecords } from "../src/runtime/work-continuity.js";
+import { createWakeJob, createWakeRecord } from "../src/runtime/wake-store.js";
 
 function createTempWorkspace(): string {
   const root = path.join(tmpdir(), `msgcode-heartbeat-tick-${randomUUID()}`);
@@ -19,9 +20,43 @@ function cleanupTempWorkspace(root: string): void {
   }
 }
 
-function createChildTask(workspace: string, taskId: string, board: string, slug: string): void {
+function createParentTask(workspace: string, taskId: string, board: string, slug: string, childTaskIds: string[]): void {
   const issuesDir = path.join(workspace, "issues");
   fs.mkdirSync(issuesDir, { recursive: true });
+
+  const content = `---
+owner: user
+assignee: agent
+reviewer: user
+why: 测试父任务
+scope: 测试
+risk: low
+accept: 完成
+implicit:
+  waiting_for: "${childTaskIds.join(", ")}"
+  next_check: ""
+  stale_since: ""
+---
+
+# Goal
+
+测试父任务内容
+
+## Child Tasks
+
+${childTaskIds.map((id) => `- \`${id}\``).join("\n")}
+`;
+
+  fs.writeFileSync(path.join(issuesDir, `${taskId}.tdo.${board}.${slug}.md`), content);
+}
+
+function createChildTask(workspace: string, taskId: string, board: string, slug: string, parentTaskId?: string): void {
+  const issuesDir = path.join(workspace, "issues");
+  fs.mkdirSync(issuesDir, { recursive: true });
+
+  const parentTaskSection = parentTaskId
+    ? `\n## Parent Task\n\n- \`${parentTaskId}\`\n`
+    : "";
 
   const content = `---
 owner: agent
@@ -36,6 +71,95 @@ accept: 完成
 # Task
 
 测试任务内容
+${parentTaskSection}`;
+
+  fs.writeFileSync(path.join(issuesDir, `${taskId}.tdo.${board}.${slug}.md`), content);
+}
+
+function createChildTaskWithVerify(workspace: string, taskId: string, board: string, slug: string): void {
+  const issuesDir = path.join(workspace, "issues");
+  fs.mkdirSync(issuesDir, { recursive: true });
+
+  const content = `---
+owner: agent
+assignee: codex
+reviewer: agent
+why: 测试验证命令
+scope: 测试
+risk: low
+accept: 完成
+---
+
+# Task
+
+测试任务内容
+
+## Verify
+
+- \`printf verified\`
+- \`node -e "process.exit(0)"\`
+`;
+
+  fs.writeFileSync(path.join(issuesDir, `${taskId}.tdo.${board}.${slug}.md`), content);
+}
+
+function createChildTaskWithFailingVerify(workspace: string, taskId: string, board: string, slug: string): void {
+  const issuesDir = path.join(workspace, "issues");
+  fs.mkdirSync(issuesDir, { recursive: true });
+
+  const content = `---
+owner: agent
+assignee: codex
+reviewer: agent
+why: 测试验证失败
+scope: 测试
+risk: low
+accept: 完成
+---
+
+# Task
+
+测试任务内容
+
+## Verify
+
+- \`node -e "process.exit(7)"\`
+`;
+
+  fs.writeFileSync(path.join(issuesDir, `${taskId}.tdo.${board}.${slug}.md`), content);
+}
+
+function createChildTaskWithFollowUp(
+  workspace: string,
+  taskId: string,
+  board: string,
+  slug: string,
+  followUpMessage: string
+): void {
+  const issuesDir = path.join(workspace, "issues");
+  fs.mkdirSync(issuesDir, { recursive: true });
+
+  const content = `---
+owner: agent
+assignee: codex
+reviewer: agent
+why: 测试 follow-up
+scope: 测试
+risk: low
+accept: 完成
+implicit:
+  waiting_for: ""
+  next_check: ""
+  stale_since: ""
+---
+
+# Task
+
+测试任务内容
+
+## Follow-up
+
+${followUpMessage}
 `;
 
   fs.writeFileSync(path.join(issuesDir, `${taskId}.tdo.${board}.${slug}.md`), content);
@@ -68,6 +192,70 @@ describe("P7-TK0204: Heartbeat Tick Integration (最小可跑主链)", () => {
 
     // 无任务时只打日志，不报错
     expect(true).toBe(true);
+  });
+
+  it("D1b: 每次 tick 后都应写出只读 STATUS 快照", async () => {
+    createChildTask(workspace, "tk9997", "frontend", "status-page");
+    createWakeJob(workspace, {
+      id: "wk-job-001",
+      kind: "recurring",
+      schedule: { kind: "every", everyMs: 60_000, anchorMs: Date.now() },
+      mode: "next-heartbeat",
+      taskId: "tk9997",
+      enabled: true,
+    });
+    createWakeRecord(workspace, {
+      id: "wk-rec-001",
+      jobId: "wk-job-001",
+      status: "pending",
+      path: "task",
+      taskId: "tk9997",
+      latePolicy: "run-if-missed",
+    });
+    const subagentDir = path.join(workspace, ".msgcode", "subagents");
+    fs.mkdirSync(subagentDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(subagentDir, "subagent-running.json"),
+      JSON.stringify({
+        taskId: "subagent-running",
+        client: "codex",
+        workspacePath: workspace,
+        groupName: "group-status",
+        sessionName: "session-status",
+        goal: "继续完善状态页",
+        status: "running",
+        doneMarker: "DONE",
+        failedMarker: "FAILED",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        watchMode: true,
+        taskFile: path.join(subagentDir, "subagent-running.json"),
+      }, null, 2),
+    );
+
+    const handler = createHeartbeatTickHandler({
+      workspacePath: workspace,
+      issuesDir: path.join(workspace, "issues"),
+      mockSubagentFn: async () => ({ success: true }),
+    });
+
+    await handler({
+      tickId: "test-001b",
+      reason: "manual",
+      startTime: Date.now(),
+    });
+
+    const statusPath = path.join(workspace, ".msgcode", "STATUS");
+    expect(fs.existsSync(statusPath)).toBe(true);
+    const statusContent = fs.readFileSync(statusPath, "utf8");
+    expect(statusContent).toContain("# msgcode status @");
+    expect(statusContent).toContain("## dispatch");
+    expect(statusContent).toContain("tk9997");
+    expect(statusContent).toContain("## wakes");
+    expect(statusContent).toContain("wk-rec-001");
+    expect(statusContent).toContain("## subagents");
+    expect(statusContent).toContain("codex  running");
+    expect(statusContent).toContain("## heartbeat");
   });
 
   it("D2: 有子任务时创建 dispatch 记录", async () => {
@@ -126,6 +314,7 @@ describe("P7-TK0204: Heartbeat Tick Integration (最小可跑主链)", () => {
         capturedParams = params;
       },
       mockSubagentFn: async () => ({
+        success: true,
         task: { taskId: "mock-task-123" },
         watchResult: { success: true, response: "mock success" },
       }),
@@ -182,6 +371,132 @@ describe("P7-TK0204: Heartbeat Tick Integration (最小可跑主链)", () => {
     if (reviewDispatch) {
       expect(reviewDispatch.persona).toBe("code-reviewer");
     }
+  });
+
+  it("D3b: 任务文档里的 Verify 命令应透传到 dispatch 和 taskCard", async () => {
+    createChildTaskWithVerify(workspace, "tk6666", "frontend", "verify-test");
+
+    let capturedParams: any = null;
+    const handler = createHeartbeatTickHandler({
+      workspacePath: workspace,
+      issuesDir: path.join(workspace, "issues"),
+      beforeDispatch: (params) => {
+        capturedParams = params;
+      },
+      mockSubagentFn: async () => ({
+        success: true,
+        task: { taskId: "mock-task-verify-123" },
+        watchResult: { success: true, response: "verified" },
+      }),
+    });
+
+    await handler({
+      tickId: "test-003b",
+      reason: "manual",
+      startTime: Date.now(),
+    });
+
+    const dispatchResult = await loadDispatchRecords(workspace);
+    const dispatch = dispatchResult.records.find((record) => record.childTaskId === "tk6666");
+
+    expect(dispatch?.verificationCommands).toEqual([
+      "printf verified",
+      "node -e \"process.exit(0)\"",
+    ]);
+    expect(capturedParams?.taskCard?.verification).toEqual([
+      "printf verified",
+      "node -e \"process.exit(0)\"",
+    ]);
+  });
+
+  it("D3d: Verify 失败时任务应停在 rvw，并把证据写入 .msgcode/evidence", async () => {
+    createChildTaskWithFailingVerify(workspace, "tk6667", "frontend", "verify-fail");
+
+    const handler = createHeartbeatTickHandler({
+      workspacePath: workspace,
+      issuesDir: path.join(workspace, "issues"),
+      mockSubagentFn: async () => ({
+        success: true,
+        task: { taskId: "mock-task-verify-fail-123" },
+        watchResult: { success: true, response: "verified" },
+      }),
+    });
+
+    await handler({
+      tickId: "test-003d",
+      reason: "manual",
+      startTime: Date.now(),
+    });
+
+    expect(fs.existsSync(path.join(workspace, "issues", "tk6667.rvw.frontend.verify-fail.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "issues", "tk6667.pss.frontend.verify-fail.md"))).toBe(false);
+
+    const evidencePath = path.join(workspace, ".msgcode", "evidence", "tk6667.json");
+    expect(fs.existsSync(evidencePath)).toBe(true);
+    const evidence = JSON.parse(fs.readFileSync(evidencePath, "utf8")) as {
+      exitCode: number;
+      ok: boolean;
+      commands: Array<{ exitCode: number }>;
+    };
+    expect(evidence.ok).toBe(false);
+    expect(evidence.exitCode).toBe(7);
+    expect(evidence.commands[0]?.exitCode).toBe(7);
+  });
+
+  it("D3e: Verify 连续失败时任务应从 rvw 推进到 bkd", async () => {
+    createChildTaskWithFailingVerify(workspace, "tk6668", "frontend", "verify-blocked");
+
+    const handler = createHeartbeatTickHandler({
+      workspacePath: workspace,
+      issuesDir: path.join(workspace, "issues"),
+      mockSubagentFn: async () => ({
+        success: true,
+        task: { taskId: "mock-task-verify-blocked-123" },
+        watchResult: { success: true, response: "verified" },
+      }),
+    });
+
+    await handler({
+      tickId: "test-003e-1",
+      reason: "manual",
+      startTime: Date.now(),
+    });
+
+    expect(fs.existsSync(path.join(workspace, "issues", "tk6668.rvw.frontend.verify-blocked.md"))).toBe(true);
+
+    await handler({
+      tickId: "test-003e-2",
+      reason: "manual",
+      startTime: Date.now(),
+    });
+
+    expect(fs.existsSync(path.join(workspace, "issues", "tk6668.rvw.frontend.verify-blocked.md"))).toBe(false);
+    expect(fs.existsSync(path.join(workspace, "issues", "tk6668.bkd.frontend.verify-blocked.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, ".msgcode", "evidence", "tk6668.json"))).toBe(true);
+  });
+
+  it("D3c: 非 git workspace 完成 dispatch 后应推进子任务与父任务", async () => {
+    createParentTask(workspace, "tk6650", "runtime", "parent-review", ["tk6651"]);
+    createChildTask(workspace, "tk6651", "frontend", "child-proof", "tk6650");
+
+    const handler = createHeartbeatTickHandler({
+      workspacePath: workspace,
+      issuesDir: path.join(workspace, "issues"),
+      mockSubagentFn: async () => ({
+        success: true,
+        task: { taskId: "mock-task-6651" },
+        watchResult: { success: true, response: "done" },
+      }),
+    });
+
+    await handler({
+      tickId: "test-003c",
+      reason: "manual",
+      startTime: Date.now(),
+    });
+
+    expect(fs.existsSync(path.join(workspace, "issues", "tk6651.pss.frontend.child-proof.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "issues", "tk6650.rvw.runtime.parent-review.md"))).toBe(true);
   });
 
   it("D4: 跳过已存在的 pending dispatch", async () => {
@@ -323,5 +638,148 @@ describe("P7-TK0204: Heartbeat Tick Integration (最小可跑主链)", () => {
     const passedTaskFile = path.join(workspace, "issues/tk5555.pss.frontend.timeout-test.md");
     expect(fs.existsSync(taskFile)).toBe(false);
     expect(fs.existsSync(passedTaskFile)).toBe(true);
+  });
+
+  it("D6: 子任务完成后应推进父任务到 rvw，并写入真实 parentTaskId", async () => {
+    createParentTask(workspace, "tk4444", "runtime", "parent-goal", ["tk4445"]);
+    createChildTask(workspace, "tk4445", "frontend", "child-work", "tk4444");
+
+    const handler = createHeartbeatTickHandler({
+      workspacePath: workspace,
+      issuesDir: path.join(workspace, "issues"),
+      mockSubagentFn: async () => ({
+        success: true,
+        task: { taskId: "mock-task-parent-001" },
+        watchResult: { success: true, response: "mock success" },
+      }),
+    });
+
+    const ctx: TickContext = {
+      tickId: "test-006",
+      reason: "manual",
+      startTime: Date.now(),
+    };
+
+    await handler(ctx);
+
+    const dispatchResult = await loadDispatchRecords(workspace);
+    const dispatch = dispatchResult.records.find((d) => d.childTaskId === "tk4445");
+    expect(dispatch).toBeDefined();
+    expect(dispatch!.parentTaskId).toBe("tk4444");
+    expect(dispatch!.status).toBe("completed");
+
+    const childPassedFile = path.join(workspace, "issues/tk4445.pss.frontend.child-work.md");
+    const parentReviewFile = path.join(workspace, "issues/tk4444.rvw.runtime.parent-goal.md");
+    expect(fs.existsSync(childPassedFile)).toBe(true);
+    expect(fs.existsSync(parentReviewFile)).toBe(true);
+  });
+
+  it("D6b: running 子代理的 follow-up 只应发送一次，并写回 dispatch", async () => {
+    createChildTaskWithFollowUp(workspace, "tk4446", "frontend", "follow-up-once", "请继续补上验证截图。");
+
+    const dispatchDir = path.join(workspace, ".msgcode", "dispatch");
+    fs.mkdirSync(dispatchDir, { recursive: true });
+
+    const runningDispatch = {
+      dispatchId: "dispatch-follow-up",
+      parentTaskId: "tk4446",
+      childTaskId: "tk4446",
+      client: "codex",
+      persona: "frontend-builder",
+      subagentTaskId: "mock-subagent-follow-up",
+      goal: "测试任务内容",
+      cwd: workspace,
+      acceptance: ["完成"],
+      status: "running" as const,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      filePath: path.join(dispatchDir, "dispatch-follow-up.json"),
+    };
+    fs.writeFileSync(runningDispatch.filePath, JSON.stringify(runningDispatch, null, 2));
+
+    const sentMessages: string[] = [];
+    const handler = createHeartbeatTickHandler({
+      workspacePath: workspace,
+      issuesDir: path.join(workspace, "issues"),
+      mockSubagentStatusFn: async () => ({
+        task: {
+          taskId: "mock-subagent-follow-up",
+          client: "codex",
+          workspacePath: workspace,
+          groupName: "group-follow-up",
+          sessionName: "session-follow-up",
+          goal: "测试任务内容",
+          status: "running",
+          doneMarker: "DONE",
+          failedMarker: "FAILED",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          watchMode: true,
+          taskFile: path.join(workspace, ".msgcode", "subagents", "mock-subagent-follow-up.json"),
+        },
+        paneTail: "still running",
+      }),
+      mockSubagentSayFn: async (_dispatch, message) => {
+        sentMessages.push(message);
+        return { success: true, response: "收到，继续执行" };
+      },
+    });
+
+    await handler({
+      tickId: "test-006b-1",
+      reason: "manual",
+      startTime: Date.now(),
+    });
+
+    await handler({
+      tickId: "test-006b-2",
+      reason: "manual",
+      startTime: Date.now(),
+    });
+
+    expect(sentMessages).toEqual(["请继续补上验证截图。"]);
+
+    const dispatchResult = await loadDispatchRecords(workspace);
+    const dispatch = dispatchResult.records.find((record) => record.dispatchId === "dispatch-follow-up");
+    expect(dispatch?.lastSupervisorMessageHash).toBeDefined();
+    expect(dispatch?.lastSupervisorMessageAt).toBeDefined();
+    expect(dispatch?.status).toBe("running");
+  });
+
+  it("D7: 有 waiting_for 依赖时，应优先派发已解锁的子任务", async () => {
+    createParentTask(workspace, "tk4430", "runtime", "dependency-parent", ["tk4431", "tk4432"]);
+    createChildTask(workspace, "tk4431", "web", "first-step", "tk4430");
+    createChildTask(workspace, "tk4432", "web", "second-step", "tk4430");
+
+    const secondTaskPath = path.join(workspace, "issues", "tk4432.tdo.web.second-step.md");
+    const secondTaskContent = fs.readFileSync(secondTaskPath, "utf8");
+    fs.writeFileSync(
+      secondTaskPath,
+      secondTaskContent.replace('waiting_for: ""', 'waiting_for: "tk4431"')
+    );
+
+    const handler = createHeartbeatTickHandler({
+      workspacePath: workspace,
+      issuesDir: path.join(workspace, "issues"),
+      mockSubagentFn: async () => ({
+        success: true,
+        task: { taskId: "mock-task-dependency-001" },
+        watchResult: { success: true, response: "mock success" },
+      }),
+    });
+
+    const ctx: TickContext = {
+      tickId: "test-007",
+      reason: "manual",
+      startTime: Date.now(),
+    };
+
+    await handler(ctx);
+
+    const dispatchResult = await loadDispatchRecords(workspace);
+    expect(dispatchResult.records.length).toBe(1);
+    expect(dispatchResult.records[0]?.childTaskId).toBe("tk4431");
+    expect(fs.existsSync(path.join(workspace, "issues", "tk4431.pss.web.first-step.md"))).toBe(true);
+    expect(fs.existsSync(path.join(workspace, "issues", "tk4432.tdo.web.second-step.md"))).toBe(true);
   });
 });

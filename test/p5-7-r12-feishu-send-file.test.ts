@@ -117,6 +117,7 @@ describe("P5.7-R12: feishu_send_file", () => {
             ok: true,
             attachmentType: "file",
             attachmentKey: "file_v3_123",
+            receipt: "om_file_123",
           }),
         }),
       }
@@ -126,6 +127,7 @@ describe("P5.7-R12: feishu_send_file", () => {
     expect(result.chatId).toBe("oc_runtime_chat");
     expect(result.attachmentType).toBe("file");
     expect(result.attachmentKey).toBe("file_v3_123");
+    expect(result.receipt).toBe("om_file_123");
   });
 
   it("图片发送成功时，也应视为成功", async () => {
@@ -142,6 +144,7 @@ describe("P5.7-R12: feishu_send_file", () => {
             ok: true,
             attachmentType: "image",
             attachmentKey: "img_v3_123",
+            receipt: "om_img_123",
           }),
         }),
       }
@@ -149,6 +152,7 @@ describe("P5.7-R12: feishu_send_file", () => {
 
     expect(result.ok).toBe(true);
     expect(result.chatId).toBe("oc_runtime_chat");
+    expect(result.receipt).toBe("om_img_123");
   });
 
   it("chatId 缺省时应从 workspace 当前会话上下文回填", async () => {
@@ -164,6 +168,7 @@ describe("P5.7-R12: feishu_send_file", () => {
         chatId: args.chatId,
         attachmentType: "file",
         attachmentKey: "file_v3_workspace",
+        receipt: "om_workspace_123",
       }),
     }));
 
@@ -181,9 +186,11 @@ describe("P5.7-R12: feishu_send_file", () => {
     expect(result.data?.chatId).toBe("oc_from_workspace");
     expect(result.data?.attachmentType).toBe("file");
     expect(result.data?.attachmentKey).toBe("file_v3_workspace");
+    expect(result.data?.receipt).toBe("om_workspace_123");
     expect(result.previewText).toContain("[feishu_send_file]");
     expect(result.previewText).toContain("[attachmentType] file");
     expect(result.previewText).toContain("[attachmentKey] file_v3_workspace");
+    expect(result.previewText).toContain("[receipt] om_workspace_123");
   });
 
 });

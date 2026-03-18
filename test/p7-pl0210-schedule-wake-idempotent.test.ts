@@ -18,6 +18,7 @@ import {
   getSchedulesDir,
 } from "../src/runtime/schedule-wake.js";
 import { listWakeJobs, listWakeRecords, getJobsDir, getRecordsDir } from "../src/runtime/wake-store.js";
+import { createHeartbeatTickHandler } from "../src/runtime/heartbeat-tick.js";
 
 function createTempWorkspace(): string {
   const root = path.join(tmpdir(), `msgcode-schedule-wake-${randomUUID()}`);
@@ -35,6 +36,28 @@ function createScheduleFile(workspacePath: string, scheduleId: string, schedule:
   ensureScheduleDir(workspacePath);
   const schedulePath = path.join(getSchedulesDir(workspacePath), `${scheduleId}.json`);
   fs.writeFileSync(schedulePath, JSON.stringify(schedule, null, 2));
+}
+
+function createChildTask(workspacePath: string, taskId: string, board: string, slug: string): void {
+  const issuesDir = path.join(workspacePath, "issues");
+  fs.mkdirSync(issuesDir, { recursive: true });
+
+  const content = `---
+owner: agent
+assignee: codex
+reviewer: agent
+why: 测试 schedule now
+scope: 测试
+risk: low
+accept: 完成
+---
+
+# Task
+
+测试任务内容
+`;
+
+  fs.writeFileSync(path.join(issuesDir, `${taskId}.tdo.${board}.${slug}.md`), content);
 }
 
 async function flushAsyncWork(): Promise<void> {
@@ -553,6 +576,50 @@ describe("Schedule -> Wake Job -> Wake Record 幂等生成", () => {
       expect(called).toBe(1);
       expect(record).not.toBeNull();
       expect(listWakeRecords(workspace).map((item) => item.id)).toContain(record!.id);
+    });
+
+    it("mode=now 默认可接到 workspace heartbeat，立即推进任务文档", async () => {
+      createChildTask(workspace, "tk9201", "frontend", "schedule-now");
+
+      const heartbeatTick = createHeartbeatTickHandler({
+        workspacePath: workspace,
+        issuesDir: path.join(workspace, "issues"),
+        mockSubagentFn: async () => ({
+          success: true,
+          task: { taskId: "mock-schedule-now-001" },
+          watchResult: { success: true, response: "mock success" },
+        }),
+      });
+
+      setTriggerNowHook(async ({ workspacePath }) => {
+        await heartbeatTick({
+          tickId: "schedule-now",
+          reason: "manual",
+          startTime: Date.now(),
+        });
+        return workspacePath === workspace;
+      });
+
+      createScheduleFile(workspace, "mode-heartbeat-now", {
+        version: 2,
+        enabled: true,
+        schedule: { kind: "at", atMs: Date.now() - 1000 },
+        wake: {
+          mode: "now",
+          taskId: "tk9201",
+          hint: "立即推进 heartbeat",
+          latePolicy: "run-if-missed",
+        },
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      });
+
+      const job = syncScheduleToWakeJob(workspace, getSchedule(workspace, "mode-heartbeat-now")!);
+      const record = triggerWakeJob(workspace, job!.id, Date.now() - 1000);
+      await flushAsyncWork();
+
+      expect(record).not.toBeNull();
+      expect(fs.existsSync(path.join(workspace, "issues", "tk9201.pss.frontend.schedule-now.md"))).toBe(true);
     });
   });
 

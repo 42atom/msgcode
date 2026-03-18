@@ -56,6 +56,11 @@ function getRunnerOldDisplayName(runnerOld: RunnerTypeOld): string {
     return "Claude";
 }
 
+function isCodexTrustPrompt(paneOutput: string): boolean {
+    return paneOutput.includes("Do you trust the contents of this directory?")
+        && paneOutput.includes("Press enter to continue");
+}
+
 /**
  * 校验路径是否安全（防止路径遍历和命令注入）
  *
@@ -172,6 +177,10 @@ export class TmuxSession {
                     return SessionStatus.Ready;
                 }
             } else if (family === "codex") {
+                if (isCodexTrustPrompt(paneOutput)) {
+                    return SessionStatus.Starting;
+                }
+
                 // Codex 就绪标志：检查是否有命令提示符
                 // Codex CLI 在 --no-alt-screen 模式下通常会显示 > 或 $ 提示符
                 // 或者输出结束于新行后跟提示符
@@ -760,6 +769,19 @@ export class TmuxSession {
         const checkInterval = 1000; // 每秒检查一次
 
         while (Date.now() - start < timeout) {
+            if (normalizeRunnerOldFamily(runnerOld) === "codex") {
+                const paneOutput = await this.capturePane(sessionName, 120);
+                if (isCodexTrustPrompt(paneOutput)) {
+                    logger.info("检测到 Codex 目录信任提示，自动继续", {
+                        module: "tmux",
+                        sessionName,
+                    });
+                    await this.sendEnter(sessionName);
+                    await new Promise(resolve => setTimeout(resolve, 600));
+                    continue;
+                }
+            }
+
             const status = await this.getStatus(sessionName, runnerOld);
             if (status === SessionStatus.Ready) {
                 return true;

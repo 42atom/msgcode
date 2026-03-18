@@ -6,18 +6,18 @@
  * - msgcode todo list --workspace <id|path>
  * - msgcode todo done <taskId> --workspace <id|path>
  *
- * 存储：workspace 本地 todo.db
+ * 存储：workspace 本地 .msgcode/todo.json
  */
 
 import { Command } from "commander";
 import path from "node:path";
-import { existsSync, mkdirSync } from "node:fs";
-import Database from "better-sqlite3";
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import type { Diagnostic } from "../memory/types.js";
 import { parseWorkspaceParam } from "../memory/types.js";
 import { getWorkspaceRootForDisplay } from "../routes/store.js";
 import { createEnvelope } from "./command-runner.js";
 import { randomUUID } from "node:crypto";
+import { loadBetterSqlite3 } from "../deps/better-sqlite3.js";
 
 // ============================================
 // 错误码定义
@@ -42,6 +42,12 @@ interface TodoItem {
   status: "pending" | "done";
   createdAt: string;
   doneAt: string | null;
+}
+
+interface TodoStateFile {
+  version: 1;
+  updatedAt: string;
+  items: TodoItem[];
 }
 
 // ============================================
@@ -101,43 +107,116 @@ function createTodoDiagnostic(
 }
 
 /**
- * 获取 todo.db 路径
+ * 获取 todo.json 路径
+ */
+function getTodoJsonPath(workspacePath: string): string {
+  return path.join(workspacePath, ".msgcode", "todo.json");
+}
+
+/**
+ * 获取历史 todo.db 路径
  */
 function getTodoDbPath(workspacePath: string): string {
   return path.join(workspacePath, ".msgcode", "todo.db");
 }
 
 /**
- * 初始化数据库
+ * 原子写 todo.json
  */
-function initTodoDb(db: Database.Database): void {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS todos (
-      id TEXT PRIMARY KEY,
-      title TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'pending',
-      createdAt TEXT NOT NULL,
-      doneAt TEXT
-    );
-    CREATE INDEX IF NOT EXISTS idx_status ON todos(status);
-  `);
-}
-
-/**
- * 打开数据库连接
- */
-function openTodoDb(workspacePath: string): Database.Database {
-  const dbPath = getTodoDbPath(workspacePath);
-  const dir = path.dirname(dbPath);
+function writeTodoStateAtomic(workspacePath: string, state: TodoStateFile): void {
+  const todoPath = getTodoJsonPath(workspacePath);
+  const dir = path.dirname(todoPath);
 
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
 
-  const db = new Database(dbPath);
-  initTodoDb(db);
+  const tempPath = `${todoPath}.tmp`;
+  writeFileSync(tempPath, JSON.stringify(state, null, 2), "utf8");
+  renameSync(tempPath, todoPath);
+}
 
-  return db;
+function createEmptyTodoState(): TodoStateFile {
+  return {
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    items: [],
+  };
+}
+
+async function importLegacyTodoDb(workspacePath: string): Promise<TodoStateFile | null> {
+  const dbPath = getTodoDbPath(workspacePath);
+  if (!existsSync(dbPath)) {
+    return null;
+  }
+
+  const Database = loadBetterSqlite3();
+  const db = new Database(dbPath, { readonly: true });
+
+  try {
+    const table = db.prepare(`
+      SELECT name FROM sqlite_master WHERE type='table' AND name='todos'
+    `).get() as { name?: string } | undefined;
+
+    if (!table?.name) {
+      return createEmptyTodoState();
+    }
+
+    const rows = db.prepare(`
+      SELECT id, title, status, createdAt, doneAt
+      FROM todos
+      ORDER BY createdAt DESC
+    `).all() as TodoItem[];
+
+    const state: TodoStateFile = {
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      items: rows.map((row) => ({
+        id: row.id,
+        title: row.title,
+        status: row.status === "done" ? "done" : "pending",
+        createdAt: row.createdAt,
+        doneAt: row.doneAt ?? null,
+      })),
+    };
+
+    writeTodoStateAtomic(workspacePath, state);
+    renameSync(dbPath, `${dbPath}.legacy.bak`);
+    return state;
+  } finally {
+    db.close();
+  }
+}
+
+async function loadTodoState(workspacePath: string): Promise<TodoStateFile> {
+  const todoPath = getTodoJsonPath(workspacePath);
+  if (existsSync(todoPath)) {
+    const parsed = JSON.parse(readFileSync(todoPath, "utf8")) as TodoStateFile;
+    return {
+      version: 1,
+      updatedAt: parsed.updatedAt,
+      items: Array.isArray(parsed.items) ? parsed.items : [],
+    };
+  }
+
+  const migrated = await importLegacyTodoDb(workspacePath);
+  if (migrated) {
+    return migrated;
+  }
+
+  const empty = createEmptyTodoState();
+  writeTodoStateAtomic(workspacePath, empty);
+  return empty;
+}
+
+function saveTodoState(workspacePath: string, items: TodoItem[]): TodoStateFile {
+  const state: TodoStateFile = {
+    version: 1,
+    updatedAt: new Date().toISOString(),
+    items,
+  };
+  writeTodoStateAtomic(workspacePath, state);
+  return state;
 }
 
 // ============================================
@@ -184,20 +263,17 @@ export function createTodoAddCommand(): Command {
         // 解析 workspace
         const workspacePath = await resolveWorkspacePathParam(options.workspace);
 
-        // 打开数据库
-        const db = openTodoDb(workspacePath);
-
-        // 创建 todo
+        const state = await loadTodoState(workspacePath);
         const todoId = randomUUID();
         const createdAt = new Date().toISOString();
-
-        const stmt = db.prepare(`
-          INSERT INTO todos (id, title, status, createdAt, doneAt)
-          VALUES (?, ?, 'pending', ?, NULL)
-        `);
-
-        stmt.run(todoId, title.trim(), createdAt);
-        db.close();
+        const item: TodoItem = {
+          id: todoId,
+          title: title.trim(),
+          status: "pending",
+          createdAt,
+          doneAt: null,
+        };
+        saveTodoState(workspacePath, [item, ...state.items]);
 
         const data = {
           taskId: todoId,
@@ -273,24 +349,10 @@ export function createTodoListCommand(): Command {
         // 解析 workspace
         const workspacePath = await resolveWorkspacePathParam(options.workspace);
 
-        // 打开数据库
-        const db = openTodoDb(workspacePath);
-
-        // 查询 todos
-        let sql = "SELECT * FROM todos";
-        const params: string[] = [];
-
-        if (options.status) {
-          sql += " WHERE status = ?";
-          params.push(options.status);
-        }
-
-        sql += " ORDER BY createdAt DESC";
-
-        const stmt = db.prepare(sql);
-        const rows = stmt.all(...params) as TodoItem[];
-
-        db.close();
+        const state = await loadTodoState(workspacePath);
+        const rows = options.status
+          ? state.items.filter((item) => item.status === options.status)
+          : state.items;
 
         const data = {
           count: rows.length,
@@ -372,15 +434,10 @@ export function createTodoDoneCommand(): Command {
         // 解析 workspace
         const workspacePath = await resolveWorkspacePathParam(options.workspace);
 
-        // 打开数据库
-        const db = openTodoDb(workspacePath);
-
-        // 检查 todo 是否存在
-        const checkStmt = db.prepare("SELECT * FROM todos WHERE id = ?");
-        const existing = checkStmt.get(taskId) as TodoItem | undefined;
+        const state = await loadTodoState(workspacePath);
+        const existing = state.items.find((item) => item.id === taskId);
 
         if (!existing) {
-          db.close();
           errors.push(
             createTodoDiagnostic(
               TODO_ERROR_CODES.NOT_FOUND,
@@ -400,12 +457,12 @@ export function createTodoDoneCommand(): Command {
 
         // 更新状态
         const doneAt = new Date().toISOString();
-        const updateStmt = db.prepare(`
-          UPDATE todos SET status = 'done', doneAt = ? WHERE id = ?
-        `);
-        updateStmt.run(doneAt, taskId);
-
-        db.close();
+        const items = state.items.map((item) =>
+          item.id === taskId
+            ? { ...item, status: "done" as const, doneAt }
+            : item
+        );
+        saveTodoState(workspacePath, items);
 
         const data = {
           taskId,

@@ -52,6 +52,7 @@ msgcode 现在已有最小正式 `subagent` CLI 主链：
 
 - `msgcode subagent run codex --goal '...' --watch`
 - `msgcode subagent run claude-code --goal '...' --watch`
+- `msgcode subagent say <task-id> --message '...'`
 - `msgcode subagent list`
 - `msgcode subagent status <task-id>`
 - `msgcode subagent stop <task-id>`
@@ -76,6 +77,7 @@ msgcode 现在已有最小正式 `subagent` CLI 主链：
    - canonical：
      - `msgcode subagent run codex --goal '...' --watch`
      - `msgcode subagent run claude-code --goal '...' --watch`
+     - `msgcode subagent say <task-id> --message '...'`
      - `msgcode subagent list`
      - `msgcode subagent status <task-id>`
      - `msgcode subagent stop <task-id>`
@@ -94,12 +96,15 @@ msgcode 现在已有最小正式 `subagent` CLI 主链：
 先用 `help_docs` 查当前程序里是否已经存在 `subagent`：
 
 - 看是否有 `subagent run`
+- 看是否有 `subagent say`
 - 看是否有 `subagent list`
 - 看是否有 `subagent status`
 - 看参数名是不是 `--goal` / `--watch`
 
 其中：
 
+- `subagent say <task-id>` 用来对正在运行的子代理继续补一句话
+- 每次会落到 `.msgcode/subagents/<taskId>.messages.ndjson`
 - `subagent list` 用来列当前 workspace 下已有任务
 - `subagent status <task-id>` 用来继续观察某个任务
 - 不要把 `list` 误读成“查看有哪些执行臂可安装/可用”
@@ -150,6 +155,12 @@ Persona 是人格说明书，告诉子代理"怎么做"。
 docs/protocol/personas/<persona-id>.md
 ```
 
+当前正式 persona：
+
+- `frontend-builder`
+- `code-reviewer`
+- `api-builder`
+
 Persona 告诉子代理：
 - 适用场景
 - 工作流程
@@ -161,7 +172,7 @@ Persona 告诉子代理：
 
 - `msgcode subagent run ...` 已正式接上 `persona`
 - runtime 会从 `docs/protocol/personas/<persona-id>.md` 读取 persona 文档并注入子代理上下文
-- task card 可以直接通过 CLI 参数显式传入
+- `task card` 会和 `persona` 一起进入委派 prompt
 
 ### 2. 把任务缩成一个独立包
 
@@ -221,10 +232,11 @@ token:
 至少要做这些检查：
 
 1. 看任务是否仍在运行
-2. 若忘了 `taskId`，先用 `msgcode subagent list`
-3. 看输出里是否出现唯一 token
-4. 看产物文件是否真实存在
-5. 必要时再自己读产物、跑测试、做抽查
+2. 若需要继续补要求，用 `msgcode subagent say <task-id> --message '...'`
+3. 若忘了 `taskId`，先用 `msgcode subagent list`
+4. 看输出里是否出现唯一 token
+5. 看产物文件是否真实存在
+6. 必要时再自己读产物、跑测试、做抽查
 
 `subagent list` 的正确用途是：
 

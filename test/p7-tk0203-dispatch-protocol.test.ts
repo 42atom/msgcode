@@ -11,6 +11,8 @@ import {
   loadDispatchRecords,
 } from "../src/runtime/work-continuity.js";
 import { createTaskSupervisor } from "../src/runtime/task-supervisor.js";
+import { TaskStore } from "../src/runtime/task-store.js";
+import { createTaskRecord } from "../src/runtime/task-types.js";
 import { ensureScheduleDir, getSchedulesDir } from "../src/runtime/schedule-wake.js";
 
 function createTempWorkspace(): string {
@@ -442,6 +444,88 @@ describe("Doc-First Dispatch Protocol", () => {
       } finally {
         await supervisor.stop();
       }
+    });
+
+    it("有现成 runtime checkpoint 时，dispatch 恢复应保留更精确的恢复指针", async () => {
+      writeTaskDoc(workspace, "tk0001.doi.runtime.parent-task.md");
+      writeTaskDoc(workspace, "tk0002.tdo.runtime.child-task.md");
+
+      await writeDispatchRecord({
+        workspacePath: workspace,
+        parentTaskId: "tk0001",
+        childTaskId: "tk0002",
+        client: "codex",
+        goal: "继续推进父任务",
+        cwd: workspace,
+        acceptance: ["done"],
+        checkpoint: {
+          summary: "dispatch checkpoint",
+          nextAction: "读取最新派单结果",
+          updatedAt: Date.now(),
+        },
+      });
+
+      const taskDir = path.join(workspace, ".msgcode", "tasks");
+      const eventQueueDir = path.join(workspace, ".msgcode", "event-queue");
+      fs.mkdirSync(taskDir, { recursive: true });
+      fs.mkdirSync(eventQueueDir, { recursive: true });
+
+      const taskStore = new TaskStore({ taskDir });
+      const runtimeTask = {
+        ...createTaskRecord({
+          chatId: "tk0001",
+          workspacePath: workspace,
+          goal: "父任务 runtime cache",
+        }),
+        taskId: "tk0001",
+      };
+      const created = await taskStore.createTask(runtimeTask);
+      expect(created.ok).toBe(true);
+      const running = await taskStore.updateTask("tk0001", {
+        status: "running",
+      });
+      expect(running.ok).toBe(true);
+      await taskStore.updateTask("tk0001", {
+        status: "blocked",
+        checkpoint: {
+          currentPhase: "blocked",
+          summary: "等待补证据",
+          nextAction: "补齐 verify 证据后继续",
+          updatedAt: Date.now(),
+        },
+      });
+
+      let observedNextAction: string | undefined;
+      const supervisor = createTaskSupervisor({
+        taskDir,
+        eventQueueDir,
+        workspacePath: workspace,
+        heartbeatIntervalMs: 0,
+        executeTaskTurn: async (_task, context) => {
+          observedNextAction = context.capsule?.checkpoint.nextAction;
+          return {
+            answer: "done",
+            actionJournal: [],
+            verifyResult: {
+              ok: true,
+              evidence: "ok",
+            },
+          };
+        },
+      });
+
+      await supervisor.start();
+      try {
+        await supervisor.handleHeartbeatTick({
+          tickId: "tick-dispatch-runtime-checkpoint",
+          reason: "manual",
+          startTime: Date.now(),
+        });
+      } finally {
+        await supervisor.stop();
+      }
+
+      expect(observedNextAction).toBe("补齐 verify 证据后继续");
     });
   });
 });

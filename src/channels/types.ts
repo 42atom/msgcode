@@ -8,6 +8,8 @@
  * 附件元数据
  */
 export interface Attachment {
+  /** 附件来源通道（如 feishu） */
+  transport?: string;
   /** 文件名 */
   filename?: string;
   /** MIME 类型 */
@@ -30,6 +32,8 @@ export interface Attachment {
 export interface InboundMessage {
   /** 消息唯一标识 */
   id: string;
+  /** 通道来源（如 feishu） */
+  transport?: string;
   /** 通道内部聊天 ID */
   chatId: string;
   /** 消息文本（可选，空消息跳过） */
@@ -75,6 +79,7 @@ export interface ChannelSendResult {
   error?: string;
   attachmentType?: "file" | "image";
   attachmentKey?: string;
+  receipt?: string;
   fallbackTextSent?: boolean;
 }
 

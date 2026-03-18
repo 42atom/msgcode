@@ -33,6 +33,7 @@ msgcode 要做的是把上面这句定义落成一套像样的工作条件：
 仓库级工程原则也因此收口成一句：
 
 - **能落成文件真相源的，先落文件。不能落成真相源的，只做薄 runtime。**
+- **新增的人类可读、可巡检、带生命周期的文件面，优先沿用 `issues/` 命名哲学；机器协议和运行时缓存保持稳定 ID + JSON，不为巡检体验改主链。**
 
 它有两条执行线：
 - `Agent 线`（默认）：本地模型 + 记忆 + SOUL + skills + tool loop
@@ -46,6 +47,32 @@ msgcode 要做的是把上面这句定义落成一套像样的工作条件：
 - 当前桌面桥：`ghost-os`，这是默认且唯一的桌面自动化桥
 - 最终产品方向：`menu App + 单面板 + web系统面板`
 - msgcode 不再自研点击、识别、视觉定位这一类“自动化供应”逻辑；这些能力由上游桌面执行引擎提供，msgcode 只做薄桥接、配置收口和结果回传
+
+## 三大板块
+
+后续主线默认都归到这三块，不再散着长：
+
+1. 资源管理
+- `LLM`
+- 文件系统
+- tools / browser / desktop / memory
+
+2. 调度系统
+- `heartbeat`
+- `cron / wake`
+- 分步执行
+- `dispatch / subagent`
+
+3. I/O 系统
+- Feishu / mail / voice / browser / desktop
+- 多模态输入
+- 多模态输出
+
+工程口径：
+
+- 资源管理回答“能用什么”
+- 调度系统回答“什么时候做、拆给谁做”
+- I/O 系统回答“怎么感知世界、怎么把结果送回去”
 
 ## 系统模型（先看这段）
 
@@ -78,6 +105,10 @@ msgcode 的默认原则不是“约束 LLM”，而是“支持 LLM 完成任务
 - 系统只保留三类硬边界：安全、预算、物理。除此之外，不新增隐藏裁判、猜测式 fallback、规则化代答。
 - 默认能力主链：`LLM 先读 runtime skill -> 再用工具 / CLI / 文件协议执行`。
 - 能落成文件真相源的，先落文件；不能落成真相源的，只做薄 runtime，不抢状态地位。
+- 人类巡检面与机器协议面要分开：
+  - 人类可读、可巡检、带生命周期的文件面，优先沿用 `issues/` 这套命名哲学
+  - 机器协议和运行时缓存，优先保持稳定 ID + JSON
+  - 可观测性优先通过只读派生视图补，不回头改协议主链
 
 ## Skill 与工具边界
 
@@ -108,6 +139,17 @@ npm install
 - `npm install` 现在会安装 `patchright` 依赖，正式浏览器主链通过 `connectOverCDP` 连接共享工作 Chrome。
 - 共享工作 Chrome 数据根默认落在：`$WORKSPACE_ROOT/.msgcode/chrome-profiles/<name>`
 - 当前正式浏览器主链：Patchright + Chrome-as-State
+
+### 开发运行时边界
+
+- 日常 CLI：优先用 `msgcode ...` 或 `./bin/msgcode ...`。这条入口天然走 Node。
+- 开发直跑源码：用 `node --import tsx src/cli.ts ...`，或 `npm run cli:node -- ...`。
+- `npm test` / `npm run test:bun` 只跑 Bun 安全子集。
+- 任何会触达 `better-sqlite3` 的路径，都不要直接塞进 Bun 进程。
+- 当前明确属于 Node 边界的能力：
+  - `memory index`
+  - memory sqlite 检索/调试
+  - 历史 `todo.db` 一次性导入
 
 ### 3. 初始化配置
 
@@ -224,6 +266,12 @@ msgcode start -d
 
 更多命令请以运行时 `/help` 输出为准。
 
+## 测试口径
+
+- `npm test`：等价于 `npm run test:bun`，用于 Bun 安全子集回归。
+- 需要验证 SQLite 路径时，优先直接跑 `msgcode ...`、`./bin/msgcode ...` 或 `npm run cli:node -- ...`。
+- 不要把 `better-sqlite3` 相关路径强行放进 `bun test`。
+
 ## Legacy Desktop Bridge（遗留显式链路）
 
 - 当前默认桌面能力面已切到 `ghost_*` 原生工具。
@@ -243,6 +291,11 @@ msgcode start -d
 - `L2` 长期记忆：数据文件在 `<workspace>/memory/*.md`，索引在 `~/.config/msgcode/memory/index.sqlite`
 
 `/clear` 只清理 `L0/L1`，不清理 `L2`。
+
+开发补充：
+- `L2` 的文件真相源可以直接读写。
+- `index.sqlite` 只是派生索引；坏了可以删后重建。
+- 若要直跑源码执行 `memory index`，请走 `node --import tsx src/cli.ts memory index ...`。
 
 ## Known Limits
 

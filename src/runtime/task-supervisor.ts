@@ -234,7 +234,7 @@ export class TaskSupervisor {
                 ? {
                     ...existing.checkpoint,
                     currentPhase: "running",
-                    nextAction: "继续执行当前任务",
+                    nextAction: existing.checkpoint.nextAction || "继续执行当前任务",
                     updatedAt: Date.now(),
                 }
                 : {
@@ -540,9 +540,11 @@ export class TaskSupervisor {
             return null;
         }
 
+        const runtimeTask = await this.taskStore.getActiveTask(dispatch.parentTaskId);
         const snapshot = await buildWorkRecoverySnapshot({
             workspacePath,
             parentTaskId: dispatch.parentTaskId,
+            runtimeTask,
         });
         const task = await this.ensureRuntimeCacheTask(workspacePath, snapshot.workCapsule);
 

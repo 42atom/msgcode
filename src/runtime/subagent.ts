@@ -8,7 +8,8 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, stat } from "node:fs/promises";
+import { appendFile, mkdir, readFile, readdir, stat } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { getWorkspacePath } from "../cli/command-runner.js";
@@ -30,10 +31,12 @@ export const SUBAGENT_ERROR_CODES = {
   STOP_FAILED: "SUBAGENT_STOP_FAILED",
   WATCH_TIMEOUT: "SUBAGENT_WATCH_TIMEOUT",
   TASK_FAILED: "SUBAGENT_TASK_FAILED",
+  NOT_RUNNING: "SUBAGENT_NOT_RUNNING",
 } as const;
 
 const DEFAULT_TIMEOUT_MS = 10 * 60 * 1000;
 const WATCH_POLL_INTERVAL_MS = 1500;
+const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 export interface SubagentTaskRecord {
   taskId: string;
@@ -42,6 +45,8 @@ export interface SubagentTaskRecord {
   groupName: string;
   sessionName: string;
   goal: string;
+  persona?: string;
+  taskCard?: SubagentTaskCard;
   status: SubagentTaskStatus;
   doneMarker: string;
   failedMarker: string;
@@ -52,15 +57,36 @@ export interface SubagentTaskRecord {
   watchMode: boolean;
   resultText?: string;
   lastPaneTail?: string;
+  messagesFile?: string;
   taskFile: string;
+}
+
+export interface SubagentMessageRecord {
+  messageId: string;
+  taskId: string;
+  direction: "to-subagent" | "from-subagent";
+  body: string;
+  createdAt: string;
+  relatedMessageId?: string;
 }
 
 export interface RunSubagentInput {
   client: string;
   goal: string;
+  persona?: string;
+  taskCard?: SubagentTaskCard;
   workspace?: string;
   watch?: boolean;
   timeoutMs?: number;
+}
+
+export interface SubagentTaskCard {
+  cwd?: string;
+  constraints?: string[];
+  acceptance?: string[];
+  verification?: string[];
+  artifacts?: string[];
+  parentTask?: string;
 }
 
 export class SubagentRuntimeError extends Error {
@@ -86,6 +112,13 @@ export interface RunSubagentResult {
 export interface SubagentStatusResult {
   task: SubagentTaskRecord;
   paneTail: string;
+}
+
+export interface SendSubagentMessageResult {
+  task: SubagentTaskRecord;
+  messageId: string;
+  messagesFile: string;
+  response?: string;
 }
 
 export interface ListSubagentTasksResult {
@@ -118,6 +151,10 @@ function getTaskFilePath(workspacePath: string, taskId: string): string {
   return path.join(getSubagentDir(workspacePath), `${taskId}.json`);
 }
 
+function getTaskMessagesFilePath(workspacePath: string, taskId: string): string {
+  return path.join(getSubagentDir(workspacePath), `${taskId}.messages.ndjson`);
+}
+
 function buildGroupName(client: SubagentClient, workspacePath: string): string {
   const base = path.basename(workspacePath).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "workspace";
   const digest = createHash("sha1").update(workspacePath).digest("hex").slice(0, 6);
@@ -132,22 +169,185 @@ function buildFailedMarker(taskId: string): string {
   return `MSGCODE_SUBAGENT_FAILED ${taskId}`;
 }
 
-function buildDelegationPrompt(record: SubagentTaskRecord): string {
-  return [
+function getPersonaPath(personaId: string): string {
+  return path.join(REPO_ROOT, "docs", "protocol", "personas", `${personaId}.md`);
+}
+
+async function loadPersonaContent(personaId?: string): Promise<string | undefined> {
+  if (!personaId) {
+    return undefined;
+  }
+  const personaPath = getPersonaPath(personaId);
+  try {
+    const content = await readFile(personaPath, "utf8");
+    return content.trim();
+  } catch {
+    throw new SubagentRuntimeError(
+      SUBAGENT_ERROR_CODES.DELEGATE_FAILED,
+      `persona 文档不存在: ${personaPath}`,
+    );
+  }
+}
+
+function formatTaskCard(taskCard?: SubagentTaskCard): string[] {
+  if (!taskCard) {
+    return [];
+  }
+
+  const lines: string[] = ["task_card:"];
+  if (taskCard.cwd) lines.push(`- cwd: ${taskCard.cwd}`);
+  if (taskCard.parentTask) lines.push(`- parent_task: ${taskCard.parentTask}`);
+  if (taskCard.constraints?.length) {
+    lines.push("- constraints:");
+    for (const item of taskCard.constraints) lines.push(`  - ${item}`);
+  }
+  if (taskCard.acceptance?.length) {
+    lines.push("- acceptance:");
+    for (const item of taskCard.acceptance) lines.push(`  - ${item}`);
+  }
+  if (taskCard.verification?.length) {
+    lines.push("- verification:");
+    for (const item of taskCard.verification) lines.push(`  - ${item}`);
+  }
+  if (taskCard.artifacts?.length) {
+    lines.push("- artifacts:");
+    for (const item of taskCard.artifacts) lines.push(`  - ${item}`);
+  }
+  return lines;
+}
+
+function extractTaskIds(value: string | undefined): string[] {
+  if (!value) {
+    return [];
+  }
+  return Array.from(new Set(value.match(/\btk\d{4}\b/gi)?.map((id) => id.toLowerCase()) ?? []));
+}
+
+function stripFrontMatter(content: string): string {
+  return content.replace(/^---\n[\s\S]*?\n---\n?/, "").trim();
+}
+
+function extractFirstParagraph(content: string): string | undefined {
+  const lines = stripFrontMatter(content).split("\n");
+  const paragraph: string[] = [];
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+    if (!line) {
+      if (paragraph.length > 0) {
+        break;
+      }
+      continue;
+    }
+    if (line.startsWith("#") || line.startsWith("```") || line.startsWith("---")) {
+      continue;
+    }
+    if (line.startsWith("- ") || /^\d+\.\s/.test(line)) {
+      continue;
+    }
+    paragraph.push(line);
+  }
+
+  if (paragraph.length === 0) {
+    return undefined;
+  }
+
+  return paragraph.join(" ").slice(0, 240);
+}
+
+function extractParentTaskId(taskContent: string): string | undefined {
+  const parentSectionMatch = taskContent.match(/##\s+Parent Task\s*\n([\s\S]*?)(?=\n#{1,2}\s|$)/i);
+  const parentIds = extractTaskIds(parentSectionMatch?.[1]);
+  return parentIds[0];
+}
+
+async function findIssueFileByTaskId(workspacePath: string, taskId: string): Promise<string | undefined> {
+  const issuesDir = path.join(workspacePath, "issues");
+  try {
+    const entries = await readdir(issuesDir);
+    const matched = entries.find((entry) => entry.startsWith(`${taskId}.`) && entry.endsWith(".md"));
+    return matched ? path.join(issuesDir, matched) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function loadDelegationContext(record: SubagentTaskRecord): Promise<string[]> {
+  const currentTaskId = record.taskCard?.parentTask;
+  if (!currentTaskId) {
+    return [];
+  }
+
+  const lines: string[] = [];
+  const currentTaskPath = await findIssueFileByTaskId(record.workspacePath, currentTaskId);
+  if (currentTaskPath) {
+    try {
+      const currentTaskContent = await readFile(currentTaskPath, "utf8");
+      const parentTaskId = extractParentTaskId(currentTaskContent);
+      if (parentTaskId) {
+        const parentTaskPath = await findIssueFileByTaskId(record.workspacePath, parentTaskId);
+        if (parentTaskPath) {
+          const parentTaskContent = await readFile(parentTaskPath, "utf8");
+          const parentSummary = extractFirstParagraph(parentTaskContent);
+          if (parentSummary) {
+            lines.push("parent_task_summary:");
+            lines.push(parentSummary);
+            lines.push("");
+          }
+        }
+      }
+    } catch {
+      // ignore: keep prompt thin and best-effort
+    }
+  }
+
+  const evidencePath = path.join(record.workspacePath, ".msgcode", "evidence", `${currentTaskId}.json`);
+  try {
+    const evidenceContent = await readFile(evidencePath, "utf8");
+    const evidence = JSON.parse(evidenceContent) as {
+      exitCode?: number;
+      commands?: Array<{ ok?: boolean; stderr?: string; exitCode?: number }>;
+    };
+    const failingCommand = evidence.commands?.find((item) => item.ok === false) ?? evidence.commands?.at(-1);
+    if (typeof evidence.exitCode === "number" && failingCommand) {
+      const stderrPreview = (failingCommand.stderr || "").replace(/\s+/g, " ").trim().slice(0, 200);
+      lines.push("recent_failure_evidence:");
+      lines.push(`- exit_code: ${evidence.exitCode}`);
+      if (stderrPreview) {
+        lines.push(`- stderr: ${stderrPreview}`);
+      }
+      lines.push("");
+    }
+  } catch {
+    // ignore: no evidence is a normal case
+  }
+
+  return lines;
+}
+
+function buildDelegationPrompt(record: SubagentTaskRecord, personaContent?: string, delegationContext: string[] = []): string {
+  const lines = [
     "你现在是 msgcode 的子代理执行臂。",
     "请只执行任务，不要反问，不要汇报长过程。",
     "",
     `task_id: ${record.taskId}`,
     `workspace: ${record.workspacePath}`,
+    `client: ${record.client}`,
+    ...(record.persona ? [`persona: ${record.persona}`] : []),
     "",
     "goal:",
     record.goal.trim(),
     "",
+    ...formatTaskCard(record.taskCard),
+    ...(record.taskCard ? [""] : []),
+    ...delegationContext,
+    ...(personaContent ? ["persona_doc:", personaContent, ""] : []),
     "完成协议：",
     `- 成功完成后，最后单独输出一行：${record.doneMarker}`,
     `- 若确定无法完成，最后单独输出一行：${record.failedMarker}`,
     "- 除了上面的标记行，不要改写标记文本。",
-  ].join("\n");
+  ];
+  return lines.join("\n");
 }
 
 async function ensureSubagentDir(workspacePath: string): Promise<void> {
@@ -157,6 +357,11 @@ async function ensureSubagentDir(workspacePath: string): Promise<void> {
 async function writeTaskRecord(record: SubagentTaskRecord): Promise<void> {
   await ensureSubagentDir(record.workspacePath);
   await atomicWriteFile(record.taskFile, JSON.stringify(record, null, 2));
+}
+
+async function appendMessageRecord(workspacePath: string, taskId: string, entry: SubagentMessageRecord): Promise<void> {
+  await ensureSubagentDir(workspacePath);
+  await appendFile(getTaskMessagesFilePath(workspacePath, taskId), `${JSON.stringify(entry)}\n`, "utf8");
 }
 
 async function readTaskRecord(taskFile: string): Promise<SubagentTaskRecord> {
@@ -289,15 +494,20 @@ export async function runSubagentTask(input: RunSubagentInput): Promise<RunSubag
     groupName,
     sessionName,
     goal: input.goal,
+    persona: input.persona,
+    taskCard: input.taskCard,
     status: "running",
     doneMarker: buildDoneMarker(taskId),
     failedMarker: buildFailedMarker(taskId),
     createdAt: now,
     updatedAt: now,
     watchMode: input.watch === true,
+    messagesFile: getTaskMessagesFilePath(workspacePath, taskId),
     taskFile: getTaskFilePath(workspacePath, taskId),
   };
-  const prompt = buildDelegationPrompt(record);
+  const personaContent = await loadPersonaContent(input.persona);
+  const delegationContext = await loadDelegationContext(record);
+  const prompt = buildDelegationPrompt(record, personaContent, delegationContext);
 
   await writeTaskRecord(record);
 
@@ -419,6 +629,107 @@ export async function getSubagentTaskStatus(input: {
   return {
     task: next,
     paneTail,
+  };
+}
+
+export async function sendSubagentMessage(input: {
+  taskId: string;
+  message: string;
+  workspace?: string;
+  watch?: boolean;
+  timeoutMs?: number;
+}): Promise<SendSubagentMessageResult> {
+  const workspacePath = resolveWorkspacePath(input.workspace);
+  const taskFile = await findTaskFile(workspacePath, input.taskId);
+  let record = await readTaskRecord(taskFile);
+
+  if (record.status !== "running") {
+    throw new SubagentRuntimeError(
+      SUBAGENT_ERROR_CODES.NOT_RUNNING,
+      `子代理任务未运行，无法继续对话: ${record.taskId} (${record.status})`,
+    );
+  }
+
+  const messageId = randomUUID();
+  const createdAt = new Date().toISOString();
+  const trimmedMessage = input.message.trim();
+  if (!trimmedMessage) {
+    throw new SubagentRuntimeError(
+      SUBAGENT_ERROR_CODES.DELEGATE_FAILED,
+      "消息不能为空",
+    );
+  }
+
+  await appendMessageRecord(workspacePath, record.taskId, {
+    messageId,
+    taskId: record.taskId,
+    direction: "to-subagent",
+    body: trimmedMessage,
+    createdAt,
+  });
+
+  if (input.watch) {
+    const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    const result = await handleTmuxSend(record.groupName, trimmedMessage, {
+      projectDir: workspacePath,
+      runnerType: "tmux",
+      runnerOld: record.client,
+      timeout: timeoutMs,
+    });
+
+    if (isHardWatchTransportError(result.error)) {
+      throw new SubagentRuntimeError(
+        SUBAGENT_ERROR_CODES.DELEGATE_FAILED,
+        result.error || "子代理消息发送失败",
+      );
+    }
+
+    const paneTail = await TmuxSession.capturePane(record.sessionName, 160);
+    const detectedStatus = detectTaskCompletion(record, `${result.response ?? ""}\n${paneTail}`);
+    record = detectedStatus
+      ? await updateTaskStatus(record, {
+          status: detectedStatus,
+          completedAt: new Date().toISOString(),
+          lastPaneTail: paneTail,
+          resultText: result.response ?? result.error,
+        })
+      : await updateTaskStatus(record, {
+          lastPaneTail: paneTail,
+          resultText: result.response ?? result.error,
+        });
+
+    if (result.response?.trim()) {
+      await appendMessageRecord(workspacePath, record.taskId, {
+        messageId: randomUUID(),
+        taskId: record.taskId,
+        direction: "from-subagent",
+        body: result.response,
+        createdAt: new Date().toISOString(),
+        relatedMessageId: messageId,
+      });
+    }
+
+    return {
+      task: record,
+      messageId,
+      messagesFile: record.messagesFile || getTaskMessagesFilePath(workspacePath, record.taskId),
+      response: result.response,
+    };
+  }
+
+  const sendResult = await sendMessage(record.groupName, trimmedMessage);
+  if (!sendResult.success) {
+    throw new SubagentRuntimeError(
+      SUBAGENT_ERROR_CODES.DELEGATE_FAILED,
+      sendResult.error || "子代理消息发送失败",
+    );
+  }
+
+  record = await updateTaskStatus(record, {});
+  return {
+    task: record,
+    messageId,
+    messagesFile: record.messagesFile || getTaskMessagesFilePath(workspacePath, record.taskId),
   };
 }
 

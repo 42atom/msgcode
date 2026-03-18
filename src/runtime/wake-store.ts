@@ -5,7 +5,7 @@
  */
 
 import path from "node:path";
-import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, readdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import type { WakeJob, WakeRecord, WakeClaim } from "./wake-types.js";
 import { WAKE_ERROR_CODES } from "./wake-types.js";
@@ -207,7 +207,7 @@ export function listWakeJobs(workspacePath: string): WakeJob[] {
   }
 
   try {
-    const files = require("fs").readdirSync(jobsDir);
+    const files = readdirSync(jobsDir);
     const jobs: WakeJob[] = [];
     for (const file of files) {
     if (!file.endsWith(".json")) continue;
@@ -330,7 +330,7 @@ export function listWakeRecords(workspacePath: string): WakeRecord[] {
   }
 
   try {
-    const files = require("fs").readdirSync(recordsDir);
+    const files = readdirSync(recordsDir);
     const records: WakeRecord[] = [];
     for (const file of files) {
     if (!file.endsWith(".json")) continue;
@@ -393,4 +393,3 @@ export function gcTerminalWakeRecords(workspacePath: string): number {
 
   return deleted;
 }
-

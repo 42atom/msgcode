@@ -251,6 +251,11 @@ async function loadMemoryCommands() {
   program.addCommand(createMemoryCommand());
 }
 
+async function loadVerifyCommands() {
+  const { createVerifyCommand } = await import("./cli/verify.js");
+  program.addCommand(createVerifyCommand());
+}
+
 // Job 命令组（M3）
 async function loadJobCommands() {
   const { createJobCommand } = await import("./cli/jobs.js");
@@ -334,6 +339,9 @@ async function main() {
   if (top === "memory") {
     await loadMemoryCommands();
   }
+  if (top === "verify") {
+    await loadVerifyCommands();
+  }
   if (top === "job") {
     await loadJobCommands();
   }
@@ -370,8 +378,9 @@ async function main() {
 
   // 对于 help（无参数或 --help），也加载一遍子命令，让帮助信息完整
   if (!top || top === "-h" || top === "--help") {
-    await loadMemoryCommands();
-    await loadJobCommands();
+  await loadMemoryCommands();
+  await loadVerifyCommands();
+  await loadJobCommands();
     await loadPreflightCommands();
     await loadRunCommands();
     await loadThreadCommands();

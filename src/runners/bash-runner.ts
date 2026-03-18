@@ -24,6 +24,8 @@ export interface BashRunnerOptions {
   command: string;
   /** 工作目录 */
   cwd: string;
+  /** 进程环境变量（可选；默认继承当前进程） */
+  env?: NodeJS.ProcessEnv;
   /** 超时时间（毫秒），默认 120000 */
   timeoutMs?: number;
   /** 取消信号（可选） */
@@ -235,7 +237,7 @@ async function writeFullOutput(
 export async function runBashCommand(
   options: BashRunnerOptions
 ): Promise<BashRunnerResult> {
-  const { command, cwd, timeoutMs = DEFAULT_TIMEOUT_MS, signal, onUpdate } = options;
+  const { command, cwd, env, timeoutMs = DEFAULT_TIMEOUT_MS, signal, onUpdate } = options;
 
   const started = Date.now();
   let stdout = "";
@@ -253,7 +255,7 @@ export async function runBashCommand(
         proc = spawn(command, {
           cwd,
           shell: true,
-          env: { ...process.env, PWD: cwd },
+          env: { ...process.env, ...env, PWD: cwd },
         });
 
         // 处理 stdout（流式输出）

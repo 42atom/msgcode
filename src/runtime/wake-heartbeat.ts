@@ -7,12 +7,14 @@
  */
 
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import { logger } from "../logger/index.js";
 import { getPendingWakeRecords } from "./wake-store.js";
 import { claimWakeRecord, releaseWakeClaim } from "./wake-claim.js";
 import { consumeWakeRecord, type WakeWorkCapsule } from "./wake-consume.js";
 import type { WakeRecord } from "./wake-types.js";
 import type { TaskRecord } from "./task-types.js";
+import { TaskStore } from "./task-store.js";
 
 /**
  * Wake Heartbeat 配置
@@ -44,6 +46,25 @@ export interface WakeConsumeResult {
 const DEFAULT_MAX_CONSUME = 3;
 const DEFAULT_CONSUMER = "heartbeat-consumer";
 const DEFAULT_LEASE_MS = 5 * 60 * 1000; // 5分钟
+
+function getWorkspaceTaskDir(workspacePath: string): string {
+  return path.join(workspacePath, ".msgcode", "tasks");
+}
+
+async function loadRuntimeTaskForWake(
+  workspacePath: string,
+  wakeRecord: WakeRecord
+): Promise<TaskRecord | null> {
+  if (!wakeRecord.taskId) {
+    return null;
+  }
+
+  const taskStore = new TaskStore({
+    taskDir: getWorkspaceTaskDir(workspacePath),
+  });
+
+  return taskStore.getActiveTask(wakeRecord.taskId);
+}
 
 /**
  * 在 heartbeat tick 中消费 pending wake records
@@ -116,11 +137,13 @@ export async function consumePendingWakes(
         workspacePath,
       });
 
+      const runtimeTask = await loadRuntimeTaskForWake(workspacePath, record);
+
       // 获取消费上下文并调用消费者
       const consumeResult = await consumeWakeRecord({
         workspacePath,
         wakeRecordId: record.id,
-        runtimeTask: null, // TODO: 后续可以传入当前 runtime task
+        runtimeTask,
       });
 
       // 调用消费者回调

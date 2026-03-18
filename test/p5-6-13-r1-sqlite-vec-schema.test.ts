@@ -2,7 +2,7 @@
  * msgcode: P5.6.13-R1 sqlite-vec 回归锁测试
  *
  * 验证向量存储 schema、扩展加载和降级能力
- * 注意：由于 better-sqlite3 在 Bun 下不支持，运行时测试需要通过 tsx 执行
+ * 注意：由于 better-sqlite3 在 Bun 下不支持，触达 SQLite 的运行时验证必须走 Node 入口
  */
 
 import { describe, it, expect } from "vitest";

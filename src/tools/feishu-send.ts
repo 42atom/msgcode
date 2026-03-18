@@ -21,6 +21,7 @@ export interface FeishuSendFileResult {
     error?: string;
     attachmentType?: "file" | "image";
     attachmentKey?: string;
+    receipt?: string;
     chatId: string;
 }
 
@@ -88,6 +89,7 @@ export async function feishuSendFile(
                 chatId: args.chatId,
                 attachmentType: result.attachmentType,
                 attachmentKey: result.attachmentKey,
+                receipt: result.receipt,
             };
         }
 

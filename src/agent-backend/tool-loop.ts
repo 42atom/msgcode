@@ -106,6 +106,62 @@ type ResolveModelParams = {
     modelsListPath?: string;
 };
 
+type ToolLoopCoreParams = {
+    traceId: string;
+    route: "tool" | "complex-tool";
+    model: string;
+    workspacePath: string;
+    currentMessageId?: string;
+    defaultActionTargetMessageId?: string;
+    actionJournal: ActionJournalEntry[];
+    quotaProfile: "conservative" | "balanced" | "aggressive";
+    perTurnToolCallLimit: number;
+    perTurnToolStepLimit: number;
+    currentToolCalls: ToolCall[];
+    executedToolCalls: ExecutedToolCall[];
+    stepId: number;
+};
+
+type ToolLoopCoreResult = {
+    stepId: number;
+    roundExecutedToolCalls: ExecutedToolCall[];
+    quotaResult?: AgentToolLoopResult;
+};
+
+type CompletedToolLoopParams = {
+    traceId: string;
+    provider: string;
+    route: "tool" | "complex-tool";
+    model: string;
+    actionJournal: ActionJournalEntry[];
+    executedToolCalls: ExecutedToolCall[];
+    answer: string;
+    quotaProfile: "conservative" | "balanced" | "aggressive";
+    perTurnToolCallLimit: number;
+    perTurnToolStepLimit: number;
+    stopReason?: string | null;
+    finishReason?: string | null;
+};
+
+type SerializedExecutedToolResult = {
+    toolCallId: string;
+    content: string;
+};
+
+type OpenAiConversationMessage = {
+    role: string;
+    content?: string;
+    tool_calls?: ToolCall[];
+    tool_call_id?: string;
+};
+
+type OpenAiToolRoundResponse = {
+    assistantRole: string;
+    assistantContent?: string;
+    toolCalls: ToolCall[];
+    finishReason: string | null;
+};
+
 /**
  * 统一后端 URL 归一化：
  * - 去掉尾部 `/`
@@ -272,6 +328,354 @@ function maybeBuildToolStepQuotaResult(params: {
         observed: params.executedToolSteps,
         limit: isHardCapExceeded ? HARD_CAP_TOOL_STEPS : params.perTurnToolStepLimit,
         lastExecutedCall: params.lastExecutedCall,
+    });
+}
+
+async function executeToolCallRound(params: ToolLoopCoreParams): Promise<ToolLoopCoreResult> {
+    const roundExecutedToolCalls: ExecutedToolCall[] = [];
+    let nextStepId = params.stepId;
+
+    for (const tc of params.currentToolCalls) {
+        let args: Record<string, unknown> = {};
+        try {
+            args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
+        } catch {
+            args = {};
+        }
+        let toolResult: ToolRunResult;
+        try {
+            toolResult = await runTool(tc.function.name, args, params.workspacePath, {
+                currentMessageId: params.currentMessageId,
+                defaultActionTargetMessageId: params.defaultActionTargetMessageId,
+            });
+        } catch (e) {
+            toolResult = {
+                error: e instanceof Error ? e.message : String(e),
+                errorCode: "TOOL_EXEC_FAILED",
+                durationMs: 0,
+            };
+        }
+
+        const executed: ExecutedToolCall = { tc, args, result: buildConversationToolResult(toolResult) };
+
+        if (toolResult.error) {
+            const toolErrorCode = toolResult.errorCode || "TOOL_EXEC_FAILED";
+
+            nextStepId++;
+            params.actionJournal.push({
+                traceId: params.traceId,
+                stepId: nextStepId,
+                phase: "act",
+                timestamp: Date.now(),
+                route: params.route,
+                model: params.model,
+                tool: tc.function.name,
+                ok: false,
+                exitCode: toolResult.exitCode ?? undefined,
+                errorCode: toolErrorCode,
+                errorMessage: normalizeToolErrorMessage(toolResult.error),
+                stdoutTail: toolResult.stdoutTail ?? undefined,
+                stderrTail: toolResult.stderrTail ?? undefined,
+                fullOutputPath: toolResult.fullOutputPath ?? undefined,
+                durationMs: toolResult.durationMs,
+            });
+            params.executedToolCalls.push(executed);
+            roundExecutedToolCalls.push(executed);
+
+            const quotaResult = maybeBuildToolStepQuotaResult({
+                actionJournal: params.actionJournal,
+                quotaProfile: params.quotaProfile,
+                perTurnToolCallLimit: params.perTurnToolCallLimit,
+                perTurnToolStepLimit: params.perTurnToolStepLimit,
+                currentToolCallsLength: params.currentToolCalls.length,
+                executedToolSteps: params.executedToolCalls.length,
+                lastExecutedCall: params.executedToolCalls[params.executedToolCalls.length - 1],
+            });
+            return {
+                stepId: nextStepId,
+                roundExecutedToolCalls,
+                quotaResult,
+            };
+        }
+
+        params.executedToolCalls.push(executed);
+        roundExecutedToolCalls.push(executed);
+
+        nextStepId++;
+        params.actionJournal.push({
+            traceId: params.traceId,
+            stepId: nextStepId,
+            phase: "act",
+            timestamp: Date.now(),
+            route: params.route,
+            model: params.model,
+            tool: tc.function.name,
+            ok: true,
+            readFilePath: maybeExtractSkillReadFilePath(tc.function.name, toolResult),
+            durationMs: toolResult.durationMs,
+        });
+
+        const quotaResult = maybeBuildToolStepQuotaResult({
+            actionJournal: params.actionJournal,
+            quotaProfile: params.quotaProfile,
+            perTurnToolCallLimit: params.perTurnToolCallLimit,
+            perTurnToolStepLimit: params.perTurnToolStepLimit,
+            currentToolCallsLength: params.currentToolCalls.length,
+            executedToolSteps: params.executedToolCalls.length,
+            lastExecutedCall: params.executedToolCalls[params.executedToolCalls.length - 1],
+        });
+        if (quotaResult) {
+            return {
+                stepId: nextStepId,
+                roundExecutedToolCalls,
+                quotaResult,
+            };
+        }
+    }
+
+    return {
+        stepId: nextStepId,
+        roundExecutedToolCalls,
+    };
+}
+
+function buildCompletedToolLoopResult(params: CompletedToolLoopParams): AgentToolLoopResult {
+    const firstCall = params.executedToolCalls[0]
+        ? {
+            name: params.executedToolCalls[0].tc.function.name,
+            args: params.executedToolCalls[0].args,
+            result: params.executedToolCalls[0].result,
+        }
+        : undefined;
+    const metadataRoute = firstCall !== undefined ? "tool" : "no-tool";
+
+    logger.info("agent final response metadata", {
+        module: "agent-backend/tool-loop",
+        traceId: params.traceId,
+        route: metadataRoute,
+        provider: params.provider,
+        ...(params.stopReason !== undefined ? { stopReason: params.stopReason } : {}),
+        ...(params.finishReason !== undefined ? { finishReason: params.finishReason } : {}),
+        maxTokens: MAIN_AGENT_MAX_TOKENS,
+    });
+
+    return {
+        answer: params.answer,
+        toolCall: firstCall,
+        actionJournal: params.actionJournal,
+        decisionSource: params.executedToolCalls.length === 0 ? "model" : undefined,
+        quotaProfile: params.quotaProfile,
+        perTurnToolCallLimit: params.perTurnToolCallLimit,
+        perTurnToolStepLimit: params.perTurnToolStepLimit,
+        remainingToolCalls: params.perTurnToolCallLimit,
+        remainingSteps: params.perTurnToolStepLimit - params.executedToolCalls.length,
+    };
+}
+
+function serializeExecutedToolResults(roundExecutedToolCalls: ExecutedToolCall[]): SerializedExecutedToolResult[] {
+    return roundExecutedToolCalls.map(({ tc, result }) => ({
+        toolCallId: tc.id,
+        content: serializeToolResultForConversation(result),
+    }));
+}
+
+function buildMiniMaxRoundReplayMessages(
+    contentBlocks: MiniMaxAnthropicContentBlock[],
+    serializedToolResults: SerializedExecutedToolResult[],
+): MiniMaxAnthropicMessage[] {
+    return [
+        {
+            role: "assistant",
+            content: contentBlocks,
+        },
+        {
+            role: "user",
+            content: serializedToolResults.map(({ toolCallId, content }) => ({
+                type: "tool_result" as const,
+                tool_use_id: toolCallId,
+                content,
+            })),
+        },
+    ];
+}
+
+function buildOpenAiRoundReplayMessages(params: {
+    assistantRole: string;
+    assistantContent?: string;
+    toolCalls: ToolCall[];
+    serializedToolResults: SerializedExecutedToolResult[];
+}): OpenAiConversationMessage[] {
+    const assistantMessage: OpenAiConversationMessage = {
+        role: params.assistantRole,
+        tool_calls: params.toolCalls,
+    };
+    if (params.assistantContent !== undefined) {
+        assistantMessage.content = params.assistantContent;
+    }
+
+    const toolResultMessages: OpenAiConversationMessage[] = params.serializedToolResults.map(({ toolCallId, content }) => ({
+        role: "tool",
+        tool_call_id: toolCallId,
+        content,
+    }));
+
+    return [assistantMessage, ...toolResultMessages];
+}
+
+async function buildOpenAiExecSystemPrompt(params: {
+    baseSystem: string;
+    backendRuntime: AgentBackendRuntime;
+    workspacePath: string;
+    workspaceRootForTools: string;
+    toolNames: ToolName[];
+}): Promise<string> {
+    const useMcp = params.backendRuntime.nativeApiEnabled && process.env.LMSTUDIO_ENABLE_MCP === "1" && !!params.workspacePath;
+    let system = buildExecSystemPrompt(params.baseSystem, useMcp);
+
+    system += `\n\n${await renderLlmToolIndexForWorkspace(params.toolNames, params.workspaceRootForTools)}`;
+    const workspacePathHint = buildWorkspacePathHint(params.workspacePath);
+    if (workspacePathHint) {
+        system += `\n\n${workspacePathHint}`;
+    }
+    const nativeToolPriorityHint = buildNativeToolPriorityHint(params.toolNames);
+    if (nativeToolPriorityHint) {
+        system += `\n\n${nativeToolPriorityHint}`;
+    }
+    const browserRuntimeHint = buildBrowserRuntimeHint(params.toolNames);
+    if (browserRuntimeHint) {
+        system += `\n\n${browserRuntimeHint}`;
+    }
+
+    // 技能系统注入：只有真实暴露了 read_file + bash 时才提示
+    if (params.toolNames.includes("read_file") && params.toolNames.includes("bash")) {
+        try {
+            const { existsSync } = await import("node:fs");
+            const { join } = await import("node:path");
+            const os = await import("node:os");
+            const globalSkillIndexPath = join(os.homedir(), ".config", "msgcode", "skills", "index.json");
+
+            let skillHint = "\n\n[技能系统]\n";
+            if (existsSync(globalSkillIndexPath)) {
+                try {
+                    const indexContent = await fsPromises.readFile(globalSkillIndexPath, "utf-8");
+                    skillHint += `全局 skills 索引 JSON（只读）:\n${indexContent.trim()}\n`;
+                    const index = JSON.parse(indexContent);
+                    if (index.skills && Array.isArray(index.skills) && index.skills.length > 0) {
+                        const skillIds: string[] = [];
+                        for (const skill of index.skills) {
+                            if (!skill || typeof skill !== "object") continue;
+                            const id = (skill as { id?: unknown }).id;
+                            if (typeof id === "string" && id.trim()) {
+                                skillIds.push(id);
+                            }
+                        }
+                        if (skillIds.length > 0) {
+                            skillHint += `全局技能：${skillIds.join(", ")}\n`;
+                        }
+                    }
+                } catch {
+                    // 忽略
+                }
+            }
+            skillHint += "调用方式：read_file 先读 ~/.config/msgcode/skills/<id>/SKILL.md。把 SKILL.md 当成能力说明书 / 接口文档，仔细阅读后再按里面写明的真实调用合同执行；不要自造 wrapper，不要猜 main.sh，也不要猜 skill 目录里还有别的脚本。skill 是说明书，不是默认执行入口。若当前能力已经作为原生工具暴露（例如 browser、feishu_send_file），优先调用原生工具，不要先绕回 bash/CLI。只有当前能力没有原生工具，或需要额外 CLI / 脚本合同知识时，才读 skill 后继续走 bash/CLI。判断某个 skill 能做什么、不能做什么之前，必须先读清 SKILL.md；如果看完仍然不确定，就先和用户沟通，不要先下结论。";
+            system += skillHint;
+        } catch {
+            // 忽略
+        }
+    }
+
+    return system.trim();
+}
+
+function buildOpenAiConversationMessages(params: {
+    system: string;
+    summaryContext?: AgentToolLoopOptions["summaryContext"];
+    windowMessages?: AgentToolLoopOptions["windowMessages"];
+    prompt: string;
+}): OpenAiConversationMessage[] {
+    const messages: OpenAiConversationMessage[] = [];
+    if (params.system) {
+        messages.push({ role: "system", content: params.system });
+    }
+
+    const contextBlocks = buildConversationContextBlocks({
+        summaryContext: params.summaryContext,
+        windowMessages: params.windowMessages,
+    });
+
+    if (contextBlocks.summaryText) {
+        messages.push({
+            role: "assistant",
+            content: `[历史对话摘要]\n${contextBlocks.summaryText}`,
+        });
+    }
+
+    if (contextBlocks.windowMessages.length > 0) {
+        for (const msg of contextBlocks.windowMessages) {
+            messages.push({ role: msg.role, content: msg.content });
+        }
+    }
+
+    messages.push({ role: "user", content: params.prompt });
+    return messages;
+}
+
+async function requestOpenAiToolRound(params: {
+    baseUrl: string;
+    model: string;
+    messages: OpenAiConversationMessage[];
+    tools: readonly unknown[];
+    toolChoice?: ToolChoice;
+    timeoutMs: number;
+    apiKey?: string;
+}): Promise<OpenAiToolRoundResponse> {
+    const round = await callChatCompletionsRaw({
+        baseUrl: params.baseUrl,
+        model: params.model,
+        messages: params.messages,
+        tools: params.tools,
+        toolChoice: params.toolChoice ?? "auto",
+        temperature: 0,
+        maxTokens: MAIN_AGENT_MAX_TOKENS,
+        timeoutMs: params.timeoutMs,
+        apiKey: params.apiKey,
+    });
+
+    const nextMessage = round.choices[0]?.message;
+    return {
+        assistantRole: nextMessage?.role || "assistant",
+        assistantContent: nextMessage?.content,
+        toolCalls: nextMessage?.tool_calls ?? [],
+        finishReason: round.finishReason ?? null,
+    };
+}
+
+async function requestMiniMaxToolRound(params: {
+    baseUrl: string;
+    model: string;
+    messages: MiniMaxAnthropicMessage[];
+    system?: string;
+    tools: readonly unknown[];
+    timeoutMs: number;
+    apiKey?: string;
+}): Promise<{
+    role: string;
+    contentBlocks: MiniMaxAnthropicContentBlock[];
+    content: string;
+    toolCalls: ToolCall[];
+    stopReason: string | null;
+}> {
+    return await callMiniMaxAnthropicRaw({
+        baseUrl: params.baseUrl,
+        model: params.model,
+        messages: params.messages,
+        system: params.system,
+        tools: params.tools,
+        toolChoice: params.tools.length > 0 ? { type: "auto" } : undefined,
+        temperature: 0,
+        maxTokens: MAIN_AGENT_MAX_TOKENS,
+        timeoutMs: params.timeoutMs,
+        apiKey: params.apiKey,
     });
 }
 
@@ -955,19 +1359,12 @@ async function runMiniMaxAnthropicToolLoop(params: {
 
     const anthropicContext = splitSystemFromMessages(params.baseMessages);
     let conversationMessages = anthropicContext.messages;
-    const initialToolChoice: MiniMaxAnthropicToolChoice | undefined = params.activeToolSchemas.length > 0
-        ? { type: "auto" }
-        : undefined;
-
-    let response = await callMiniMaxAnthropicRaw({
+    let response = await requestMiniMaxToolRound({
         baseUrl: params.baseUrl,
         model: params.model,
         messages: conversationMessages,
         system: anthropicContext.system,
         tools: params.activeToolSchemas,
-        toolChoice: initialToolChoice,
-        temperature: 0,
-        maxTokens: MAIN_AGENT_MAX_TOKENS,
         timeoutMs: params.timeoutMs,
         apiKey: params.apiKey,
     });
@@ -992,127 +1389,40 @@ async function runMiniMaxAnthropicToolLoop(params: {
         }
 
         if (currentToolCalls.length > 0) {
-            const roundExecutedToolCalls: ExecutedToolCall[] = [];
-
-            for (const tc of currentToolCalls) {
-                let args: Record<string, unknown> = {};
-                try {
-                    args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
-                } catch {
-                    args = {};
-                }
-                let toolResult: ToolRunResult;
-                try {
-                    toolResult = await runTool(tc.function.name, args, params.workspacePath, {
-                        currentMessageId: params.currentMessageId,
-                        defaultActionTargetMessageId: params.defaultActionTargetMessageId,
-                    });
-                } catch (e) {
-                    toolResult = {
-                        error: e instanceof Error ? e.message : String(e),
-                        errorCode: "TOOL_EXEC_FAILED",
-                        durationMs: 0,
-                    };
-                }
-
-                const executed: ExecutedToolCall = { tc, args, result: buildConversationToolResult(toolResult) };
-
-                if (toolResult.error) {
-                    const toolErrorCode = toolResult.errorCode || "TOOL_EXEC_FAILED";
-
-                    stepId++;
-                    actionJournal.push({
-                        traceId: params.traceId,
-                        stepId,
-                        phase: "act",
-                        timestamp: Date.now(),
-                        route: params.route,
-                        model: params.model,
-                        tool: tc.function.name,
-                        ok: false,
-                        exitCode: toolResult.exitCode ?? undefined,
-                        errorCode: toolErrorCode,
-                        errorMessage: normalizeToolErrorMessage(toolResult.error),
-                        stdoutTail: toolResult.stdoutTail ?? undefined,
-                        stderrTail: toolResult.stderrTail ?? undefined,
-                        fullOutputPath: toolResult.fullOutputPath ?? undefined,
-                        durationMs: toolResult.durationMs,
-                    });
-                    executedToolCalls.push(executed);
-                    roundExecutedToolCalls.push(executed);
-
-                    const toolStepQuotaResult = maybeBuildToolStepQuotaResult({
-                        actionJournal,
-                        quotaProfile: params.quotaProfile,
-                        perTurnToolCallLimit: params.perTurnToolCallLimit,
-                        perTurnToolStepLimit: params.perTurnToolStepLimit,
-                        currentToolCallsLength: currentToolCalls.length,
-                        executedToolSteps: executedToolCalls.length,
-                        lastExecutedCall: executedToolCalls[executedToolCalls.length - 1],
-                    });
-                    if (toolStepQuotaResult) {
-                        return toolStepQuotaResult;
-                    }
-                    break;
-                }
-
-                executedToolCalls.push(executed);
-                roundExecutedToolCalls.push(executed);
-
-                stepId++;
-                actionJournal.push({
-                    traceId: params.traceId,
-                    stepId,
-                    phase: "act",
-                    timestamp: Date.now(),
-                    route: params.route,
-                    model: params.model,
-                    tool: tc.function.name,
-                    ok: true,
-                    readFilePath: maybeExtractSkillReadFilePath(tc.function.name, toolResult),
-                    durationMs: toolResult.durationMs,
-                });
-
-                const toolStepQuotaResult = maybeBuildToolStepQuotaResult({
-                    actionJournal,
-                    quotaProfile: params.quotaProfile,
-                    perTurnToolCallLimit: params.perTurnToolCallLimit,
-                    perTurnToolStepLimit: params.perTurnToolStepLimit,
-                    currentToolCallsLength: currentToolCalls.length,
-                    executedToolSteps: executedToolCalls.length,
-                    lastExecutedCall: executedToolCalls[executedToolCalls.length - 1],
-                });
-                if (toolStepQuotaResult) {
-                    return toolStepQuotaResult;
-                }
+            const roundResult = await executeToolCallRound({
+                traceId: params.traceId,
+                route: params.route,
+                model: params.model,
+                workspacePath: params.workspacePath,
+                currentMessageId: params.currentMessageId,
+                defaultActionTargetMessageId: params.defaultActionTargetMessageId,
+                actionJournal,
+                quotaProfile: params.quotaProfile,
+                perTurnToolCallLimit: params.perTurnToolCallLimit,
+                perTurnToolStepLimit: params.perTurnToolStepLimit,
+                currentToolCalls,
+                executedToolCalls,
+                stepId,
+            });
+            stepId = roundResult.stepId;
+            const roundExecutedToolCalls = roundResult.roundExecutedToolCalls;
+            if (roundResult.quotaResult) {
+                return roundResult.quotaResult;
             }
 
             if (roundExecutedToolCalls.length > 0) {
-                const assistantMessage: MiniMaxAnthropicMessage = {
-                    role: "assistant",
-                    content: currentResponse.contentBlocks,
-                };
-                const toolResultMessage: MiniMaxAnthropicMessage = {
-                    role: "user",
-                    content: roundExecutedToolCalls.map(({ tc, result }) => ({
-                        type: "tool_result" as const,
-                        tool_use_id: tc.id,
-                        content: serializeToolResultForConversation(result),
-                    })),
-                };
+                const serializedToolResults = serializeExecutedToolResults(roundExecutedToolCalls);
+                conversationMessages = [
+                    ...conversationMessages,
+                    ...buildMiniMaxRoundReplayMessages(currentResponse.contentBlocks, serializedToolResults),
+                ];
 
-                conversationMessages = [...conversationMessages, assistantMessage, toolResultMessage];
-
-                currentResponse = await callMiniMaxAnthropicRaw({
+                currentResponse = await requestMiniMaxToolRound({
                     baseUrl: params.baseUrl,
                     model: params.model,
                     messages: conversationMessages,
                     system: anthropicContext.system,
                     tools: params.activeToolSchemas,
-                    // P0 松绑：使用 auto 让模型自由选择
-                    toolChoice: { type: "auto" },
-                    temperature: 0,
-                    maxTokens: MAIN_AGENT_MAX_TOKENS,
                     timeoutMs: params.timeoutMs,
                     apiKey: params.apiKey,
                 });
@@ -1122,30 +1432,19 @@ async function runMiniMaxAnthropicToolLoop(params: {
         }
         if (currentToolCalls.length > 0) continue;
 
-        const finalAnswer = currentResponse.content || "";
-        const firstCall = executedToolCalls[0]
-            ? { name: executedToolCalls[0].tc.function.name, args: executedToolCalls[0].args, result: executedToolCalls[0].result }
-            : undefined;
-        const metadataRoute = firstCall !== undefined ? "tool" : "no-tool";
-        logger.info("agent final response metadata", {
-            module: "agent-backend/tool-loop",
+        return buildCompletedToolLoopResult({
             traceId: params.traceId,
-            route: metadataRoute,
             provider: "minimax",
-            stopReason: currentResponse.stopReason,
-            maxTokens: MAIN_AGENT_MAX_TOKENS,
-        });
-        return {
-            answer: finalAnswer,
-            toolCall: firstCall,
+            route: params.route,
+            model: params.model,
             actionJournal,
-            decisionSource: executedToolCalls.length === 0 ? "model" : undefined,
+            executedToolCalls,
+            answer: currentResponse.content || "",
             quotaProfile: params.quotaProfile,
             perTurnToolCallLimit: params.perTurnToolCallLimit,
             perTurnToolStepLimit: params.perTurnToolStepLimit,
-            remainingToolCalls: params.perTurnToolCallLimit,
-            remainingSteps: params.perTurnToolStepLimit - executedToolCalls.length,
-        };
+            stopReason: currentResponse.stopReason,
+        });
     }
 }
 
@@ -1238,86 +1537,19 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     const baseSystem = await resolveBaseSystemPrompt(options.system);
     const workspacePath = options.workspacePath || root;
     const toolNames = options.tools ? (options.tools as ToolName[]) : await getToolsForLlm(workspaceRootForTools);
-    const useMcp = backendRuntime.nativeApiEnabled && process.env.LMSTUDIO_ENABLE_MCP === "1" && !!workspacePath;
-    let system = buildExecSystemPrompt(baseSystem, useMcp);
-
-    system += `\n\n${await renderLlmToolIndexForWorkspace(toolNames, workspaceRootForTools)}`;
-    const workspacePathHint = buildWorkspacePathHint(workspacePath);
-    if (workspacePathHint) {
-        system += `\n\n${workspacePathHint}`;
-    }
-    const nativeToolPriorityHint = buildNativeToolPriorityHint(toolNames);
-    if (nativeToolPriorityHint) {
-        system += `\n\n${nativeToolPriorityHint}`;
-    }
-    const browserRuntimeHint = buildBrowserRuntimeHint(toolNames);
-    if (browserRuntimeHint) {
-        system += `\n\n${browserRuntimeHint}`;
-    }
-
-    // 技能系统注入：只有真实暴露了 read_file + bash 时才提示
-    if (toolNames.includes("read_file") && toolNames.includes("bash")) {
-        try {
-            const { existsSync } = await import("node:fs");
-            const { join } = await import("node:path");
-            const os = await import("node:os");
-            const globalSkillIndexPath = join(os.homedir(), ".config", "msgcode", "skills", "index.json");
-
-            let skillHint = "\n\n[技能系统]\n";
-            if (existsSync(globalSkillIndexPath)) {
-                try {
-                    const indexContent = await fsPromises.readFile(globalSkillIndexPath, "utf-8");
-                    skillHint += `全局 skills 索引 JSON（只读）:\n${indexContent.trim()}\n`;
-                    const index = JSON.parse(indexContent);
-                    if (index.skills && Array.isArray(index.skills) && index.skills.length > 0) {
-                        const skillIds: string[] = [];
-                        for (const skill of index.skills) {
-                            if (!skill || typeof skill !== "object") continue;
-                            const id = (skill as { id?: unknown }).id;
-                            if (typeof id === "string" && id.trim()) {
-                                skillIds.push(id);
-                            }
-                        }
-                        if (skillIds.length > 0) {
-                            skillHint += `全局技能：${skillIds.join(", ")}\n`;
-                        }
-                    }
-                } catch {
-                    // 忽略
-                }
-            }
-            skillHint += "调用方式：read_file 先读 ~/.config/msgcode/skills/<id>/SKILL.md。把 SKILL.md 当成能力说明书 / 接口文档，仔细阅读后再按里面写明的真实调用合同执行；不要自造 wrapper，不要猜 main.sh，也不要猜 skill 目录里还有别的脚本。skill 是说明书，不是默认执行入口。若当前能力已经作为原生工具暴露（例如 browser、feishu_send_file），优先调用原生工具，不要先绕回 bash/CLI。只有当前能力没有原生工具，或需要额外 CLI / 脚本合同知识时，才读 skill 后继续走 bash/CLI。判断某个 skill 能做什么、不能做什么之前，必须先读清 SKILL.md；如果看完仍然不确定，就先和用户沟通，不要先下结论。";
-            system += skillHint;
-        } catch {
-            // 忽略
-        }
-    }
-
-    const messages: Array<{ role: string; content?: string; tool_call_id?: string; tool_calls?: ToolCall[] }> = [];
-    if (system && system.trim()) {
-        messages.push({ role: "system", content: system.trim() });
-    }
-
-    const contextBlocks = buildConversationContextBlocks({
+    const system = await buildOpenAiExecSystemPrompt({
+        baseSystem,
+        backendRuntime,
+        workspacePath,
+        workspaceRootForTools,
+        toolNames,
+    });
+    const messages = buildOpenAiConversationMessages({
+        system,
         summaryContext: options.summaryContext,
         windowMessages: options.windowMessages,
+        prompt: options.prompt,
     });
-
-    // 注入短期记忆上下文
-    if (contextBlocks.summaryText) {
-        messages.push({
-            role: "assistant",
-            content: `[历史对话摘要]\n${contextBlocks.summaryText}`
-        });
-    }
-
-    if (contextBlocks.windowMessages.length > 0) {
-        for (const msg of contextBlocks.windowMessages) {
-            messages.push({ role: msg.role, content: msg.content });
-        }
-    }
-
-    messages.push({ role: "user", content: options.prompt });
 
     const preferredToolChoice: ToolChoice | undefined = undefined;
 
@@ -1349,26 +1581,21 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     }
 
     // 第一次请求
-    const r1 = await callChatCompletionsRaw({
+    const firstRound = await requestOpenAiToolRound({
         baseUrl,
         model: usedModel,
         messages,
         tools: activeToolSchemas,
-        toolChoice: preferredToolChoice ?? "auto",
-        temperature: 0,
-        maxTokens: MAIN_AGENT_MAX_TOKENS,
+        toolChoice: preferredToolChoice,
         timeoutMs,
         apiKey: backendRuntime.apiKey,
     });
 
-    let msg1 = r1.choices[0]?.message;
-    let toolCalls = msg1?.tool_calls ?? [];
-    let currentFinishReason = r1.finishReason ?? null;
-
     const executedToolCalls: ExecutedToolCall[] = [];
-    let currentAssistantRole = msg1?.role || "assistant";
-    let currentAssistantContent = msg1?.content;
-    let currentToolCalls = toolCalls;
+    let currentAssistantRole = firstRound.assistantRole;
+    let currentAssistantContent = firstRound.assistantContent;
+    let currentToolCalls = firstRound.toolCalls;
+    let currentFinishReason = firstRound.finishReason;
     let conversationMessages = [...messages];
     while (true) {
         // P5.7-R12-T8: 单轮工具调用数检查
@@ -1386,166 +1613,71 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
         }
 
         if (currentToolCalls.length > 0) {
-            const roundExecutedToolCalls: ExecutedToolCall[] = [];
-
-            for (const tc of currentToolCalls) {
-                let args: Record<string, unknown> = {};
-                try {
-                    args = tc.function.arguments ? JSON.parse(tc.function.arguments) : {};
-                } catch {
-                    args = {};
-                }
-                let toolResult: ToolRunResult;
-                try {
-                    toolResult = await runTool(tc.function.name, args, workspacePath, {
-                        currentMessageId: options.currentMessageId,
-                        defaultActionTargetMessageId: options.defaultActionTargetMessageId,
-                    });
-                } catch (e) {
-                    toolResult = {
-                        error: e instanceof Error ? e.message : String(e),
-                        errorCode: "TOOL_EXEC_FAILED",
-                        durationMs: 0,
-                    };
-                }
-
-                const executed: ExecutedToolCall = { tc, args, result: buildConversationToolResult(toolResult) };
-
-                if (toolResult.error) {
-                    const toolErrorCode = toolResult.errorCode || "TOOL_EXEC_FAILED";
-
-                    stepId++;
-                    actionJournal.push({
-                        traceId,
-                        stepId,
-                        phase: "act",
-                        timestamp: Date.now(),
-                        route,
-                        model: usedModel,
-                        tool: tc.function.name,
-                        ok: false,
-                        exitCode: toolResult.exitCode ?? undefined,
-                        errorCode: toolErrorCode,
-                        errorMessage: normalizeToolErrorMessage(toolResult.error),
-                        stdoutTail: toolResult.stdoutTail ?? undefined,
-                        stderrTail: toolResult.stderrTail ?? undefined,
-                        fullOutputPath: toolResult.fullOutputPath ?? undefined,
-                        durationMs: toolResult.durationMs,
-                    });
-                    executedToolCalls.push(executed);
-                    roundExecutedToolCalls.push(executed);
-
-                    const toolStepQuotaResult = maybeBuildToolStepQuotaResult({
-                        actionJournal,
-                        quotaProfile,
-                        perTurnToolCallLimit,
-                        perTurnToolStepLimit,
-                        currentToolCallsLength: currentToolCalls.length,
-                        executedToolSteps: executedToolCalls.length,
-                        lastExecutedCall: executedToolCalls[executedToolCalls.length - 1],
-                    });
-                    if (toolStepQuotaResult) {
-                        return toolStepQuotaResult;
-                    }
-                    break;
-                }
-
-                executedToolCalls.push(executed);
-                roundExecutedToolCalls.push(executed);
-
-                stepId++;
-                actionJournal.push({
-                    traceId,
-                    stepId,
-                    phase: "act",
-                    timestamp: Date.now(),
-                    route,
-                    model: usedModel,
-                    tool: tc.function.name,
-                    ok: true,
-                    readFilePath: maybeExtractSkillReadFilePath(tc.function.name, toolResult),
-                    durationMs: toolResult.durationMs,
-                });
-
-                // P5.7-R12-T8: 总工具步骤数检查
-                const toolStepQuotaResult = maybeBuildToolStepQuotaResult({
-                    actionJournal,
-                    quotaProfile,
-                    perTurnToolCallLimit,
-                    perTurnToolStepLimit,
-                    currentToolCallsLength: currentToolCalls.length,
-                    executedToolSteps: executedToolCalls.length,
-                    lastExecutedCall: executedToolCalls[executedToolCalls.length - 1],
-                });
-                if (toolStepQuotaResult) {
-                    return toolStepQuotaResult;
-                }
+            const roundResult = await executeToolCallRound({
+                traceId,
+                route,
+                model: usedModel,
+                workspacePath,
+                currentMessageId: options.currentMessageId,
+                defaultActionTargetMessageId: options.defaultActionTargetMessageId,
+                actionJournal,
+                quotaProfile,
+                perTurnToolCallLimit,
+                perTurnToolStepLimit,
+                currentToolCalls,
+                executedToolCalls,
+                stepId,
+            });
+            stepId = roundResult.stepId;
+            const roundExecutedToolCalls = roundResult.roundExecutedToolCalls;
+            if (roundResult.quotaResult) {
+                return roundResult.quotaResult;
             }
 
             if (roundExecutedToolCalls.length > 0) {
-                const assistantMsg: { role: string; content?: string; tool_calls?: ToolCall[] } = {
-                    role: currentAssistantRole,
-                    tool_calls: currentToolCalls,
-                };
-                if (currentAssistantContent !== undefined) {
-                    assistantMsg.content = currentAssistantContent;
-                }
+                const serializedToolResults = serializeExecutedToolResults(roundExecutedToolCalls);
+                conversationMessages = [
+                    ...conversationMessages,
+                    ...buildOpenAiRoundReplayMessages({
+                        assistantRole: currentAssistantRole,
+                        assistantContent: currentAssistantContent,
+                        toolCalls: currentToolCalls,
+                        serializedToolResults,
+                    }),
+                ];
 
-                const toolResultMessages = roundExecutedToolCalls.map(({ tc, result }) => ({
-                    role: "tool" as const,
-                    tool_call_id: tc.id,
-                    content: serializeToolResultForConversation(result)
-                }));
-
-                conversationMessages = [...conversationMessages, assistantMsg, ...toolResultMessages];
-
-                const nextRound = await callChatCompletionsRaw({
+                const nextRound = await requestOpenAiToolRound({
                     baseUrl,
                     model: usedModel,
                     messages: conversationMessages,
                     tools: activeToolSchemas,
-                    toolChoice: preferredToolChoice ?? "auto",
-                    temperature: 0,
-                    maxTokens: MAIN_AGENT_MAX_TOKENS,
+                    toolChoice: preferredToolChoice,
                     timeoutMs,
                     apiKey: backendRuntime.apiKey,
                 });
 
-                const nextMsg = nextRound.choices[0]?.message;
-                currentAssistantRole = nextMsg?.role || "assistant";
-                currentAssistantContent = nextMsg?.content;
-                currentToolCalls = nextMsg?.tool_calls ?? [];
-                currentFinishReason = nextRound.finishReason ?? null;
+                currentAssistantRole = nextRound.assistantRole;
+                currentAssistantContent = nextRound.assistantContent;
+                currentToolCalls = nextRound.toolCalls;
+                currentFinishReason = nextRound.finishReason;
             }
         }
 
         if (currentToolCalls.length > 0) continue;
 
-        const finalAnswer = currentAssistantContent ?? "";
-        const firstCall = executedToolCalls[0]
-            ? { name: executedToolCalls[0].tc.function.name, args: executedToolCalls[0].args, result: executedToolCalls[0].result }
-            : undefined;
-        const metadataRoute = firstCall !== undefined ? "tool" : "no-tool";
-        logger.info("agent final response metadata", {
-            module: "agent-backend/tool-loop",
+        return buildCompletedToolLoopResult({
             traceId,
-            route: metadataRoute,
             provider: backendRuntime.id,
-            finishReason: currentFinishReason,
-            maxTokens: MAIN_AGENT_MAX_TOKENS,
-        });
-        return {
-            answer: finalAnswer,
-            toolCall: firstCall,
+            route,
+            model: usedModel,
             actionJournal,
-            decisionSource: executedToolCalls.length === 0 ? "model" : undefined,
-            // P5.7-R12-T8: 正常结束时也返回配额信息
+            executedToolCalls,
+            answer: currentAssistantContent ?? "",
             quotaProfile,
             perTurnToolCallLimit,
             perTurnToolStepLimit,
-            remainingToolCalls: perTurnToolCallLimit,
-            remainingSteps: perTurnToolStepLimit - executedToolCalls.length,
-        };
+            finishReason: currentFinishReason,
+        });
     }
 }
 

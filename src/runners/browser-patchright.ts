@@ -422,8 +422,8 @@ async function listInstanceStates(): Promise<BrowserInstanceState[]> {
   // - Prefer most recently used instances to minimize wasted CDP probes
   // - Keep deterministic tie-break to avoid "random first file blocks the whole scan"
   return states.sort((a, b) => {
-    const aTs = parseIsoMs(a.lastUsedAt ?? a.startTime) ?? 0;
-    const bTs = parseIsoMs(b.lastUsedAt ?? b.startTime) ?? 0;
+    const aTs = Date.parse(a.startTime ?? "") || 0;
+    const bTs = Date.parse(b.startTime ?? "") || 0;
     if (aTs !== bTs) {
       return bTs - aTs;
     }

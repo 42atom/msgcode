@@ -56,6 +56,28 @@ describe("P5.7-R13: downloads layout", () => {
     expect(result.localPath).toContain("/downloads/files/");
   });
 
+  it("Feishu 附件落盘时，文件名应保留 transport 前缀", async () => {
+    const workspacePath = join(tmpdir(), `msgcode-workspace-${randomUUID()}`);
+    const sourceDir = join(tmpdir(), `msgcode-source-${randomUUID()}`);
+    tempPaths.push(workspacePath, sourceDir);
+    mkdirSync(workspacePath, { recursive: true });
+    mkdirSync(sourceDir, { recursive: true });
+
+    const sourcePath = join(sourceDir, "report.html");
+    writeFileSync(sourcePath, "<html>ok</html>");
+
+    const result = await copyToVault(workspacePath, "om_feishu_123", {
+      transport: "feishu",
+      path: sourcePath,
+      filename: "report.html",
+      mime: "text/html",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.localPath).toContain("/downloads/files/");
+    expect(result.localPath).toContain("feishu_om_feishu_123_report.html");
+  });
+
   it("历史 .caf 语音在没有 mime 时也应落到 downloads/audio", async () => {
     const workspacePath = join(tmpdir(), `msgcode-workspace-${randomUUID()}`);
     const sourceDir = join(tmpdir(), `msgcode-source-${randomUUID()}`);

@@ -75,9 +75,10 @@ async function sleepMs(ms: number, signal?: AbortSignal): Promise<void> {
 async function waitForCodexJsonlPath(
     reader: CodexOutputReader,
     projectDir: string,
+    maxWaitMs: number,
     signal?: AbortSignal,
 ): Promise<string | null> {
-    const deadline = Date.now() + CODEX_JSONL_READY_WAIT_MS;
+    const deadline = Date.now() + Math.min(CODEX_JSONL_READY_WAIT_MS, maxWaitMs);
 
     while (Date.now() < deadline) {
         if (signal?.aborted) {
@@ -114,6 +115,15 @@ function findLastPromptLine(paneOutput: string): string {
     return "";
 }
 
+function extractDelegationMarkers(message: string): { doneMarker?: string; failedMarker?: string } {
+    const doneMatch = message.match(/MSGCODE_SUBAGENT_DONE [a-f0-9-]+/i);
+    const failedMatch = message.match(/MSGCODE_SUBAGENT_FAILED [a-f0-9-]+/i);
+    return {
+        doneMarker: doneMatch?.[0],
+        failedMarker: failedMatch?.[0],
+    };
+}
+
 /**
  * 发送消息到 Claude/Codex 并等待回复（T2/T3: 支持 Codex）
  *
@@ -131,6 +141,7 @@ export async function handleTmuxSend(
 ): Promise<ResponseResult> {
     const sessionName = TmuxSession.getSessionName(groupName);
     const promptForEchoRemoval = withRemoteHintIfNeeded(sessionName, message);
+    const delegationMarkers = extractDelegationMarkers(message);
     // Claude 回读定位：优先用“用户原始消息”的末行作为 marker（更稳定，不受远程上下文多行影响）
     const userMarkerLine = getMarkerLineFromUserMessage(message);
     let sentTextForMarker = ""; // baseline-tail diff 的兜底锚点（基于真实发送到 tmux 的文本）
@@ -178,14 +189,21 @@ export async function handleTmuxSend(
 
     if (runnerOld === "codex") {
         // codex_jsonl: Codex CLI JSONL 读取
-        readMode = "codex_jsonl";
         coderReader = new CodexOutputReader();
-        if (!options.projectDir) {
-            return { success: false, error: "缺少工作区路径（projectDir），无法定位 Coder CLI 会话日志。请先 /bind 绑定工作区。" };
+        if (options.projectDir) {
+            coderJsonlPath = await waitForCodexJsonlPath(coderReader, options.projectDir, timeout, signal);
         }
-        coderJsonlPath = await waitForCodexJsonlPath(coderReader, options.projectDir, signal);
-        if (!coderJsonlPath) {
-            return { success: false, error: "未找到 Coder CLI 会话日志（~/.codex/sessions/**/rollout-*.jsonl）。请先 /start 启动会话，日志生成后再试。" };
+        if (coderJsonlPath) {
+            readMode = "codex_jsonl";
+        } else {
+            readMode = "pane";
+            logger.warn(`[Responder ${groupName}] 未找到 Codex JSONL，fallback 到 pane 读屏`, {
+                module: "responder",
+                groupName,
+                runnerOld,
+                readMode,
+                projectDir: options.projectDir,
+            });
         }
     } else if (runnerOld === "claude-code") {
         // claude-code: 优先 claude_jsonl，fallback 到 pane
@@ -499,6 +517,17 @@ export async function handleTmuxSend(
             // P0 经验：Claude Code 的 pane 输出会因为 resize/换行重排/动态状态行而变化，
             // baseline-tail diff 容易失效；因此优先用“发送文本的 marker”定位最后一次输入行。
             const currentPaneOutput = await TmuxSession.capturePane(sessionName, 2000);
+
+            if (
+                (delegationMarkers.doneMarker && currentPaneOutput.includes(delegationMarkers.doneMarker)) ||
+                (delegationMarkers.failedMarker && currentPaneOutput.includes(delegationMarkers.failedMarker))
+            ) {
+                const cleanedText = removeUserEcho(cleanClaudeOutput(currentPaneOutput), promptForEchoRemoval);
+                return {
+                    success: true,
+                    response: formatResponse(cleanedText),
+                };
+            }
 
             const markerExtract = extractAfterLastMarkerLine(currentPaneOutput, userMarkerLine);
             if (markerExtract) {

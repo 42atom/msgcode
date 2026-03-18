@@ -5,17 +5,19 @@
  * P5.6.13-R1: 新增 sqlite-vec 向量存储
  */
 
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { existsSync, mkdirSync } from "node:fs";
-import Database from "better-sqlite3";
 import * as sqliteVec from "sqlite-vec";
+import { loadBetterSqlite3 } from "../deps/better-sqlite3.js";
 import type {
   Document,
   Chunk,
   SearchResult,
   MemoryStoreConfig,
 } from "./types.js";
+import type BetterSqlite3 from "better-sqlite3";
 
 // ============================================
 // 常量
@@ -34,14 +36,18 @@ const VEC_TABLE_NAME = "chunks_vec";
 const VECTOR_DIMENSIONS = 768;
 
 /** Schema 版本 */
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
+
+function calculateFileSha256Sync(filePath: string): string {
+  return createHash("sha256").update(readFileSync(filePath)).digest("hex");
+}
 
 // ============================================
 // Memory Store 类
 // ============================================
 
 export class MemoryStore {
-  private db: Database.Database;
+  private db: BetterSqlite3.Database;
   private config: MemoryStoreConfig;
   private vectorAvailable: boolean = false;
 
@@ -59,6 +65,7 @@ export class MemoryStore {
     }
 
     // 打开数据库
+    const Database = loadBetterSqlite3();
     this.db = new Database(this.config.indexPath);
     // 默认 busy_timeout=0，遇到瞬时写锁会直接抛错（“偶发卡壳”）。
     // 记忆索引是可重建派生物，等待一小段时间比失败更符合主链体验。
@@ -78,7 +85,7 @@ export class MemoryStore {
   }
 
   /** 获取数据库实例（供内部使用） */
-  getDb(): Database.Database {
+  getDb(): BetterSqlite3.Database {
     return this.db;
   }
 
@@ -144,6 +151,14 @@ export class MemoryStore {
    * 创建表结构
    */
   private createTables(): void {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS workspace_roots (
+        workspace_id TEXT PRIMARY KEY,
+        workspace_path TEXT NOT NULL,
+        updated_at_ms INTEGER NOT NULL
+      );
+    `);
+
     // Documents 表
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS documents (
@@ -219,6 +234,16 @@ export class MemoryStore {
   // 文档操作
   // ============================================
 
+  upsertWorkspaceRoot(workspaceId: string, workspacePath: string): void {
+    this.db.prepare(`
+      INSERT INTO workspace_roots (workspace_id, workspace_path, updated_at_ms)
+      VALUES (?, ?, ?)
+      ON CONFLICT(workspace_id) DO UPDATE SET
+        workspace_path = excluded.workspace_path,
+        updated_at_ms = excluded.updated_at_ms
+    `).run(workspaceId, workspacePath, Date.now());
+  }
+
   /**
    * 添加或更新文档
    */
@@ -248,10 +273,28 @@ export class MemoryStore {
    */
   getDocument(workspaceId: string, relPath: string): Document | null {
     const stmt = this.db.prepare(`
-      SELECT * FROM documents WHERE workspace_id = ? AND path = ?
+      SELECT
+        doc_id as docId,
+        workspace_id as workspaceId,
+        path,
+        mtime_ms as mtimeMs,
+        sha256,
+        created_at_ms as createdAtMs
+      FROM documents
+      WHERE workspace_id = ? AND path = ?
     `);
 
     return stmt.get(workspaceId, relPath) as Document | null;
+  }
+
+  getWorkspaceDocumentCount(workspaceId: string): number {
+    const result = this.db.prepare(`
+      SELECT COUNT(*) as count
+      FROM documents
+      WHERE workspace_id = ?
+    `).get(workspaceId) as { count: number };
+
+    return result.count;
   }
 
   /**
@@ -591,6 +634,7 @@ export class MemoryStore {
     indexedChunks: number;
     ftsAvailable: boolean;
     vectorAvailable: boolean;
+    documentsWithoutSha256: number;
   } {
     const workspaces = this.db.prepare(`
       SELECT COUNT(DISTINCT workspace_id) as count FROM documents
@@ -602,6 +646,10 @@ export class MemoryStore {
 
     const chunks = this.db.prepare(`
       SELECT COUNT(*) as count FROM chunks
+    `).get() as { count: number };
+
+    const documentsWithoutSha256 = this.db.prepare(`
+      SELECT COUNT(*) as count FROM documents WHERE sha256 = ''
     `).get() as { count: number };
 
     // 检查 FTS5 是否可用
@@ -621,15 +669,110 @@ export class MemoryStore {
       indexedChunks: chunks.count,
       ftsAvailable,
       vectorAvailable: this.vectorAvailable,
+      documentsWithoutSha256: documentsWithoutSha256.count,
     };
   }
 
   /**
    * 获取脏文件（需要重新索引）
    */
-  getDirtyFiles(): Array<{ workspaceId: string; path: string }> {
-    // TODO: 实现脏文件检测逻辑
-    return [];
+  getDirtyFiles(): Array<{
+    workspaceId: string;
+    workspacePath?: string;
+    path: string;
+    reason: "workspace_path_unknown" | "sha_missing" | "file_missing" | "metadata_stale" | "content_changed";
+    indexedMtimeMs: number;
+    currentMtimeMs?: number;
+    indexedSha256: string;
+    currentSha256?: string;
+  }> {
+    const documents = this.db.prepare(`
+      SELECT
+        d.workspace_id,
+        d.path,
+        d.mtime_ms,
+        d.sha256,
+        wr.workspace_path
+      FROM documents d
+      LEFT JOIN workspace_roots wr ON wr.workspace_id = d.workspace_id
+      ORDER BY d.workspace_id, d.path
+    `).all() as Array<{
+      workspace_id: string;
+      path: string;
+      mtime_ms: number;
+      sha256: string;
+      workspace_path?: string;
+    }>;
+
+    const dirtyFiles: Array<{
+      workspaceId: string;
+      workspacePath?: string;
+      path: string;
+      reason: "workspace_path_unknown" | "sha_missing" | "file_missing" | "metadata_stale" | "content_changed";
+      indexedMtimeMs: number;
+      currentMtimeMs?: number;
+      indexedSha256: string;
+      currentSha256?: string;
+    }> = [];
+
+    for (const doc of documents) {
+      if (!doc.workspace_path) {
+        dirtyFiles.push({
+          workspaceId: doc.workspace_id,
+          path: doc.path,
+          reason: "workspace_path_unknown",
+          indexedMtimeMs: doc.mtime_ms,
+          indexedSha256: doc.sha256,
+        });
+        continue;
+      }
+
+      const absolutePath = path.join(doc.workspace_path, doc.path);
+      if (!existsSync(absolutePath)) {
+        dirtyFiles.push({
+          workspaceId: doc.workspace_id,
+          workspacePath: doc.workspace_path,
+          path: doc.path,
+          reason: "file_missing",
+          indexedMtimeMs: doc.mtime_ms,
+          indexedSha256: doc.sha256,
+        });
+        continue;
+      }
+
+      const currentMtimeMs = statSync(absolutePath).mtimeMs;
+      if (!doc.sha256) {
+        dirtyFiles.push({
+          workspaceId: doc.workspace_id,
+          workspacePath: doc.workspace_path,
+          path: doc.path,
+          reason: "sha_missing",
+          indexedMtimeMs: doc.mtime_ms,
+          currentMtimeMs,
+          indexedSha256: doc.sha256,
+        });
+        continue;
+      }
+
+      if (currentMtimeMs === doc.mtime_ms) {
+        continue;
+      }
+
+      const currentSha256 = calculateFileSha256Sync(absolutePath);
+      const reason = currentSha256 === doc.sha256 ? "metadata_stale" : "content_changed";
+      dirtyFiles.push({
+        workspaceId: doc.workspace_id,
+        workspacePath: doc.workspace_path,
+        path: doc.path,
+        reason,
+        indexedMtimeMs: doc.mtime_ms,
+        currentMtimeMs,
+        indexedSha256: doc.sha256,
+        currentSha256,
+      });
+    }
+
+    return dirtyFiles;
   }
 }
 

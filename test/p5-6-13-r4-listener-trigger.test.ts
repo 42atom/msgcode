@@ -28,7 +28,7 @@ function coerceOpenAIMessageContentToText(content: unknown): string {
   return "";
 }
 
-function runIsolatedListenerCase(mode: "search" | "fail-open"): {
+function runIsolatedListenerCase(mode: "search" | "fail-open" | "missing-index"): {
   vectorAvailable?: boolean;
   requestBody?: Record<string, unknown>;
   sent?: Array<{ chatId: string; text: string }>;
@@ -68,7 +68,10 @@ function runIsolatedListenerCase(mode: "search" | "fail-open"): {
 
     // listener 主链要求显式绑定（allowDefaultFallback=false），测试里写入一条临时 routes.json
     const nowIso = new Date().toISOString();
-    const chatId = mode === "search" ? "chat-r4-search" : "chat-r4-fail-open";
+    const chatId =
+      mode === "search" ? "chat-r4-search" :
+      mode === "fail-open" ? "chat-r4-fail-open" :
+      "chat-r4-missing-index";
     fs.writeFileSync(routesPath, JSON.stringify({
       version: 1,
       routes: {
@@ -126,6 +129,9 @@ function runIsolatedListenerCase(mode: "search" | "fail-open"): {
         "继续 推进 这轮 任务 的 关键记忆"
       );
       store.close();
+    } else if (mode === "missing-index") {
+      fs.mkdirSync(path.join(workspacePath, "memory"), { recursive: true });
+      fs.writeFileSync(path.join(workspacePath, "memory", "2026-03-18.md"), "# Memory\\n\\n请继续原样处理\\n", "utf8");
     } else {
       const brokenPath = path.join(homeDir, ".config", "msgcode", "memory", "index.sqlite");
       fs.mkdirSync(brokenPath, { recursive: true });
@@ -169,7 +175,7 @@ function runIsolatedListenerCase(mode: "search" | "fail-open"): {
       await handleMessage(
         {
           id: mode === "search" ? "msg-r4-search" : "msg-r4-fail-open",
-          chatId: mode === "search" ? "chat-r4-search" : "chat-r4-fail-open",
+          chatId: mode === "search" ? "chat-r4-search" : mode === "fail-open" ? "chat-r4-fail-open" : "chat-r4-missing-index",
           text: mode === "search" ? "继续" : "请继续原样处理",
           isFromMe: false,
           sender: "tester@example.com",
@@ -231,7 +237,7 @@ describe("P5.6.13-R4: listener 记忆检索触发收口", () => {
     expect(debugEntry).toBeDefined();
     expect(debugEntry?.[1]).toMatchObject({
       module: "listener",
-      memoryMode: result.vectorAvailable ? "hybrid" : "fts-only",
+      memoryMode: "fts-only",
       vectorAvailable: result.vectorAvailable,
       memoryHitCount: 1,
       memoryInjected: true,
@@ -258,5 +264,25 @@ describe("P5.6.13-R4: listener 记忆检索触发收口", () => {
       warnError.includes("unable to open database file") ||
       warnError.includes("index.sqlite"),
     ).toBe(true);
+  });
+
+  it("索引缺失时应显式提示先重建，而不是伪装成普通无结果", () => {
+    const result = runIsolatedListenerCase("missing-index");
+    const messages = Array.isArray(result.requestBody?.messages)
+      ? (result.requestBody?.messages as Array<{ role?: string; content?: unknown }>)
+      : [];
+    const userMessage = messages.findLast((message) => message.role === "user");
+    const userText = coerceOpenAIMessageContentToText(userMessage?.content);
+
+    expect(userText).toContain("请继续原样处理");
+    expect(userText).not.toContain("相关记忆：");
+
+    const debugEntry = result.debugLogs?.find(([message]) => message === "记忆注入结果");
+    expect(debugEntry).toBeDefined();
+    expect(String(debugEntry?.[1]?.skippedReason || "")).toContain("memory 索引缺失");
+
+    const warnEntry = result.warnLogs?.find(([message]) => message === "记忆索引缺失");
+    expect(warnEntry).toBeDefined();
+    expect(String(warnEntry?.[1]?.recommended || "")).toContain("msgcode memory index --workspace");
   });
 });

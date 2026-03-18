@@ -102,6 +102,7 @@ HEARTBEAT_OK
 | wakeups/records/*.json | Wake 触发、执行、结果 | 硬状态真相 |
 | dispatch/*.json | 派单执行、进度 | 硬状态真相 |
 | subagents/*.json | 子代理状态 | 硬状态真相 |
+| .msgcode/STATUS | 只读观测快照 | 派生物（非真相） |
 
 ### Conflict Resolution
 
@@ -113,7 +114,21 @@ issues/*.md 文件名状态 = 任务状态真相源
 .msgcode/wakeups/*.json = Wake 运行真相源
 .msgcode/dispatch/*.json = 派单执行真相源
 .msgcode/subagents/*.json = 子代理真相源
+.msgcode/STATUS = 只读投影，不承载状态真相
 ```
+
+### STATUS Snapshot
+
+- heartbeat 每次 tick 结束后会覆盖写 `.msgcode/STATUS`
+- 这是观测面，不是协议面
+- 用途：
+  - `cat .msgcode/STATUS` 一眼看当前 dispatch / wakes / subagents
+  - 快速人工排障
+  - 让 LLM 先读全局，再按需下钻 JSON 真相源
+- 约束：
+  - 不从 `STATUS` 回写状态
+  - 不以 `STATUS` 作为恢复输入
+  - 真相冲突时，一律以 `issues/`、`dispatch/*.json`、`wakeups/*.json`、`subagents/*.json` 为准
 
 ---
 

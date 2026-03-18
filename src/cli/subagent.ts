@@ -15,6 +15,7 @@ import {
   getSubagentTaskStatus,
   listSubagentTasks,
   runSubagentTask,
+  sendSubagentMessage,
   stopSubagentTask,
 } from "../runtime/subagent.js";
 
@@ -72,6 +73,25 @@ function formatStatusText(data: {
   ];
   if (data.paneTail) {
     lines.push("", "paneTail:", data.paneTail);
+  }
+  return lines.join("\n");
+}
+
+function formatSayText(data: {
+  taskId: string;
+  status: string;
+  workspacePath: string;
+  messagesFile: string;
+  response?: string;
+}): string {
+  const lines = [
+    `taskId: ${data.taskId}`,
+    `status: ${data.status}`,
+    `workspace: ${data.workspacePath}`,
+    `messagesFile: ${data.messagesFile}`,
+  ];
+  if (data.response) {
+    lines.push("", "response:", data.response);
   }
   return lines.join("\n");
 }
@@ -348,11 +368,71 @@ export function createSubagentStopCommand(): Command {
   return cmd;
 }
 
+export function createSubagentSayCommand(): Command {
+  const cmd = new Command("say");
+
+  cmd
+    .description("向运行中的子代理继续发一句话")
+    .argument("<task-id>", "taskId")
+    .requiredOption("--message <text>", "继续发送给子代理的话")
+    .option("--workspace <id|path>", "工作目录（默认当前 cwd）")
+    .option("--watch", "阻塞等待本次回复")
+    .option("--timeout-ms <ms>", "watch 超时（毫秒）")
+    .option("--json", "JSON 格式输出")
+    .action(async (taskId: string, options) => {
+      const startTime = Date.now();
+      const command = "msgcode subagent say";
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      try {
+        const result = await sendSubagentMessage({
+          taskId,
+          message: options.message,
+          workspace: options.workspace,
+          watch: options.watch === true,
+          timeoutMs: options.timeoutMs ? Number(options.timeoutMs) : undefined,
+        });
+        const data = {
+          taskId: result.task.taskId,
+          status: result.task.status,
+          workspacePath: result.task.workspacePath,
+          messagesFile: result.messagesFile,
+          response: result.response,
+        };
+        const envelope = createEnvelope(command, startTime, "pass", data, warnings, errors);
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.log(formatSayText(data));
+        }
+        process.exit(0);
+      } catch (error) {
+        const message = resolveErrorMessage(error);
+        const code = resolveErrorCode(error, SUBAGENT_ERROR_CODES.DELEGATE_FAILED);
+        errors.push(createSubagentDiagnostic(code, message, {
+          taskId,
+          workspace: options.workspace ?? process.cwd(),
+        }));
+        const envelope = createEnvelope(command, startTime, "error", {}, warnings, errors);
+        if (options.json) {
+          console.log(JSON.stringify(envelope, null, 2));
+        } else {
+          console.error(`${code}: ${message}`);
+        }
+        process.exit(1);
+      }
+    });
+
+  return cmd;
+}
+
 export function createSubagentCommand(): Command {
   const cmd = new Command("subagent");
 
   cmd.description("子代理执行臂（codex / claude-code）");
   cmd.addCommand(createSubagentRunCommand());
+  cmd.addCommand(createSubagentSayCommand());
   cmd.addCommand(createSubagentListCommand());
   cmd.addCommand(createSubagentStatusCommand());
   cmd.addCommand(createSubagentStopCommand());
@@ -418,6 +498,30 @@ export function getSubagentListContract() {
     },
     errorCodes: [
       SUBAGENT_ERROR_CODES.INVALID_CLIENT,
+    ],
+  };
+}
+
+export function getSubagentSayContract() {
+  return {
+    name: "msgcode subagent say",
+    description: "向运行中的子代理继续发送一条消息，并可选等待本次回复",
+    options: {
+      required: {
+        "<task-id>": "taskId",
+        "--message": "继续发送给子代理的话",
+      },
+      optional: {
+        "--workspace": "工作目录（默认当前 cwd）",
+        "--watch": "阻塞等待本次回复",
+        "--timeout-ms": "watch 超时（毫秒）",
+        "--json": "JSON 格式输出",
+      },
+    },
+    errorCodes: [
+      SUBAGENT_ERROR_CODES.TASK_NOT_FOUND,
+      SUBAGENT_ERROR_CODES.NOT_RUNNING,
+      SUBAGENT_ERROR_CODES.DELEGATE_FAILED,
     ],
   };
 }

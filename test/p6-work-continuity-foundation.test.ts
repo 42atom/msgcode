@@ -28,9 +28,9 @@ function cleanupTempWorkspace(root: string): void {
   }
 }
 
-function writeTaskDoc(workspace: string, filename: string): string {
+function writeTaskDoc(workspace: string, filename: string, content = "# task\n"): string {
   const filePath = path.join(workspace, "issues", filename);
-  fs.writeFileSync(filePath, "# task\n", "utf8");
+  fs.writeFileSync(filePath, content, "utf8");
   return filePath;
 }
 
@@ -161,6 +161,90 @@ describe("P6: Work Continuity Foundation (tk0205)", () => {
 
     expect(snapshot.workCapsule.childTasks?.[0]?.workStatus).toBe("done");
     expect(snapshot.workCapsule.drift?.items.some((item) => item.code === "dispatch-stale-child")).toBe(true);
+  });
+
+  it("A3b: 即使子任务尚未派发，父任务文档里的 waiting_for 也应进入 work capsule", async () => {
+    writeTaskDoc(
+      workspace,
+      "tk3100.doi.runtime.parent-task.md",
+      `---
+implicit:
+  waiting_for: "tk3101"
+---
+
+# Goal
+
+parent
+
+## Child Tasks
+
+- \`tk3101\`
+`,
+    );
+    writeTaskDoc(workspace, "tk3101.tdo.runtime.child-task.md");
+
+    const snapshot = await buildWorkRecoverySnapshot({
+      workspacePath: workspace,
+      parentTaskId: "tk3100",
+    });
+
+    expect(snapshot.dispatchRecords.length).toBe(0);
+    expect(snapshot.workCapsule.childTasks?.some((task) => task.taskId === "tk3101")).toBe(true);
+    expect(snapshot.workCapsule.childTasks?.find((task) => task.taskId === "tk3101")?.workStatus).toBe("pending");
+    expect(snapshot.workCapsule.checkpoint.nextAction).toBe("派发子任务 tk3101");
+    expect(snapshot.workCapsule.nextAction.type).toBe("dispatch");
+    expect(snapshot.workCapsule.nextAction.params?.childTaskId).toBe("tk3101");
+  });
+
+  it("A3c: 多条 dispatch 并存时，恢复应使用最新 checkpoint", async () => {
+    writeTaskDoc(workspace, "tk3200.doi.runtime.parent-task.md");
+    writeTaskDoc(workspace, "tk3201.tdo.runtime.child-task-a.md");
+    writeTaskDoc(workspace, "tk3202.tdo.runtime.child-task-b.md");
+
+    await writeDispatchRecord({
+      workspacePath: workspace,
+      dispatchId: "dispatch-old",
+      createdAt: "2026-03-18T00:00:00.000Z",
+      updatedAt: "2026-03-18T00:00:00.000Z",
+      parentTaskId: "tk3200",
+      childTaskId: "tk3201",
+      client: "codex",
+      goal: "旧派单",
+      cwd: workspace,
+      acceptance: ["done"],
+      checkpoint: {
+        summary: "旧 checkpoint",
+        nextAction: "不要再用这个",
+        updatedAt: 1,
+      },
+    });
+
+    await writeDispatchRecord({
+      workspacePath: workspace,
+      dispatchId: "dispatch-new",
+      createdAt: "2026-03-18T00:10:00.000Z",
+      updatedAt: "2026-03-18T00:10:00.000Z",
+      parentTaskId: "tk3200",
+      childTaskId: "tk3202",
+      client: "codex",
+      goal: "新派单",
+      cwd: workspace,
+      acceptance: ["done"],
+      checkpoint: {
+        summary: "新 checkpoint",
+        nextAction: "继续最新子任务",
+        updatedAt: 2,
+      },
+    });
+
+    const snapshot = await buildWorkRecoverySnapshot({
+      workspacePath: workspace,
+      parentTaskId: "tk3200",
+    });
+
+    expect(snapshot.workCapsule.checkpointSource).toBe("dispatch");
+    expect(snapshot.workCapsule.checkpoint.summary).toBe("新 checkpoint");
+    expect(snapshot.workCapsule.checkpoint.nextAction).toBe("继续最新子任务");
   });
 
   it("single-writer: 同一 workspace 只允许一个写入者", async () => {
