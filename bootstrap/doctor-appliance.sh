@@ -32,12 +32,16 @@ fi
 
 INSTALL_ROOT=$(cd "$INSTALL_ROOT" && pwd)
 MANIFEST_PATH="$INSTALL_ROOT/appliance.manifest"
+MANIFEST_VERSION=""
+APP_VERSION=""
 RUNTIME_DIR="runtime"
 LAUNCHER_REL="bin/msgcode"
 RUNTIME_BIN_REL="$RUNTIME_DIR/bin/msgcode"
 
 if [ -f "$MANIFEST_PATH" ]; then
   . "$MANIFEST_PATH"
+  MANIFEST_VERSION="${MSGCODE_APPLIANCE_MANIFEST_VERSION:-$MANIFEST_VERSION}"
+  APP_VERSION="${MSGCODE_APPLIANCE_APP_VERSION:-$APP_VERSION}"
   RUNTIME_DIR="${MSGCODE_APPLIANCE_RUNTIME_DIR:-$RUNTIME_DIR}"
   LAUNCHER_REL="${MSGCODE_APPLIANCE_LAUNCHER_REL:-$LAUNCHER_REL}"
   RUNTIME_BIN_REL="${MSGCODE_APPLIANCE_RUNTIME_BIN_REL:-$RUNTIME_BIN_REL}"
@@ -49,6 +53,21 @@ RUNTIME_BIN_PATH="$INSTALL_ROOT/$RUNTIME_BIN_REL"
 
 if [ ! -f "$MANIFEST_PATH" ]; then
   echo "Missing installed manifest: $MANIFEST_PATH" >&2
+  exit 2
+fi
+
+if [ -z "$MANIFEST_VERSION" ]; then
+  echo "Missing manifest version in: $MANIFEST_PATH" >&2
+  exit 2
+fi
+
+if [ "$MANIFEST_VERSION" != "1" ]; then
+  echo "Unsupported manifest version: $MANIFEST_VERSION" >&2
+  exit 2
+fi
+
+if [ -z "$APP_VERSION" ]; then
+  echo "Missing appliance app version in: $MANIFEST_PATH" >&2
   exit 2
 fi
 
@@ -67,4 +86,4 @@ if [ ! -x "$RUNTIME_BIN_PATH" ]; then
   exit 2
 fi
 
-echo "Appliance doctor 通过：$INSTALL_ROOT"
+echo "Appliance doctor 通过：$INSTALL_ROOT (version=$APP_VERSION)"

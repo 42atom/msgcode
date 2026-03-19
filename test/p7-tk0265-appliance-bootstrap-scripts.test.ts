@@ -22,12 +22,14 @@ async function createFakeBundle(
   bundleRoot: string,
   markerText: string,
   options?: {
+    appVersion?: string;
     runtimeDir?: string;
     launcherRel?: string;
     runtimeBinRel?: string;
     nodeBinRel?: string;
   }
 ): Promise<void> {
+  const appVersion = options?.appVersion ?? "test-1.0.0";
   const runtimeDir = options?.runtimeDir ?? "runtime";
   const launcherRel = options?.launcherRel ?? "bin/msgcode";
   const runtimeBinRel = options?.runtimeBinRel ?? `${runtimeDir}/bin/msgcode`;
@@ -44,6 +46,8 @@ printf '${markerText}\\n' > "$MSGCODE_TEST_MARKER"
   await fs.writeFile(
     path.join(bundleRoot, "appliance.manifest"),
     [
+      "MSGCODE_APPLIANCE_MANIFEST_VERSION=1",
+      `MSGCODE_APPLIANCE_APP_VERSION=${appVersion}`,
       `MSGCODE_APPLIANCE_RUNTIME_DIR=${runtimeDir}`,
       `MSGCODE_APPLIANCE_LAUNCHER_REL=${launcherRel}`,
       `MSGCODE_APPLIANCE_RUNTIME_BIN_REL=${runtimeBinRel}`,
@@ -108,6 +112,8 @@ describe("appliance bootstrap scripts", () => {
     expect(existsSync(path.join(installRoot, "core-runtime", "bin", "msgcode"))).toBe(true);
     expect(existsSync(path.join(installRoot, "launcher", "msgcode"))).toBe(true);
     const installedManifest = await fs.readFile(path.join(installRoot, "appliance.manifest"), "utf8");
+    expect(installedManifest).toContain("MSGCODE_APPLIANCE_MANIFEST_VERSION=1");
+    expect(installedManifest).toContain("MSGCODE_APPLIANCE_APP_VERSION=test-1.0.0");
     expect(installedManifest).toContain("MSGCODE_APPLIANCE_RUNTIME_DIR=core-runtime");
     expect(installedManifest).toContain("MSGCODE_APPLIANCE_LAUNCHER_REL=launcher/msgcode");
   });
@@ -230,6 +236,7 @@ describe("appliance bootstrap scripts", () => {
     });
 
     expect(stdout).toContain("Appliance doctor 通过");
+    expect(stdout).toContain("version=test-1.0.0");
   });
 
   it("rollback-appliance 应恢复上一个 runtime 与 manifest", async () => {

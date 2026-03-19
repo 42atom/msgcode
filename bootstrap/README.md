@@ -77,5 +77,5 @@ sh bootstrap/rollback-appliance.sh --install-root <target>
 - `first-run-init.sh` 只负责调用 `msgcode init`
 - `upgrade-appliance.sh` 只替换安装目录下的 `runtime/`
 - 如存在 `bundle-root/appliance.manifest`，`install/upgrade` 会优先按 manifest 读运行时路径与 launcher 路径
-- `doctor-appliance.sh` 只检查安装根、manifest、runtime 和 launcher 是否齐全
+- `doctor-appliance.sh` 会检查 manifest 版本、app 版本、runtime 和 launcher 是否齐全
 - `rollback-appliance.sh` 只在本地保留了上一版 `runtime.prev + appliance.manifest.prev` 时生效
