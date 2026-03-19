@@ -13,11 +13,10 @@ import os from "node:os";
 import path from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { resolveRuntimeEntry } from "./runtime-entry.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_ROOT = path.resolve(__dirname, "..", "..");
-const DAEMON_SCRIPT = path.join(PROJECT_ROOT, "src", "daemon.ts");
-const TSX_CLI = path.join(PROJECT_ROOT, "node_modules", "tsx", "dist", "cli.mjs");
 const MSGCODE_LAUNCH_AGENT_LABEL = "ai.msgcode.daemon";
 const RETIRED_DAEMON_ENV_KEYS = ["IMSG_PATH", "IMSG_DB_PATH"] as const;
 
@@ -120,13 +119,11 @@ export function resolveDaemonCommandConfig(env: NodeJS.ProcessEnv = process.env)
   workingDirectory: string;
   environment: Record<string, string | undefined>;
 } {
-  if (!existsSync(TSX_CLI)) {
-    throw new Error(`缺少 tsx 运行时：${TSX_CLI}`);
-  }
+  const daemonEntry = resolveRuntimeEntry("daemon", { projectRoot: PROJECT_ROOT, env });
 
   return {
-    programArguments: [process.execPath, TSX_CLI, DAEMON_SCRIPT],
-    workingDirectory: PROJECT_ROOT,
+    programArguments: [daemonEntry.command, ...daemonEntry.args],
+    workingDirectory: daemonEntry.workingDirectory,
     environment: resolveDaemonEnvironment(env),
   };
 }

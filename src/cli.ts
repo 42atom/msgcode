@@ -17,14 +17,13 @@ import { spawn } from "node:child_process";
 import dotenv from "dotenv";
 import { getVersion, getVersionInfo, type VersionInfo } from "./version.js";
 import { logger } from "./logger/index.js";
+import { resolveRuntimeEntry } from "./runtime/runtime-entry.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const CONFIG_DIR = path.join(os.homedir(), ".config/msgcode");
 const LOG_DIR = path.join(CONFIG_DIR, "log");
 const LOG_FILE = path.join(LOG_DIR, "msgcode.log");
-const DAEMON_SCRIPT = path.join(__dirname, "daemon.ts");
-
 /**
  * CLI 启动时预加载环境变量（不校验）
  *
@@ -435,14 +434,16 @@ async function launchDaemon(): Promise<void> {
     LOG_CONSOLE: "false",
   };
 
-  const localTsx = path.join(__dirname, "..", "node_modules", ".bin", "tsx");
-  const cmd = existsSync(localTsx) ? localTsx : "npx";
-  const args = existsSync(localTsx) ? [DAEMON_SCRIPT] : ["tsx", DAEMON_SCRIPT];
+  const daemonEntry = resolveRuntimeEntry("daemon", {
+    projectRoot: path.join(__dirname, ".."),
+    env,
+  });
 
-  const child = spawn(cmd, args, {
+  const child = spawn(daemonEntry.command, daemonEntry.args, {
     detached: true,
     stdio: "ignore",
     env,
+    cwd: daemonEntry.workingDirectory,
   });
 
   child.on("error", (error) => {

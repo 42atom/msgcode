@@ -11,14 +11,31 @@ import { existsSync } from "fs";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const cliPath = join(__dirname, "..", "src", "cli.ts");
-const localTsx = join(__dirname, "..", "node_modules", ".bin", "tsx");
+const runtimeRoot = process.env.MSGCODE_RUNTIME_ROOT?.trim()
+    ? process.env.MSGCODE_RUNTIME_ROOT.trim()
+    : join(__dirname, "..");
+const explicitCliEntry = process.env.MSGCODE_CLI_ENTRY?.trim() || "";
+const compiledCandidates = [
+    explicitCliEntry,
+    join(runtimeRoot, "app", "cli.js"),
+    join(runtimeRoot, "dist", "cli.js"),
+].filter(Boolean);
 
-// 优先使用本地 tsx（避免 npx 在线拉取/版本漂移），找不到再回退到 npx
-const command = existsSync(localTsx) ? localTsx : "npx";
-const args = existsSync(localTsx)
-    ? [cliPath, ...process.argv.slice(2)]
-    : ["tsx", cliPath, ...process.argv.slice(2)];
+const compiledCliEntry = compiledCandidates.find((candidate) => existsSync(candidate));
+let command;
+let args;
+
+if (compiledCliEntry) {
+    command = process.execPath;
+    args = [compiledCliEntry, ...process.argv.slice(2)];
+} else {
+    const cliPath = join(__dirname, "..", "src", "cli.ts");
+    const localTsxCli = join(__dirname, "..", "node_modules", "tsx", "dist", "cli.mjs");
+    command = existsSync(localTsxCli) ? process.execPath : "npx";
+    args = existsSync(localTsxCli)
+        ? [localTsxCli, cliPath, ...process.argv.slice(2)]
+        : ["tsx", cliPath, ...process.argv.slice(2)];
+}
 
 const child = spawn(command, args, {
     stdio: "inherit",
