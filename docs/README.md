@@ -64,9 +64,16 @@ docs/
 
 ## 现役边界
 
+- 当前产品定位：面向小微机构本地部署使用的私有 Agent 系统
+- 当前现役交付形态：Mac mini 上的 Feishu-first 运行时
 - 当前桌面能力面默认是 `ghost_*`
-- 最终产品方向统一表述为：`menu App + 单面板 + web系统面板`
 - msgcode 不再自研点击/识别逻辑，正式文档应坚持“薄桥接，不做自动化供应”
+
+协议入口：
+
+- `docs/protocol/COGNITION.md`
+- `docs/protocol/MEMORY.md`
+- `docs/protocol/WORKSTATE.md`
 
 Legacy Desktop Bridge 现已整体迁入：
 

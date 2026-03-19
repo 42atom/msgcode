@@ -1,6 +1,6 @@
 # msgcode
 
-> Feishu-first personal agent runtime on macOS.
+> 面向小微机构本地部署的私有 Agent appliance，当前现役交付形态为 Mac mini 上的 Feishu-first 运行时。
 
 当前版本：`v2.4.0`
 
@@ -8,38 +8,36 @@
 
 当前发布说明：`docs/release/v2.4.0.md`
 
-一句话定义：
+一句话定位：
 
-- **msgcode = AI 的操作系统化工作底座：在用户授权下，给一个可靠主脑完整、真实、可验证的电脑能力，让它按 persona 工作、管理子代理，并通过文件真相源持续完成真实任务。**
+- **msgcode 是一个面向小微机构本地部署使用的私有 Agent 系统，以 Mac mini 一体式交付为主，强调隐私、本地可控和持续扩展。**
 
-msgcode 的目标是把「个人智能体」做成可长期运行的基础设施，而不是一次性的聊天应用。
+核心价值：
 
-## 主管道
+- **数据留在本地**
+- **Agent 持续理解自己的机构**
+- **能力可以持续扩展**
 
-```text
-Feishu / CLI
-    |
-    v
-msgcode
-  I/O -----------> 输入、命令、回复、产物回传
-    |
-    v
-  调度 ----------> heartbeat / wake / dispatch / subagent
-    |
-    v
-  资源 ----------> LLM / files / memory / browser / ghost_*
-    |
-    v
-workspace files / issues / AIDOCS
-```
+它很像老板身边一位会使用 `msgcode` 的长期秘书：
 
-入口理解先抓这条主链：
+- 老板负责判断
+- Agent 负责持续理解机构、处理日常事务、调用能力包完成执行
 
-- I/O 系统回答“怎么进来、怎么出去”
-- 调度系统回答“什么时候做、拆给谁做”
-- 资源系统回答“能用什么”
+当前现役交付边界：
+
+- 单机、单组织、单管理员优先
+- 当前启动链固定依赖飞书企业应用与飞书群绑定
+- 当前现役运行面是 `macOS + Feishu + ghost-os`
+
+msgcode 的目标是把「面向小微机构的本地私有 Agent 系统」做成可长期运行的基础设施，而不是一次性的聊天应用。
 
 ## 快速开始
+
+当前实现主链说明：
+
+- 当前默认运行面仍是 `macOS + Feishu`
+- 当前推荐交付形态是 `Mac mini` 本地一体式部署
+- README 下面的安装与启动步骤，描述的是这条现役主链
 
 ### 1. 环境要求
 
@@ -160,6 +158,31 @@ msgcode start -d
 
 ## 当前主链
 
+### 主管道
+
+```text
+Feishu / CLI
+    |
+    v
+msgcode
+  I/O -----------> 输入、命令、回复、产物回传
+    |
+    v
+  调度 ----------> heartbeat / wake / dispatch / subagent
+    |
+    v
+  资源 ----------> LLM / files / memory / browser / ghost_*
+    |
+    v
+workspace files / issues / AIDOCS
+```
+
+入口理解先抓这条主链：
+
+- I/O 系统回答“怎么进来、怎么出去”
+- 调度系统回答“什么时候做、拆给谁做”
+- 资源系统回答“能用什么”
+
 ### 三大板块
 
 1. 资源管理
@@ -192,63 +215,24 @@ msgcode start -d
 - `Agent 线`承载业务语义（记忆、人格、技能）
 - `Tmux 线`只做忠实转发与回传，不隐式注入业务语义
 
-## Agent 认知文件表
-
-这张表只回答一件事：
-
-- Agent 到底通过哪些文件“认识你”、记住工作、继续推进任务
-
-这里只放**面向人类**的文件面。
-
-- `.json / .jsonl / .ndjson` 这类机器协议面不放进这张表
-- 机器协议与运行时状态，另看 `docs/protocol/*`
-
-文件多不等于更好。关键是把真相源摊开，让人能一眼看懂。
-
-| 文件面 | 具体文件名 / 文件模式 | 作用 | 真相级别 | 生命周期 |
-|---|---|---|---|---|
-| 灵魂 | `~/.config/msgcode/souls/default/SOUL.md` `/<workspace>/.msgcode/SOUL.md` | 定义人格、风格、边界 | 认知真相源 | 长期 |
-| 长期记忆 | `/<workspace>/memory/YYYY-MM-DD.md` | 记录稳定事实、偏好、经验 | 记忆真相源 | 长期 |
-| 会话摘要 | `/<workspace>/.msgcode/sessions/<chatId>/summary.md` | 服务压缩与恢复阅读 | 派生视图 | 可重建 |
-| 原始请求 inbox | `/<workspace>/.msgcode/inbox/rq0001.new.<transport>.<slug>.md` `/<workspace>/.msgcode/inbox/rq0001.triaged.<transport>.<slug>.md` | 记录新请求和分拣状态 | I/O 真相源 | 短中期 |
-| heartbeat 草稿 | `/<workspace>/.msgcode/HEARTBEAT.md` | 记录巡检提示、checklist、notes | 草稿面 | 可覆盖 |
-| 每日日记 | `/<workspace>/AIDOCS/reports/daily/YYYY-MM-DD.md` | 记录当天完成、阻塞、下一步 | reflection 真相 | 每日追加 |
-| 记忆候选 | `/<workspace>/.msgcode/reflection/memory-candidates/memory-<category>-<YYYYMMDD>-<seq>.md` | 记录待审核的长期经验 | reflection 真相 | 阶段性 |
-| skill 候选 | `/<workspace>/.msgcode/reflection/skill-candidates/skill-<category>-<YYYYMMDD>-<seq>.md` | 记录待沉淀的 skill/workflow | reflection 真相 | 阶段性 |
-| 任务状态 | `/issues/tkNNNN.<state>.<board>[.prio].<slug>.md` | 记录任务状态、责任、验收口径 | 任务真相源 | 生命周期完整 |
-| 交付与证据 | `/AIDOCS/reports/*` `/AIDOCS/artifacts/*` | 放报告、素材、补充证据 | 证据面 | 按需保留 |
-
-一句话收口：
-
-- `SOUL + memory + summary` 负责“认识你”
-- `inbox + issues` 负责“接活并推进”
-- `reflection + AIDOCS` 负责“回收经验和保留证据”
-
-补充：
-
-- `dispatch / subagents / sessions raw log` 这些机器协议面仍然存在
-- 只是它们不属于 README 这张“人类认知文件表”
-
-## 设计原则
+## 当前实现口径
 
 **不是 AI 要家，是让 AI 工作的人，应该给它一个像样的家。**
 
-- msgcode 的定位是薄 runtime，不是替 AI 做主的控制平台
+- msgcode 当前实现是一个薄 runtime，不是替 AI 做主的控制平台
+- **msgcode = AI 的操作系统化工作底座：在用户授权下，给一个可靠主脑完整、真实、可验证的电脑能力，让它按 persona 工作、管理子代理，并通过文件真相源持续完成真实任务。**
 - 默认主链是：`模型 -> 工具/CLI/文件 -> 真实结果 -> 模型`
 - 能落成文件真相源的，先落文件；不能落的，只做薄 runtime
 - `skill` 首先是说明书，不是替模型做决定的控制器
 
-当前产品口径：
+## 开发者入口
 
-- 当前桌面桥：`ghost-os`
-- 当前实现目标：薄 runtime，默认把真实电脑能力暴露给 LLM
-- 最终产品方向：`menu App + 单面板 + web系统面板`
-
-延伸阅读：
-
-- `docs/product/pitch.md`
-- `CONTRIBUTING.md`
-- `docs/README.md`
+- `docs/protocol/COGNITION.md`：Agent 通过哪些人类可读文件认识机构、继续工作
+- `docs/protocol/MEMORY.md`：长期记忆与索引边界
+- `docs/protocol/WORKSTATE.md`：跨窗口恢复工作态的骨架文件
+- `docs/testing/feishu-live-smoke.md`：飞书真机 smoke 默认基座
+- `src/README.md`：代码分层与职责
+- `docs/README.md`：文档总入口
 
 ## 最小命令集
 
@@ -269,33 +253,6 @@ msgcode start -d
 
 更多命令请以运行时 `/help` 输出为准。
 
-## Legacy Desktop Bridge（遗留显式链路）
-
-- 当前默认桌面能力面已切到 `ghost_*` 原生工具
-- 自研 Desktop Bridge 已整体迁入 `docs/archive/retired-desktop-bridge/`
-- 不要再把旧 `mac/` / `docs/desktop/` 当默认入口，现役桌面能力以 `ghost_*` 为准
-
-## 退役名对照
-
-- `desktop` → `ghost_*`
-- `shell` → `bash`
-- `run_skill` → `SKILL.md + 原生工具/正式 CLI`
-- `mem` → `memory skill + msgcode memory + 自动注入`
-
-## 记忆机制（L0/L1/L2）
-
-- `L0` 会话窗口：`<workspace>/.msgcode/sessions/<chatId>.jsonl`
-- `L1` 会话摘要：上下文接近预算时压缩旧轮次
-- `L2` 长期记忆：数据文件在 `<workspace>/memory/*.md`，索引在 `~/.config/msgcode/memory/index.sqlite`
-
-`/clear` 只清理 `L0/L1`，不清理 `L2`。
-
-开发补充：
-
-- `L2` 的文件真相源可以直接读写
-- `index.sqlite` 只是派生索引；坏了可以删后重建
-- 若要直跑源码执行 `memory index`，请走 `node --import tsx src/cli.ts memory index ...`
-
 ## Known Limits
 
 - 当前正式消息通道只有飞书；未来 app/web client 会接在更薄的 channel seam 上，而不是恢复旧 iMessage 主链
@@ -306,7 +263,9 @@ msgcode start -d
 
 - `docs/README.md` 文档总入口
 - `docs/testing/feishu-live-smoke.md` 飞书真机 smoke 默认基座
-- `docs/product/pitch.md` 产品叙事与定位
+- `docs/protocol/COGNITION.md` Agent 人类认知文件表
+- `docs/protocol/MEMORY.md` 记忆真相源与索引边界
+- `docs/protocol/WORKSTATE.md` 工作态骨架协议
 - `docs/archive/retired-desktop-bridge/` Legacy Desktop Bridge 版本化归档（非现役上手入口）
 - `CONTRIBUTING.md` 开源协作与文档边界说明
 - `src/README.md` 代码分层与职责
