@@ -7,7 +7,7 @@ import path from "node:path";
  * 对齐 spec: AIDOCS/msgcode-2.1/memory_spec_v2.1.md
  */
 
-// SQLite 将使用 better-sqlite3（在 store.ts 中导入）
+// SQLite 运行时由 src/deps/sqlite.ts 统一提供
 
 // ============================================
 // CLI Contract Envelope（对齐 cli_contract_v2.1.md）

@@ -15,6 +15,8 @@ import { consumeWakeRecord, type WakeWorkCapsule } from "./wake-consume.js";
 import type { WakeRecord } from "./wake-types.js";
 import type { TaskRecord } from "./task-types.js";
 import { TaskStore } from "./task-store.js";
+import { noteWakeFailure } from "./wake-failure.js";
+import { computeVitals, explainPolicy } from "./vitals.js";
 
 /**
  * Wake Heartbeat 配置
@@ -46,6 +48,10 @@ export interface WakeConsumeResult {
 const DEFAULT_MAX_CONSUME = 3;
 const DEFAULT_CONSUMER = "heartbeat-consumer";
 const DEFAULT_LEASE_MS = 5 * 60 * 1000; // 5分钟
+
+function isHeavyWakeRecord(record: WakeRecord): boolean {
+  return Boolean(record.taskId);
+}
 
 function getWorkspaceTaskDir(workspacePath: string): string {
   return path.join(workspacePath, ".msgcode", "tasks");
@@ -109,10 +115,40 @@ export async function consumePendingWakes(
     return [];
   }
 
+  const vitals = await computeVitals(workspacePath);
+  const policyReason = explainPolicy(vitals);
+
+  if (vitals.policy.mode === "defer") {
+    logger.info("[WakeHeartbeat] vitals=defer，当前 tick 延后 wake 消费", {
+      workspacePath,
+      reason: policyReason,
+    });
+    return actionableRecords.slice(0, maxConsume).map((record) => ({
+      consumed: false,
+      wakeRecordId: record.id,
+      error: `deferred by vitals: ${policyReason}`,
+    }));
+  }
+
   const results: WakeConsumeResult[] = [];
+  let consumeBudget = 0;
 
   // 3. 遍历消费
-  for (const record of actionableRecords.slice(0, maxConsume)) {
+  for (const record of actionableRecords) {
+    if (vitals.policy.mode === "degrade" && isHeavyWakeRecord(record)) {
+      results.push({
+        consumed: false,
+        wakeRecordId: record.id,
+        error: `degraded by vitals: heavy wake requires capsule`,
+      });
+      continue;
+    }
+
+    if (consumeBudget >= maxConsume) {
+      break;
+    }
+    consumeBudget++;
+
     try {
       // 尝试原子 claim
       const claim = claimWakeRecord(workspacePath, record.id, consumerId, leaseMs);
@@ -186,11 +222,12 @@ export async function consumePendingWakes(
       // 消费失败时释放 claim 并复位 record 状态
       try {
         releaseWakeClaim(workspacePath, record.id);
-        // 把 record 改回 pending，允许下次重试
-        const { updateWakeRecord } = await import("./wake-store.js");
-        updateWakeRecord(workspacePath, record.id, {
-          status: "pending",
-          claimedAt: undefined,
+        noteWakeFailure({
+          workspacePath,
+          recordId: record.id,
+          code: "WAKE_CONSUME_FAILED",
+          summary: errorMsg,
+          incrementReclaim: false,
         });
       } catch {}
 

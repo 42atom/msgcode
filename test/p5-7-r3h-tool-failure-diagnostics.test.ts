@@ -7,8 +7,8 @@
  * - 失败语义：TOOL_EXEC_FAILED / TOOL_LOOP_LIMIT_EXCEEDED
  */
 
-import { describe, it, expect } from "bun:test";
-import { runBashCommand } from "../src/runners/bash-runner.js";
+import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import { runBashCommand, __setBashRunnerTestDeps, __resetBashRunnerTestDeps } from "../src/runners/bash-runner.js";
 import { runLmStudioToolLoop } from "../src/lmstudio.js";
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
@@ -60,6 +60,16 @@ async function createToolEnabledWorkspace(): Promise<string> {
 }
 
 describe("P5.7-R3h: Tool Failure Diagnostics (Behavior Lock)", () => {
+    beforeEach(() => {
+        __setBashRunnerTestDeps({
+            resolveManagedBashPath: () => "/bin/bash",
+        });
+    });
+
+    afterEach(() => {
+        __resetBashRunnerTestDeps();
+    });
+
     describe("非零退出码与超时语义", () => {
         it("应正确返回非零退出码", async () => {
             const result = await runBashCommand({

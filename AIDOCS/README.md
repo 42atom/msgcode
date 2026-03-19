@@ -22,7 +22,10 @@
 - `refs/`：参考资料（已合并原 references/）
 - `prompts/`：提示词模板
 - `architecture/`：架构资料
-- `product/`：产品资料
+- `artifacts/`：一次性产物与验收附件
+- `reports/` / `reviews/`：当前阶段仍需参考的报告与评审
+- `audio/` / `media/`：音频与多媒体辅助材料
+- `msgcode-2.0/2.1/2.2`：历史阶段资料包，保留作追溯参考
 
 ## 整理规则
 

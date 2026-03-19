@@ -49,10 +49,10 @@ describe("P5.7-R9: 真实能力验收门", () => {
     }
   });
 
-  it("任务单文档应存在并包含 R9 标题", () => {
+  it("任务单文档应在归档目录中保留并包含 R9 标题", () => {
     const docPath = path.join(
       process.cwd(),
-      "docs/tasks/p5-7-r9-real-capability-gate.md"
+      "docs/archive/tasks/p5-7-r9-real-capability-gate.md"
     );
     expect(fs.existsSync(docPath)).toBe(true);
     const content = fs.readFileSync(docPath, "utf8");
@@ -60,10 +60,11 @@ describe("P5.7-R9: 真实能力验收门", () => {
     expect(content).toContain("模型真实能力验收门");
   });
 
-  it("任务单索引应包含 R9 条目", () => {
+  it("任务单目录 README 应声明已归档并指向现协议", () => {
     const readmePath = path.join(process.cwd(), "docs/tasks/README.md");
     const content = fs.readFileSync(readmePath, "utf8");
-    expect(content).toContain("P5.7-R9");
-    expect(content).toContain("真实能力验收门");
+    expect(content).toContain("已归档");
+    expect(content).toContain("issues/tkNNNN.<state>.<board>.<slug>[.prio].md");
+    expect(content).toContain("docs/plan/plNNNN.<state>.<board>.<slug>[.prio].md");
   });
 });

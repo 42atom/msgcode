@@ -7,6 +7,7 @@ import { createHeartbeatTickHandler, type HeartbeatTickResult } from "../src/run
 import { type TickContext } from "../src/runtime/heartbeat.js";
 import { loadDispatchRecords } from "../src/runtime/work-continuity.js";
 import { createWakeJob, createWakeRecord } from "../src/runtime/wake-store.js";
+import { __resetBashRunnerTestDeps, __setBashRunnerTestDeps } from "../src/runners/bash-runner.js";
 
 function createTempWorkspace(): string {
   const root = path.join(tmpdir(), `msgcode-heartbeat-tick-${randomUUID()}`);
@@ -170,9 +171,13 @@ describe("P7-TK0204: Heartbeat Tick Integration (最小可跑主链)", () => {
 
   beforeEach(() => {
     workspace = createTempWorkspace();
+    __setBashRunnerTestDeps({
+      resolveManagedBashPath: () => "/bin/bash",
+    });
   });
 
   afterEach(() => {
+    __resetBashRunnerTestDeps();
     cleanupTempWorkspace(workspace);
   });
 

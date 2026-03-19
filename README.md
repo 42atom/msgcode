@@ -45,6 +45,7 @@ workspace files / issues / AIDOCS
 
 - macOS（建议 Apple Silicon）
 - Node.js + npm
+- Homebrew Bash（正式 `bash` 合同；只认 `/opt/homebrew/bin/bash` 或 `/usr/local/bin/bash`）
 - `tmux`
 - 飞书企业自建应用凭据（`FEISHU_APP_ID` / `FEISHU_APP_SECRET`）
 - Chrome/Chromium（供浏览器自动化底座使用）
@@ -62,12 +63,19 @@ ghost status
 ### 2. 安装依赖
 
 ```bash
+brew bundle --file bootstrap/Brewfile
+sh bootstrap/doctor-managed-bash.sh
 cd <msgcode-dir>
 npm install
 ```
 
 说明：
 
+- `bash` 工具的正式 shell 合同固定为 Homebrew Bash：`/opt/homebrew/bin/bash` 或 `/usr/local/bin/bash`
+- 它不是用户登录 shell；不假设 `zsh`，也不假设系统 `/bin/bash` 3.2
+- 若要一次性补齐推荐终端工具，可再执行：
+  - `brew bundle --file bootstrap/Brewfile.agent`
+  - `sh bootstrap/doctor-agent-pack.sh`
 - `npm install` 会安装 `patchright` 依赖
 - 正式浏览器主链通过 `connectOverCDP` 连接共享工作 Chrome
 - 共享工作 Chrome 数据根默认落在：`$WORKSPACE_ROOT/.msgcode/chrome-profiles/<name>`
@@ -147,7 +155,7 @@ msgcode start -d
 - 日常 CLI：优先用 `msgcode ...` 或 `./bin/msgcode ...`
 - 开发直跑源码：用 `node --import tsx src/cli.ts ...`，或 `npm run cli:node -- ...`
 - `npm test` / `npm run test:bun` 只跑 Bun 安全子集
-- 任何会触达 `better-sqlite3` 的路径，不要直接塞进 Bun 进程
+- 任何会触达 `node:sqlite` / `sqlite-vec` 的路径，不要直接塞进 Bun 进程
 - 飞书真机 smoke 基座见：`docs/testing/feishu-live-smoke.md`
 
 ## 当前主链

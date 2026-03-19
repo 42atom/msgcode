@@ -17,6 +17,42 @@ import type { Attachment } from "../channels/types.js";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promises as fs } from "node:fs";
 
+interface ResponderRuntimeDeps {
+    tmuxSession: typeof TmuxSession;
+    sessionStatus: typeof SessionStatus;
+    createCodexReader: () => CodexOutputReader;
+    createOutputReader: () => OutputReader;
+    sendAttachments: typeof sendAttachmentsToSession;
+}
+
+const responderRuntimeDeps: ResponderRuntimeDeps = {
+    tmuxSession: TmuxSession,
+    sessionStatus: SessionStatus,
+    createCodexReader: () => new CodexOutputReader(),
+    createOutputReader: () => new OutputReader(),
+    sendAttachments: sendAttachmentsToSession,
+};
+
+const defaultResponderRuntimeDeps: ResponderRuntimeDeps = {
+    ...responderRuntimeDeps,
+};
+
+export function __setResponderTestDeps(overrides: Partial<ResponderRuntimeDeps>): void {
+    if (overrides.tmuxSession) responderRuntimeDeps.tmuxSession = overrides.tmuxSession;
+    if (overrides.sessionStatus) responderRuntimeDeps.sessionStatus = overrides.sessionStatus;
+    if (overrides.createCodexReader) responderRuntimeDeps.createCodexReader = overrides.createCodexReader;
+    if (overrides.createOutputReader) responderRuntimeDeps.createOutputReader = overrides.createOutputReader;
+    if (overrides.sendAttachments) responderRuntimeDeps.sendAttachments = overrides.sendAttachments;
+}
+
+export function __resetResponderTestDeps(): void {
+    responderRuntimeDeps.tmuxSession = defaultResponderRuntimeDeps.tmuxSession;
+    responderRuntimeDeps.sessionStatus = defaultResponderRuntimeDeps.sessionStatus;
+    responderRuntimeDeps.createCodexReader = defaultResponderRuntimeDeps.createCodexReader;
+    responderRuntimeDeps.createOutputReader = defaultResponderRuntimeDeps.createOutputReader;
+    responderRuntimeDeps.sendAttachments = defaultResponderRuntimeDeps.sendAttachments;
+}
+
 // ============================================
 // 读取模式（三态）
 // ============================================
@@ -139,7 +175,9 @@ export async function handleTmuxSend(
     message: string,
     options: ResponseOptions = {}
 ): Promise<ResponseResult> {
-    const sessionName = TmuxSession.getSessionName(groupName);
+    const tmuxSession = responderRuntimeDeps.tmuxSession;
+    const sessionStatus = responderRuntimeDeps.sessionStatus;
+    const sessionName = tmuxSession.getSessionName(groupName);
     const promptForEchoRemoval = withRemoteHintIfNeeded(sessionName, message);
     const delegationMarkers = extractDelegationMarkers(message);
     // Claude 回读定位：优先用“用户原始消息”的末行作为 marker（更稳定，不受远程上下文多行影响）
@@ -147,7 +185,7 @@ export async function handleTmuxSend(
     let sentTextForMarker = ""; // baseline-tail diff 的兜底锚点（基于真实发送到 tmux 的文本）
 
     // 检查会话是否存在
-    const exists = await TmuxSession.exists(groupName);
+    const exists = await tmuxSession.exists(groupName);
     if (!exists) {
         return { success: false, error: `tmux 会话未运行，请先发送 /start` };
     }
@@ -159,8 +197,8 @@ export async function handleTmuxSend(
     // fail-fast：会话存在但尚未就绪时，不要把消息直接塞进输入流（会导致长时间无输出）
     // 远程手机端体验：必须快速给到"还在启动"的反馈，而不是等待 5-10 分钟超时。
     try {
-        const status = await TmuxSession.getRunnerStatus(groupName, runnerType);
-        if (status !== SessionStatus.Ready) {
+        const status = await tmuxSession.getRunnerStatus(groupName, runnerType);
+        if (status !== sessionStatus.Ready) {
             const runnerName = runnerOld === "codex" ? "Codex" : (runnerOld === "claude-code" ? "Claude Code" : "Claude");
             return { success: false, error: `${runnerName} 尚未就绪，请稍等后再试（/status 查看），或发送 /start 重启会话` };
         }
@@ -189,7 +227,7 @@ export async function handleTmuxSend(
 
     if (runnerOld === "codex") {
         // codex_jsonl: Codex CLI JSONL 读取
-        coderReader = new CodexOutputReader();
+        coderReader = responderRuntimeDeps.createCodexReader();
         if (options.projectDir) {
             coderJsonlPath = await waitForCodexJsonlPath(coderReader, options.projectDir, timeout, signal);
         }
@@ -207,7 +245,7 @@ export async function handleTmuxSend(
         }
     } else if (runnerOld === "claude-code") {
         // claude-code: 优先 claude_jsonl，fallback 到 pane
-        claudeReader = new OutputReader();
+        claudeReader = responderRuntimeDeps.createOutputReader();
         if (options.projectDir) {
             // P0 Batch-1: 使用 readProject 获取选路信息（包含 deliverable 评分）
             const initResult = await claudeReader.readProject(options.projectDir);
@@ -258,7 +296,7 @@ export async function handleTmuxSend(
         claudeReader!.setPosition(claudeJsonlPath!, startOffset);
     } else {
         // pane: 记录发送前的 pane 末尾作为 baseline tail
-        const fullPane = await TmuxSession.capturePane(sessionName, 1200);
+        const fullPane = await tmuxSession.capturePane(sessionName, 1200);
         startPaneTail = fullPane.slice(-BASELINE_TAIL_SIZE);
     }
 
@@ -281,7 +319,7 @@ export async function handleTmuxSend(
     // 3. 发送附件（Codex CLI 暂不支持附件）
     // P0: claude_jsonl 也需要发送附件（虽然读取走 JSONL，但附件仍需通过 tmux 发送）
     if (readMode !== "codex_jsonl") {
-        await sendAttachmentsToSession(sessionName, options.attachments);
+        await responderRuntimeDeps.sendAttachments(sessionName, options.attachments);
     }
 
     logger.debug(`[Responder ${groupName}] 准备发送消息`, { module: "responder", groupName, runnerOld });
@@ -301,17 +339,17 @@ export async function handleTmuxSend(
 
         logger.debug(`[Responder ${groupName}] 发送消息`, { module: "responder", groupName, runnerOld, messageLen: preparedMessage.length });
         // P0: 两步发送 - 先发送字面量文本，再发送 Enter
-        await TmuxSession.sendTextLiteral(sessionName, preparedMessage);
+        await tmuxSession.sendTextLiteral(sessionName, preparedMessage);
         // 延迟 30-80ms 防止 UI 吞键
         await sleepMs(50, signal);
-        await TmuxSession.sendEnter(sessionName);
+        await tmuxSession.sendEnter(sessionName);
 
         logger.debug(`[Responder ${groupName}] 消息已发送，开始轮询`, { module: "responder", groupName, runnerOld });
         // P0: 提交校验兜底 - 检查文本是否仍在输入栏，如果是则补发 Enter
         await sleepMs(100, signal); // 等待一下让 UI 更新
-        if (await TmuxSession.isTextStillInInput(sessionName, preparedMessage)) {
+        if (await tmuxSession.isTextStillInInput(sessionName, preparedMessage)) {
             logger.warn(`检测到 Enter 被吞，补发一次`, { module: "responder", groupName, runnerOld });
-            await TmuxSession.sendEnter(sessionName);
+            await tmuxSession.sendEnter(sessionName);
         }
     } catch (error: any) {
         logger.error(`[Responder ${groupName}] 发送失败`, { module: "responder", groupName, runnerOld, error: error.message });
@@ -516,7 +554,7 @@ export async function handleTmuxSend(
             //
             // P0 经验：Claude Code 的 pane 输出会因为 resize/换行重排/动态状态行而变化，
             // baseline-tail diff 容易失效；因此优先用“发送文本的 marker”定位最后一次输入行。
-            const currentPaneOutput = await TmuxSession.capturePane(sessionName, 2000);
+            const currentPaneOutput = await tmuxSession.capturePane(sessionName, 2000);
 
             if (
                 (delegationMarkers.doneMarker && currentPaneOutput.includes(delegationMarkers.doneMarker)) ||

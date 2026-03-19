@@ -17,6 +17,7 @@ import {
   getWakeRecord,
 } from "./wake-store.js";
 import { releaseWakeClaim, getStaleClaims } from "./wake-claim.js";
+import { noteWakeFailure } from "./wake-failure.js";
 
 // ============================================
 // Startup Catch-up 主函数
@@ -65,9 +66,12 @@ export async function executeStartupCatchup(workspacePath: string): Promise<Star
       // 把对应的 record 从 claimed 改回 pending（允许重新 claim）
       const record = getWakeRecord(workspacePath, claim.wakeId);
       if (record && record.status === "claimed") {
-        updateWakeRecord(workspacePath, claim.wakeId, {
-          status: "pending",
-          claimedAt: undefined,
+        noteWakeFailure({
+          workspacePath,
+          recordId: claim.wakeId,
+          code: "WAKE_STALE_RECLAIM",
+          summary: `stale claim reclaimed from ${claim.owner}`,
+          incrementReclaim: true,
         });
       }
 

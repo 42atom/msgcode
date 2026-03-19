@@ -19,6 +19,38 @@ import { sendEscape, sendMessage } from "../tmux/sender.js";
 import { TmuxSession } from "../tmux/session.js";
 import { atomicWriteFile } from "./fs-atomic.js";
 
+interface SubagentRuntimeDeps {
+  tmuxSession: typeof TmuxSession;
+  handleTmuxSend: typeof handleTmuxSend;
+  sendEscape: typeof sendEscape;
+  sendMessage: typeof sendMessage;
+}
+
+const subagentRuntimeDeps: SubagentRuntimeDeps = {
+  tmuxSession: TmuxSession,
+  handleTmuxSend,
+  sendEscape,
+  sendMessage,
+};
+
+const defaultSubagentRuntimeDeps: SubagentRuntimeDeps = {
+  ...subagentRuntimeDeps,
+};
+
+export function __setSubagentTestDeps(overrides: Partial<SubagentRuntimeDeps>): void {
+  if (overrides.tmuxSession) subagentRuntimeDeps.tmuxSession = overrides.tmuxSession;
+  if (overrides.handleTmuxSend) subagentRuntimeDeps.handleTmuxSend = overrides.handleTmuxSend;
+  if (overrides.sendEscape) subagentRuntimeDeps.sendEscape = overrides.sendEscape;
+  if (overrides.sendMessage) subagentRuntimeDeps.sendMessage = overrides.sendMessage;
+}
+
+export function __resetSubagentTestDeps(): void {
+  subagentRuntimeDeps.tmuxSession = defaultSubagentRuntimeDeps.tmuxSession;
+  subagentRuntimeDeps.handleTmuxSend = defaultSubagentRuntimeDeps.handleTmuxSend;
+  subagentRuntimeDeps.sendEscape = defaultSubagentRuntimeDeps.sendEscape;
+  subagentRuntimeDeps.sendMessage = defaultSubagentRuntimeDeps.sendMessage;
+}
+
 export type SubagentClient = "codex" | "claude-code";
 export type SubagentTaskStatus = "running" | "completed" | "failed" | "stopped";
 
@@ -450,7 +482,7 @@ async function waitForTaskMarker(
   }
 
   while (Date.now() < deadlineMs) {
-    paneTail = await TmuxSession.capturePane(record.sessionName, 160);
+    paneTail = await subagentRuntimeDeps.tmuxSession.capturePane(record.sessionName, 160);
     const status = detectTaskCompletion(record, `${seedText}\n${paneTail}`);
     if (status) {
       return { status, paneTail };
@@ -484,7 +516,7 @@ export async function runSubagentTask(input: RunSubagentInput): Promise<RunSubag
   }
 
   const groupName = buildGroupName(client, workspacePath);
-  const sessionName = TmuxSession.getSessionName(groupName);
+  const sessionName = subagentRuntimeDeps.tmuxSession.getSessionName(groupName);
   const taskId = randomUUID();
   const now = new Date().toISOString();
   const record: SubagentTaskRecord = {
@@ -513,7 +545,7 @@ export async function runSubagentTask(input: RunSubagentInput): Promise<RunSubag
 
   let startupMessage = "";
   try {
-    startupMessage = await TmuxSession.start(groupName, workspacePath, "tmux", client);
+    startupMessage = await subagentRuntimeDeps.tmuxSession.start(groupName, workspacePath, "tmux", client);
   } catch (error) {
     const startErrorMessage = `${error instanceof Error ? error.message : String(error)}\n${buildInstallHint(client)}`;
     await updateTaskStatus(record, {
@@ -527,7 +559,7 @@ export async function runSubagentTask(input: RunSubagentInput): Promise<RunSubag
   if (input.watch) {
     const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const deadlineMs = Date.now() + timeoutMs;
-    const result = await handleTmuxSend(groupName, prompt, {
+    const result = await subagentRuntimeDeps.handleTmuxSend(groupName, prompt, {
       projectDir: workspacePath,
       runnerType: "tmux",
       runnerOld: client,
@@ -590,7 +622,7 @@ export async function runSubagentTask(input: RunSubagentInput): Promise<RunSubag
     );
   }
 
-  const sendResult = await sendMessage(groupName, prompt);
+  const sendResult = await subagentRuntimeDeps.sendMessage(groupName, prompt);
   if (!sendResult.success) {
     await updateTaskStatus(record, {
       status: "failed",
@@ -616,7 +648,7 @@ export async function getSubagentTaskStatus(input: {
   const workspacePath = resolveWorkspacePath(input.workspace);
   const taskFile = await findTaskFile(workspacePath, input.taskId);
   const record = await readTaskRecord(taskFile);
-  const paneTail = await TmuxSession.capturePane(record.sessionName, 120);
+  const paneTail = await subagentRuntimeDeps.tmuxSession.capturePane(record.sessionName, 120);
   const detectedStatus = record.status === "running" ? detectTaskCompletion(record, paneTail) : null;
   const next = detectedStatus
     ? await updateTaskStatus(record, {
@@ -670,7 +702,7 @@ export async function sendSubagentMessage(input: {
 
   if (input.watch) {
     const timeoutMs = input.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    const result = await handleTmuxSend(record.groupName, trimmedMessage, {
+    const result = await subagentRuntimeDeps.handleTmuxSend(record.groupName, trimmedMessage, {
       projectDir: workspacePath,
       runnerType: "tmux",
       runnerOld: record.client,
@@ -684,7 +716,7 @@ export async function sendSubagentMessage(input: {
       );
     }
 
-    const paneTail = await TmuxSession.capturePane(record.sessionName, 160);
+    const paneTail = await subagentRuntimeDeps.tmuxSession.capturePane(record.sessionName, 160);
     const detectedStatus = detectTaskCompletion(record, `${result.response ?? ""}\n${paneTail}`);
     record = detectedStatus
       ? await updateTaskStatus(record, {
@@ -717,7 +749,7 @@ export async function sendSubagentMessage(input: {
     };
   }
 
-  const sendResult = await sendMessage(record.groupName, trimmedMessage);
+  const sendResult = await subagentRuntimeDeps.sendMessage(record.groupName, trimmedMessage);
   if (!sendResult.success) {
     throw new SubagentRuntimeError(
       SUBAGENT_ERROR_CODES.DELEGATE_FAILED,
@@ -762,7 +794,7 @@ export async function stopSubagentTask(input: {
   const record = await readTaskRecord(taskFile);
 
   try {
-    await sendEscape(record.groupName);
+    await subagentRuntimeDeps.sendEscape(record.groupName);
   } catch (error) {
     logger.warn("subagent stop failed", {
       module: "subagent",
@@ -775,7 +807,7 @@ export async function stopSubagentTask(input: {
     );
   }
 
-  const paneTail = await TmuxSession.capturePane(record.sessionName, 120);
+  const paneTail = await subagentRuntimeDeps.tmuxSession.capturePane(record.sessionName, 120);
   const next = await updateTaskStatus(record, {
     status: "stopped",
     stoppedAt: new Date().toISOString(),

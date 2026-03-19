@@ -32,9 +32,7 @@
   "license": "MIT",
   "dependencies": {
     "@larksuiteoapi/node-sdk": "^1.59.0",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/commander": "^2.12.0",
-    "better-sqlite3": "^12.6.2",
     "commander": "^14.0.2",
     "croner": "^9.1.0",
     "dotenv": "^16.4.0",

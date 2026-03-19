@@ -11,32 +11,36 @@ import os from "node:os";
 
 describe("P5.6.8-R3b: edit_file 补丁语义回归锁", () => {
     describe("静态验证", () => {
-        it("tools/bus.ts 必须包含 edit_file case", () => {
+        it("tools/handlers.ts 必须包含 edit_file case", () => {
             const code = fs.readFileSync(
-                path.join(process.cwd(), "src/tools/bus.ts"),
+                path.join(process.cwd(), "src/tools/handlers.ts"),
                 "utf-8"
             );
             expect(code).toContain('case "edit_file"');
         });
 
-        it("edit_file 必须使用 oldText/newText 补丁模式", () => {
-            const code = fs.readFileSync(
-                path.join(process.cwd(), "src/tools/bus.ts"),
+        it("edit_file 必须通过 registry 归一化为 oldText/newText 补丁模式", () => {
+            const handlersCode = fs.readFileSync(
+                path.join(process.cwd(), "src/tools/handlers.ts"),
                 "utf-8"
             );
-            // 验证补丁语义
-            expect(code).toContain("oldText");
-            expect(code).toContain("newText");
-            expect(code).toContain("edits");
+            const registryCode = fs.readFileSync(
+                path.join(process.cwd(), "src/tools/registry.ts"),
+                "utf-8"
+            );
+            expect(handlersCode).toContain("runEditFileTool");
+            expect(handlersCode).toContain("const edits = Array.isArray(args.edits) ? args.edits : []");
+            expect(registryCode).toContain("normalizeEditFileEditsInput");
+            expect(registryCode).toContain("oldText");
+            expect(registryCode).toContain("newText");
+            expect(registryCode).toContain("args.edits = edits");
         });
 
-        it("edit_file 必须验证 oldText 存在", () => {
+        it("edit_file 必须在 registry 中验证 oldText/newText 类型", () => {
             const code = fs.readFileSync(
-                path.join(process.cwd(), "src/tools/bus.ts"),
+                path.join(process.cwd(), "src/tools/registry.ts"),
                 "utf-8"
             );
-            // P5.6.13-R1A-EXEC R2: 参数校验在 validateToolArgs 中
-            // 验证 oldText 类型检查存在
             expect(code).toContain("typeof edit.oldText !== \"string\"");
             expect(code).toContain("typeof edit.newText !== \"string\"");
         });

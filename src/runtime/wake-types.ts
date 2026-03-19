@@ -52,11 +52,13 @@ export function getWakeClaimsDir(workspacePath: string): string {
  * Wake Job Kind
  */
 export type WakeJobKind = "once" | "recurring";
+export const WAKE_JOB_KINDS = ["once", "recurring"] as const;
 
 /**
  * Wake Mode
  */
 export type WakeMode = "now" | "next-heartbeat";
+export const WAKE_MODES = ["now", "next-heartbeat"] as const;
 
 /**
  * Schedule（时间语义）
@@ -116,6 +118,7 @@ export type WakeRecordStatus =
   | "done"      // 已完成
   | "failed"    // 执行失败
   | "expired";  // 过期未执行
+export const WAKE_RECORD_STATUSES = ["pending", "claimed", "done", "failed", "expired"] as const;
 
 /**
  * Late Policy
@@ -123,11 +126,13 @@ export type WakeRecordStatus =
 export type LatePolicy =
   | "run-if-missed"  // 错过也执行
   | "skip-if-missed"; // 错过就跳过
+export const LATE_POLICIES = ["run-if-missed", "skip-if-missed"] as const;
 
 /**
  * Request Path
  */
 export type RequestPath = "run" | "task";
+export const REQUEST_PATHS = ["run", "task"] as const;
 
 /**
  * Wake Record（触发事实）
@@ -167,6 +172,18 @@ export interface WakeRecord {
 
   /** 错误消息（可选） */
   errorMessage?: string;
+
+  /** stale reclaim / 保守重试计数 */
+  reclaimCount?: number;
+
+  /** 最近一次失败代码 */
+  lastFailureCode?: string;
+
+  /** 最近一次失败时间（毫秒） */
+  lastFailureAt?: number;
+
+  /** 最近一次失败摘要 */
+  lastFailureSummary?: string;
 
   /** 迟到策略 */
   latePolicy: LatePolicy;
@@ -223,7 +240,106 @@ export const WAKE_GC_CONFIG = {
 
   /** 默认安全边界（10秒） */
   defaultSafetyMarginSec: 10,
+
+  /** poison wake 升级阈值 */
+  poisonThreshold: 3,
 } as const;
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function isWakeSchedule(value: unknown): value is WakeSchedule {
+  if (!isObject(value) || typeof value.kind !== "string") return false;
+
+  if (value.kind === "at") {
+    return typeof value.atMs === "number";
+  }
+
+  if (value.kind === "every") {
+    return typeof value.everyMs === "number" && typeof value.anchorMs === "number";
+  }
+
+  if (value.kind === "cron") {
+    return typeof value.expr === "string" && (value.tz === undefined || typeof value.tz === "string");
+  }
+
+  return false;
+}
+
+export function isWakeJobKind(value: unknown): value is WakeJobKind {
+  return typeof value === "string" && (WAKE_JOB_KINDS as readonly string[]).includes(value);
+}
+
+export function isWakeMode(value: unknown): value is WakeMode {
+  return typeof value === "string" && (WAKE_MODES as readonly string[]).includes(value);
+}
+
+export function isWakeRecordStatus(value: unknown): value is WakeRecordStatus {
+  return typeof value === "string" && (WAKE_RECORD_STATUSES as readonly string[]).includes(value);
+}
+
+export function isLatePolicy(value: unknown): value is LatePolicy {
+  return typeof value === "string" && (LATE_POLICIES as readonly string[]).includes(value);
+}
+
+export function isRequestPath(value: unknown): value is RequestPath {
+  return typeof value === "string" && (REQUEST_PATHS as readonly string[]).includes(value);
+}
+
+export function isWakeJob(value: unknown): value is WakeJob {
+  if (!isObject(value)) return false;
+
+  return (
+    typeof value.id === "string" &&
+    isWakeJobKind(value.kind) &&
+    isWakeSchedule(value.schedule) &&
+    isWakeMode(value.mode) &&
+    (value.taskId === undefined || typeof value.taskId === "string") &&
+    typeof value.enabled === "boolean" &&
+    (value.hint === undefined || typeof value.hint === "string") &&
+    (value.latePolicy === undefined || isLatePolicy(value.latePolicy)) &&
+    typeof value.createdAt === "number" &&
+    typeof value.updatedAt === "number"
+  );
+}
+
+export function isWakeRecord(value: unknown): value is WakeRecord {
+  if (!isObject(value)) return false;
+
+  return (
+    typeof value.id === "string" &&
+    (value.jobId === undefined || typeof value.jobId === "string") &&
+    isWakeRecordStatus(value.status) &&
+    isRequestPath(value.path) &&
+    (value.taskId === undefined || typeof value.taskId === "string") &&
+    (value.hint === undefined || typeof value.hint === "string") &&
+    typeof value.scheduledAt === "number" &&
+    (value.claimedAt === undefined || typeof value.claimedAt === "number") &&
+    (value.completedAt === undefined || typeof value.completedAt === "number") &&
+    (value.failedAt === undefined || typeof value.failedAt === "number") &&
+    (value.errorMessage === undefined || typeof value.errorMessage === "string") &&
+    (value.reclaimCount === undefined || typeof value.reclaimCount === "number") &&
+    (value.lastFailureCode === undefined || typeof value.lastFailureCode === "string") &&
+    (value.lastFailureAt === undefined || typeof value.lastFailureAt === "number") &&
+    (value.lastFailureSummary === undefined || typeof value.lastFailureSummary === "string") &&
+    isLatePolicy(value.latePolicy) &&
+    typeof value.createdAt === "number" &&
+    typeof value.updatedAt === "number"
+  );
+}
+
+export function isWakeClaim(value: unknown): value is WakeClaim {
+  if (!isObject(value)) return false;
+
+  return (
+    typeof value.wakeId === "string" &&
+    typeof value.owner === "string" &&
+    typeof value.claimedAt === "number" &&
+    typeof value.leaseUntil === "number" &&
+    typeof value.safetyMarginSec === "number"
+  );
+}
 
 // ============================================
 // 错误码

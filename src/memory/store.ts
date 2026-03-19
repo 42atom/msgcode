@@ -10,14 +10,13 @@ import { existsSync, mkdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import os from "node:os";
 import * as sqliteVec from "sqlite-vec";
-import { loadBetterSqlite3 } from "../deps/better-sqlite3.js";
+import { openSqliteDatabase, type SqliteDatabase } from "../deps/sqlite.js";
 import type {
   Document,
   Chunk,
   SearchResult,
   MemoryStoreConfig,
 } from "./types.js";
-import type BetterSqlite3 from "better-sqlite3";
 
 // ============================================
 // 常量
@@ -47,7 +46,7 @@ function calculateFileSha256Sync(filePath: string): string {
 // ============================================
 
 export class MemoryStore {
-  private db: BetterSqlite3.Database;
+  private db: SqliteDatabase;
   private config: MemoryStoreConfig;
   private vectorAvailable: boolean = false;
 
@@ -65,8 +64,7 @@ export class MemoryStore {
     }
 
     // 打开数据库
-    const Database = loadBetterSqlite3();
-    this.db = new Database(this.config.indexPath);
+    this.db = openSqliteDatabase(this.config.indexPath, { allowExtension: true });
     // 默认 busy_timeout=0，遇到瞬时写锁会直接抛错（“偶发卡壳”）。
     // 记忆索引是可重建派生物，等待一小段时间比失败更符合主链体验。
     this.db.pragma("busy_timeout = 5000");
@@ -85,7 +83,7 @@ export class MemoryStore {
   }
 
   /** 获取数据库实例（供内部使用） */
-  getDb(): BetterSqlite3.Database {
+  getDb(): SqliteDatabase {
     return this.db;
   }
 

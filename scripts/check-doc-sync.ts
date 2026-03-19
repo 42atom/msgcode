@@ -347,6 +347,9 @@ const RETIRED_TOOL_NAMES = ["desktop", "run_skill", "shell", "mem"];
 const RETIRED_CONTEXT_HINTS = [
   "退役",
   "已退役",
+  "归档",
+  "已归档",
+  "已删除",
   "legacy",
   "历史",
   "旧",
@@ -383,6 +386,38 @@ function checkRetiredToolNamesInActiveEntryDocs(): string[] {
           violations.push(`${relPath}:${index + 1}: ${line.trim()}`);
           break;
         }
+      }
+    });
+  }
+
+  return violations;
+}
+
+const RETIRED_DIRECTORY_ENTRY_FILES = [
+  "README.md",
+  "docs/README.md",
+  "issues/_template.md",
+  "docs/plan/rs9001.dne.docs.msgcode-architecture.md",
+];
+
+function checkRetiredDirectoryMentionsInEntryDocs(): string[] {
+  const violations: string[] = [];
+  const retiredDirs = ["docs/design/", "docs/notes/"];
+
+  for (const relPath of RETIRED_DIRECTORY_ENTRY_FILES) {
+    const absPath = path.join(process.cwd(), relPath);
+    if (!fs.existsSync(absPath)) continue;
+
+    const lines = fs.readFileSync(absPath, "utf-8").split("\n");
+    lines.forEach((line, index) => {
+      const lowered = line.toLowerCase();
+      const hasRetiredContext = RETIRED_CONTEXT_HINTS.some((hint) =>
+        lowered.includes(hint.toLowerCase())
+      );
+      if (hasRetiredContext) return;
+
+      if (retiredDirs.some((dir) => line.includes(dir))) {
+        violations.push(`${relPath}:${index + 1}: ${line.trim()}`);
       }
     });
   }
@@ -450,7 +485,7 @@ function checkRetiredDirectoryReferences(): string[] {
     }
   }
 
-  return [...issues, ...docs];
+  return [...issues, ...docs, ...checkRetiredDirectoryMentionsInEntryDocs()];
 }
 
 /**

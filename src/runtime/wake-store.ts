@@ -8,7 +8,17 @@ import path from "node:path";
 import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync, readdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import type { WakeJob, WakeRecord, WakeClaim } from "./wake-types.js";
-import { WAKE_ERROR_CODES } from "./wake-types.js";
+import {
+  WAKE_ERROR_CODES,
+  WAKE_GC_CONFIG,
+  getDefaultWakeDir,
+  getWakeJobsDir,
+  getWakeRecordsDir,
+  getWakeClaimsDir,
+  isWakeClaim,
+  isWakeJob,
+  isWakeRecord,
+} from "./wake-types.js";
 
 import { logger } from "../logger/index.js";
 
@@ -16,29 +26,11 @@ import { logger } from "../logger/index.js";
 // 常量
 // ============================================
 
-/** 默认 wake 目录 */
-const DEFAULT_WAKE_DIR = ".msgcode/wakeups";
-
-/** 默认 jobs 目录 */
-const DEFAULT_JOBS_DIR = "jobs";
-
-/** 默认 records 目录 */
-const DEFAULT_RECORDS_DIR = "records";
-
-/** 默认 claims 目录 */
-const DEFAULT_CLAIMS_DIR = "claims";
-
 /** 终态记录保留时间（7天） */
-const TERMINAL_RECORD_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const TERMINAL_RECORD_RETENTION_MS = WAKE_GC_CONFIG.defaultRetentionMs;
 
 /** 失败记录保留时间（30天） */
-const FAILED_RECORD_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
-
-/** 默认租约时长（5分钟） */
-const DEFAULT_LEASE_MS = 5 * 60 * 1000;
-
-/** 默认安全边界（10秒） */
-const DEFAULT_SAFETY_MARGIN_SEC = 10;
+const FAILED_RECORD_RETENTION_MS = WAKE_GC_CONFIG.failedRetentionMs;
 
 // ============================================
 // 辅助函数
@@ -48,28 +40,28 @@ const DEFAULT_SAFETY_MARGIN_SEC = 10;
  * 获取默认 wake 基础路径
  */
 export function getDefaultWakeBasePath(workspacePath: string): string {
-  return path.join(workspacePath, DEFAULT_WAKE_DIR);
+  return getDefaultWakeDir(workspacePath);
 }
 
 /**
  * 获取 jobs 目录
  */
 export function getJobsDir(workspacePath: string): string {
-  return path.join(getDefaultWakeBasePath(workspacePath), DEFAULT_JOBS_DIR);
+  return getWakeJobsDir(workspacePath);
 }
 
 /**
  * 获取 records 目录
  */
 export function getRecordsDir(workspacePath: string): string {
-  return path.join(getDefaultWakeBasePath(workspacePath), DEFAULT_RECORDS_DIR);
+  return getWakeRecordsDir(workspacePath);
 }
 
 /**
  * 获取 claims 目录
  */
 export function getClaimsDir(workspacePath: string): string {
-  return path.join(getDefaultWakeBasePath(workspacePath), DEFAULT_CLAIMS_DIR);
+  return getWakeClaimsDir(workspacePath);
 }
 
 /**
@@ -96,13 +88,18 @@ export function getClaimPath(workspacePath: string, recordId: string): string {
 /**
  * 磁盘读（带错误处理）
  */
-function readJsonFile<T>(filePath: string): T | null {
+function readJsonFile<T>(filePath: string, isValid?: (value: unknown) => value is T): T | null {
   try {
     if (!existsSync(filePath)) {
       return null;
     }
     const content = readFileSync(filePath, "utf8");
-    return JSON.parse(content) as T;
+    const parsed = JSON.parse(content) as unknown;
+    if (isValid && !isValid(parsed)) {
+      logger.warn(`[WakeStore] 文件合同不合法，忽略`, { filePath });
+      return null;
+    }
+    return parsed as T;
   } catch (error) {
     logger.warn(`[WakeStore] 读取文件失败: ${filePath}`, { error });
     return null;
@@ -170,7 +167,7 @@ export function createWakeJob(
  * 获取 Wake Job
  */
 export function getWakeJob(workspacePath: string, jobId: string): WakeJob | null {
-  return readJsonFile<WakeJob>(getJobPath(workspacePath, jobId));
+  return readJsonFile<WakeJob>(getJobPath(workspacePath, jobId), isWakeJob);
 }
 
 /**
@@ -211,7 +208,7 @@ export function listWakeJobs(workspacePath: string): WakeJob[] {
     const jobs: WakeJob[] = [];
     for (const file of files) {
     if (!file.endsWith(".json")) continue;
-    const job = readJsonFile<WakeJob>(path.join(jobsDir, file));
+    const job = readJsonFile<WakeJob>(path.join(jobsDir, file), isWakeJob);
     if (job) {
       jobs.push(job);
     }
@@ -293,7 +290,7 @@ export function createWakeRecord(
  * 获取 Wake Record
  */
 export function getWakeRecord(workspacePath: string, recordId: string): WakeRecord | null {
-  return readJsonFile<WakeRecord>(getRecordPath(workspacePath, recordId));
+  return readJsonFile<WakeRecord>(getRecordPath(workspacePath, recordId), isWakeRecord);
 }
 
 /**
@@ -334,7 +331,7 @@ export function listWakeRecords(workspacePath: string): WakeRecord[] {
     const records: WakeRecord[] = [];
     for (const file of files) {
     if (!file.endsWith(".json")) continue;
-    const record = readJsonFile<WakeRecord>(path.join(recordsDir, file));
+    const record = readJsonFile<WakeRecord>(path.join(recordsDir, file), isWakeRecord);
     if (record) {
       records.push(record);
     }

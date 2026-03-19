@@ -1,0 +1,4 @@
+# msgcode default bootstrap
+# 主链只收口托管 Bash，不把推荐工具包混进默认层。
+
+brew "bash"

@@ -2,6 +2,15 @@ import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import {
+  __resetSubagentTestDeps,
+  __setSubagentTestDeps,
+  getSubagentTaskStatus,
+  listSubagentTasks,
+  runSubagentTask,
+  sendSubagentMessage,
+  stopSubagentTask,
+} from "../src/runtime/subagent.js";
 
 let startHandler = async () => "started";
 let capturePaneHandler = async () => "";
@@ -15,31 +24,6 @@ const sendMessageMock = mock((...args: unknown[]) => sendMessageHandler(...args)
 const sendEscapeMock = mock((...args: unknown[]) => sendEscapeHandler(...args));
 const handleTmuxSendMock = mock((...args: unknown[]) => handleTmuxSendHandler(...args));
 
-mock.module("../src/tmux/session.js", () => ({
-  TmuxSession: {
-    getSessionName: (groupName: string) => `msgcode-${groupName}`,
-    start: startMock,
-    capturePane: capturePaneMock,
-  },
-}));
-
-mock.module("../src/tmux/sender.js", () => ({
-  sendMessage: sendMessageMock,
-  sendEscape: sendEscapeMock,
-}));
-
-mock.module("../src/tmux/responder.js", () => ({
-  handleTmuxSend: handleTmuxSendMock,
-}));
-
-const {
-  runSubagentTask,
-  sendSubagentMessage,
-  listSubagentTasks,
-  getSubagentTaskStatus,
-  stopSubagentTask,
-} = await import("../src/runtime/subagent.js");
-
 describe("P5.7-R37: subagent runtime", () => {
   let workspacePath = "";
 
@@ -49,7 +33,7 @@ describe("P5.7-R37: subagent runtime", () => {
     fs.writeFileSync(path.join(issuesDir, `${taskId}.${state}.${board}.${slug}.md`), content);
   }
 
-  beforeEach(() => {
+  beforeEach(async () => {
     workspacePath = fs.mkdtempSync(path.join(os.tmpdir(), "msgcode-subagent-"));
     startHandler = async () => '已启动 tmux 会话 "msgcode-subagent"\nCodex 已就绪';
     capturePaneHandler = async () => "";
@@ -61,10 +45,22 @@ describe("P5.7-R37: subagent runtime", () => {
     sendMessageMock.mockClear();
     sendEscapeMock.mockClear();
     handleTmuxSendMock.mockClear();
+    __resetSubagentTestDeps();
+    __setSubagentTestDeps({
+      tmuxSession: {
+        getSessionName: (groupName: string) => `msgcode-${groupName}`,
+        start: startMock,
+        capturePane: capturePaneMock,
+      } as unknown as typeof import("../src/tmux/session.js").TmuxSession,
+      sendMessage: sendMessageMock as unknown as typeof import("../src/tmux/sender.js").sendMessage,
+      sendEscape: sendEscapeMock as unknown as typeof import("../src/tmux/sender.js").sendEscape,
+      handleTmuxSend: handleTmuxSendMock as unknown as typeof import("../src/tmux/responder.js").handleTmuxSend,
+    });
   });
 
   afterEach(() => {
     fs.rmSync(workspacePath, { recursive: true, force: true });
+    __resetSubagentTestDeps();
   });
 
   it("run --watch 只有检测到完成 marker 后才标记 completed", async () => {

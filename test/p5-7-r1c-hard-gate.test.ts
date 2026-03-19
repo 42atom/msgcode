@@ -52,7 +52,7 @@ function hasOnlyOrSkip(content: string): boolean {
 }
 
 describe("P5.7-R1c: CLI 基座能力硬门回归锁", () => {
-  const tasksDir = join(process.cwd(), "docs/tasks");
+  const tasksDir = join(process.cwd(), "docs/archive/tasks");
   const archiveDir = join(process.cwd(), "docs/archive/retired-imsg-cli");
 
   describe("R1c-1: 任务单真实链路证据", () => {

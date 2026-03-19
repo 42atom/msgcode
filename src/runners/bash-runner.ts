@@ -11,6 +11,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 
 // ============================================
 // 类型定义
@@ -69,6 +70,49 @@ const MAX_OUTPUT_BYTES = 100 * 1024; // 100KB
 
 /** 日志文件名前缀 */
 const LOG_PREFIX = "bash-output";
+
+/** 托管 Bash 候选路径 */
+export const MANAGED_BASH_CANDIDATES = [
+  "/opt/homebrew/bin/bash",
+  "/usr/local/bin/bash",
+] as const;
+
+interface BashRunnerDeps {
+  resolveManagedBashPath: () => string | null;
+}
+
+function defaultResolveManagedBashPath(): string | null {
+  for (const candidate of MANAGED_BASH_CANDIDATES) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+const bashRunnerDeps: BashRunnerDeps = {
+  resolveManagedBashPath: defaultResolveManagedBashPath,
+};
+
+const defaultBashRunnerDeps: BashRunnerDeps = {
+  ...bashRunnerDeps,
+};
+
+export function __setBashRunnerTestDeps(overrides: Partial<BashRunnerDeps>): void {
+  if (overrides.resolveManagedBashPath) {
+    bashRunnerDeps.resolveManagedBashPath = overrides.resolveManagedBashPath;
+  }
+}
+
+export function __resetBashRunnerTestDeps(): void {
+  bashRunnerDeps.resolveManagedBashPath = defaultBashRunnerDeps.resolveManagedBashPath;
+}
+
+function formatManagedBashMissingError(): string {
+  return [
+    "托管 Bash 缺失：bash 工具只认",
+    MANAGED_BASH_CANDIDATES.join(" 或 "),
+    "；请先安装 Homebrew bash（brew install bash）。",
+  ].join(" ");
+}
 
 // ============================================
 // 进程树清理工具
@@ -238,6 +282,7 @@ export async function runBashCommand(
   options: BashRunnerOptions
 ): Promise<BashRunnerResult> {
   const { command, cwd, env, timeoutMs = DEFAULT_TIMEOUT_MS, signal, onUpdate } = options;
+  const bashPath = bashRunnerDeps.resolveManagedBashPath();
 
   const started = Date.now();
   let stdout = "";
@@ -247,14 +292,25 @@ export async function runBashCommand(
   let timeoutTimer: NodeJS.Timeout | null = null;
   let isAborted = false;
 
+  if (!bashPath) {
+    return {
+      ok: false,
+      exitCode: -1,
+      stdoutTail: "",
+      stderrTail: "",
+      error: formatManagedBashMissingError(),
+      durationMs: Date.now() - started,
+    };
+  }
+
   try {
     // 创建 Promise 执行 shell 命令
     const result = await new Promise<{ exitCode: number; stdout: string; stderr: string }>(
       (resolve, reject) => {
-        // 使用 spawn 执行 shell 命令（shell: true = 完整 shell 解释）
-        proc = spawn(command, {
+        // 显式执行托管 Bash，禁止 shell 自动漂移到 /bin/sh 或登录 shell。
+        proc = spawn(bashPath, ["--noprofile", "--norc", "-lc", command], {
           cwd,
-          shell: true,
+          shell: false,
           env: { ...process.env, ...env, PWD: cwd },
         });
 

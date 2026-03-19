@@ -118,19 +118,21 @@ describe("P5.6.8-R3d: 彻底去耦回归锁", () => {
         });
 
         it("src/tools/bus.ts 必须是工具执行的唯一真相源", () => {
-            const code = fs.readFileSync(
+            const busCode = fs.readFileSync(
                 path.join(process.cwd(), "src/tools/bus.ts"),
                 "utf-8"
             );
+            const handlersCode = fs.readFileSync(
+                path.join(process.cwd(), "src/tools/handlers.ts"),
+                "utf-8"
+            );
 
-            // 必须导出 executeTool 函数
-            expect(code).toContain("export async function executeTool");
-
-            // 必须包含四基础工具的实现
-            expect(code).toContain('case "read_file"');
-            expect(code).toContain('case "write_file"');
-            expect(code).toContain('case "edit_file"');
-            expect(code).toContain('case "bash"');
+            expect(busCode).toContain("export async function executeTool");
+            expect(busCode).toContain("executeRoutedTool");
+            expect(handlersCode).toContain('case "read_file"');
+            expect(handlersCode).toContain('case "write_file"');
+            expect(handlersCode).toContain('case "edit_file"');
+            expect(busCode).toContain('case "bash"');
         });
     });
 });

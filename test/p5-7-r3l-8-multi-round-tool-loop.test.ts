@@ -130,8 +130,7 @@ describe("P5.7-R3l-8: multi-round tool loop", () => {
 
             expect(callCount).toBe(3);
             expect(result.answer).toContain("两轮工具已执行完成");
-            // P5.7-R12-T3: verify phase 增加了一条 journal entry
-            expect(result.actionJournal.length).toBe(3);
+            expect(result.actionJournal.length).toBe(2);
             expect(result.actionJournal[0].tool).toBe("bash");
             expect(result.actionJournal[1].tool).toBe("read_file");
             expect(result.actionJournal[0].ok).toBe(true);

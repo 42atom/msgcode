@@ -37,5 +37,3 @@ links: []
 ## Links
 
 - Plan: <docs/plan/pl...>
-- Task: <docs/tasks/...>
-

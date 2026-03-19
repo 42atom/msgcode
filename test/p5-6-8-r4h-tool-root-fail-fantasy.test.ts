@@ -29,13 +29,20 @@ describe("P5.6.8-R4h-1: 根路径一致性", () => {
   });
 
   it("R4h-1.2: executeTool 使用 workspacePath 参数", async () => {
-    const busContent = await readFile(
-      join(process.cwd(), "src", "tools", "bus.ts"),
-      "utf-8"
-    );
+    const [busContent, typesContent] = await Promise.all([
+      readFile(
+        join(process.cwd(), "src", "tools", "bus.ts"),
+        "utf-8"
+      ),
+      readFile(
+        join(process.cwd(), "src", "tools", "types.ts"),
+        "utf-8"
+      ),
+    ]);
 
-    // 验证：executeTool 接收 workspacePath
-    expect(busContent).toContain("workspacePath: string");
+    // 验证：executeTool 复用 ToolContext，且 ToolContext 明确包含 workspacePath
+    expect(busContent).toContain("ctx: ToolContext");
+    expect(typesContent).toContain("workspacePath: string;");
   });
 });
 

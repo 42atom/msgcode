@@ -83,7 +83,7 @@ describe("Codex output", () => {
     fs.mkdirSync(path.dirname(file), { recursive: true });
 
     writeJsonl(file, [
-      { type: "session_meta", payload: { cwd: "/tmp/ws", id: "s1" } },
+      { type: "session_meta", payload: { cwd: "/tmp/ws", session_id: "s1" } },
       { type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "A" }] } },
     ]);
 
@@ -113,9 +113,9 @@ describe("Codex output", () => {
     fs.mkdirSync(path.dirname(b1), { recursive: true });
     fs.mkdirSync(path.dirname(a2), { recursive: true });
 
-    writeJsonl(a1, [{ type: "session_meta", payload: { cwd: wsA, id: "a1" } }]);
-    writeJsonl(b1, [{ type: "session_meta", payload: { cwd: wsB, id: "b1" } }]);
-    writeJsonl(a2, [{ type: "session_meta", payload: { cwd: wsA, id: "a2" } }]);
+    writeJsonl(a1, [{ type: "session_meta", payload: { cwd: wsA, session_id: "a1" } }]);
+    writeJsonl(b1, [{ type: "session_meta", payload: { cwd: wsB, session_id: "b1" } }]);
+    writeJsonl(a2, [{ type: "session_meta", payload: { cwd: wsA, session_id: "a2" } }]);
 
     // Control mtime ordering: b1 newest, then a2, then a1
     touch(a1, 1000);

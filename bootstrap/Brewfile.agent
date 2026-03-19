@@ -1,0 +1,12 @@
+# msgcode optional agent toolset
+# 先装默认层 bootstrap/Brewfile，再按需安装本清单。
+
+brew "tmux"
+brew "uv"
+brew "bun"
+brew "ripgrep"
+brew "fd"
+brew "jq"
+brew "fzf"
+brew "bat"
+brew "eza"

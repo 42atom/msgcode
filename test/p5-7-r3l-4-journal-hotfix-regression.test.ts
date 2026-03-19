@@ -65,23 +65,36 @@ describe("P5.7-R3l-4 HOTFIX: actionJournal", () => {
 
         globalThis.fetch = (async () => {
             callCount += 1;
+
+            if (callCount === 1) {
+                return asJsonResponse({
+                    choices: [{
+                        message: {
+                            role: "assistant",
+                            content: "",
+                            tool_calls: [{
+                                id: "call_fail_1",
+                                type: "function",
+                                function: {
+                                    name: "bash",
+                                    arguments: JSON.stringify({
+                                        command: "sleep 0.1; echo fail 1>&2; exit 1",
+                                    }),
+                                },
+                            }],
+                        },
+                        finish_reason: "tool_calls",
+                    }],
+                });
+            }
+
             return asJsonResponse({
                 choices: [{
                     message: {
                         role: "assistant",
-                        content: "",
-                        tool_calls: [{
-                            id: "call_fail_1",
-                            type: "function",
-                            function: {
-                                name: "bash",
-                                arguments: JSON.stringify({
-                                    command: "sleep 0.1; echo fail 1>&2; exit 1",
-                                }),
-                            },
-                        }],
+                        content: "命令失败，已记录。",
                     },
-                    finish_reason: "tool_calls",
+                    finish_reason: "stop",
                 }],
             });
         }) as typeof fetch;
@@ -96,7 +109,7 @@ describe("P5.7-R3l-4 HOTFIX: actionJournal", () => {
                 backendRuntime: localOpenAiRuntime,
             });
 
-            expect(callCount).toBe(1); // 失败短路，不进入二轮总结
+            expect(callCount).toBe(2); // 失败先回灌模型，再给模型一轮总结机会
             expect(result.actionJournal.length).toBe(1);
             expect(result.actionJournal[0].ok).toBe(false);
             expect(result.actionJournal[0].errorCode).toBeDefined();
@@ -160,8 +173,7 @@ describe("P5.7-R3l-4 HOTFIX: actionJournal", () => {
             });
 
             expect(callCount).toBe(2);
-            // P5.7-R12-T3: verify phase 增加了一条 journal entry
-            expect(result.actionJournal.length).toBe(2);
+            expect(result.actionJournal.length).toBe(1);
             expect(result.actionJournal[0].ok).toBe(true);
             expect(result.actionJournal[0].durationMs).toBeGreaterThan(0);
         } finally {

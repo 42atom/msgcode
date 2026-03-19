@@ -58,7 +58,7 @@ describe("P5.7-R12-T10: Agent-First / Router-Second 改造", () => {
                 "utf-8"
             );
 
-            expect(content.includes('decisionSource: executedToolCalls.length === 0 ? "model" : undefined')).toBe(true);
+            expect(content.includes('decisionSource: params.executedToolCalls.length === 0 ? "model" : undefined')).toBe(true);
         });
     });
 

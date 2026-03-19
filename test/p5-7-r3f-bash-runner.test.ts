@@ -7,8 +7,13 @@
  * - 中断后无孤儿进程测试
  */
 
-import { describe, it, expect } from "bun:test";
-import { runBashCommand, killProcessTree } from "../src/runners/bash-runner.js";
+import { describe, it, expect, beforeEach, afterEach } from "bun:test";
+import {
+    runBashCommand,
+    killProcessTree,
+    __setBashRunnerTestDeps,
+    __resetBashRunnerTestDeps,
+} from "../src/runners/bash-runner.js";
 import { mkdtemp, writeFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,6 +21,16 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 
 describe("P5.7-R3f: Bash Runner", () => {
+    beforeEach(() => {
+        __setBashRunnerTestDeps({
+            resolveManagedBashPath: () => "/bin/bash",
+        });
+    });
+
+    afterEach(() => {
+        __resetBashRunnerTestDeps();
+    });
+
     describe("基础执行", () => {
         it("应该成功执行简单命令", async () => {
             const result = await runBashCommand({
@@ -48,6 +63,36 @@ describe("P5.7-R3f: Bash Runner", () => {
 
             expect(result.ok).toBe(true);
             expect(result.stdoutTail).toContain("line2");
+        });
+
+        it("应该显式通过选定 Bash 执行，而不是 shell 自动漂移", async () => {
+            const result = await runBashCommand({
+                command: "printf '%s\\n%s\\n' \"$BASH\" \"$BASH_VERSION\"",
+                cwd: process.cwd(),
+            });
+
+            expect(result.ok).toBe(true);
+            const lines = result.stdoutTail.trim().split("\n");
+            expect(lines[0]).toBe("/bin/bash");
+            expect(lines[1]).toContain("3.2");
+        });
+
+        it("托管 Bash 缺失时应返回真实物理边界错误", async () => {
+            __setBashRunnerTestDeps({
+                resolveManagedBashPath: () => null,
+            });
+
+            const result = await runBashCommand({
+                command: "echo should-not-run",
+                cwd: process.cwd(),
+            });
+
+            expect(result.ok).toBe(false);
+            expect(result.exitCode).toBe(-1);
+            expect(result.error).toContain("/opt/homebrew/bin/bash");
+            expect(result.error).toContain("/usr/local/bin/bash");
+            expect(result.error).toContain("brew install bash");
+            expect(result.stdoutTail).toBe("");
         });
     });
 

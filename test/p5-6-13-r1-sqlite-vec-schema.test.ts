@@ -2,7 +2,7 @@
  * msgcode: P5.6.13-R1 sqlite-vec 回归锁测试
  *
  * 验证向量存储 schema、扩展加载和降级能力
- * 注意：由于 better-sqlite3 在 Bun 下不支持，触达 SQLite 的运行时验证必须走 Node 入口
+ * 注意：由于 SQLite 运行时路径不走 Bun，触达 SQLite 的运行时验证必须走 Node 入口
  */
 
 import { describe, it, expect } from "vitest";
@@ -30,8 +30,8 @@ describe("P5.6.13-R1: sqlite-vec Schema 回归锁", () => {
             expect(storeCode).toContain("VEC_TABLE_NAME");
         });
 
-        it("R1-4: Schema 版本升级为 2", () => {
-            expect(storeCode).toContain("SCHEMA_VERSION = 2");
+        it("R1-4: Schema 版本升级为 3", () => {
+            expect(storeCode).toContain("SCHEMA_VERSION = 3");
         });
 
         it("R1-5: store.ts 包含 loadVectorExtension 方法", () => {

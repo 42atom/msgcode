@@ -17,7 +17,7 @@ import { parseWorkspaceParam } from "../memory/types.js";
 import { getWorkspaceRootForDisplay } from "../routes/store.js";
 import { createEnvelope } from "./command-runner.js";
 import { randomUUID } from "node:crypto";
-import { loadBetterSqlite3 } from "../deps/better-sqlite3.js";
+import { openSqliteDatabase } from "../deps/sqlite.js";
 
 // ============================================
 // 错误码定义
@@ -150,8 +150,7 @@ async function importLegacyTodoDb(workspacePath: string): Promise<TodoStateFile 
     return null;
   }
 
-  const Database = loadBetterSqlite3();
-  const db = new Database(dbPath, { readonly: true });
+  const db = openSqliteDatabase(dbPath, { readOnly: true });
 
   try {
     const table = db.prepare(`

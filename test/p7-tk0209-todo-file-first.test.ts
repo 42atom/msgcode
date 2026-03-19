@@ -84,8 +84,8 @@ describe("tk0209: todo file-first closure", () => {
   it("R2: 遇到历史 todo.db 时只做一次性导入", () => {
     const dbPath = path.join(workspace, ".msgcode", "todo.db");
     const bootstrap = `
-      const Database = require("better-sqlite3");
-      const db = new Database(${JSON.stringify(dbPath)});
+      const { DatabaseSync } = require("node:sqlite");
+      const db = new DatabaseSync(${JSON.stringify(dbPath)});
       db.exec("CREATE TABLE todos (id TEXT PRIMARY KEY, title TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending', createdAt TEXT NOT NULL, doneAt TEXT)");
       db.prepare("INSERT INTO todos (id, title, status, createdAt, doneAt) VALUES (?, ?, ?, ?, ?)").run(
         "legacy-001",
