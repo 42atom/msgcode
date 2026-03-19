@@ -98,7 +98,9 @@ export type SessionTarget = "main" | "isolated";
  */
 export type Payload =
   | { kind: "tmuxMessage"; text: string }
-  | { kind: "chatMessage"; text: string; chatGuid: string };
+  | { kind: "chatMessage"; text: string; chatGuid: string }
+  // 兼容历史 jobs.json 中遗留的 schedule payload，不再用于新投影写入。
+  | { kind: "agentPrompt"; text: string };
 
 /**
  * Delivery（回发策略）

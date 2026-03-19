@@ -479,14 +479,23 @@ function serializeExecutedToolResults(roundExecutedToolCalls: ExecutedToolCall[]
     }));
 }
 
+function collectReplayedToolCallIds(serializedToolResults: SerializedExecutedToolResult[]): Set<string> {
+    return new Set(serializedToolResults.map(({ toolCallId }) => toolCallId));
+}
+
 function buildMiniMaxRoundReplayMessages(
     contentBlocks: MiniMaxAnthropicContentBlock[],
     serializedToolResults: SerializedExecutedToolResult[],
 ): MiniMaxAnthropicMessage[] {
+    const replayedToolCallIds = collectReplayedToolCallIds(serializedToolResults);
+    const replayedContentBlocks = contentBlocks.filter((block) => (
+        block.type !== "tool_use" || replayedToolCallIds.has(block.id)
+    ));
+
     return [
         {
             role: "assistant",
-            content: contentBlocks,
+            content: replayedContentBlocks,
         },
         {
             role: "user",
@@ -505,9 +514,10 @@ function buildOpenAiRoundReplayMessages(params: {
     toolCalls: ToolCall[];
     serializedToolResults: SerializedExecutedToolResult[];
 }): OpenAiConversationMessage[] {
+    const replayedToolCallIds = collectReplayedToolCallIds(params.serializedToolResults);
     const assistantMessage: OpenAiConversationMessage = {
         role: params.assistantRole,
-        tool_calls: params.toolCalls,
+        tool_calls: params.toolCalls.filter((toolCall) => replayedToolCallIds.has(toolCall.id)),
     };
     if (params.assistantContent !== undefined) {
         assistantMessage.content = params.assistantContent;

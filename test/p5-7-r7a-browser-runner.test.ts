@@ -275,6 +275,70 @@ describe("P5.7-R7A: browser runner", () => {
     expect(Array.isArray(result.data.refs)).toBe(true);
   });
 
+  it("tabs.text 应优先断开 CDP 连接，而不是调用 browser.close", async () => {
+    const page = createPageStub({
+      targetId: "target_disconnect_1",
+      title: "Disconnect Test",
+      url: "https://example.com/disconnect",
+    });
+
+    let connectionClosed = 0;
+    let browserClosed = 0;
+
+    __setBrowserPatchrightTestDeps({
+      fetchImpl: (async () => {
+        return jsonResponse({ webSocketDebuggerUrl: "ws://127.0.0.1:9222/devtools/browser/test" });
+      }) as typeof fetch,
+      spawnProcess: ((command, args) => {
+        return {
+          pid: 5678,
+          unref() {
+            return undefined;
+          },
+        } as any;
+      }) as any,
+      resolvePatchright: () => ({
+        async connectOverCDP() {
+          return {
+            _connection: {
+              close() {
+                connectionClosed += 1;
+              },
+            },
+            contexts() {
+              return [{
+                pages() {
+                  return [page];
+                },
+                async newPage() {
+                  return page;
+                },
+              }];
+            },
+            async close() {
+              browserClosed += 1;
+            },
+          } as any;
+        },
+      }),
+    });
+
+    await executeBrowserOperation({
+      operation: "instances.launch",
+      rootName: "work-default",
+      mode: "headless",
+    });
+
+    const result = await executeBrowserOperation({
+      operation: "tabs.text",
+      tabId: "target_disconnect_1",
+    });
+
+    expect(result.data.title).toBe("Disconnect Test");
+    expect(connectionClosed).toBe(1);
+    expect(browserClosed).toBe(0);
+  });
+
   it("tabs.text 应跳过不可达的实例状态（例如旧端口 9223），继续扫描并命中可用实例", async () => {
     const stateDir = join(tempWorkspaceRoot, ".msgcode", "chrome-profiles", ".browser");
     await mkdir(stateDir, { recursive: true });

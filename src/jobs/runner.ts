@@ -6,6 +6,7 @@
  * 职责：
  * - executeJob(job, ctx): 统一执行入口，scheduler 和 msgcode job run 复用
  * - 支持 payload.kind === "tmuxMessage"
+ * - 兼容历史 payload.kind === "agentPrompt"
  * - 按 job.delivery.mode 决定是否回发到同聊天通道
  * - 按 job.delivery.maxChars 截断
  * - 错误码落盘：ROUTE_NOT_FOUND/ROUTE_INACTIVE/TMUX_SESSION_DEAD 等
@@ -77,8 +78,8 @@ export async function executeJob(
   try {
     const startTime = Date.now();
 
-    // P5.7-R17: 支持 chatMessage payload（不走 tmux，直接发消息）
-    if (job.payload.kind === "chatMessage") {
+    // 直接消息类 payload 不走 tmux；agentPrompt 仅作历史 jobs.json 兼容。
+    if (job.payload.kind === "chatMessage" || job.payload.kind === "agentPrompt") {
       return finalizeScheduleRun(run, await executeChatMessageJob(job, ctx, startTime));
     }
 

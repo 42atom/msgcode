@@ -236,6 +236,82 @@ describe("Phase 1: Run Core", () => {
     expect(scheduleRecords[0]?.triggerId).toBe("job-schedule-1");
   });
 
+  it("schedule 应兼容历史 agentPrompt payload", async () => {
+    const routePath = path.join(tmpDir, "routes.json");
+    process.env.ROUTES_FILE_PATH = routePath;
+
+    const workspacePath = path.join(tmpDir, "workspace-schedule-legacy");
+    fs.mkdirSync(workspacePath, { recursive: true });
+    fs.writeFileSync(
+      routePath,
+      JSON.stringify({
+        version: 1,
+        routes: {
+          "chat-schedule-legacy": {
+            chatGuid: "chat-schedule-legacy",
+            workspacePath,
+            botType: "default",
+            status: "active",
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      }),
+      "utf-8"
+    );
+
+    const { executeJob } = await import("../src/jobs/runner.js");
+
+    const job = {
+      id: "job-schedule-legacy-agentprompt",
+      enabled: true,
+      name: "legacy-agentprompt",
+      route: { chatGuid: "chat-schedule-legacy" },
+      schedule: { kind: "cron" as const, expr: "*/5 * * * *", tz: "Asia/Singapore" },
+      sessionTarget: "main" as const,
+      payload: {
+        kind: "agentPrompt" as const,
+        text: "老投影也应继续执行",
+      },
+      delivery: {
+        mode: "reply-to-same-chat" as const,
+        bestEffort: true,
+        maxChars: 200,
+      },
+      state: {
+        routeStatus: "valid" as const,
+        nextRunAtMs: null,
+        runningAtMs: null,
+        lastRunAtMs: null,
+        lastStatus: "pending" as const,
+        lastErrorCode: null,
+        lastError: null,
+        lastDurationMs: null,
+      },
+      createdAtMs: Date.now(),
+      updatedAtMs: Date.now(),
+    };
+
+    const sent: Array<{ chatGuid: string; text: string }> = [];
+    const result = await executeJob(job, {
+      sendReply: async (chatGuid, text) => {
+        sent.push({ chatGuid, text });
+      },
+    });
+
+    expect(result.status).toBe("ok");
+    expect(sent).toEqual([{ chatGuid: "chat-schedule-legacy", text: "老投影也应继续执行" }]);
+
+    const scheduleRecords = readRunRecords(runsPath).filter(
+      (record) => record.triggerId === "job-schedule-legacy-agentprompt"
+    );
+    expect(scheduleRecords.map((record) => record.status)).toEqual([
+      "accepted",
+      "running",
+      "completed",
+    ]);
+  });
+
   it("schedule skipped 不应伪装成 completed", async () => {
     const { executeJob } = await import("../src/jobs/runner.js");
 

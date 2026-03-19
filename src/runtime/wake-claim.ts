@@ -5,7 +5,7 @@
  */
 
 import path from "node:path";
-import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, openSync, writeSync, closeSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync, openSync, writeSync, closeSync, readdirSync } from "node:fs";
 import type { WakeClaim } from "./wake-types.js";
 import { WAKE_ERROR_CODES, WAKE_GC_CONFIG } from "./wake-types.js";
 import { getClaimsDir, getRecordPath, updateWakeRecord } from "./wake-store.js";
@@ -158,7 +158,7 @@ export function getStaleClaims(workspacePath: string): WakeClaim[] {
     return [];
   }
   try {
-    const files = require("fs").readdirSync(claimDir);
+    const files = readdirSync(claimDir);
     const now = Date.now();
     const staleClaims: WakeClaim[] = [];
     for (const file of files) {

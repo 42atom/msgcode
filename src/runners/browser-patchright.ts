@@ -492,6 +492,23 @@ async function connectBrowser(port: number, timeoutMs: number): Promise<Patchrig
   }
 }
 
+async function disconnectBrowser(browser: PatchrightBrowserLike): Promise<void> {
+  const internal = browser as PatchrightBrowserLike & {
+    _connection?: { close(cause?: unknown): void };
+  };
+
+  if (typeof internal._connection?.close === "function") {
+    try {
+      internal._connection.close();
+      return;
+    } catch {
+      // fall through to browser.close()
+    }
+  }
+
+  await browser.close().catch(() => undefined);
+}
+
 async function getDefaultContext(browser: PatchrightBrowserLike): Promise<{
   pages(): Array<unknown>;
   newPage(): Promise<unknown>;
@@ -1014,7 +1031,7 @@ export async function executeBrowserOperation(
           },
         };
       } finally {
-        await browser.close().catch(() => undefined);
+        await disconnectBrowser(browser);
       }
     }
     case "tabs.list": {
@@ -1029,7 +1046,7 @@ export async function executeBrowserOperation(
           },
         };
       } finally {
-        await browser.close().catch(() => undefined);
+        await disconnectBrowser(browser);
       }
     }
     case "tabs.snapshot": {
@@ -1062,7 +1079,7 @@ export async function executeBrowserOperation(
             },
           };
         } finally {
-          await browser.close().catch(() => undefined);
+          await disconnectBrowser(browser);
         }
       }
       throw new BrowserCommandError(
@@ -1099,7 +1116,7 @@ export async function executeBrowserOperation(
             },
           };
         } finally {
-          await browser.close().catch(() => undefined);
+          await disconnectBrowser(browser);
         }
       }
       throw new BrowserCommandError(
@@ -1189,7 +1206,7 @@ export async function executeBrowserOperation(
               );
           }
         } finally {
-          await browser.close().catch(() => undefined);
+          await disconnectBrowser(browser);
         }
       }
       throw new BrowserCommandError(
@@ -1224,7 +1241,7 @@ export async function executeBrowserOperation(
             },
           };
         } finally {
-          await browser.close().catch(() => undefined);
+          await disconnectBrowser(browser);
         }
       }
       throw new BrowserCommandError(
