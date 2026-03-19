@@ -352,7 +352,7 @@ sourceDiary: AIDOCS/reports/daily/2026-03-18.md
 
 ## 9. References
 
-- Plan: `docs/plan/pl0204.tdo.runtime.heartbeat-alarm-and-reflection-mainline.md`
+- Plan: `docs/plan/pl0204.pss.runtime.heartbeat-alarm-and-reflection-mainline.md`
 - Mainline: `issues/tk0217.pss.runtime.p1.reflection-candidate-review-and-daily-log-mainline.md`
 - Heartbeat: `docs/protocol/HEARTBEAT.md`
 - Memory Audit: `issues/tk0208.pss.memory.p1.memory-file-truth-and-index-layer-demotion-audit.md`

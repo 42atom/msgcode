@@ -1,5 +1,5 @@
 Benchmark Task Card:
-/Users/admin/GitProjects/msgcode/aidocs/notes/benchmark-task-phase3-soul-context-fix-260310.md
+(historical task card retired; artifacts retained here)
 
 Artifact Directory:
 /Users/admin/GitProjects/msgcode/aidocs/artifacts/benchmark-phase3-soul-context-fix

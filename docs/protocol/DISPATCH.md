@@ -285,7 +285,7 @@ links:
 
 ## 8. References
 
-- Plan: `docs/plan/pl0202.tdo.agent.persona-and-doc-dispatch-mainline.md`
-- Template: `docs/plan/rs0202.tdo.agent.persona-and-dispatch-templates.md`
+- Plan: `docs/plan/pl0202.pss.agent.persona-and-doc-dispatch-mainline.md`
+- Template: `docs/plan/rs0202.dne.agent.persona-and-dispatch-templates.md`
 - Work Continuity: `src/runtime/work-continuity.ts`
 - Subagent: `src/runtime/subagent.ts`

@@ -18,7 +18,7 @@ pl	0016	dne	browser		16	docs/design/plan-260307-patchright-browser-cutover.md	do
 pl	0015	dne	browser		15	docs/design/plan-260307-patchright-unification.md	docs/plan/pl0015.dne.browser.patchright-unification.md	issue:15		
 pl	9001	dne	browser			docs/design/plan-260307-pinchtab-fingerprint-browser.md	docs/plan/pl9001.dne.browser.pinchtab-fingerprint-browser.md	rule:browser		
 pl	0013	dne	browser		13	docs/design/plan-260307-pinchtab-single-browser-substrate-bootstrap.md	docs/plan/pl0013.dne.browser.pinchtab-single-browser-substrate-bootstrap.md	issue:13		
-pl	0021	tdo	agent		21	docs/design/plan-260307-prompt-message-stratification-experiment.md	docs/plan/pl0021.tdo.agent.prompt-message-stratification-experiment.md	issue:21		
+pl	0021	tdo	agent		21	docs/design/plan-260307-prompt-message-stratification-experiment.md	docs/plan/pl0021.pss.agent.prompt-message-stratification-experiment.md	issue:21		
 pl	0014	dne	runtime		14	docs/design/plan-260307-runtime-skill-source-sync.md	docs/plan/pl0014.dne.runtime.runtime-skill-source-sync.md	issue:14		
 pl	0022	dne	tools		22	docs/design/plan-260307-scheduler-skill-bash-mainline.md	docs/plan/pl0022.dne.tools.scheduler-skill-bash-mainline.md	issue:22		
 pl	0019	dne	agent		19	docs/design/plan-260307-tool-bridge-runtime-hardening.md	docs/plan/pl0019.dne.agent.tool-bridge-runtime-hardening.md	issue:19		
@@ -32,15 +32,15 @@ pl	0041	dne	agent		41	docs/design/plan-260308-llm-unshackle-phase2-remove-contro
 pl	0028	dne	agent		28	docs/design/plan-260308-llm-unshackle.md	docs/plan/pl0028.dne.agent.llm-unshackle.md	issue:28		
 pl	0040	dne	agent		40	docs/design/plan-260308-minimal-finish-supervisor.md	docs/plan/pl0040.dne.agent.minimal-finish-supervisor.md	issue:40		
 pl	0031	tdo	agent		31	docs/design/plan-260308-no-tool-fake-success-guard.md	docs/plan/pl0031.tdo.agent.no-tool-fake-success-guard.md	issue:31		
-pl	0037	tdo	agent		37	docs/design/plan-260308-openclaw-direct-tool-loop-port.md	docs/plan/pl0037.tdo.agent.openclaw-direct-tool-loop-port.md	issue:37		
-pl	0036	tdo	agent		36	docs/design/plan-260308-openclaw-tool-loop-alignment.md	docs/plan/pl0036.tdo.agent.openclaw-tool-loop-alignment.md	issue:36		
+pl	0037	tdo	agent		37	docs/design/plan-260308-openclaw-direct-tool-loop-port.md	docs/plan/pl0037.pss.agent.openclaw-direct-tool-loop-port.md	issue:37		
+pl	0036	tdo	agent		36	docs/design/plan-260308-openclaw-tool-loop-alignment.md	docs/plan/pl0036.pss.agent.openclaw-tool-loop-alignment.md	issue:36		
 pl	0042	dne	agent		42	docs/design/plan-260308-routed-chat-unshackle-phase3.md	docs/plan/pl0042.dne.agent.routed-chat-unshackle-phase3.md	issue:42		
 pl	0029	dne	schedule		29	docs/design/plan-260308-schedule-chat-delivery-not-tmux.md	docs/plan/pl0029.dne.schedule.schedule-chat-delivery-not-tmux.md	issue:29		
-pl	0035	tdo	schedule		35	docs/design/plan-260308-schedule-cli-contract-and-delete-consistency.md	docs/plan/pl0035.tdo.schedule.schedule-cli-contract-and-delete-consistency.md	issue:35		
+pl	0035	tdo	schedule		35	docs/design/plan-260308-schedule-cli-contract-and-delete-consistency.md	docs/plan/pl0035.pss.schedule.schedule-cli-contract-and-delete-consistency.md	issue:35		
 pl	0023	dne	schedule		23	docs/design/plan-260308-schedule-entry-unification.md	docs/plan/pl0023.dne.schedule.schedule-entry-unification.md	issue:23		
 pl	0025	dne	schedule		25	docs/design/plan-260308-schedule-route-dependency-explicit.md	docs/plan/pl0025.dne.schedule.schedule-route-dependency-explicit.md	issue:25		
 pl	0038	dne	schedule		38	docs/design/plan-260308-schedule-scheduler-refresh-on-mutation.md	docs/plan/pl0038.dne.schedule.schedule-scheduler-refresh-on-mutation.md	issue:38		
-pl	0034	tdo	schedule		34	docs/design/plan-260308-schedule-stop-workspace-and-projection-sync.md	docs/plan/pl0034.tdo.schedule.schedule-stop-workspace-and-projection-sync.md	issue:34		
+pl	0034	tdo	schedule		34	docs/design/plan-260308-schedule-stop-workspace-and-projection-sync.md	docs/plan/pl0034.pss.schedule.schedule-stop-workspace-and-projection-sync.md	issue:34		
 pl	0043	dne	tools		43	docs/design/plan-260308-scheduler-add-tz-contract.md	docs/plan/pl0043.dne.tools.scheduler-add-tz-contract.md	issue:43		
 pl	0039	dne	schedule		39	docs/design/plan-260308-scheduler-refresh-storm-diagnosis.md	docs/plan/pl0039.dne.schedule.scheduler-refresh-storm-diagnosis.md	issue:39		
 pl	0030	dne	agent		30	docs/design/plan-260308-scheduling-skill-pointer-only.md	docs/plan/pl0030.dne.agent.scheduling-skill-pointer-only.md	issue:30		
@@ -62,7 +62,7 @@ pl	0061	dne	runtime		61	docs/design/plan-260310-msgcode-daemon-keepalive-via-lau
 pl	0070	dne	runtime		70	docs/design/plan-260310-optional-runtime-skills-on-demand.md	docs/plan/pl0070.dne.runtime.optional-runtime-skills-on-demand.md	issue:70		
 pl	0064	dne	feishu		64	docs/design/plan-260310-permissions-probe-imsg-conditional.md	docs/plan/pl0064.dne.feishu.permissions-probe-imsg-conditional.md	issue:64		
 pl	0057	dne	tools		57	docs/design/plan-260310-plan-files-runtime-skill.md	docs/plan/pl0057.dne.tools.plan-files-runtime-skill.md	issue:57		
-pl	0065	tdo	feishu		65	docs/design/plan-260310-post-imessage-channel-strategy.md	docs/plan/pl0065.tdo.feishu.post-imessage-channel-strategy.md	issue:65		
+pl	0065	tdo	feishu		65	docs/design/plan-260310-post-imessage-channel-strategy.md	docs/plan/pl0065.pss.feishu.post-imessage-channel-strategy.md	issue:65		
 pl	0063	dne	feishu		63	docs/design/plan-260310-preflight-transport-aware-startup-deps.md	docs/plan/pl0063.dne.feishu.preflight-transport-aware-startup-deps.md	issue:63		
 pl	0060	dne	model		60	docs/design/plan-260310-retire-zai-vision-mcp-runtime-skill.md	docs/plan/pl0060.dne.model.retire-zai-vision-mcp-runtime-skill.md	issue:60		
 pl	0059	dne	runtime		59	docs/design/plan-260310-review-fixes-task-status-and-runtime-skill-index.md	docs/plan/pl0059.dne.runtime.review-fixes-task-status-and-runtime-skill-index.md	issue:59		
@@ -80,13 +80,13 @@ pl	0081	dne	model		81	docs/design/plan-260311-qwen-only-tts-mainline.md	docs/pla
 pl	0089	dne	agent		89	docs/design/plan-260311-release-gate-alignment-docsync-and-bdd.md	docs/plan/pl0089.dne.agent.release-gate-alignment-docsync-and-bdd.md	issue:89		
 pl	0091	dne	browser		91	docs/design/plan-260311-release-gate-stale-regression-lock-alignment.md	docs/plan/pl0091.dne.browser.release-gate-stale-regression-lock-alignment.md	issue:91		
 pl	0090	dne	browser		90	docs/design/plan-260311-retire-gmail-readonly-tests-from-release-gate.md	docs/plan/pl0090.dne.browser.retire-gmail-readonly-tests-from-release-gate.md	issue:90		
-pl	0071	tdo	docs		71	docs/design/plan-260311-skill-layering-and-conflict-policy.md	docs/plan/pl0071.tdo.docs.skill-layering-and-conflict-policy.md	issue:71		
+pl	0071	tdo	docs		71	docs/design/plan-260311-skill-layering-and-conflict-policy.md	docs/plan/pl0071.pss.docs.skill-layering-and-conflict-policy.md	issue:71		
 pl	0087	dne	tools		87	docs/design/plan-260311-skill-legacy-cleanup-and-provider-truth-source.md	docs/plan/pl0087.dne.tools.skill-legacy-cleanup-and-provider-truth-source.md	issue:87		
 pl	0078	dne	runtime		78	docs/design/plan-260311-skill-self-contained-distribution.md	docs/plan/pl0078.dne.runtime.skill-self-contained-distribution.md	issue:78		
 pl	0074	dne	tools		74	docs/design/plan-260311-tool-exposure-and-skill-runtime-terminology-cleanup.md	docs/plan/pl0074.dne.tools.tool-exposure-and-skill-runtime-terminology-cleanup.md	issue:74		
 pl	0084	dne	model		84	docs/design/plan-260311-tool-manifest-single-source-export-cleanup.md	docs/plan/pl0084.dne.model.tool-manifest-single-source-export-cleanup.md	issue:84		
 pl	0088	dne	feishu		88	docs/design/plan-260311-typecheck-merge-prep-existing-errors.md	docs/plan/pl0088.dne.feishu.typecheck-merge-prep-existing-errors.md	issue:88		
-pl	0103	tdo	product		103	docs/design/plan-260312-ai-os-foundation-roadmap.md	docs/plan/pl0103.tdo.product.ai-os-foundation-roadmap.md	issue:103		
+pl	0103	tdo	product		103	docs/design/plan-260312-ai-os-foundation-roadmap.md	docs/plan/pl0103.pss.product.ai-os-foundation-roadmap.md	issue:103		
 pl	0130	dne	model		130	docs/design/plan-260312-api-backend-local-vision-policy.md	docs/plan/pl0130.dne.model.api-backend-local-vision-policy.md	issue:130		
 pl	0131	doi	browser		131	docs/design/plan-260312-browser-text-artifact-and-skill-contract.md	docs/plan/pl0131.doi.browser.browser-text-artifact-and-skill-contract.md	issue:131		
 pl	0132	dne	tools		132	docs/design/plan-260312-cli-command-surface-unification.md	docs/plan/pl0132.dne.tools.cli-command-surface-unification.md	issue:132		
@@ -101,7 +101,7 @@ pl	0093	dne	feishu		93	docs/design/plan-260312-feishu-only-channel-simplificatio
 pl	0118	dne	feishu		118	docs/design/plan-260312-feishu-send-file-natural-language-action-mainline.md	docs/plan/pl0118.dne.feishu.feishu-send-file-natural-language-action-mainline.md	issue:118		
 pl	0105	dne	agent		105	docs/design/plan-260312-finish-supervisor-observability-only.md	docs/plan/pl0105.dne.agent.finish-supervisor-observability-only.md	issue:105		
 pl	0122	dne	tools		122	docs/design/plan-260312-first-class-file-tools-and-write-preview-layering.md	docs/plan/pl0122.dne.tools.first-class-file-tools-and-write-preview-layering.md	issue:122		
-pl	0094	tdo	ghost		94	docs/design/plan-260312-heavy-resource-admission-mvp.md	docs/plan/pl0094.tdo.ghost.heavy-resource-admission-mvp.md	issue:94		
+pl	0094	tdo	ghost		94	docs/design/plan-260312-heavy-resource-admission-mvp.md	docs/plan/pl0094.pss.ghost.heavy-resource-admission-mvp.md	issue:94		
 pl	0133	dne	tools		133	docs/design/plan-260312-help-docs-memory-canonical-coverage.md	docs/plan/pl0133.dne.tools.help-docs-memory-canonical-coverage.md	issue:133		
 pl	0121	dne	tools		121	docs/design/plan-260312-help-tool-and-quota-hot-path-thinning.md	docs/plan/pl0121.dne.tools.help-tool-and-quota-hot-path-thinning.md	issue:121		
 pl	0135	dne	tools		135	docs/design/plan-260312-hide-retired-file-send-from-public-file-surface.md	docs/plan/pl0135.dne.tools.hide-retired-file-send-from-public-file-surface.md	issue:135		
@@ -169,8 +169,8 @@ pl	0159	dne	tools		159	docs/design/plan-260313-tool-bus-file-runner-extraction.m
 pl	0155	dne	tools		155	docs/design/plan-260313-tool-bus-preview-meta-thinning.md	docs/plan/pl0155.dne.tools.tool-bus-preview-meta-thinning.md	issue:155		
 pl	0154	dne	tools		154	docs/design/plan-260313-tool-bus-thin-gateway.md	docs/plan/pl0154.dne.tools.tool-bus-thin-gateway.md	issue:154		
 pl	0153	dne	agent		153	docs/design/plan-260313-tool-loop-heat-path-decontrol.md	docs/plan/pl0153.dne.agent.tool-loop-heat-path-decontrol.md	issue:153		
-pl	0184	tdo	docs		184	docs/design/plan-260314-doc-filename-protocol-migration.md	docs/plan/pl0184.tdo.docs.doc-filename-protocol-migration.md	issue:184		
-pl	0183	tdo	docs		183	docs/design/plan-260314-doc-filename-tidy.md	docs/plan/pl0183.tdo.docs.doc-filename-tidy.md	issue:183		
+pl	0184	tdo	docs		184	docs/design/plan-260314-doc-filename-protocol-migration.md	docs/plan/pl0184.pss.docs.doc-filename-protocol-migration.md	issue:184		
+pl	0183	tdo	docs		183	docs/design/plan-260314-doc-filename-tidy.md	docs/plan/pl0183.cand.docs.doc-filename-tidy.md	issue:183		
 rs	9000	dne	runtime			docs/notes/research-260223-gui-provider-config-integration.md	docs/plan/rs9000.dne.runtime.gui-provider-config-integration.md	rule:runtime		
 rs	9001	dne	docs			docs/notes/research-260306-msgcode-architecture.md	docs/plan/rs9001.dne.docs.msgcode-architecture.md	default:docs	yes	
 rs	0013	dne	browser		13	docs/notes/research-260306-pinchtab-validation.md	docs/plan/rs0013.dne.browser.pinchtab-validation.md	issue:13		
@@ -185,7 +185,7 @@ rs	9006	dne	runtime			docs/notes/research-260310-openclaw-daemon-keepalive.md	do
 rs	9007	dne	agent			docs/notes/research-260310-openclaw-terminal-agent-harness.md	docs/plan/rs9007.dne.agent.openclaw-terminal-agent-harness.md	rule:agent		
 rs	9008	dne	docs			docs/notes/research-260310-thin-core-plugin-topology.md	docs/plan/rs9008.dne.docs.thin-core-plugin-topology.md	default:docs	yes	
 rs	9009	dne	docs			docs/notes/research-260310-transparent-execution-plugin.md	docs/plan/rs9009.dne.docs.transparent-execution-plugin.md	default:docs	yes	
-rs	0071	tdo	docs		71	docs/notes/research-260311-skill-layering-and-conflict-policy.md	docs/plan/rs0071.tdo.docs.skill-layering-and-conflict-policy.md	issue:71		
+rs	0071	tdo	docs		71	docs/notes/research-260311-skill-layering-and-conflict-policy.md	docs/plan/rs0071.dne.docs.skill-layering-and-conflict-policy.md	issue:71		
 rs	9010	dne	tools			docs/notes/research-260312-cli-reference-vs-msgcode.md	docs/plan/rs9010.dne.tools.cli-reference-vs-msgcode.md	rule:tools		
 tk	0001	dne	agent			issues/0001-r9-t8-repo-protocol-alignment.md	issues/tk0001.dne.agent.r9-t8-repo-protocol-alignment.md	rule:agent		
 tk	0002	dne	agent			issues/0002-r9-t7-agent-backend-core-extraction.md	issues/tk0002.dne.agent.r9-t7-agent-backend-core-extraction.md	label:backend		
@@ -207,7 +207,7 @@ tk	0017	dne	agent			issues/0017-tool-success-over-protocol-friction.md	issues/tk
 tk	0018	dne	agent			issues/0018-tool-surface-slimming-for-llm.md	issues/tk0018.dne.agent.tool-surface-slimming-for-llm.md	rule:agent		
 tk	0019	dne	agent			issues/0019-tool-bridge-runtime-hardening.md	issues/tk0019.dne.agent.tool-bridge-runtime-hardening.md	rule:agent		
 tk	0020	dne	browser			issues/0020-browser-open-happy-path.md	issues/tk0020.dne.browser.browser-open-happy-path.md	label:browser		
-tk	0021	tdo	agent	p2		issues/0021-prompt-message-stratification-experiment.md	issues/tk0021.tdo.agent.p2.prompt-message-stratification-experiment.md	label:agent-backend		yes
+tk	0021	tdo	agent	p2		issues/tk0021.pss.agent.p2.prompt-message-stratification-experiment.md	issues/tk0021.tdo.agent.p2.prompt-message-stratification-experiment.md	label:agent-backend		yes
 tk	0022	dne	tools	p1		issues/0022-scheduler-skill-bash-mainline.md	issues/tk0022.dne.tools.scheduler-skill-bash-mainline.p1.md	label:skills		
 tk	0023	dne	schedule	p0		issues/0023-schedule-entry-unification.md	issues/tk0023.dne.schedule.schedule-entry-unification.p0.md	label:schedule		
 tk	0024	dne	tools			issues/0024-skill-single-source-runtime.md	issues/tk0024.dne.tools.skill-single-source-runtime.md	label:skills		
@@ -218,8 +218,8 @@ tk	0028	dne	agent	p0		issues/0028-llm-unshackle.md	issues/tk0028.dne.agent.llm-u
 tk	0029	dne	schedule			issues/0029-schedule-chat-delivery-not-tmux.md	issues/tk0029.dne.schedule.schedule-chat-delivery-not-tmux.md	label:schedule		
 tk	0030	dne	agent			issues/0030-scheduling-skill-pointer-only.md	issues/tk0030.dne.agent.scheduling-skill-pointer-only.md	label:agent		
 tk	0031	tdo	agent	p0		issues/0031-no-tool-fake-success-guard.md	issues/tk0031.tdo.agent.no-tool-fake-success-guard.p0.md	label:agent		
-tk	0034	tdo	schedule	p0		issues/0034-schedule-stop-workspace-and-projection-sync.md	issues/tk0034.tdo.schedule.p0.schedule-stop-workspace-and-projection-sync.md	label:scheduler		yes
-tk	0035	tdo	schedule	p0		issues/0035-schedule-cli-contract-and-delete-consistency.md	issues/tk0035.tdo.schedule.p0.schedule-cli-contract-and-delete-consistency.md	label:scheduler		yes
+tk	0034	tdo	schedule	p0		issues/tk0034.pss.schedule.p0.schedule-stop-workspace-and-projection-sync.md	issues/tk0034.tdo.schedule.p0.schedule-stop-workspace-and-projection-sync.md	label:scheduler		yes
+tk	0035	tdo	schedule	p0		issues/tk0035.pss.schedule.p0.schedule-cli-contract-and-delete-consistency.md	issues/tk0035.tdo.schedule.p0.schedule-cli-contract-and-delete-consistency.md	label:scheduler		yes
 tk	0036	tdo	agent	p1		issues/0036-openclaw-tool-loop-alignment.md	issues/tk0036.tdo.agent.p1.openclaw-tool-loop-alignment.md	label:agent		yes
 tk	0037	tdo	agent	p1		issues/0037-openclaw-direct-tool-loop-port.md	issues/tk0037.tdo.agent.p1.openclaw-direct-tool-loop-port.md	label:agent		yes
 tk	0038	dne	schedule			issues/0038-schedule-scheduler-refresh-on-mutation.md	issues/tk0038.dne.schedule.schedule-scheduler-refresh-on-mutation.md	label:scheduler		
@@ -278,7 +278,7 @@ tk	0090	dne	browser			issues/0090-retire-gmail-readonly-tests-from-release-gate.
 tk	0091	dne	browser			issues/0091-release-gate-stale-regression-lock-alignment.md	issues/tk0091.dne.browser.release-gate-stale-regression-lock-alignment.md	rule:browser		
 tk	0092	dne	tools			issues/0092-test-suite-modernization-after-core-refactor.md	issues/tk0092.dne.tools.test-suite-modernization-after-core-refactor.md	rule:tools		
 tk	0093	dne	feishu			issues/0093-feishu-only-channel-simplification-and-imsg-sunset.md	issues/tk0093.dne.feishu.feishu-only-channel-simplification-and-imsg-sunset.md	rule:feishu		
-tk	0094	tdo	ghost	p2		issues/0094-heavy-resource-admission-mvp.md	issues/tk0094.tdo.ghost.p2.heavy-resource-admission-mvp.md	rule:ghost		yes
+tk	0094	tdo	ghost	p2		issues/tk0094.pss.ghost.p2.heavy-resource-admission-mvp.md	issues/tk0094.tdo.ghost.p2.heavy-resource-admission-mvp.md	rule:ghost		yes
 tk	0095	dne	docs			issues/0095-imsg-sunset-followup-archive-and-naming-cleanup.md	issues/tk0095.dne.docs.imsg-sunset-followup-archive-and-naming-cleanup.md	rule:docs		
 tk	0096	dne	runtime			issues/0096-launchd-feishu-only-env-sanitization.md	issues/tk0096.dne.runtime.launchd-feishu-only-env-sanitization.md	label:runtime		
 tk	0097	doi	runtime	p1		issues/0097-runtime-skill-wrapper-slimming.md	issues/tk0097.doi.runtime.p1.runtime-skill-wrapper-slimming.md	rule:runtime		yes
@@ -369,5 +369,5 @@ tk	0179	dne	docs			issues/0179-readme-and-contributing-truth-alignment.md	issues
 tk	0180	doi	runtime	p1		issues/0180-ghost-permission-host-facts-and-error-diagnostics.md	issues/tk0180.doi.runtime.p1.ghost-permission-host-facts-and-error-diagnostics.md	label:runtime		yes
 tk	0181	doi	runtime	p1		issues/0181-ghost-permission-preflight-and-auto-open.md	issues/tk0181.doi.runtime.p1.ghost-permission-preflight-and-auto-open.md	label:runtime		yes
 tk	0182	doi	runtime	p1		issues/0182-desktop-permissions-preauth-on-daemon-start.md	issues/tk0182.doi.runtime.p1.desktop-permissions-preauth-on-daemon-start.md	label:runtime		yes
-tk	0183	tdo	docs	p0		issues/0183-doc-filename-tidy.md	issues/tk0183.tdo.docs.doc-filename-tidy.p0.md	rule:docs		
-tk	0184	tdo	docs	p0		issues/0184-doc-filename-protocol-migration.md	issues/tk0184.tdo.docs.doc-filename-protocol-migration.p0.md	rule:docs		
+tk	0183	cand	docs	p0		issues/0183-doc-filename-tidy.md	issues/tk0183.cand.docs.p0.doc-filename-tidy.md	rule:docs		
+tk	0184	dne	docs	p0		issues/0184-doc-filename-protocol-migration.md	issues/tk0184.dne.docs.p0.doc-filename-protocol-migration.md	rule:docs		

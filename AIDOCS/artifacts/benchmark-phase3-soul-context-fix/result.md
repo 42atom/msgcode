@@ -2,7 +2,7 @@
 
 任务：
 - 修复 task 续跑链 SOUL 丢失问题，并补齐统一 context policy 回归锁。
-- 本轮严格对照 benchmark task card：[/Users/admin/GitProjects/msgcode/aidocs/notes/benchmark-task-phase3-soul-context-fix-260310.md](/Users/admin/GitProjects/msgcode/aidocs/notes/benchmark-task-phase3-soul-context-fix-260310.md)。
+- 本轮严格对照历史 benchmark task card；原 task card 文件已退役，当前仅保留本目录作为证据落点。
 
 原因：
 - benchmark 题目要求确认 task/heartbeat 续跑链与普通 message 链使用同一套完整 context policy。
