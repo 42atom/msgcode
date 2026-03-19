@@ -54,12 +54,19 @@ const dispatchResult = await loadDispatchRecords(workspacePath);
 if (dispatchResult.records.length === 0) {
   console.log("  ❌ 没有 dispatch 记录");
 } else {
-  const dispatch = dispatchResult.records.find(d => d.childTaskId === "tk0218");
+  const dispatch = dispatchResult.records
+    .filter((d) => d.childTaskId === "tk0218")
+    .sort((a, b) => {
+      const aTime = Date.parse(a.updatedAt || a.createdAt || "");
+      const bTime = Date.parse(b.updatedAt || b.createdAt || "");
+      return bTime - aTime;
+    })[0];
   if (dispatch) {
     console.log(`  ✅ 找到 dispatch: ${dispatch.dispatchId}`);
-    console.log(`     - persona: ${dispatch.persona || "未设置"}`);
+     console.log(`     - persona: ${dispatch.persona || "未设置"}`);
     console.log(`     - status: ${dispatch.status}`);
     console.log(`     - subagentTaskId: ${dispatch.subagentTaskId || "未设置"}`);
+    console.log(`     - updatedAt: ${dispatch.updatedAt}`);
     console.log(`     - path: ${dispatch.filePath}`);
   } else {
     console.log("  ❌ 没有找到 tk0218 的 dispatch 记录");
