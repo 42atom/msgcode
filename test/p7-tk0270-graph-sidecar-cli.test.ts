@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { execFileSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -70,5 +71,61 @@ describe("tk0270: graph sidecar cli", () => {
     );
 
     expect(result).toEqual([path.join(workspace, "src", "routes", "login.ts")]);
+  });
+
+  it("CLI context 应通过 stdout 输出稳定 JSON", () => {
+    const output = execFileSync(
+      "node",
+      [
+        "--import",
+        "tsx",
+        path.join(process.cwd(), "scripts", "ts-graph-cli.ts"),
+        "context",
+        "--workspace",
+        workspace,
+        "--entry",
+        "src/auth/service.ts",
+      ],
+      { encoding: "utf8" }
+    );
+
+    const result = JSON.parse(output) as {
+      files: Array<{ path: string }>;
+      readOrder: string[];
+      tests: string[];
+      verify: string[];
+    };
+
+    expect(result.files.some((item) => item.path.endsWith("src/auth/service.ts"))).toBe(true);
+    expect(result.readOrder.some((item) => item.endsWith("src/routes/login.ts"))).toBe(true);
+    expect(result.tests.some((item) => item.endsWith("test/auth/login.test.ts"))).toBe(true);
+    expect(result.verify).toContain("./node_modules/.bin/tsc --noEmit");
+  });
+
+  it("CLI impact 应通过 stdout 输出稳定 JSON", () => {
+    const output = execFileSync(
+      "node",
+      [
+        "--import",
+        "tsx",
+        path.join(process.cwd(), "scripts", "ts-graph-cli.ts"),
+        "impact",
+        "--workspace",
+        workspace,
+        "--entry",
+        "src/auth/service.ts",
+      ],
+      { encoding: "utf8" }
+    );
+
+    const result = JSON.parse(output) as {
+      seedFiles: string[];
+      impactedFiles: string[];
+      relatedTests: string[];
+    };
+
+    expect(result.seedFiles.some((item) => item.endsWith("src/auth/service.ts"))).toBe(true);
+    expect(result.impactedFiles.some((item) => item.endsWith("src/routes/login.ts"))).toBe(true);
+    expect(result.relatedTests.some((item) => item.endsWith("test/auth/login.test.ts"))).toBe(true);
   });
 });
