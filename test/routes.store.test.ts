@@ -28,6 +28,7 @@ import {
 
 // 测试文件路径
 const TEST_ROUTES_FILE = path.join(os.tmpdir(), ".config/msgcode/routes.json");
+const EXISTING_WORKSPACE = path.join(os.tmpdir(), "msgcode-test-route-existing");
 
 // 备份原始环境变量
 const ORIGINAL_WORKSPACE_ROOT = process.env.WORKSPACE_ROOT;
@@ -52,6 +53,7 @@ describe("RouteStore", () => {
     // 确保工作空间根目录存在
     const testWorkspaceRoot = path.join(os.tmpdir(), "msgcode-test-workspace");
     fs.mkdirSync(testWorkspaceRoot, { recursive: true });
+    fs.mkdirSync(EXISTING_WORKSPACE, { recursive: true });
   });
 
   afterEach(() => {
@@ -72,7 +74,7 @@ describe("RouteStore", () => {
           "any;+;test123": {
             chatGuid: "any;+;test123",
             chatId: "test123",
-            workspacePath: "/tmp/test",
+            workspacePath: EXISTING_WORKSPACE,
             botType: "code",
             status: "active",
             createdAt: "2026-01-29T00:00:00.000Z",
@@ -115,7 +117,7 @@ describe("RouteStore", () => {
           "any;+;deadbeef": {
             chatGuid: "any;+;deadbeef",
             chatId: "deadbeef",
-            workspacePath: "/tmp/test",
+            workspacePath: EXISTING_WORKSPACE,
             label: "test",
             botType: "default",
             status: "active",
@@ -141,6 +143,87 @@ describe("RouteStore", () => {
       const persisted = JSON.parse(fs.readFileSync(TEST_ROUTES_FILE, "utf8")) as RouteStoreData;
       expect(Number.isFinite(Date.parse(persisted.routes["any;+;deadbeef"].updatedAt))).toBe(true);
     });
+
+    it("自动删除缺少关键字段的脏 route 条目并落盘", () => {
+      const broken = {
+        version: 1,
+        routes: {
+          "[object Object]": {
+            chatGuid: "[object Object]",
+            createdAt: "2026-02-24T05:42:26.780Z",
+            updatedAt: "2026-02-24T05:42:26.780Z",
+          },
+          "any;+;ok": {
+            chatGuid: "any;+;ok",
+            chatId: "ok",
+            workspacePath: EXISTING_WORKSPACE,
+            botType: "default",
+            status: "active",
+            createdAt: "2026-01-29T00:00:00.000Z",
+            updatedAt: "2026-01-29T00:00:00.000Z",
+          },
+        },
+      };
+
+      const dir = path.dirname(TEST_ROUTES_FILE);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(TEST_ROUTES_FILE, JSON.stringify(broken, null, 2), "utf8");
+
+      const loaded = loadRoutes();
+      expect(loaded.routes["[object Object]"]).toBeUndefined();
+      expect(loaded.routes["any;+;ok"]).toBeDefined();
+
+      const persisted = JSON.parse(fs.readFileSync(TEST_ROUTES_FILE, "utf8")) as RouteStoreData;
+      expect(persisted.routes["[object Object]"]).toBeUndefined();
+      expect(persisted.routes["any;+;ok"]).toBeDefined();
+    });
+
+    it("自动删除 active 且 workspace 已不存在的 route 条目并落盘", () => {
+      const missingWorkspace = path.join(os.tmpdir(), "msgcode-test-route-missing");
+      if (fs.existsSync(missingWorkspace)) {
+        fs.rmSync(missingWorkspace, { recursive: true, force: true });
+      }
+
+      const broken = {
+        version: 1,
+        routes: {
+          "any;+;missing": {
+            chatGuid: "any;+;missing",
+            chatId: "missing",
+            workspacePath: missingWorkspace,
+            botType: "default",
+            status: "active",
+            createdAt: "2026-01-29T00:00:00.000Z",
+            updatedAt: "2026-01-29T00:00:00.000Z",
+          },
+          "any;+;ok": {
+            chatGuid: "any;+;ok",
+            chatId: "ok",
+            workspacePath: EXISTING_WORKSPACE,
+            botType: "default",
+            status: "active",
+            createdAt: "2026-01-29T00:00:00.000Z",
+            updatedAt: "2026-01-29T00:00:00.000Z",
+          },
+        },
+      };
+
+      const dir = path.dirname(TEST_ROUTES_FILE);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      fs.writeFileSync(TEST_ROUTES_FILE, JSON.stringify(broken, null, 2), "utf8");
+
+      const loaded = loadRoutes();
+      expect(loaded.routes["any;+;missing"]).toBeUndefined();
+      expect(loaded.routes["any;+;ok"]).toBeDefined();
+
+      const persisted = JSON.parse(fs.readFileSync(TEST_ROUTES_FILE, "utf8")) as RouteStoreData;
+      expect(persisted.routes["any;+;missing"]).toBeUndefined();
+      expect(persisted.routes["any;+;ok"]).toBeDefined();
+    });
   });
 
   describe("saveRoutes", () => {
@@ -151,7 +234,7 @@ describe("RouteStore", () => {
           "any;+;test456": {
             chatGuid: "any;+;test456",
             chatId: "test456",
-            workspacePath: "/tmp/test",
+            workspacePath: EXISTING_WORKSPACE,
             botType: "code",
             status: "active",
             createdAt: "2026-01-29T00:00:00.000Z",
@@ -175,7 +258,7 @@ describe("RouteStore", () => {
       const entry: RouteEntry = {
         chatGuid: "any;+;test789",
         chatId: "test789",
-        workspacePath: "/tmp/test",
+        workspacePath: EXISTING_WORKSPACE,
         botType: "code",
         status: "active",
         createdAt: "2026-01-29T00:00:00.000Z",
@@ -193,7 +276,7 @@ describe("RouteStore", () => {
       const entry: RouteEntry = {
         chatGuid: "any;+;abc123",
         chatId: "abc123",
-        workspacePath: "/tmp/test",
+        workspacePath: EXISTING_WORKSPACE,
         botType: "code",
         status: "active",
         createdAt: "2026-01-29T00:00:00.000Z",
@@ -210,6 +293,21 @@ describe("RouteStore", () => {
     it("不存在的路由返回 null", () => {
       const found = getRouteByChatId("nonexistent");
       expect(found).toBeNull();
+    });
+  });
+
+  describe("setRoute", () => {
+    it("拒绝写入缺少关键字段的 route", () => {
+      expect(() =>
+        setRoute("broken", {
+          chatGuid: "broken",
+          chatId: "broken",
+          botType: "default",
+          status: "active",
+          createdAt: "2026-01-29T00:00:00.000Z",
+          updatedAt: "2026-01-29T00:00:00.000Z",
+        } as RouteEntry)
+      ).toThrow("无效的 RouteEntry");
     });
   });
 

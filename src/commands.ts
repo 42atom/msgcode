@@ -379,6 +379,29 @@ async function initJobScheduler(): Promise<void> {
   const { createJobScheduler, registerActiveJobScheduler } = await import("./jobs/scheduler.js");
   const { getRouteByChatId } = await import("./routes/store.js");
   const { executeJob } = await import("./jobs/runner.js");
+  const { pruneObviousTestOnlyJobs } = await import("./jobs/store.js");
+  const { rebuildActiveRouteScheduleJobs } = await import("./jobs/schedule-sync.js");
+
+  try {
+    const prunedJobs = pruneObviousTestOnlyJobs();
+    if (prunedJobs > 0) {
+      logger.info("Jobs store 已清掉明显测试残留", {
+        module: "commands",
+        count: prunedJobs,
+      });
+    }
+
+    const rebuiltJobs = await rebuildActiveRouteScheduleJobs();
+    logger.info("Schedule jobs 已按 active routes 重建", {
+      module: "commands",
+      count: rebuiltJobs.length,
+    });
+  } catch (error) {
+    logger.warn("Schedule jobs 重建失败，继续启动", {
+      module: "commands",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 
   jobScheduler = createJobScheduler({
     getRouteFn: getRouteByChatId,

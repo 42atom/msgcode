@@ -25,6 +25,7 @@ import type {
   LastStatus,
 } from "./types.js";
 import { getDefaultJobsPath, getDefaultRunsPath, JOBS_ERROR_CODES, createJobsDiagnostic } from "./types.js";
+import { getRouteByChatId } from "../routes/store.js";
 
 // ============================================
 // 错误类
@@ -328,6 +329,33 @@ export class JobStore {
  */
 export function createJobStore(config?: JobStoreConfig): JobStore {
   return new JobStore(config);
+}
+
+export function isObviousTestOnlyJob(job: CronJob): boolean {
+  const looksLikeTestId = job.id.startsWith("test:");
+  const looksLikeTestRoute = job.route.chatGuid.startsWith("test-");
+  return looksLikeTestId || looksLikeTestRoute;
+}
+
+export function pruneObviousTestOnlyJobs(config?: JobStoreConfig): number {
+  const store = createJobStore(config);
+  const loaded = store.loadJobs();
+  if (!loaded) {
+    return 0;
+  }
+
+  const keptJobs = loaded.jobs.filter((job) => {
+    if (!isObviousTestOnlyJob(job)) {
+      return true;
+    }
+    return getRouteByChatId(job.route.chatGuid) !== null;
+  });
+
+  const removed = loaded.jobs.length - keptJobs.length;
+  if (removed > 0) {
+    store.saveJobs({ version: 1, jobs: keptJobs });
+  }
+  return removed;
 }
 
 /**

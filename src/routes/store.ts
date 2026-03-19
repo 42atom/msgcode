@@ -67,6 +67,26 @@ function getRoutesFilePath(): string {
   return process.env.ROUTES_FILE_PATH || path.join(os.homedir(), ".config/msgcode/routes.json");
 }
 
+function isValidRouteStatus(value: unknown): value is RouteEntry["status"] {
+  return value === "active" || value === "archived" || value === "paused";
+}
+
+function isRouteEntryShape(value: unknown): value is RouteEntry {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const entry = value as Partial<RouteEntry>;
+  return (
+    typeof entry.chatGuid === "string" &&
+    typeof entry.workspacePath === "string" &&
+    typeof entry.botType === "string" &&
+    isValidRouteStatus(entry.status) &&
+    typeof entry.createdAt === "string" &&
+    typeof entry.updatedAt === "string"
+  );
+}
+
 // ============================================
 // 辅助函数
 // ============================================
@@ -132,7 +152,17 @@ export function loadRoutes(): RouteStoreData {
     const now = new Date().toISOString();
     let changed = false;
     for (const [chatGuid, entry] of Object.entries(data.routes || {})) {
-      if (!entry) continue;
+      if (!isRouteEntryShape(entry)) {
+        delete data.routes[chatGuid];
+        changed = true;
+        continue;
+      }
+
+      if (entry.status === "active" && !fs.existsSync(entry.workspacePath)) {
+        delete data.routes[chatGuid];
+        changed = true;
+        continue;
+      }
 
       const createdOk = Number.isFinite(Date.parse(entry.createdAt));
       const updatedOk = Number.isFinite(Date.parse(entry.updatedAt));
@@ -242,6 +272,10 @@ export function getRouteByChatId(chatId: string): RouteEntry | null {
  * 如果 chatGuid 已存在，更新；否则新增
  */
 export function setRoute(chatGuid: string, entry: RouteEntry): void {
+  if (!isRouteEntryShape(entry)) {
+    throw new Error(`无效的 RouteEntry: ${chatGuid}`);
+  }
+
   const data = loadRoutes();
 
   data.routes[chatGuid] = {
