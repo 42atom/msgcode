@@ -67,6 +67,7 @@ sh bootstrap/doctor-agent-pack.sh
 sh bootstrap/install-appliance.sh --bundle-root <bundle> --install-root <target>
 sh bootstrap/first-run-init.sh --install-root <target> --workspace acme/ops
 sh bootstrap/upgrade-appliance.sh --bundle-root <bundle> --install-root <target>
+sh bootstrap/doctor-appliance.sh --install-root <target>
 ```
 
 约束：
@@ -75,3 +76,4 @@ sh bootstrap/upgrade-appliance.sh --bundle-root <bundle> --install-root <target>
 - `first-run-init.sh` 只负责调用 `msgcode init`
 - `upgrade-appliance.sh` 只替换安装目录下的 `runtime/`
 - 如存在 `bundle-root/appliance.manifest`，`install/upgrade` 会优先按 manifest 读运行时路径与 launcher 路径
+- `doctor-appliance.sh` 只检查安装根、manifest、runtime 和 launcher 是否齐全

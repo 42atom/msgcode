@@ -80,6 +80,7 @@ describe("appliance bootstrap scripts", () => {
 
     expect(existsSync(path.join(installRoot, "runtime", "bin", "msgcode"))).toBe(true);
     expect(existsSync(path.join(installRoot, "bin", "msgcode"))).toBe(true);
+    expect(existsSync(path.join(installRoot, "appliance.manifest"))).toBe(true);
   });
 
   it("install-appliance 应按 manifest 读取自定义 runtime 路径", async () => {
@@ -106,6 +107,9 @@ describe("appliance bootstrap scripts", () => {
 
     expect(existsSync(path.join(installRoot, "core-runtime", "bin", "msgcode"))).toBe(true);
     expect(existsSync(path.join(installRoot, "launcher", "msgcode"))).toBe(true);
+    const installedManifest = await fs.readFile(path.join(installRoot, "appliance.manifest"), "utf8");
+    expect(installedManifest).toContain("MSGCODE_APPLIANCE_RUNTIME_DIR=core-runtime");
+    expect(installedManifest).toContain("MSGCODE_APPLIANCE_LAUNCHER_REL=launcher/msgcode");
   });
 
   it("first-run-init 应通过 launcher 调用 msgcode init", async () => {
@@ -191,5 +195,38 @@ describe("appliance bootstrap scripts", () => {
     expect(await fs.readFile(markerPath, "utf8")).toContain("v2");
     const log = await fs.readFile(logPath, "utf8");
     expect(log).toContain("status");
+  });
+
+  it("doctor-appliance 应按已安装 manifest 检查 runtime 与 launcher", async () => {
+    const root = await makeTempRoot();
+    tempRoots.push(root);
+    const bundleRoot = path.join(root, "bundle");
+    const installRoot = path.join(root, "install");
+    await createFakeBundle(bundleRoot, "doctor", {
+      runtimeDir: "core-runtime",
+      launcherRel: "launcher/msgcode",
+      runtimeBinRel: "core-runtime/bin/msgcode",
+      nodeBinRel: "core-runtime/node/bin",
+    });
+
+    await execFileAsync("sh", [
+      "bootstrap/install-appliance.sh",
+      "--bundle-root",
+      bundleRoot,
+      "--install-root",
+      installRoot,
+    ], {
+      cwd: "/Users/admin/GitProjects/msgcode",
+    });
+
+    const { stdout } = await execFileAsync("sh", [
+      "bootstrap/doctor-appliance.sh",
+      "--install-root",
+      installRoot,
+    ], {
+      cwd: "/Users/admin/GitProjects/msgcode",
+    });
+
+    expect(stdout).toContain("Appliance doctor 通过");
   });
 });
