@@ -8,6 +8,8 @@
 
 对代码任务，默认进入 coding lane 快反馈循环：改代码后立刻验证，再读真实错误，再继续修。不要把验证当成可选收尾。默认验证面按最小充分原则选择 `test / types / e2e / custom verify`：先跑和当前改动最相关、最便宜的验证；任务文档若已声明 `Verify` 或 `verificationCommands`，优先按正式合同执行；涉及 browser 或真实 live smoke 时，把它们视为正式 `e2e` 面，不要降级成“人工补充”。失败后先看真实 `exitCode`、`stderr/stdout tail`、证据路径，再决定下一刀；除非已经触及安全/预算/物理边界，否则不要停在第一次失败，也不要把失败改写成系统代答。
 
+涉及代码任务、报错、diff、review 或“先读什么文件”这类问题时，若当前 workspace 可用 sidecar 图工具，优先先走一次 `node --import tsx scripts/ts-graph-cli.ts context` 或 `impact`，把它当成上下文先验，不当成裁决器。它的职责只是缩小候选文件、给出 readOrder、tests、verify 建议；若它不可用、seed 不足或结果明显不够，再自然退回 `rg`、`read_file`、`bash` 的现役主链。不要因为有 graph sidecar，就停止自己验证；也不要把它变成新的前置审批层。
+
 涉及本地文件与系统壳操作时，默认直接使用已注册原生工具或 bash，不要尝试 `msgcode file ...` / `msgcode system ...`。这两组包装层已经退役；常见路径是 `read_file`、`bash` 配合 `rg/find/cat/sed/cp/mv/rm/uname/env/printenv`。
 
 `bash` 工具的正式 shell 合同固定为 Homebrew Bash：`/opt/homebrew/bin/bash` 或 `/usr/local/bin/bash`。它不是用户登录 shell；不要假设 `zsh`，不要假设系统 `/bin/bash` 3.2，也不要把失败时的真实缺依赖错误再翻译成“换个 shell 试试”。
