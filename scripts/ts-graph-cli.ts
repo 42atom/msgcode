@@ -2,6 +2,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import ts from "typescript";
 
 type GraphNode = {
   path: string;
@@ -28,8 +29,23 @@ type ImpactResult = {
   relatedTests: string[];
 };
 
+type TsconfigPaths = {
+  baseUrl?: string;
+  paths: Array<{ pattern: string; targets: string[] }>;
+  excludeNames: Set<string>;
+};
+
 const SOURCE_EXTENSIONS = [".ts", ".tsx", ".js", ".jsx", ".mts", ".cts"];
 const ENTRY_EXTENSIONS = [...SOURCE_EXTENSIONS, "/index.ts", "/index.tsx", "/index.js", "/index.jsx"];
+const DEFAULT_EXCLUDED_DIRS = new Set([
+  "node_modules",
+  "dist",
+  "build",
+  "out",
+  "coverage",
+  ".next",
+  ".turbo",
+]);
 
 function parseArgs(argv: string[]): {
   command: "context" | "impact";
@@ -83,7 +99,45 @@ function shouldIncludeFile(filePath: string): boolean {
   return SOURCE_EXTENSIONS.some((ext) => filePath.endsWith(ext));
 }
 
-function walkFiles(dir: string): string[] {
+function readTsconfigHints(workspace: string): TsconfigPaths {
+  const tsconfigPath = path.join(workspace, "tsconfig.json");
+  const hints: TsconfigPaths = {
+    paths: [],
+    excludeNames: new Set(DEFAULT_EXCLUDED_DIRS),
+  };
+  if (!fs.existsSync(tsconfigPath)) {
+    return hints;
+  }
+  try {
+    const raw = JSON.parse(fs.readFileSync(tsconfigPath, "utf8")) as {
+      compilerOptions?: { baseUrl?: string; outDir?: string; declarationDir?: string; paths?: Record<string, string[]> };
+      exclude?: string[];
+    };
+    const baseUrl = raw.compilerOptions?.baseUrl;
+    if (typeof baseUrl === "string" && baseUrl.trim()) {
+      hints.baseUrl = path.resolve(workspace, baseUrl);
+    }
+    for (const name of [raw.compilerOptions?.outDir, raw.compilerOptions?.declarationDir]) {
+      if (typeof name === "string" && name.trim()) {
+        hints.excludeNames.add(path.basename(name));
+      }
+    }
+    for (const entry of raw.exclude ?? []) {
+      const trimmed = entry.trim();
+      if (!trimmed) continue;
+      hints.excludeNames.add(path.basename(trimmed.replace(/\/+$/, "")));
+    }
+    for (const [pattern, targets] of Object.entries(raw.compilerOptions?.paths ?? {})) {
+      if (!Array.isArray(targets) || targets.length === 0) continue;
+      hints.paths.push({ pattern, targets });
+    }
+  } catch {
+    return hints;
+  }
+  return hints;
+}
+
+function walkFiles(dir: string, excludedDirs: Set<string>): string[] {
   if (!fs.existsSync(dir)) return [];
   const out: string[] = [];
   const stack = [dir];
@@ -91,7 +145,7 @@ function walkFiles(dir: string): string[] {
     const current = stack.pop()!;
     const entries = fs.readdirSync(current, { withFileTypes: true });
     for (const entry of entries) {
-      if (entry.name === "node_modules" || entry.name.startsWith(".git")) continue;
+      if (entry.name.startsWith(".git") || excludedDirs.has(entry.name)) continue;
       const full = path.join(current, entry.name);
       if (entry.isDirectory()) {
         stack.push(full);
@@ -105,27 +159,34 @@ function walkFiles(dir: string): string[] {
   return out;
 }
 
-function extractRelativeImports(content: string): string[] {
+function extractImportSpecs(content: string): string[] {
   const imports = new Set<string>();
-  const patterns = [
-    /import\s+[^'"]*?from\s+["']([^"']+)["']/g,
-    /import\s*\(\s*["']([^"']+)["']\s*\)/g,
-    /export\s+[^'"]*?from\s+["']([^"']+)["']/g,
-    /require\s*\(\s*["']([^"']+)["']\s*\)/g,
-  ];
-  for (const pattern of patterns) {
-    for (const match of content.matchAll(pattern)) {
-      const spec = match[1]?.trim();
-      if (spec && spec.startsWith(".")) {
-        imports.add(spec);
+  const sourceFile = ts.createSourceFile("graph.ts", content, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+
+  function visit(node: ts.Node): void {
+    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+      imports.add(node.moduleSpecifier.text.trim());
+    }
+
+    if (ts.isCallExpression(node)) {
+      const [firstArg] = node.arguments;
+      if (firstArg && ts.isStringLiteral(firstArg)) {
+        if (node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+          imports.add(firstArg.text.trim());
+        } else if (ts.isIdentifier(node.expression) && node.expression.text === "require") {
+          imports.add(firstArg.text.trim());
+        }
       }
     }
+
+    ts.forEachChild(node, visit);
   }
+
+  visit(sourceFile);
   return [...imports];
 }
 
-function resolveImport(fromFile: string, spec: string): string | undefined {
-  const base = path.resolve(path.dirname(fromFile), spec);
+function resolveFileCandidate(base: string): string | undefined {
   for (const candidate of ENTRY_EXTENSIONS.map((suffix) => base + suffix).concat([base])) {
     if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
       return path.normalize(candidate);
@@ -134,8 +195,44 @@ function resolveImport(fromFile: string, spec: string): string | undefined {
   return undefined;
 }
 
+function resolveRelativeImport(fromFile: string, spec: string): string | undefined {
+  return resolveFileCandidate(path.resolve(path.dirname(fromFile), spec));
+}
+
+function resolveTsconfigPath(workspace: string, spec: string, hints: TsconfigPaths): string | undefined {
+  const baseUrl = hints.baseUrl ?? workspace;
+
+  for (const entry of hints.paths) {
+    if (entry.pattern.includes("*")) {
+      const [prefix, suffix] = entry.pattern.split("*");
+      if (!spec.startsWith(prefix) || !spec.endsWith(suffix)) continue;
+      const matched = spec.slice(prefix.length, spec.length - suffix.length);
+      for (const target of entry.targets) {
+        const resolved = resolveFileCandidate(path.resolve(baseUrl, target.replace("*", matched)));
+        if (resolved) return resolved;
+      }
+      continue;
+    }
+    if (entry.pattern !== spec) continue;
+    for (const target of entry.targets) {
+      const resolved = resolveFileCandidate(path.resolve(baseUrl, target));
+      if (resolved) return resolved;
+    }
+  }
+
+  return resolveFileCandidate(path.resolve(baseUrl, spec));
+}
+
+function resolveImport(workspace: string, fromFile: string, spec: string, hints: TsconfigPaths): string | undefined {
+  if (spec.startsWith(".")) {
+    return resolveRelativeImport(fromFile, spec);
+  }
+  return resolveTsconfigPath(workspace, spec, hints);
+}
+
 function buildGraph(workspace: string): Map<string, GraphNode> {
-  const files = walkFiles(workspace);
+  const tsconfigHints = readTsconfigHints(workspace);
+  const files = walkFiles(workspace, tsconfigHints.excludeNames);
   const graph = new Map<string, GraphNode>();
 
   for (const filePath of files) {
@@ -148,8 +245,8 @@ function buildGraph(workspace: string): Map<string, GraphNode> {
 
   for (const filePath of files) {
     const content = fs.readFileSync(filePath, "utf8");
-    const imports = extractRelativeImports(content)
-      .map((spec) => resolveImport(filePath, spec))
+    const imports = extractImportSpecs(content)
+      .map((spec) => resolveImport(workspace, filePath, spec, tsconfigHints))
       .filter((value): value is string => Boolean(value))
       .filter((resolved) => graph.has(resolved));
 
@@ -160,6 +257,15 @@ function buildGraph(workspace: string): Map<string, GraphNode> {
   }
 
   return graph;
+}
+
+function applyInDegreePenalty(graph: Map<string, GraphNode>, filePath: string, baseScore: number): number {
+  const inDegree = graph.get(filePath)?.importedBy.length ?? 0;
+  if (inDegree <= 3) {
+    return baseScore;
+  }
+  const penalty = Math.min(0.45, Math.log2(inDegree - 1) * 0.08);
+  return Math.max(0.3, Number((baseScore - penalty).toFixed(4)));
 }
 
 function extractSeedFiles(workspace: string, graph: Map<string, GraphNode>, entries: string[], stackText?: string): string[] {
@@ -238,10 +344,10 @@ function selectContext(workspace: string, graph: Map<string, GraphNode>, seeds: 
   for (const seed of seeds) {
     upsert(seed, 1.0, "seed");
     for (const imported of graph.get(seed)?.imports ?? []) {
-      upsert(imported, 0.86, "direct import");
+      upsert(imported, applyInDegreePenalty(graph, imported, 0.86), "direct import");
     }
     for (const importer of graph.get(seed)?.importedBy ?? []) {
-      upsert(importer, 0.78, "direct importer");
+      upsert(importer, applyInDegreePenalty(graph, importer, 0.78), "direct importer");
     }
   }
 
