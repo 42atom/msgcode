@@ -1,7 +1,7 @@
 /**
  * msgcode: Wake Startup Catch-up - 启动恢复逻辑
  *
- * 对齐 spec: docs/plan/pl0210.tdo.runtime.wake-record-and-work-capsule-mainline.md
+ * 对齐 spec: docs/plan/pl0210.pss.runtime.wake-record-and-work-capsule-mainline.md
  */
 
 import path from "node:path";

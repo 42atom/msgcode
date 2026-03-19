@@ -1,7 +1,7 @@
 /**
  * msgcode: Wake Store - 文件持久化与原子操作
  *
- * 对齐 spec: docs/plan/pl0210.tdo.runtime.wake-record-and-work-capsule-mainline.md
+ * 对齐 spec: docs/plan/pl0210.pss.runtime.wake-record-and-work-capsule-mainline.md
  */
 
 import path from "node:path";

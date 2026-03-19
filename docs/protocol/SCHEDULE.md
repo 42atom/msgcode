@@ -287,7 +287,7 @@ Wake Record ID 不能包含随机因子。
 ## 7. References
 
 - Plan: `docs/plan/pl0204.tdo.runtime.heartbeat-alarm-and-reflection-mainline.md`
-- Wake: `docs/plan/pl0210.tdo.runtime.wake-record-and-work-capsule-mainline.md`
+- Wake: `docs/plan/pl0210.pss.runtime.wake-record-and-work-capsule-mainline.md`
 - Wake Types: `src/runtime/wake-types.ts`
 - HEARTBEAT Protocol: `docs/protocol/HEARTBEAT.md`
 - REFLECTION Protocol: `docs/protocol/REFLECTION.md`

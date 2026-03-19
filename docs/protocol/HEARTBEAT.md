@@ -208,7 +208,7 @@ The following are out of scope for HEARTBEAT.md protocol:
 ## 8. References
 
 - Plan: `docs/plan/pl0204.tdo.runtime.heartbeat-alarm-and-reflection-mainline.md`
-- Wake: `docs/plan/pl0210.tdo.runtime.wake-record-and-work-capsule-mainline.md`
+- Wake: `docs/plan/pl0210.pss.runtime.wake-record-and-work-capsule-mainline.md`
 - Work Continuity: `docs/plan/pl0205.tdo.runtime.work-vitals-and-session-continuity-stack.md`
 - Schedule Protocol: `docs/protocol/SCHEDULE.md`
 - Reflection Protocol: `docs/protocol/REFLECTION.md`

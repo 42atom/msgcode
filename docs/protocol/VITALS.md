@@ -500,7 +500,7 @@ Avoid narrative/psychological terms:
 ## 13. References
 
 - Plan: `docs/plan/pl0205.tdo.runtime.work-vitals-and-session-continuity-stack.md`
-- BDD: `docs/plan/pl0206.tdo.runtime.work-vitals-session-bdd-design.md`
+- BDD: `docs/plan/pl0206.pss.runtime.work-vitals-session-bdd-design.md`
 - Issue: `issues/tk0206.pss.runtime.p1.vitals-self-protection-projection-mainline.md`
 - Runtime: `src/runtime/heartbeat.ts`
 - Heartbeat Protocol: `docs/protocol/HEARTBEAT.md`

@@ -1,7 +1,7 @@
 /**
  * msgcode: Wake Consume - 把 wake record 接到 work capsule 消费链
  *
- * 对齐 spec: docs/plan/pl0210.tdo.runtime.wake-record-and-work-capsule-mainline.md
+ * 对齐 spec: docs/plan/pl0210.pss.runtime.wake-record-and-work-capsule-mainline.md
  *
  * 第二刀：把 wake -> work capsule 接进 tk0205 的恢复协议
  */

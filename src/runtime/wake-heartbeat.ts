@@ -1,7 +1,7 @@
 /**
  * msgcode: Wake Heartbeat Integration - heartbeat 优先消费 wake record
  *
- * 对齐 spec: docs/plan/pl0210.tdo.runtime.wake-record-and-work-capsule-mainline.md
+ * 对齐 spec: docs/plan/pl0210.pss.runtime.wake-record-and-work-capsule-mainline.md
  *
  * 第三刀：heartbeat 优先检查 wake record，不只是泛泛巡检
  */

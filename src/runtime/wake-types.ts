@@ -1,7 +1,7 @@
 /**
  * msgcode: Wake Job / Wake Record / Claim 类型定义
  *
- * 对齐 spec: docs/plan/pl0210.tdo.runtime.wake-record-and-work-capsule-mainline.md
+ * 对齐 spec: docs/plan/pl0210.pss.runtime.wake-record-and-work-capsule-mainline.md
  *
  * 职责：
  * - 定义 wake job（计划）
