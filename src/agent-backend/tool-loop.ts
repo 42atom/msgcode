@@ -599,6 +599,7 @@ async function buildOpenAiExecSystemPrompt(params: {
 
 function buildOpenAiConversationMessages(params: {
     system: string;
+    workstateContext?: AgentToolLoopOptions["workstateContext"];
     summaryContext?: AgentToolLoopOptions["summaryContext"];
     windowMessages?: AgentToolLoopOptions["windowMessages"];
     prompt: string;
@@ -606,6 +607,14 @@ function buildOpenAiConversationMessages(params: {
     const messages: OpenAiConversationMessage[] = [];
     if (params.system) {
         messages.push({ role: "system", content: params.system });
+    }
+
+    const workstateText = (params.workstateContext || "").trim();
+    if (workstateText) {
+        messages.push({
+            role: "assistant",
+            content: `[当前工作态骨架]\n${workstateText}`,
+        });
     }
 
     const contextBlocks = buildConversationContextBlocks({
@@ -1524,6 +1533,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
                 temperature: 0,
                 backendRuntime,
                 windowMessages: options.windowMessages,
+                workstateContext: options.workstateContext,
                 summaryContext: options.summaryContext,
                 soulContext: options.soulContext,
             });
@@ -1558,6 +1568,7 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     });
     const messages = buildOpenAiConversationMessages({
         system,
+        workstateContext: options.workstateContext,
         summaryContext: options.summaryContext,
         windowMessages: options.windowMessages,
         prompt: options.prompt,

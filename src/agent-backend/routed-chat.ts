@@ -113,6 +113,7 @@ export async function runAgentRoutedChat(options: AgentRoutedChatOptions): Promi
         system: options.system,
         workspacePath: options.workspacePath,
         windowMessages: options.windowMessages,
+        workstateContext: options.workstateContext,
         summaryContext: options.summaryContext,
         soulContext: options.soulContext,
         currentMessageId: options.currentMessageId,

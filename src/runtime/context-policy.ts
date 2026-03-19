@@ -10,6 +10,8 @@
  * - handlers 与 task 续跑都通过本文件进入同一套 policy
  */
 
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import { estimateTotalTokens } from "../budget.js";
 import { getInputBudgetFromCapabilities, resolveRuntimeCapabilities } from "../capabilities.js";
 import { resolveSoulContext } from "../config/souls.js";
@@ -61,6 +63,7 @@ export interface AssembleAgentContextInput {
     chatId: string;
     prompt: string;
     workspacePath?: string;
+    taskId?: string;
     taskGoal?: string;
     checkpoint?: TaskCheckpoint;
     agentProvider?: string;
@@ -79,6 +82,7 @@ export interface AssembleAgentContextInput {
 export interface AssembledAgentContext {
     prompt: string;
     windowMessages: WindowMessage[];
+    workstateContext?: string;
     summaryContext?: string;
     soulContext?: { content: string; source: string; path: string; chars: number };
     defaultActionTargetMessageId?: string;
@@ -179,14 +183,20 @@ export function buildConversationContextBlocks(params: {
 
 export function buildDialogPromptWithContext(params: {
     prompt: string;
+    workstateContext?: string;
     summaryContext?: string;
     windowMessages?: Array<{ role: string; content?: string }>;
 }): string {
     const sections: string[] = [];
+    const workstateText = clipContextText((params.workstateContext || "").trim(), 1600).trim();
     const contextBlocks = buildConversationContextBlocks({
         summaryContext: params.summaryContext,
         windowMessages: params.windowMessages,
     });
+
+    if (workstateText) {
+        sections.push(`[当前工作态骨架]\n${workstateText}`);
+    }
 
     if (contextBlocks.summaryText) {
         sections.push(`[历史对话摘要]\n${contextBlocks.summaryText}`);
@@ -213,6 +223,7 @@ export async function assembleAgentContext(
     const safeContextBudget = contextBudget > 0 ? contextBudget : 1;
 
     let windowMessages: WindowMessage[] = [];
+    let workstateContext: string | undefined;
     let summaryContext: string | undefined;
     let summaryData: ChatSummary | undefined;
     let soulContext: { content: string; source: string; path: string; chars: number } | undefined;
@@ -221,6 +232,7 @@ export async function assembleAgentContext(
         windowMessages = await loadWindow(input.workspacePath, input.chatId);
         summaryData = await loadSummary(input.workspacePath, input.chatId);
         summaryContext = formatSummaryAsContext(summaryData) || undefined;
+        workstateContext = await loadWorkstateContext(input.workspacePath, input.taskId);
 
         if (input.includeSoulContext) {
             soulContext = await resolveSoulContext(input.workspacePath);
@@ -360,6 +372,7 @@ export async function assembleAgentContext(
     return {
         prompt,
         windowMessages,
+        workstateContext,
         summaryContext,
         soulContext,
         defaultActionTargetMessageId: input.currentMessageId?.trim() || undefined,
@@ -382,6 +395,24 @@ export async function assembleAgentContext(
 function resolveContextAgentProvider(agentProvider?: string): string {
     const raw = (agentProvider || process.env.AGENT_BACKEND || "").trim();
     return raw || "agent-backend";
+}
+
+async function loadWorkstateContext(
+    workspacePath: string,
+    taskId?: string
+): Promise<string | undefined> {
+    const normalizedTaskId = (taskId || "").trim();
+    if (!normalizedTaskId) return undefined;
+
+    const workstatePath = path.join(workspacePath, ".msgcode", "workstates", `${normalizedTaskId}.md`);
+
+    try {
+        const raw = (await readFile(workstatePath, "utf8")).trim();
+        if (!raw) return undefined;
+        return raw;
+    } catch {
+        return undefined;
+    }
 }
 
 function buildAgentPrompt(params: {

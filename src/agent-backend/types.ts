@@ -52,6 +52,7 @@ export interface AgentChatOptions {
     temperature?: number; // P5.7-R3e: 可选覆盖温度（默认 0.7）
     backendRuntime?: AgentBackendRuntime; // P5.7-R8b: 后端运行时配置
     windowMessages?: Array<{ role: string; content?: string }>; // P5.7-R3l: 对话窗口上下文
+    workstateContext?: string; // P7-TK0277: WORKSTATE 恢复骨架
     summaryContext?: string; // P5.7-R3l: 历史摘要上下文
     soulContext?: { content: string; source: string; path: string; chars: number }; // P5.7-R3l: SOUL 上下文
 }
@@ -91,6 +92,7 @@ export interface AgentToolLoopOptions {
     backendRuntime?: AgentBackendRuntime; // P5.7-R8b: 后端运行时配置
     // P5.6.8-R4b: 短期记忆上下文
     windowMessages?: Array<{ role: string; content?: string }>; // 历史窗口消息
+    workstateContext?: string; // WORKSTATE 恢复骨架
     summaryContext?: string; // summary 格式化后的上下文
     // P5.6.8-R4e: SOUL 上下文（direct only）
     soulContext?: { content: string; source: string; path: string; chars: number };
@@ -227,6 +229,7 @@ export interface AgentRoutedChatOptions {
     workspacePath?: string;
     agentProvider?: string; // P5.7-R8b: 当前工作区后端
     windowMessages?: Array<{ role: string; content?: string }>;
+    workstateContext?: string;
     summaryContext?: string;
     soulContext?: { content: string; source: string; path: string; chars: number };
     currentMessageId?: string;

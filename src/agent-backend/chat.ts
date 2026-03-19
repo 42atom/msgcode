@@ -725,6 +725,7 @@ export async function runAgentChat(options: AgentChatOptions): Promise<string> {
 
     const promptWithContext = buildDialogPromptWithContext({
         prompt: options.prompt,
+        workstateContext: options.workstateContext,
         summaryContext: options.summaryContext,
         windowMessages: options.windowMessages,
     });

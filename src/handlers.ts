@@ -598,6 +598,7 @@ export class RuntimeRouterHandler implements CommandHandler {
             // P5.6.14-R3: 注入观测字段
             const injectionEnabled = !!(
                 assembledContext.windowMessages.length > 0 ||
+                assembledContext.workstateContext ||
                 assembledContext.summaryContext ||
                 assembledContext.soulContext?.content
             );
@@ -616,6 +617,7 @@ export class RuntimeRouterHandler implements CommandHandler {
                 injectionEnabled,
                 // 注入详情
                 memoryInjected: assembledContext.windowMessages.length > 0 || !!assembledContext.summaryContext,
+                workstateInjected: !!assembledContext.workstateContext,
                 memoryTurns: assembledContext.windowMessages.length,
                 soulInjected: !!assembledContext.soulContext?.content,
                 soulSource: assembledContext.soulContext?.source || "none",
@@ -646,6 +648,7 @@ export class RuntimeRouterHandler implements CommandHandler {
                 },
                 // P5.6.8-R4b: 注入短期记忆上下文
                 windowMessages: assembledContext.windowMessages,
+                workstateContext: assembledContext.workstateContext,
                 summaryContext: assembledContext.summaryContext,
                 // P5.6.8-R4e: 注入 SOUL 上下文（direct only）
                 soulContext: assembledContext.soulContext,

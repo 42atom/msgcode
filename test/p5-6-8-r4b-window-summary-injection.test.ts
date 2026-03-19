@@ -39,9 +39,10 @@ describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
     expect(result.usedChars).toBeLessThanOrEqual(90);
   });
 
-  it("buildDialogPromptWithContext 应保持 summary -> window -> user 顺序", () => {
+  it("buildDialogPromptWithContext 应保持 workstate -> summary -> window -> user 顺序", () => {
     const prompt = buildDialogPromptWithContext({
       prompt: "请继续回答当前问题",
+      workstateContext: "当前意图：先恢复工作态",
       summaryContext: "这里是历史摘要",
       windowMessages: [
         { role: "user", content: "上一轮用户提问" },
@@ -49,13 +50,17 @@ describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
       ],
     });
 
+    const workstateIndex = prompt.indexOf("[当前工作态骨架]");
     const summaryIndex = prompt.indexOf("[历史对话摘要]");
     const windowIndex = prompt.indexOf("[最近对话窗口]");
     const userIndex = prompt.indexOf("[当前用户问题]");
 
+    expect(workstateIndex).toBeGreaterThanOrEqual(0);
+    expect(summaryIndex).toBeGreaterThan(workstateIndex);
     expect(summaryIndex).toBeGreaterThanOrEqual(0);
     expect(windowIndex).toBeGreaterThan(summaryIndex);
     expect(userIndex).toBeGreaterThan(windowIndex);
+    expect(prompt).toContain("当前意图：先恢复工作态");
     expect(prompt).toContain("[user] 上一轮用户提问");
     expect(prompt).toContain("[assistant] 上一轮助手回答");
     expect(prompt).toContain("请继续回答当前问题");
@@ -118,5 +123,58 @@ describe("P5.6.8-R4b: window/summary 注入回归锁", () => {
     expect(messages[2]).toEqual({ role: "user", content: "上轮用户问题" });
     expect(messages[3]).toEqual({ role: "assistant", content: "上轮助手回答" });
     expect(messages[4]).toEqual({ role: "user", content: "当前用户问题" });
+  });
+
+  it("runAgentToolLoop 应把 workstate 放在 summary 前注入", async () => {
+    const capturedBodies: Array<{ messages?: Array<{ role: string; content?: string }> }> = [];
+
+    globalThis.fetch = async (_url, init) => {
+      capturedBodies.push(JSON.parse(String(init?.body ?? "{}")));
+      return new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                role: "assistant",
+                content: "最终答复",
+              },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }
+      );
+    };
+
+    const backendRuntime: AgentBackendRuntime = {
+      id: "openai",
+      baseUrl: "http://unit-test.local",
+      apiKey: "test-key",
+      model: "unit-test-model",
+      timeoutMs: 500,
+      nativeApiEnabled: false,
+    };
+
+    await runAgentToolLoop({
+      prompt: "当前用户问题",
+      workstateContext: "当前意图：先恢复工作骨架",
+      summaryContext: "这里是历史摘要",
+      windowMessages: [
+        { role: "user", content: "上轮用户问题" },
+        { role: "assistant", content: "上轮助手回答" },
+      ],
+      backendRuntime,
+      model: "unit-test-model",
+      tools: [],
+      timeoutMs: 500,
+    });
+
+    const messages = capturedBodies[0]?.messages ?? [];
+    expect(messages[1]?.content).toContain("[当前工作态骨架]");
+    expect(messages[1]?.content).toContain("当前意图：先恢复工作骨架");
+    expect(messages[2]?.content).toContain("[历史对话摘要]");
   });
 });
