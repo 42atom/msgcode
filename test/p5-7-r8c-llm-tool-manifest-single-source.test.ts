@@ -59,6 +59,7 @@ describe("P5.7-R8c: LLM 工具暴露层单一真相源", () => {
     expect(TOOL_MANIFESTS.read_file).toBeDefined();
     expect(TOOL_MANIFESTS.write_file).toBeDefined();
     expect(TOOL_MANIFESTS.edit_file).toBeDefined();
+    expect(TOOL_MANIFESTS.read_file.description).toContain("[lastNonEmptyLine]");
   });
 
   it("vision 应保留内部说明书，显式 allow 时应真实暴露给 LLM", async () => {

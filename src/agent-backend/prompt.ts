@@ -104,6 +104,12 @@ export const EXEC_TOOL_PROTOCOL_CONSTRAINT = loadPromptFragmentSync(
     EXEC_TOOL_PROTOCOL_CONSTRAINT_FILE
 );
 
+export const READ_FILE_PREVIEW_CONSTRAINT =
+    "若 read_file 的 tool_result 预览里出现 [lastNonEmptyLine]，它就是该文件尾部最后一条非空行；回答尾行/最后一行类问题时优先直接使用这条事实，不要把 [EOF] 当成正文内容。";
+
+export const FILE_FACT_VERIFICATION_CONSTRAINT =
+    "若用户在问当前工作目录里的文件内容、最后一行、尾行、摘要、行号或某段文本，你本轮必须先调用 read_file 或 bash 实际读取，再回答具体文件事实；未读文件前，禁止直接给出这些内容。";
+
 /**
  * 归一化模型覆盖值：
  * - 空字符串/别名返回 undefined（触发自动模型解析）
@@ -245,6 +251,8 @@ export function buildExecSystemPrompt(base: string, useMcp: boolean): string {
 
     // 2. 执行核协议（禁止自然语言直答）
     parts.push(EXEC_TOOL_PROTOCOL_CONSTRAINT);
+    parts.push(READ_FILE_PREVIEW_CONSTRAINT);
+    parts.push(FILE_FACT_VERIFICATION_CONSTRAINT);
 
     // 3. MCP 规则（可选）
     if (useMcp) {

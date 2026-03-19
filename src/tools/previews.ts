@@ -1,11 +1,40 @@
 import type { ToolName } from "./types.js";
 
 const TOOL_PREVIEW_MAX_CHARS = 4000;
+const READ_FILE_PREVIEW_MAX_CHARS = 512;
 
 function clipPreviewText(text: string, maxChars = TOOL_PREVIEW_MAX_CHARS): string {
   if (text.length <= maxChars) return text;
   if (maxChars <= 3) return text.slice(0, maxChars);
   return `${text.slice(0, maxChars - 3)}...`;
+}
+
+function clipPreviewTailText(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  if (maxChars <= 3) return text.slice(text.length - maxChars);
+  return `...${text.slice(text.length - (maxChars - 3))}`;
+}
+
+function extractTaggedBlock(content: string, tag: "head" | "tail"): string {
+  const marker = `[${tag}]`;
+  const nextMarker = tag === "head" ? "[tail]" : "";
+  const start = content.indexOf(marker);
+  if (start < 0) return "";
+  const after = content.slice(start + marker.length).trimStart();
+  if (!nextMarker) return after.trim();
+  const nextIndex = after.indexOf(nextMarker);
+  return (nextIndex >= 0 ? after.slice(0, nextIndex) : after).trim();
+}
+
+function extractLastNonEmptyLine(text: string): string {
+  const lines = text.split("\n");
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const line = lines[index]?.trim();
+    if (line) {
+      return line;
+    }
+  }
+  return "";
 }
 
 export function buildToolErrorPreviewText(tool: ToolName, message: string): string {
@@ -21,6 +50,43 @@ export function buildReadFilePreviewText(params: {
   byteLength: number;
   truncated: boolean;
 }): string {
+  if (params.truncated) {
+    const head = extractTaggedBlock(params.content, "head");
+    const tail = extractTaggedBlock(params.content, "tail");
+    const lastNonEmptyLine = tail ? extractLastNonEmptyLine(tail) : "";
+    const baseLines = [
+      `[read_file] path=${params.filePath}`,
+      `[bytes] ${params.byteLength}`,
+      "[status] truncated-preview",
+    ];
+    const sectionCount = Number(Boolean(head)) + Number(Boolean(tail));
+    const fixedOverhead = baseLines.join("\n").length
+      + (lastNonEmptyLine ? "\n[lastNonEmptyLine]\n".length : 0)
+      + (head ? "\n[head]\n".length : 0)
+      + (tail ? "\n[tail]\n".length : 0);
+    const contentBudget = Math.max(0, READ_FILE_PREVIEW_MAX_CHARS - fixedOverhead);
+    const lastLineBudget = lastNonEmptyLine
+      ? Math.min(160, Math.max(64, Math.floor(contentBudget * 0.35)))
+      : 0;
+    const remainingBudget = Math.max(0, contentBudget - lastLineBudget);
+    const headBudget = sectionCount > 1 ? Math.floor(remainingBudget / 2) : remainingBudget;
+    const tailBudget = sectionCount > 1 ? remainingBudget - headBudget : remainingBudget;
+    const lines = [...baseLines];
+    if (lastNonEmptyLine) {
+      lines.push("[lastNonEmptyLine]");
+      lines.push(clipPreviewTailText(lastNonEmptyLine, lastLineBudget));
+    }
+    if (head) {
+      lines.push("[head]");
+      lines.push(clipPreviewText(head, Math.max(headBudget, 0)));
+    }
+    if (tail) {
+      lines.push("[tail]");
+      lines.push(clipPreviewTailText(tail, Math.max(tailBudget, 0)));
+    }
+    return lines.join("\n");
+  }
+
   const lines = [
     `[read_file] path=${params.filePath}`,
     `[bytes] ${params.byteLength}`,

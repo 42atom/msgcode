@@ -92,6 +92,22 @@ describe("P5.7-R3l-2: Dialog/Exec Prompt 拆分", () => {
             }
         });
 
+        it("buildExecSystemPrompt 应包含 read_file truncated preview 尾行规则", () => {
+            const code = readPromptSource();
+
+            expect(code).toContain("READ_FILE_PREVIEW_CONSTRAINT");
+            expect(code).toContain("[lastNonEmptyLine]");
+            expect(code).toContain("[EOF]");
+        });
+
+        it("buildExecSystemPrompt 应包含文件事实先读后答规则", () => {
+            const code = readPromptSource();
+
+            expect(code).toContain("FILE_FACT_VERIFICATION_CONSTRAINT");
+            expect(code).toContain("必须先调用 read_file 或 bash");
+            expect(code).toContain("禁止直接给出这些内容");
+        });
+
         it("system prompt 应支持文件引用（用于反复调试）", () => {
             const code = readPromptSource();
 

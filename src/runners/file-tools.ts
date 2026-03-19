@@ -16,6 +16,7 @@ import { logger } from "../logger/index.js";
 const READ_FILE_BINARY_SNIFF_BYTES = 4096;
 const READ_FILE_INLINE_BYTE_LIMIT = 64 * 1024;
 const READ_FILE_PREVIEW_BYTES = 16 * 1024;
+const READ_FILE_TAIL_PREVIEW_BYTES = 4096;
 
 type FileRunnerErrorCode = "TOOL_NOT_ALLOWED" | "TOOL_EXEC_FAILED";
 
@@ -180,6 +181,26 @@ function buildReadFileBinaryMessage(filePath: string, kind: string): string {
   ].join("\n");
 }
 
+function buildTruncatedReadFileContent(params: {
+  head: string;
+  tail: string;
+  byteLength: number;
+}): string {
+  const parts = [
+    "[head]",
+    params.head,
+    `[... truncated ${(params.byteLength - Buffer.byteLength(params.head, "utf-8") - Buffer.byteLength(params.tail, "utf-8"))} bytes ...]`,
+  ];
+
+  const trimmedTail = params.tail.trim();
+  if (trimmedTail) {
+    parts.push("[tail]");
+    parts.push(trimmedTail);
+  }
+
+  return parts.join("\n");
+}
+
 export async function runReadFileTool(
   args: { path: string },
   ctx: FileRunnerContext
@@ -223,12 +244,28 @@ export async function runReadFileTool(
       }
 
       if (fileStat.size > READ_FILE_INLINE_BYTE_LIMIT) {
-        const previewBuffer = Buffer.alloc(Math.min(READ_FILE_PREVIEW_BYTES, fileStat.size));
-        const previewRead = await withTimeout(
-          handle.read(previewBuffer, 0, previewBuffer.length, 0),
+        const headBytes = Math.min(READ_FILE_PREVIEW_BYTES, fileStat.size);
+        const headBuffer = Buffer.alloc(headBytes);
+        const headRead = await withTimeout(
+          handle.read(headBuffer, 0, headBuffer.length, 0),
           ctx.timeoutMs ?? 30000
         );
-        largeFilePreview = previewBuffer.subarray(0, previewRead.bytesRead).toString("utf-8");
+        const headText = headBuffer.subarray(0, headRead.bytesRead).toString("utf-8");
+
+        const tailBytes = Math.min(READ_FILE_TAIL_PREVIEW_BYTES, fileStat.size);
+        const tailBuffer = Buffer.alloc(tailBytes);
+        const tailStart = Math.max(fileStat.size - tailBytes, 0);
+        const tailRead = await withTimeout(
+          handle.read(tailBuffer, 0, tailBuffer.length, tailStart),
+          ctx.timeoutMs ?? 30000
+        );
+        const tailText = tailBuffer.subarray(0, tailRead.bytesRead).toString("utf-8");
+
+        largeFilePreview = buildTruncatedReadFileContent({
+          head: headText,
+          tail: tailText,
+          byteLength: fileStat.size,
+        });
       }
     } finally {
       await handle.close();

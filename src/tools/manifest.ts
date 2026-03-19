@@ -198,7 +198,7 @@ export const TOOL_MANIFESTS: ManifestRegistry = {
 
   read_file: {
     name: "read_file",
-    description: "读取文件内容。用于查看代码、配置、文档等。",
+    description: "读取文件内容。用于查看代码、配置、文档等。若大文件截断预览含 [lastNonEmptyLine]，它就是尾部最后一条非空行，应优先使用。",
     parameters: {
       type: "object",
       properties: {
