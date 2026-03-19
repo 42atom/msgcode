@@ -74,3 +74,4 @@ sh bootstrap/upgrade-appliance.sh --bundle-root <bundle> --install-root <target>
 - `install-appliance.sh` 只接收已经组装好的 `bundle-root/runtime`
 - `first-run-init.sh` 只负责调用 `msgcode init`
 - `upgrade-appliance.sh` 只替换安装目录下的 `runtime/`
+- 如存在 `bundle-root/appliance.manifest`，`install/upgrade` 会优先按 manifest 读运行时路径与 launcher 路径

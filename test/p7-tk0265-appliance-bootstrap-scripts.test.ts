@@ -18,8 +18,21 @@ async function writeExecutable(filePath: string, content: string): Promise<void>
   await fs.chmod(filePath, 0o755);
 }
 
-async function createFakeBundle(bundleRoot: string, markerText: string): Promise<void> {
-  const runtimeRoot = path.join(bundleRoot, "runtime");
+async function createFakeBundle(
+  bundleRoot: string,
+  markerText: string,
+  options?: {
+    runtimeDir?: string;
+    launcherRel?: string;
+    runtimeBinRel?: string;
+    nodeBinRel?: string;
+  }
+): Promise<void> {
+  const runtimeDir = options?.runtimeDir ?? "runtime";
+  const launcherRel = options?.launcherRel ?? "bin/msgcode";
+  const runtimeBinRel = options?.runtimeBinRel ?? `${runtimeDir}/bin/msgcode`;
+  const nodeBinRel = options?.nodeBinRel ?? `${runtimeDir}/node/bin`;
+  const runtimeRoot = path.join(bundleRoot, runtimeDir);
   await writeExecutable(
     path.join(runtimeRoot, "bin", "msgcode"),
     `#!/bin/sh
@@ -27,6 +40,17 @@ set -eu
 printf '%s\\n' "$@" >> "$MSGCODE_TEST_LOG"
 printf '${markerText}\\n' > "$MSGCODE_TEST_MARKER"
 `
+  );
+  await fs.writeFile(
+    path.join(bundleRoot, "appliance.manifest"),
+    [
+      `MSGCODE_APPLIANCE_RUNTIME_DIR=${runtimeDir}`,
+      `MSGCODE_APPLIANCE_LAUNCHER_REL=${launcherRel}`,
+      `MSGCODE_APPLIANCE_RUNTIME_BIN_REL=${runtimeBinRel}`,
+      `MSGCODE_APPLIANCE_NODE_BIN_REL=${nodeBinRel}`,
+      "",
+    ].join("\n"),
+    "utf8"
   );
 }
 
@@ -56,6 +80,32 @@ describe("appliance bootstrap scripts", () => {
 
     expect(existsSync(path.join(installRoot, "runtime", "bin", "msgcode"))).toBe(true);
     expect(existsSync(path.join(installRoot, "bin", "msgcode"))).toBe(true);
+  });
+
+  it("install-appliance 应按 manifest 读取自定义 runtime 路径", async () => {
+    const root = await makeTempRoot();
+    tempRoots.push(root);
+    const bundleRoot = path.join(root, "bundle");
+    const installRoot = path.join(root, "install");
+    await createFakeBundle(bundleRoot, "manifest", {
+      runtimeDir: "core-runtime",
+      launcherRel: "launcher/msgcode",
+      runtimeBinRel: "core-runtime/bin/msgcode",
+      nodeBinRel: "core-runtime/node/bin",
+    });
+
+    await execFileAsync("sh", [
+      "bootstrap/install-appliance.sh",
+      "--bundle-root",
+      bundleRoot,
+      "--install-root",
+      installRoot,
+    ], {
+      cwd: "/Users/admin/GitProjects/msgcode",
+    });
+
+    expect(existsSync(path.join(installRoot, "core-runtime", "bin", "msgcode"))).toBe(true);
+    expect(existsSync(path.join(installRoot, "launcher", "msgcode"))).toBe(true);
   });
 
   it("first-run-init 应通过 launcher 调用 msgcode init", async () => {

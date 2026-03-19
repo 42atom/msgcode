@@ -38,10 +38,25 @@ fi
 BUNDLE_ROOT=$(cd "$BUNDLE_ROOT" && pwd)
 INSTALL_ROOT=$(mkdir -p "$INSTALL_ROOT" && cd "$INSTALL_ROOT" && pwd)
 
-RUNTIME_SRC="$BUNDLE_ROOT/runtime"
-RUNTIME_DST="$INSTALL_ROOT/runtime"
-BIN_DIR="$INSTALL_ROOT/bin"
-LAUNCHER_PATH="$BIN_DIR/msgcode"
+MANIFEST_PATH="$BUNDLE_ROOT/appliance.manifest"
+RUNTIME_DIR="runtime"
+LAUNCHER_REL="bin/msgcode"
+RUNTIME_BIN_REL="$RUNTIME_DIR/bin/msgcode"
+NODE_BIN_REL="$RUNTIME_DIR/node/bin"
+
+if [ -f "$MANIFEST_PATH" ]; then
+  # appliance.manifest is shipped with the bundle and uses simple KEY=VALUE lines.
+  . "$MANIFEST_PATH"
+  RUNTIME_DIR="${MSGCODE_APPLIANCE_RUNTIME_DIR:-$RUNTIME_DIR}"
+  LAUNCHER_REL="${MSGCODE_APPLIANCE_LAUNCHER_REL:-$LAUNCHER_REL}"
+  RUNTIME_BIN_REL="${MSGCODE_APPLIANCE_RUNTIME_BIN_REL:-$RUNTIME_BIN_REL}"
+  NODE_BIN_REL="${MSGCODE_APPLIANCE_NODE_BIN_REL:-$NODE_BIN_REL}"
+fi
+
+RUNTIME_SRC="$BUNDLE_ROOT/$RUNTIME_DIR"
+RUNTIME_DST="$INSTALL_ROOT/$RUNTIME_DIR"
+BIN_DIR="$INSTALL_ROOT/$(dirname "$LAUNCHER_REL")"
+LAUNCHER_PATH="$INSTALL_ROOT/$LAUNCHER_REL"
 
 if [ ! -d "$RUNTIME_SRC" ]; then
   echo "Missing runtime bundle: $RUNTIME_SRC" >&2
@@ -57,17 +72,18 @@ fi
 mkdir -p "$BIN_DIR"
 cp -R "$RUNTIME_SRC" "$RUNTIME_DST"
 
-cat > "$LAUNCHER_PATH" <<'EOF'
+cat > "$LAUNCHER_PATH" <<EOF
 #!/bin/sh
 set -eu
-SELF_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
-RUNTIME_ROOT=$(cd "$SELF_DIR/.." && pwd)/runtime
-if [ -d "$RUNTIME_ROOT/node/bin" ]; then
-  PATH="$RUNTIME_ROOT/node/bin:$PATH"
+SELF_DIR=\$(CDPATH= cd -- "\$(dirname "\$0")" && pwd)
+INSTALL_ROOT=\$(cd "\$SELF_DIR/.." && pwd)
+RUNTIME_ROOT="\$INSTALL_ROOT/$RUNTIME_DIR"
+if [ -d "\$INSTALL_ROOT/$NODE_BIN_REL" ]; then
+  PATH="\$INSTALL_ROOT/$NODE_BIN_REL:\$PATH"
   export PATH
 fi
-export MSGCODE_RUNTIME_ROOT="$RUNTIME_ROOT"
-exec "$RUNTIME_ROOT/bin/msgcode" "$@"
+export MSGCODE_RUNTIME_ROOT="\$RUNTIME_ROOT"
+exec "\$INSTALL_ROOT/$RUNTIME_BIN_REL" "\$@"
 EOF
 
 chmod +x "$LAUNCHER_PATH"
