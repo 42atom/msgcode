@@ -151,7 +151,7 @@ export interface WorkspaceConfig {
 
   /**
    * 允许的工具列表
-   * - 默认：["tts", "asr"]
+   * - 默认：当前已实现正式工具默认全开
    */
   "tooling.allow"?: ToolName[];
 
@@ -252,7 +252,7 @@ export const DEFAULT_WORKSPACE_CONFIG: Required<WorkspaceConfig> = {
   "tmux.client": "codex", // P5.6.14-R1: 默认 codex client
   "runner.default": "agent-backend", // P5.7-R9-T6: 兼容字段，默认 agent-backend
   "tooling.mode": "autonomous", // P5.5: 测试期统一 autonomous（LLM 自主决策 tool_calls）
-  "tooling.allow": ["tts", "asr", "bash", "browser", "read_file", "write_file", "edit_file", "help_docs", "feishu_list_members", "feishu_list_recent_messages", "feishu_reply_message", "feishu_react_message", "feishu_send_file", ...GHOST_TOOL_NAMES], // 默认文件主链恢复为 read/write/edit + bash；ghost_* 原生桌面能力进入正式工具面，vision 与 legacy desktop 都改为显式 opt-in
+  "tooling.allow": ["tts", "asr", "vision", "bash", "browser", "read_file", "write_file", "edit_file", "help_docs", "feishu_list_members", "feishu_list_recent_messages", "feishu_reply_message", "feishu_react_message", "feishu_send_file", ...GHOST_TOOL_NAMES], // 默认对当前已实现正式工具全开；legacy desktop 仍不恢复，未实现 mem 仍不默认暴露
   "tooling.require_confirm": [], // 默认不要求确认
   "tooling.fs_scope": "unrestricted", // 当前默认 unrestricted，避免扩大变更面
   "feishu.appId": "", // 飞书 App ID（默认空，需要用户配置）

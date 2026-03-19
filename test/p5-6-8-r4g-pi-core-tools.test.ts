@@ -29,9 +29,10 @@ describe("P5.6.8-R4g: 命名收口", () => {
     expect(validTools).not.toContain("run_skill");
   });
 
-  it("R4g-2: 默认 tooling.allow 包含第一公民文件工具与 help_docs", async () => {
+  it("R4g-2: 默认 tooling.allow 包含当前已实现正式工具面", async () => {
     const { DEFAULT_WORKSPACE_CONFIG } = await import("../src/config/workspace.js");
 
+    expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).toContain("vision");
     expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).toContain("read_file");
     expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).toContain("write_file");
     expect(DEFAULT_WORKSPACE_CONFIG["tooling.allow"]).toContain("edit_file");
