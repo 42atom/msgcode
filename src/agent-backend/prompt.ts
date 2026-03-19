@@ -110,6 +110,12 @@ export const READ_FILE_PREVIEW_CONSTRAINT =
 export const FILE_FACT_VERIFICATION_CONSTRAINT =
     "若用户在问当前工作目录里的文件内容、最后一行、尾行、摘要、行号或某段文本，你本轮必须先调用 read_file 或 bash 实际读取，再回答具体文件事实；未读文件前，禁止直接给出这些内容。";
 
+export const IMAGE_FOLLOWUP_FACT_REUSE_CONSTRAINT =
+    "若用户在追问同一张图片、截图或报告，而最近对话窗口里已经有附件信息、[图片摘要]或上一轮图像分析结论，优先复用这些已提取事实继续回答；不要仅因为本轮没有新附件就回退成“我没有视觉能力”。";
+
+export const IMAGE_FILE_READ_CONSTRAINT =
+    "png/jpg/jpeg/webp 等图片文件不是 read_file 的目标；不要用 read_file 读取图片本体。若需要新图像细节，优先走现有视觉能力；若当前上下文里只有旧图像事实且仍不足以回答，再明确要求用户补发截图或贴出文本。";
+
 /**
  * 归一化模型覆盖值：
  * - 空字符串/别名返回 undefined（触发自动模型解析）
@@ -253,6 +259,8 @@ export function buildExecSystemPrompt(base: string, useMcp: boolean): string {
     parts.push(EXEC_TOOL_PROTOCOL_CONSTRAINT);
     parts.push(READ_FILE_PREVIEW_CONSTRAINT);
     parts.push(FILE_FACT_VERIFICATION_CONSTRAINT);
+    parts.push(IMAGE_FOLLOWUP_FACT_REUSE_CONSTRAINT);
+    parts.push(IMAGE_FILE_READ_CONSTRAINT);
 
     // 3. MCP 规则（可选）
     if (useMcp) {

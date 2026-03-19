@@ -108,6 +108,21 @@ describe("P5.7-R3l-2: Dialog/Exec Prompt 拆分", () => {
             expect(code).toContain("禁止直接给出这些内容");
         });
 
+        it("buildExecSystemPrompt 应包含图片后续追问复用规则", () => {
+            const code = readPromptSource();
+
+            expect(code).toContain("IMAGE_FOLLOWUP_FACT_REUSE_CONSTRAINT");
+            expect(code).toContain("不要仅因为本轮没有新附件就回退成“我没有视觉能力”");
+        });
+
+        it("buildExecSystemPrompt 应包含图片文件禁止 read_file 规则", () => {
+            const code = readPromptSource();
+
+            expect(code).toContain("IMAGE_FILE_READ_CONSTRAINT");
+            expect(code).toContain("不要用 read_file 读取图片本体");
+            expect(code).toContain("png/jpg/jpeg/webp");
+        });
+
         it("system prompt 应支持文件引用（用于反复调试）", () => {
             const code = readPromptSource();
 
