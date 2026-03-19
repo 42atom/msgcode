@@ -195,6 +195,8 @@ describe("appliance bootstrap scripts", () => {
     expect(await fs.readFile(markerPath, "utf8")).toContain("v2");
     const log = await fs.readFile(logPath, "utf8");
     expect(log).toContain("status");
+    expect(existsSync(path.join(installRoot, "runtime.prev", "bin", "msgcode"))).toBe(true);
+    expect(existsSync(path.join(installRoot, "appliance.manifest.prev"))).toBe(true);
   });
 
   it("doctor-appliance 应按已安装 manifest 检查 runtime 与 launcher", async () => {
@@ -228,5 +230,67 @@ describe("appliance bootstrap scripts", () => {
     });
 
     expect(stdout).toContain("Appliance doctor 通过");
+  });
+
+  it("rollback-appliance 应恢复上一个 runtime 与 manifest", async () => {
+    const root = await makeTempRoot();
+    tempRoots.push(root);
+    const bundleRoot1 = path.join(root, "bundle-v1");
+    const bundleRoot2 = path.join(root, "bundle-v2");
+    const installRoot = path.join(root, "install");
+    const logPath = path.join(root, "rollback.log");
+    const markerPath = path.join(root, "rollback-marker.txt");
+    await createFakeBundle(bundleRoot1, "v1", {
+      runtimeDir: "core-runtime",
+      launcherRel: "launcher/msgcode",
+      runtimeBinRel: "core-runtime/bin/msgcode",
+      nodeBinRel: "core-runtime/node/bin",
+    });
+    await createFakeBundle(bundleRoot2, "v2", {
+      runtimeDir: "core-runtime",
+      launcherRel: "launcher/msgcode",
+      runtimeBinRel: "core-runtime/bin/msgcode",
+      nodeBinRel: "core-runtime/node/bin",
+    });
+
+    await execFileAsync("sh", [
+      "bootstrap/install-appliance.sh",
+      "--bundle-root",
+      bundleRoot1,
+      "--install-root",
+      installRoot,
+    ], {
+      cwd: "/Users/admin/GitProjects/msgcode",
+    });
+
+    await execFileAsync("sh", [
+      "bootstrap/upgrade-appliance.sh",
+      "--bundle-root",
+      bundleRoot2,
+      "--install-root",
+      installRoot,
+    ], {
+      cwd: "/Users/admin/GitProjects/msgcode",
+    });
+
+    await execFileAsync("sh", [
+      "bootstrap/rollback-appliance.sh",
+      "--install-root",
+      installRoot,
+    ], {
+      cwd: "/Users/admin/GitProjects/msgcode",
+    });
+
+    await execFileAsync(path.join(installRoot, "launcher", "msgcode"), ["status"], {
+      env: {
+        ...process.env,
+        MSGCODE_TEST_LOG: logPath,
+        MSGCODE_TEST_MARKER: markerPath,
+      },
+    });
+
+    expect(await fs.readFile(markerPath, "utf8")).toContain("v1");
+    const log = await fs.readFile(logPath, "utf8");
+    expect(log).toContain("status");
   });
 });
