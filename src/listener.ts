@@ -109,32 +109,38 @@ async function sendText(
   }
 }
 
-function extractAttachmentEvidence(attachmentText: string): string[] {
-  const blocks = attachmentText
-    .split("[attachment]")
+function parseTaggedFieldBlocks(input: string, tag: string): Array<Map<string, string>> {
+  return input
+    .split(`[${tag}]`)
     .map((block) => block.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .map((block) => {
+      const fields = new Map<string, string>();
+      for (const line of block.split("\n").map((item) => item.trim()).filter(Boolean)) {
+        const idx = line.indexOf("=");
+        if (idx <= 0) continue;
+        const key = line.slice(0, idx).trim();
+        const value = line.slice(idx + 1).trim();
+        if (key && value) {
+          fields.set(key, value);
+        }
+      }
+      return fields;
+    });
+}
+
+function extractAttachmentEvidence(attachmentText: string): string[] {
+  const blocks = parseTaggedFieldBlocks(attachmentText, "attachment");
 
   const evidence: string[] = [];
   for (const block of blocks) {
-    const fields = new Map<string, string>();
-    for (const line of block.split("\n").map((line) => line.trim()).filter(Boolean)) {
-      const idx = line.indexOf("=");
-      if (idx <= 0) continue;
-      const key = line.slice(0, idx).trim();
-      const value = line.slice(idx + 1).trim();
-      if (key && value) {
-        fields.set(key, value);
-      }
-    }
-
-    const path = fields.get("path");
+    const path = block.get("path");
     if (!path) continue;
 
     const parts = ["附件"];
-    const type = fields.get("type");
-    const mime = fields.get("mime");
-    const digest = fields.get("digest");
+    const type = block.get("type");
+    const mime = block.get("mime");
+    const digest = block.get("digest");
     if (type) parts.push(`type=${type}`);
     if (mime) parts.push(`mime=${mime}`);
     parts.push(`path=${path}`);
@@ -143,6 +149,99 @@ function extractAttachmentEvidence(attachmentText: string): string[] {
   }
 
   return evidence;
+}
+
+function extractDerivedStatusEvidence(attachmentText: string): string[] {
+  const blocks = parseTaggedFieldBlocks(attachmentText, "derived");
+  const evidence: string[] = [];
+
+  for (const block of blocks) {
+    const kind = block.get("kind");
+    const status = block.get("status");
+    if (!kind || !status || status === "ok") continue;
+
+    const prefix = kind === "vision"
+      ? "图片预处理"
+      : kind === "asr"
+        ? "语音预处理"
+        : "附件预处理";
+    const parts = [`${prefix}: status=${status}`];
+    const reason = block.get("reason");
+    const error = block.get("error");
+    if (reason) parts.push(`reason=${reason}`);
+    if (error) parts.push(`error=${error}`);
+    evidence.push(parts.join(" "));
+  }
+
+  return evidence;
+}
+
+function hasImageAttachmentEvidence(attachmentEvidence: string[]): boolean {
+  return attachmentEvidence.some((line) => /(?:^| )type=image(?: |$)|mime=image\//.test(line));
+}
+
+function buildImageAttachmentGuidance(): string {
+  return [
+    "当前轮包含图片附件。",
+    "禁止对图片附件路径使用 read_file。",
+    "若当前正式工具面已暴露 vision，先用 vision 读取图片事实。",
+    "若当前正式工具面未暴露 vision，先读 vision-index skill，再按其中指向的视觉路径执行。",
+    "只有在本轮真实尝试过视觉读取仍失败时，才能说这轮没成功读取图片内容；不要说“我没有视觉能力”。",
+  ].join("\n");
+}
+
+function buildAgentAttachmentContext(baseContent: string, attachmentText: string): string {
+  let contentToHandle = (baseContent || "").trim();
+  const derivedEvidence = attachmentText
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => line.startsWith("[图片摘要]") || line.startsWith("[语音转写]"))
+    .map((line) => line.replace(/^\[[^\]]+\]\s*/g, "").trim())
+    .filter(Boolean);
+  const attachmentEvidence = extractAttachmentEvidence(attachmentText);
+  const derivedStatusEvidence = extractDerivedStatusEvidence(attachmentText);
+  const hasImageAttachment = hasImageAttachmentEvidence(attachmentEvidence);
+
+  if (!contentToHandle && attachmentEvidence.length > 0) {
+    contentToHandle = hasImageAttachment
+      ? "你收到了一张图片或截图。请先读取图片事实，再回复用户。"
+      : "你收到了一些附件。请先基于附件信息判断是否需要调用工具读取或处理，再回复用户。";
+  }
+
+  if (hasImageAttachment) {
+    contentToHandle +=
+      (contentToHandle ? "\n\n" : "") +
+      "图片处理规则：" +
+      "\n" +
+      buildImageAttachmentGuidance();
+  }
+
+  if (derivedStatusEvidence.length > 0) {
+    contentToHandle +=
+      (contentToHandle ? "\n\n" : "") +
+      "图片处理状态：" +
+      "\n" +
+      derivedStatusEvidence.join("\n");
+  }
+
+  if (derivedEvidence.length > 0) {
+    contentToHandle +=
+      (contentToHandle ? "\n\n" : "") +
+      "补充信息：" +
+      "\n" +
+      derivedEvidence.join("\n");
+  }
+
+  if (attachmentEvidence.length > 0) {
+    contentToHandle +=
+      (contentToHandle ? "\n\n" : "") +
+      "附件信息：" +
+      "\n" +
+      attachmentEvidence.join("\n");
+  }
+
+  return contentToHandle.trim();
 }
 
 /**
@@ -284,6 +383,10 @@ export const __test = process.env.NODE_ENV === "test"
     shouldSendAcknowledgement,
     getAcknowledgementDelayMs,
     ACKNOWLEDGEMENT_TEXT,
+    extractAttachmentEvidence,
+    extractDerivedStatusEvidence,
+    buildImageAttachmentGuidance,
+    buildAgentAttachmentContext,
   }
   : undefined;
 
@@ -817,6 +920,8 @@ export async function handleMessage(
             chatId: message.chatId,
             kind: pipelineResult.derived.kind,
             status: pipelineResult.derived.status,
+            reason: pipelineResult.derived.reason ?? null,
+            error: pipelineResult.derived.error ?? null,
           });
         }
       } catch (pipelineError) {
@@ -893,36 +998,7 @@ export async function handleMessage(
         return;
       }
 
-      // 只追加派生文本（[图片摘要]/[语音转写]），去掉标签本体，避免模型复述方括号块
-      const derivedEvidence = attachmentText
-        .split("\n")
-        .map(l => l.trim())
-        .filter(Boolean)
-        .filter(line => line.startsWith("[图片摘要]") || line.startsWith("[语音转写]"))
-        .map(line => line.replace(/^\[[^\]]+\]\s*/g, "").trim())
-        .filter(Boolean);
-      const attachmentEvidence = extractAttachmentEvidence(attachmentText);
-
-      // 非图片附件默认不做系统自动处理，改为把附件信息交给模型自行决策
-      if (!contentToHandle && attachmentEvidence.length > 0) {
-        contentToHandle = "你收到了一些附件。请先基于附件信息判断是否需要调用工具读取或处理，再回复用户。";
-      }
-
-      if (derivedEvidence.length > 0) {
-        contentToHandle +=
-          (contentToHandle ? "\n\n" : "") +
-          "补充信息：" +
-          "\n" +
-          derivedEvidence.join("\n");
-      }
-
-      if (attachmentEvidence.length > 0) {
-        contentToHandle +=
-          (contentToHandle ? "\n\n" : "") +
-          "附件信息：" +
-          "\n" +
-          attachmentEvidence.join("\n");
-      }
+      contentToHandle = buildAgentAttachmentContext(contentToHandle, attachmentText);
 
       // 如果既没有文本也没有可处理的附件，跳过
       if (!contentToHandle.trim()) {
