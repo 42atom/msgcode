@@ -3,7 +3,7 @@
 ## Sources
 
 ### Source 1: 现有移动入口研究
-- Path: `docs/notes/research-260310-mobile-entry-options.md`
+- Path: `docs/plan/rs9005.dne.docs.mobile-entry-options.md`
 - Key points:
   - 当前冻结主线仍是 `Feishu -> Telegram -> Discord`
   - 旧结论更偏向 `Tailscale Serve` 个人远程实验
@@ -11,21 +11,21 @@
   - 明确不建议直接照抄 `OpenClaw` 的完整手机客户端 / gateway 形态
 
 ### Source 2: 后 iMessage 通道策略
-- Path: `docs/design/plan-260310-post-imessage-channel-strategy.md`
+- Path: `docs/plan/pl0065.pss.feishu.post-imessage-channel-strategy.md`
 - Key points:
   - 通道层只允许做 `thin channel adapter`
   - 不做 transport platform / channel orchestrator
   - Feishu 是当前唯一主通道，未来通道继续复用同一条内部主链
 
 ### Source 3: 终局架构节点
-- Path: `docs/notes/research-260310-future-architecture-node.md`
+- Path: `docs/plan/rs0066.dne.agent.future-architecture-node.md`
 - Key points:
   - 已经把 `Reachability` 单独画成一层
   - 该层只负责触达、访问、深链跳转、远程打开页面/服务
   - 该层不负责 agent 本体、状态真相源和复杂控制逻辑
 
 ### Source 4: OpenClaw 对标的边界结论
-- Path: `docs/design/plan-260310-agent-core-gap-vs-openclaw.md`
+- Path: `docs/plan/pl0066.pss.agent.agent-core-gap-vs-openclaw.md`
 - Key points:
   - `msgcode` 需要补的是统一 run lifecycle，不是先做 gateway
   - 当前明确禁止直接引入 OpenClaw 式 pairing / control plane / platform

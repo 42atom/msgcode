@@ -4,8 +4,8 @@
 
 ## 回链
 
-- Issue: [0006](../../issues/tk0006.dne.agent.agent-relentless-task-closure.md)
-- Issue: [0007](../../issues/tk0007.dne.agent.tool-loop-quota-strategy.md)
+- Issue: [0006](../../../issues/tk0006.dne.agent.agent-relentless-task-closure.md)
+- Plan: [0007](../../plan/pl0007.dne.agent.tool-loop-quota-strategy.md)
 - Plan: docs/plan/pl0006.dne.agent.agent-relentless-task-closure.md
 - Plan: docs/plan/pl0007.dne.agent.tool-loop-quota-strategy.md
 
@@ -29,7 +29,7 @@
 2. `/Users/admin/GitProjects/msgcode/src/agent-backend/routed-chat.ts`
 3. `/Users/admin/GitProjects/msgcode/src/agent-backend/tool-loop.ts`
 4. `/Users/admin/GitProjects/msgcode/src/tools/types.ts`（如需新增验证失败错误码）
-5. `/Users/admin/GitProjects/msgcode/test/p5-7-r12-t3-verify-phase-mainline.test.ts`（新建）
+5. `/Users/admin/GitProjects/msgcode/test/p5-7-r12-agent-relentless-task-closure.test.ts`
 
 ## 范围外（冻结）
 

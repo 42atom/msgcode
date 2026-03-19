@@ -504,7 +504,7 @@ function checkIssueFilenameProtocol(): string[] {
 
   // 新协议正则：tkNNNN.state.board[.prio].slug.md
   // 格式：tk<id>.<state>.<board>[.p<0-2>].<slug>.md
-  // 示例：tk0004.doi.browser.p0.web-transaction-platform-core.md
+  // 示例：tk0004.cand.browser.p0.web-transaction-platform-core.md
   const newProtocolPattern = /^tk\d{4}\.(tdo|doi|rvw|bkd|pss|dne|cand|arvd)\.[a-z][a-z0-9-]+(\.(p0|p1|p2))?\.[a-z][a-z0-9-]+\.md$/;
 
   for (const entry of entries) {

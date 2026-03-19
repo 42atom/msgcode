@@ -4,7 +4,7 @@
 
 ## 回链
 
-- Issue: [0006](../../issues/tk0006.dne.agent.agent-relentless-task-closure.md)
+- Issue: [0006](../../../issues/tk0006.dne.agent.agent-relentless-task-closure.md)
 - Plan: docs/plan/pl0006.dne.agent.agent-relentless-task-closure.md
 
 ## 目标（冻结）

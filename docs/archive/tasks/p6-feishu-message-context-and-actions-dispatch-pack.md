@@ -7,9 +7,9 @@
 ## 唯一真相源
 
 - Issue:
-  - [0073-feishu-message-context-and-message-actions.md](/Users/admin/GitProjects/msgcode/issues/0073-feishu-message-context-and-message-actions.md)
+  - [tk0073.dne.feishu.feishu-message-context-and-message-actions.md](/Users/admin/GitProjects/msgcode/issues/tk0073.dne.feishu.feishu-message-context-and-message-actions.md)
 - Plan:
-  - [plan-260311-feishu-message-context-and-actions.md](/Users/admin/GitProjects/msgcode/docs/plan/pl0073.dne.feishu.feishu-message-context-and-message-actions.md)
+  - [plan-260311-feishu-message-context-and-actions.md](/Users/admin/GitProjects/msgcode/docs/plan/pl0073.dne.feishu.feishu-message-context-and-actions.md)
 
 ## 核心原则
 
@@ -101,9 +101,9 @@
 任务：按 Phase 顺序推进飞书消息级上下文与消息动作能力，先从 Phase 1 开始，不要跨阶段大爆炸。
 
 唯一真相源：
-- Issue: /Users/admin/GitProjects/msgcode/issues/0073-feishu-message-context-and-message-actions.md
-- Plan: /Users/admin/GitProjects/msgcode/docs/plan/pl0073.dne.feishu.feishu-message-context-and-message-actions.md
-- Task: /Users/admin/GitProjects/msgcode/docs/tasks/p6-feishu-message-context-and-actions-dispatch-pack.md
+- Issue: /Users/admin/GitProjects/msgcode/issues/tk0073.dne.feishu.feishu-message-context-and-message-actions.md
+- Plan: /Users/admin/GitProjects/msgcode/docs/plan/pl0073.dne.feishu.feishu-message-context-and-actions.md
+- Task: /Users/admin/GitProjects/msgcode/docs/archive/tasks/p6-feishu-message-context-and-actions-dispatch-pack.md
 
 本轮范围：
 - 只做 Phase 1：当前消息 facts

@@ -13,10 +13,10 @@
 
 ## 唯一真相源
 
-- Issue：`issues/0004-web-transaction-platform-core.md`
-- Plan：`docs/design/plan-260306-web-transaction-platform-core.md`
-- Task：`docs/tasks/p5-7-r7a-pinchtab-browser-core-substrate.md`
-- Validation Notes：`docs/notes/research-260306-pinchtab-validation.md`
+- Issue：`issues/tk0004.cand.browser.p0.web-transaction-platform-core.md`
+- Plan：`docs/plan/pl0004.cand.browser.web-transaction-platform-core.md`
+- Task：`docs/archive/tasks/p5-7-r7a-pinchtab-browser-core-substrate.md`
+- Validation Notes：`docs/plan/rs9002.dne.browser.patchright-phase-a.md`
 
 若派单包与上述文件有冲突，以 task + issue 当前内容为准。
 
@@ -35,7 +35,7 @@
 
 1. `src/cli.ts`，用于挂载 browser 命令
 2. `README.md`，若命令面需要最小同步
-3. `issues/0004-web-transaction-platform-core.md`，回写执行证据
+3. `issues/tk0004.cand.browser.p0.web-transaction-platform-core.md`，回写执行证据
 
 ## 严禁扩 scope
 
@@ -147,7 +147,7 @@
 2. 不能依赖 orchestrator 的默认实例
 3. 不能依赖默认 tab
 4. 不能把 CLI 返回的 tab 语义当唯一真相源
-5. 必须优先走 `docs/notes/research-260306-pinchtab-validation.md` 中已验证的 HTTP 路径
+5. 必须优先走 `docs/plan/rs9002.dne.browser.patchright-phase-a.md` 中已验证的 HTTP 路径
 
 ## 建议交付格式
 

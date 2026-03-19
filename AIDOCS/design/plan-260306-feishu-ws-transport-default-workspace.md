@@ -2,5 +2,4 @@
 
 该文档与仓库正式 Plan 同步，便于外部审阅。
 
-- 正式路径：`docs/design/plan-260306-feishu-ws-transport-default-workspace.md`
-
+- 正式路径：`docs/plan/pl0003.pss.feishu.feishu-ws-transport-default-workspace.md`

@@ -8,7 +8,7 @@
 
 执行底座：
 
-- 优先使用 [Feishu live verification loop](/Users/admin/GitProjects/msgcode/docs/design/plan-260312-feishu-live-verification-loop.md)
+- 优先使用 [Feishu live verification loop](/Users/admin/GitProjects/msgcode/docs/plan/pl0098.dne.feishu.feishu-live-verification-loop.md)
 - 默认开启 debug 模式，并同时查看日志、workspace 产物、群消息结果
 
 ---

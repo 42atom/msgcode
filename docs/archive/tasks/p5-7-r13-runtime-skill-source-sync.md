@@ -2,7 +2,7 @@
 
 ## 回链
 
-- Issue: [0014](../../issues/0014-runtime-skill-source-sync.md)
+- Issue: [0014](/Users/admin/GitProjects/msgcode/issues/tk0014.dne.runtime.runtime-skill-source-sync.md)
 - Plan: docs/plan/pl0014.dne.runtime.runtime-skill-source-sync.md
 
 ## 目标

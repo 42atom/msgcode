@@ -89,7 +89,7 @@ swift build
 ## 高契合的部分
 
 1. 都是“桌面能力应是手臂，不是大脑”
-   - 这和当前 `docs/design/plan-260310-ghost-os-desktop-plugin-replacement.md` 完全一致
+   - 这和当前 `docs/plan/pl0163.dne.ghost.ghost-os-desktop-plugin-replacement.md` 完全一致
 
 2. `ghost-os` 已自带 setup / doctor / status
    - 这意味着我们不必再在 `msgcode` 内部继续扩张 desktop 运维面
@@ -462,8 +462,8 @@ README / 上手文档必须补：
 ## 证据
 
 - Docs:
-  - `docs/design/plan-260310-ghost-os-desktop-plugin-replacement.md`
-  - `docs/notes/research-260310-ghost-os-desktop-plugin-gap.md`
+  - `docs/plan/pl0163.dne.ghost.ghost-os-desktop-plugin-replacement.md`
+  - `docs/plan/rs9004.dne.ghost.ghost-os-desktop-plugin-gap.md`
   - `docs/desktop/contract.md`
   - `/Users/admin/GitProjects/GithubDown/ghost-os/README.md`
 - Code:

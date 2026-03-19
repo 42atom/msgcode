@@ -1,7 +1,7 @@
 # 任务单：P5.7-R7B（Gmail 只读验收）
 
 Issue: 0004
-Plan: docs/design/plan-260306-web-transaction-platform-core.md
+Plan: docs/plan/pl0004.cand.browser.web-transaction-platform-core.md
 
 优先级：P1
 建议分支：`codex/p5-7-r7b-gmail-readonly`
@@ -27,10 +27,10 @@ Plan: docs/design/plan-260306-web-transaction-platform-core.md
 3. 本轮目标不是继续抽象平台，而是拿 Gmail 做第一条真实只读业务验证。
 
 参考真相源：
-- `issues/0004-web-transaction-platform-core.md`
-- `docs/design/plan-260306-web-transaction-platform-core.md`
+- `issues/tk0004.cand.browser.p0.web-transaction-platform-core.md`
+- `docs/plan/pl0004.cand.browser.web-transaction-platform-core.md`
 - `AIDOCS/notes/gmail-readonly-browser-acceptance-260306.md`
-- `docs/notes/research-260306-pinchtab-validation.md`
+- `docs/plan/rs0013.dne.browser.pinchtab-validation.md`
 
 ## 目标（冻结）
 
@@ -82,7 +82,7 @@ Plan: docs/design/plan-260306-web-transaction-platform-core.md
 - `/Users/admin/GitProjects/msgcode/src/browser/` 或等价位置（新增 Gmail 只读模块）
 - `/Users/admin/GitProjects/msgcode/src/cli/`（若增加最小验收命令）
 - `/Users/admin/GitProjects/msgcode/test/*p5-7-r7b*`
-- `/Users/admin/GitProjects/msgcode/issues/0004-web-transaction-platform-core.md`（回写证据）
+- `/Users/admin/GitProjects/msgcode/issues/tk0004.cand.browser.p0.web-transaction-platform-core.md`（回写证据）
 - `/Users/admin/GitProjects/msgcode/README.md`（若需最小同步）
 
 ## 实现顺序

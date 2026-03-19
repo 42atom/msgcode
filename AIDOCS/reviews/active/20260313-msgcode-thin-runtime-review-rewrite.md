@@ -64,9 +64,9 @@
 
 现有已完成收口：
 
-- `/Users/admin/GitProjects/msgcode/issues/0142-retire-file-system-cli-wrappers.md`
-- `/Users/admin/GitProjects/msgcode/issues/0143-retire-system-info-auto-skill.md`
-- `/Users/admin/GitProjects/msgcode/issues/0144-retire-web-cli-wrappers.md`
+- `/Users/admin/GitProjects/msgcode/issues/tk0142.dne.tools.retire-file-system-cli-wrappers.md`
+- `/Users/admin/GitProjects/msgcode/issues/tk0143.dne.tools.retire-system-info-auto-skill.md`
+- `/Users/admin/GitProjects/msgcode/issues/tk0144.dne.tools.retire-web-cli-wrappers.md`
 
 这些 issue 已明确：
 
@@ -111,7 +111,7 @@
 - `/Users/admin/GitProjects/msgcode/src/routes/cmd-schedule.ts`
 - `/Users/admin/GitProjects/msgcode/src/jobs/scheduler.ts`
 - `/Users/admin/GitProjects/msgcode/src/jobs/runner.ts`
-- `/Users/admin/GitProjects/msgcode/issues/0022-scheduler-skill-bash-mainline.md`
+- `/Users/admin/GitProjects/msgcode/docs/plan/pl0022.dne.tools.scheduler-skill-bash-mainline.md`
 
 `0022` 已经证明一个关键事实：
 
@@ -160,7 +160,7 @@ LLM 的上下文窗口不等于持久化记忆。问题不在于 `memory` 这个
 
 证据：
 
-- `/Users/admin/GitProjects/msgcode/issues/0119-cli-reference-vs-runtime-gap-review.md`
+- `/Users/admin/GitProjects/msgcode/issues/tk0119.dne.tools.cli-reference-vs-runtime-gap-review.md`
 - `/Users/admin/GitProjects/msgcode/docs/plan/pl0119.dne.tools.cli-reference-vs-runtime-gap-review.md`
 
 `0119` 已经明确：
@@ -232,8 +232,8 @@ Unix 哲学不是“拒绝状态”，而是：
 
 关联真相源：
 
-- `/Users/admin/GitProjects/msgcode/issues/0121-help-tool-and-quota-hot-path-thinning.md`
-- `/Users/admin/GitProjects/msgcode/issues/0126-tool-loop-quota-hot-path-dedup.md`
+- `/Users/admin/GitProjects/msgcode/issues/tk0121.dne.tools.help-tool-and-quota-hot-path-thinning.md`
+- `/Users/admin/GitProjects/msgcode/issues/tk0126.dne.model.tool-loop-quota-hot-path-dedup.md`
 
 #### Phase 2：继续把 Tool Bus 压成薄网关
 
@@ -318,12 +318,12 @@ Unix 哲学不是“拒绝状态”，而是：
 ### Docs
 
 - `/Users/admin/GitProjects/msgcode/docs/plan/pl0102.dne.runtime.llm-execution-authority-charter.md`
-- `/Users/admin/GitProjects/msgcode/issues/0119-cli-reference-vs-runtime-gap-review.md`
+- `/Users/admin/GitProjects/msgcode/issues/tk0119.dne.tools.cli-reference-vs-runtime-gap-review.md`
 - `/Users/admin/GitProjects/msgcode/docs/plan/pl0119.dne.tools.cli-reference-vs-runtime-gap-review.md`
-- `/Users/admin/GitProjects/msgcode/issues/0022-scheduler-skill-bash-mainline.md`
-- `/Users/admin/GitProjects/msgcode/issues/0142-retire-file-system-cli-wrappers.md`
-- `/Users/admin/GitProjects/msgcode/issues/0143-retire-system-info-auto-skill.md`
-- `/Users/admin/GitProjects/msgcode/issues/0144-retire-web-cli-wrappers.md`
+- `/Users/admin/GitProjects/msgcode/docs/plan/pl0022.dne.tools.scheduler-skill-bash-mainline.md`
+- `/Users/admin/GitProjects/msgcode/issues/tk0142.dne.tools.retire-file-system-cli-wrappers.md`
+- `/Users/admin/GitProjects/msgcode/issues/tk0143.dne.tools.retire-system-info-auto-skill.md`
+- `/Users/admin/GitProjects/msgcode/issues/tk0144.dne.tools.retire-web-cli-wrappers.md`
 
 ### Code
 

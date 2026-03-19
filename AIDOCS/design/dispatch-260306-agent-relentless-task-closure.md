@@ -7,8 +7,8 @@
 
 ## 唯一真相源
 
-- Issue：`issues/0006-agent-relentless-task-closure.md`
-- Plan：`docs/design/plan-260306-agent-relentless-task-closure.md`
+- Issue：`issues/tk0006.dne.agent.agent-relentless-task-closure.md`
+- Plan：`docs/plan/pl0006.dne.agent.agent-relentless-task-closure.md`
 - Dispatch：`AIDOCS/design/dispatch-260306-agent-relentless-task-closure.md`
 
 若实现过程发现历史任务单口径冲突，以 Issue + Plan 当前内容为准。

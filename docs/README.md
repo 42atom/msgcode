@@ -25,13 +25,13 @@ docs/
 - 格式：`tkNNNN.<state>.<board>[.prio].<slug>.md`
 - 状态：tdo, doi, rvw, bkd, pss, dne, cand, arvd
 - 优先级（仅活跃 task）：p0, p1, p2
-- 示例：`tk0003.doi.feishu.p1.feishu-ws-transport-default-workspace.md`
+- 示例：`tk0003.pss.feishu.p1.feishu-ws-transport-default-workspace.md`
 
 ### docs/plan/ (计划/研究/报告)
 
 - 格式：`<kind>NNNN.<state>.<board>.<slug>.md`
 - kind: pl(plan), rs(research), rf(refactor), rp(report)
-- 示例：`pl0003.doi.feishu.feishu-ws-transport-default-workspace.md`
+- 示例：`pl0003.pss.feishu.feishu-ws-transport-default-workspace.md`
 
 ## 架构决策
 

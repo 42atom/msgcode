@@ -28,4 +28,4 @@
 - 当前视觉测试样本答错，不能把这套安装视为可靠视觉后端。
 
 ## Status
-**Completed** - 已完成本机 `omlx` 冒烟验证，结论已写入 `aidocs/notes/research-260310-omlx-local-smoke-test.md`。
+**Completed** - 已完成本机 `omlx` 冒烟验证，结论已写入 `AIDOCS/notes/research-260310-omlx-local-smoke-test.md`。

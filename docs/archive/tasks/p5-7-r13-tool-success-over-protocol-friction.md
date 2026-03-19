@@ -2,7 +2,7 @@
 
 ## 回链
 
-- Issue: [0017](../../issues/0017-tool-success-over-protocol-friction.md)
+- Issue: [0017](/Users/admin/GitProjects/msgcode/issues/tk0017.dne.agent.tool-success-over-protocol-friction.md)
 - Plan: docs/plan/pl0017.dne.agent.tool-success-over-protocol-friction.md
 
 ## 目标

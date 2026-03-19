@@ -15,7 +15,7 @@
 1. `/Users/admin/GitProjects/msgcode/src/runtime/heartbeat.ts`（新建）
 2. `/Users/admin/GitProjects/msgcode/src/commands.ts`
 3. `/Users/admin/GitProjects/msgcode/test/p5-7-r12-t1-heartbeat-event-wake.test.ts`（新建）
-4. `/Users/admin/GitProjects/msgcode/docs/tasks/p5-7-r12-t1-heartbeat-event-wake.md`（回填完成状态）
+4. `/Users/admin/GitProjects/msgcode/docs/archive/tasks/p5-7-r12-t1-heartbeat-event-wake.md`（回填完成状态）
 
 超出白名单即停止并回报。
 

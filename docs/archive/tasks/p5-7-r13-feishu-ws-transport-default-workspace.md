@@ -1,7 +1,7 @@
 # P5.7-R13: Feishu WS Transport + Default Workspace Fallback（MVP）
 
 Issue: 0003  
-Plan: docs/plan/pl0003.doi.feishu.feishu-ws-transport-default-workspace.md
+Plan: docs/plan/pl0003.pss.feishu.feishu-ws-transport-default-workspace.md
 
 ## 背景
 - iMessage 传输层不稳定，导致 msgcode 使用受限。
@@ -15,4 +15,3 @@ Plan: docs/plan/pl0003.doi.feishu.feishu-ws-transport-default-workspace.md
 1. 飞书群里 `/where`（未绑定）显示默认工作目录，并提示 `/bind` 覆盖。
 2. 飞书群里 `/bind acme/ops` 生效，`routes.json` 生成对应条目（chatGuid=feishu:<chat_id>）。
 3. 飞书群里发普通文本能收到 bot 回文（MVP：仅 text）。
-

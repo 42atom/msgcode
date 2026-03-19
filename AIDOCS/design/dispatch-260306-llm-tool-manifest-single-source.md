@@ -7,8 +7,8 @@
 
 ## 唯一真相源
 
-- Issue：`issues/0005-browser-tool-not-exposed-to-llm.md`
-- Plan：`docs/design/plan-260306-llm-tool-manifest-single-source.md`
+- Issue：`issues/tk0005.dne.browser.browser-tool-not-exposed-to-llm.md`
+- Plan：`docs/plan/pl0005.dne.browser.llm-tool-manifest-single-source.md`
 - Dispatch：`AIDOCS/design/dispatch-260306-llm-tool-manifest-single-source.md`
 
 若实现过程发现与旧代码冲突，以 Issue + Plan 当前内容为准，不以历史硬编码白名单为准。

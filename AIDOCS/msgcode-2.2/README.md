@@ -489,4 +489,4 @@ bash scripts/mlx-lab/probe-tool-loop.sh
 |------|------|
 | 测试脚本 | [scripts/mlx-lab/](../../scripts/mlx-lab/) |
 | 测试报告 | [AIDOCS/msgcode-2.2/mlx-lab/results/](./mlx-lab/results/) |
-| MLX Provider | [src/providers/mlx.ts](../../src/providers/mlx.ts) |
+| MLX Provider | [src/local-backend/registry.ts](../../src/local-backend/registry.ts) |

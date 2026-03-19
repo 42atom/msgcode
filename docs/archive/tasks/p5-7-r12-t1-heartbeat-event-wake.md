@@ -4,7 +4,7 @@
 
 ## 回链
 
-- Issue: [0006](../../issues/tk0006.dne.agent.agent-relentless-task-closure.md)
+- Issue: [0006](../../../issues/tk0006.dne.agent.agent-relentless-task-closure.md)
 - Plan: docs/plan/pl0006.dne.agent.agent-relentless-task-closure.md
 
 ## 目标（冻结）
@@ -155,4 +155,3 @@
 - `scheduleTick()` 中设置 `currentTickPromise = this.executeTick(ctx)`
 - `stop()` 直接 `await this.currentTickPromise`（无超时限制）
 - `stop()` 显式清空 `pendingTick = false`
-

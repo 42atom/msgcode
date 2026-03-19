@@ -24,9 +24,9 @@
 
 ## 唯一真相源
 
-- Issue：`issues/0007-tool-loop-quota-strategy.md`
-- Plan：`docs/design/plan-260306-tool-loop-quota-strategy.md`
-- Task：`docs/tasks/p5-7-r12-t8-tool-loop-quota-strategy.md`
+- Plan：`docs/plan/pl0007.dne.agent.tool-loop-quota-strategy.md`
+- Issue：`docs/plan/pl0007.dne.agent.tool-loop-quota-strategy.md`
+- Task：`docs/archive/tasks/p5-7-r12-t8-tool-loop-quota-strategy.md`
 - Dispatch：`AIDOCS/design/dispatch-260306-tool-loop-quota-strategy.md`
 
 若实现过程发现历史文档口径冲突，以 Issue + Plan 当前内容为准。

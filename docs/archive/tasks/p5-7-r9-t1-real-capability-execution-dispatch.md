@@ -35,7 +35,7 @@
      - `npx tsx scripts/r9-real-smoke.ts --format md --out AIDOCS/reports/r9-real-smoke-template.md`
      - `npx tsx scripts/r9-real-smoke.ts --format json --out AIDOCS/reports/r9-real-smoke-template.json`
 2. `test(p5.7-r9-t1): execute 8 real capability scenarios with evidence`
-   - 按 `docs/tasks/p5-7-r9-real-capability-gate.md` 逐项执行 8 场景
+   - 按 `docs/archive/tasks/p5-7-r9-real-capability-gate.md` 逐项执行 8 场景
    - 每项回填：输入、工具证据、输出、产物路径、PASS/FAIL
 3. `fix(p5.7-r9-t1): patch blocking defects found in real capability gate`
    - 仅修复阻断项（最小改动）
@@ -73,4 +73,3 @@
 1. 禁止 `git add -A`
 2. 每步隔离提交，只提交当前步骤文件
 3. 发现非本单改动，先汇报再继续
-

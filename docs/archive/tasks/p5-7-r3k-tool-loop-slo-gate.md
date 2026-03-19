@@ -94,5 +94,5 @@
 
 ## 回链
 
-- Issue: issues/tk0007.dne.agent.tool-loop-quota-strategy.md
+- Plan: docs/plan/pl0007.dne.agent.tool-loop-quota-strategy.md
 - Plan: docs/plan/pl0007.dne.agent.tool-loop-quota-strategy.md

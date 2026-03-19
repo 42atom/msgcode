@@ -7,7 +7,7 @@
  * - 验证 allowed/registered/exposed/missing 四类状态
  *
  * Issue: 0005
- * Plan: docs/design/plan-260306-llm-tool-manifest-single-source.md
+ * Plan: /Users/admin/GitProjects/msgcode/docs/plan/pl0005.dne.browser.llm-tool-manifest-single-source.md
  */
 
 import { describe, expect, it, afterEach } from "bun:test";

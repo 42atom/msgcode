@@ -348,33 +348,33 @@
             <h1>msgcode 任务进度</h1>
             <p>顶部只保留总览。任务真相源只认 <code>issues/</code> 文件名状态槽位。</p>
           </div>
-          <div class="hero-meta">生成时间: 2026年3月14日 18:49:16 | 仓库路径: /Users/admin/GitProjects/msgcode</div>
+          <div class="hero-meta">生成时间: 2026年3月19日 10:00:00 | 仓库路径: /Users/admin/GitProjects/msgcode</div>
         </div>
         <div class="meter">
           <div class="meter-head">
             <div>
-              <strong>89.7%</strong>
+              <strong>98.7%</strong>
               <span>完成线占比</span>
             </div>
             <div>
-              <strong style="font-size:28px;">166 / 185</strong>
+              <strong style="font-size:28px;">226 / 229</strong>
               <span>Pass + Done</span>
             </div>
           </div>
           <div class="meter-track">
-            <div class="meter-fill" style="width:89.7%;"></div>
+            <div class="meter-fill" style="width:98.7%;"></div>
           </div>
           <div class="meter-notes">
             <div class="meter-note">
-              <strong>185</strong>
+              <strong>229</strong>
               <span>总任务</span>
             </div>
             <div class="meter-note">
-              <strong>19</strong>
-              <span>未完成 · 10.3%</span>
+              <strong>0</strong>
+              <span>未完成 · 0.0%</span>
             </div>
             <div class="meter-note">
-              <strong>1</strong>
+              <strong>0</strong>
               <span>Review</span>
             </div>
             <div class="meter-note">
@@ -383,21 +383,21 @@
             </div>
           </div>
         </div>
-        <div class="segment-bar"><span class="segment seg-tdo" style="width:7.568%" title="Todo 14"></span><span class="segment seg-doi" style="width:2.162%" title="Doing 4"></span><span class="segment seg-rvw" style="width:0.541%" title="Review 1"></span><span class="segment seg-pss" style="width:7.027%" title="Pass 13"></span><span class="segment seg-dne" style="width:82.703%" title="Done 153"></span></div>
+        <div class="segment-bar"><span class="segment seg-pss" style="width:31.441%" title="Pass 72"></span><span class="segment seg-dne" style="width:67.249%" title="Done 154"></span><span class="segment seg-cand" style="width:1.310%" title="Cancelled 3"></span></div>
       </div>
 
       <section style="margin-top: 18px;">
         <h2>任务明细</h2>
         <div class="tabbar">
-          <button type="button" class="tab-button is-active" data-state-filter="open"><strong>未完成</strong><span>19</span></button>
-          <button type="button" class="tab-button" data-state-filter="done"><strong>已完成</strong><span>166</span></button>
-          <button type="button" class="tab-button" data-state-filter="all"><strong>全部</strong><span>185</span></button>
-          <button type="button" class="tab-button" data-state-filter="cand"><strong>已取消</strong><span>0</span></button>
+          <button type="button" class="tab-button is-active" data-state-filter="open"><strong>未完成</strong><span>0</span></button>
+          <button type="button" class="tab-button" data-state-filter="done"><strong>已完成</strong><span>226</span></button>
+          <button type="button" class="tab-button" data-state-filter="all"><strong>全部</strong><span>229</span></button>
+          <button type="button" class="tab-button" data-state-filter="cand"><strong>已取消</strong><span>3</span></button>
         </div>
         <div class="toolbar">
           <select id="board-filter">
             <option value="all">全部板块</option>
-            <option value="agent">agent</option><option value="browser">browser</option><option value="docs">docs</option><option value="feishu">feishu</option><option value="ghost">ghost</option><option value="memory">memory</option><option value="model">model</option><option value="product">product</option><option value="release">release</option><option value="runtime">runtime</option><option value="schedule">schedule</option><option value="tools">tools</option>
+            <option value="agent">agent</option><option value="browser">browser</option><option value="docs">docs</option><option value="feishu">feishu</option><option value="ghost">ghost</option><option value="io">io</option><option value="memory">memory</option><option value="model">model</option><option value="product">product</option><option value="release">release</option><option value="runtime">runtime</option><option value="schedule">schedule</option><option value="tools">tools</option><option value="web">web</option>
           </select>
           <input id="search" type="search" placeholder="搜索 id / board / slug / path">
         </div>
@@ -465,6 +465,22 @@
       
 
         <tr
+          data-state="cand"
+          data-board="browser"
+          data-search="0004 tk cand browser p0 web-transaction-platform-core issues/tk0004.cand.browser.p0.web-transaction-platform-core.md"
+          data-active="no"
+        >
+          <td>0004</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-cand">Cancelled</span></td>
+          <td>browser</td>
+          <td>p0</td>
+          <td class="slug">web-transaction-platform-core</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0004.cand.browser.p0.web-transaction-platform-core.md">issues/tk0004.cand.browser.p0.web-transaction-platform-core.md</a></td>
+        </tr>
+      
+
+        <tr
           data-state="dne"
           data-board="browser"
           data-search="0005 tk dne browser  browser-tool-not-exposed-to-llm issues/tk0005.dne.browser.browser-tool-not-exposed-to-llm.md"
@@ -513,18 +529,18 @@
       
 
         <tr
-          data-state="rvw"
+          data-state="pss"
           data-board="agent"
-          data-search="0009 tk rvw agent p0 unix-mainline-refactor issues/tk0009.rvw.agent.p0.unix-mainline-refactor.md"
-          data-active="yes"
+          data-search="0009 tk pss agent p0 unix-mainline-refactor issues/tk0009.pss.agent.p0.unix-mainline-refactor.md"
+          data-active="no"
         >
           <td>0009</td>
           <td><span class="badge kind">Task</span></td>
-          <td><span class="badge state state-rvw">Review</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
           <td>agent</td>
           <td>p0</td>
           <td class="slug">unix-mainline-refactor</td>
-          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0009.rvw.agent.p0.unix-mainline-refactor.md">issues/tk0009.rvw.agent.p0.unix-mainline-refactor.md</a></td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0009.pss.agent.p0.unix-mainline-refactor.md">issues/tk0009.pss.agent.p0.unix-mainline-refactor.md</a></td>
         </tr>
       
 
@@ -705,18 +721,18 @@
       
 
         <tr
-          data-state="tdo"
+          data-state="pss"
           data-board="agent"
-          data-search="0021 tk tdo agent p2 prompt-message-stratification-experiment issues/tk0021.tdo.agent.p2.prompt-message-stratification-experiment.md"
-          data-active="yes"
+          data-search="0021 tk pss agent p2 prompt-message-stratification-experiment issues/tk0021.pss.agent.p2.prompt-message-stratification-experiment.md"
+          data-active="no"
         >
           <td>0021</td>
           <td><span class="badge kind">Task</span></td>
-          <td><span class="badge state state-tdo">Todo</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
           <td>agent</td>
           <td>p2</td>
           <td class="slug">prompt-message-stratification-experiment</td>
-          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0021.tdo.agent.p2.prompt-message-stratification-experiment.md">issues/tk0021.tdo.agent.p2.prompt-message-stratification-experiment.md</a></td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0021.pss.agent.p2.prompt-message-stratification-experiment.md">issues/tk0021.pss.agent.p2.prompt-message-stratification-experiment.md</a></td>
         </tr>
       
 
@@ -813,6 +829,22 @@
           <td>-</td>
           <td class="slug">scheduling-skill-pointer-only</td>
           <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0030.dne.agent.scheduling-skill-pointer-only.md">issues/tk0030.dne.agent.scheduling-skill-pointer-only.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="cand"
+          data-board="agent"
+          data-search="0031 tk cand agent p1 no-tool-fake-success-guard issues/tk0031.cand.agent.p1.no-tool-fake-success-guard.md"
+          data-active="no"
+        >
+          <td>0031</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-cand">Cancelled</span></td>
+          <td>agent</td>
+          <td>p1</td>
+          <td class="slug">no-tool-fake-success-guard</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0031.cand.agent.p1.no-tool-fake-success-guard.md">issues/tk0031.cand.agent.p1.no-tool-fake-success-guard.md</a></td>
         </tr>
       
 
@@ -1121,34 +1153,34 @@
       
 
         <tr
-          data-state="doi"
+          data-state="pss"
           data-board="model"
-          data-search="0054 tk doi model p1 vision-detail-skill-first-provider-neutral issues/tk0054.doi.model.p1.vision-detail-skill-first-provider-neutral.md"
-          data-active="yes"
+          data-search="0054 tk pss model p1 vision-detail-skill-first-provider-neutral issues/tk0054.pss.model.p1.vision-detail-skill-first-provider-neutral.md"
+          data-active="no"
         >
           <td>0054</td>
           <td><span class="badge kind">Task</span></td>
-          <td><span class="badge state state-doi">Doing</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
           <td>model</td>
           <td>p1</td>
           <td class="slug">vision-detail-skill-first-provider-neutral</td>
-          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0054.doi.model.p1.vision-detail-skill-first-provider-neutral.md">issues/tk0054.doi.model.p1.vision-detail-skill-first-provider-neutral.md</a></td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0054.pss.model.p1.vision-detail-skill-first-provider-neutral.md">issues/tk0054.pss.model.p1.vision-detail-skill-first-provider-neutral.md</a></td>
         </tr>
       
 
         <tr
-          data-state="doi"
+          data-state="pss"
           data-board="runtime"
-          data-search="0055 tk doi runtime p1 local-model-load-retry issues/tk0055.doi.runtime.p1.local-model-load-retry.md"
-          data-active="yes"
+          data-search="0055 tk pss runtime p1 local-model-load-retry issues/tk0055.pss.runtime.p1.local-model-load-retry.md"
+          data-active="no"
         >
           <td>0055</td>
           <td><span class="badge kind">Task</span></td>
-          <td><span class="badge state state-doi">Doing</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
           <td>runtime</td>
           <td>p1</td>
           <td class="slug">local-model-load-retry</td>
-          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0055.doi.runtime.p1.local-model-load-retry.md">issues/tk0055.doi.runtime.p1.local-model-load-retry.md</a></td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0055.pss.runtime.p1.local-model-load-retry.md">issues/tk0055.pss.runtime.p1.local-model-load-retry.md</a></td>
         </tr>
       
 
@@ -1297,18 +1329,18 @@
       
 
         <tr
-          data-state="tdo"
+          data-state="pss"
           data-board="feishu"
-          data-search="0065 tk tdo feishu p2 post-imessage-channel-strategy issues/tk0065.tdo.feishu.p2.post-imessage-channel-strategy.md"
-          data-active="yes"
+          data-search="0065 tk pss feishu p2 post-imessage-channel-strategy issues/tk0065.pss.feishu.p2.post-imessage-channel-strategy.md"
+          data-active="no"
         >
           <td>0065</td>
           <td><span class="badge kind">Task</span></td>
-          <td><span class="badge state state-tdo">Todo</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
           <td>feishu</td>
           <td>p2</td>
           <td class="slug">post-imessage-channel-strategy</td>
-          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0065.tdo.feishu.p2.post-imessage-channel-strategy.md">issues/tk0065.tdo.feishu.p2.post-imessage-channel-strategy.md</a></td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0065.pss.feishu.p2.post-imessage-channel-strategy.md">issues/tk0065.pss.feishu.p2.post-imessage-channel-strategy.md</a></td>
         </tr>
       
 
@@ -1329,18 +1361,18 @@
       
 
         <tr
-          data-state="tdo"
+          data-state="pss"
           data-board="ghost"
-          data-search="0067 tk tdo ghost p1 ghost-os-desktop-plugin-replacement issues/tk0067.tdo.ghost.p1.ghost-os-desktop-plugin-replacement.md"
-          data-active="yes"
+          data-search="0067 tk pss ghost p1 ghost-os-desktop-plugin-replacement issues/tk0067.pss.ghost.p1.ghost-os-desktop-plugin-replacement.md"
+          data-active="no"
         >
           <td>0067</td>
           <td><span class="badge kind">Task</span></td>
-          <td><span class="badge state state-tdo">Todo</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
           <td>ghost</td>
           <td>p1</td>
           <td class="slug">ghost-os-desktop-plugin-replacement</td>
-          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0067.tdo.ghost.p1.ghost-os-desktop-plugin-replacement.md">issues/tk0067.tdo.ghost.p1.ghost-os-desktop-plugin-replacement.md</a></td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0067.pss.ghost.p1.ghost-os-desktop-plugin-replacement.md">issues/tk0067.pss.ghost.p1.ghost-os-desktop-plugin-replacement.md</a></td>
         </tr>
       
 
@@ -1393,18 +1425,18 @@
       
 
         <tr
-          data-state="tdo"
+          data-state="pss"
           data-board="docs"
-          data-search="0071 tk tdo docs p2 skill-layering-and-conflict-policy-review issues/tk0071.tdo.docs.p2.skill-layering-and-conflict-policy-review.md"
-          data-active="yes"
+          data-search="0071 tk pss docs p2 skill-layering-and-conflict-policy-review issues/tk0071.pss.docs.p2.skill-layering-and-conflict-policy-review.md"
+          data-active="no"
         >
           <td>0071</td>
           <td><span class="badge kind">Task</span></td>
-          <td><span class="badge state state-tdo">Todo</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
           <td>docs</td>
           <td>p2</td>
           <td class="slug">skill-layering-and-conflict-policy-review</td>
-          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0071.tdo.docs.p2.skill-layering-and-conflict-policy-review.md">issues/tk0071.tdo.docs.p2.skill-layering-and-conflict-policy-review.md</a></td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0071.pss.docs.p2.skill-layering-and-conflict-policy-review.md">issues/tk0071.pss.docs.p2.skill-layering-and-conflict-policy-review.md</a></td>
         </tr>
       
 
@@ -1761,18 +1793,18 @@
       
 
         <tr
-          data-state="tdo"
+          data-state="pss"
           data-board="ghost"
-          data-search="0094 tk tdo ghost p2 heavy-resource-admission-mvp issues/tk0094.tdo.ghost.p2.heavy-resource-admission-mvp.md"
-          data-active="yes"
+          data-search="0094 tk pss ghost p2 heavy-resource-admission-mvp issues/tk0094.pss.ghost.p2.heavy-resource-admission-mvp.md"
+          data-active="no"
         >
           <td>0094</td>
           <td><span class="badge kind">Task</span></td>
-          <td><span class="badge state state-tdo">Todo</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
           <td>ghost</td>
           <td>p2</td>
           <td class="slug">heavy-resource-admission-mvp</td>
-          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0094.tdo.ghost.p2.heavy-resource-admission-mvp.md">issues/tk0094.tdo.ghost.p2.heavy-resource-admission-mvp.md</a></td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0094.pss.ghost.p2.heavy-resource-admission-mvp.md">issues/tk0094.pss.ghost.p2.heavy-resource-admission-mvp.md</a></td>
         </tr>
       
 
@@ -1809,18 +1841,18 @@
       
 
         <tr
-          data-state="doi"
+          data-state="pss"
           data-board="runtime"
-          data-search="0097 tk doi runtime p1 runtime-skill-wrapper-slimming issues/tk0097.doi.runtime.p1.runtime-skill-wrapper-slimming.md"
-          data-active="yes"
+          data-search="0097 tk pss runtime p1 runtime-skill-wrapper-slimming issues/tk0097.pss.runtime.p1.runtime-skill-wrapper-slimming.md"
+          data-active="no"
         >
           <td>0097</td>
           <td><span class="badge kind">Task</span></td>
-          <td><span class="badge state state-doi">Doing</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
           <td>runtime</td>
           <td>p1</td>
           <td class="slug">runtime-skill-wrapper-slimming</td>
-          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0097.doi.runtime.p1.runtime-skill-wrapper-slimming.md">issues/tk0097.doi.runtime.p1.runtime-skill-wrapper-slimming.md</a></td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0097.pss.runtime.p1.runtime-skill-wrapper-slimming.md">issues/tk0097.pss.runtime.p1.runtime-skill-wrapper-slimming.md</a></td>
         </tr>
       
 
@@ -1905,18 +1937,18 @@
       
 
         <tr
-          data-state="tdo"
+          data-state="pss"
           data-board="product"
-          data-search="0103 tk tdo product p2 ai-os-foundation-roadmap issues/tk0103.tdo.product.p2.ai-os-foundation-roadmap.md"
-          data-active="yes"
+          data-search="0103 tk pss product p2 ai-os-foundation-roadmap issues/tk0103.pss.product.p2.ai-os-foundation-roadmap.md"
+          data-active="no"
         >
           <td>0103</td>
           <td><span class="badge kind">Task</span></td>
-          <td><span class="badge state state-tdo">Todo</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
           <td>product</td>
           <td>p2</td>
           <td class="slug">ai-os-foundation-roadmap</td>
-          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0103.tdo.product.p2.ai-os-foundation-roadmap.md">issues/tk0103.tdo.product.p2.ai-os-foundation-roadmap.md</a></td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0103.pss.product.p2.ai-os-foundation-roadmap.md">issues/tk0103.pss.product.p2.ai-os-foundation-roadmap.md</a></td>
         </tr>
       
 
@@ -2353,18 +2385,18 @@
       
 
         <tr
-          data-state="doi"
+          data-state="pss"
           data-board="browser"
-          data-search="0131 tk doi browser p1 browser-text-artifact-and-skill-contract issues/tk0131.doi.browser.p1.browser-text-artifact-and-skill-contract.md"
-          data-active="yes"
+          data-search="0131 tk pss browser p1 browser-text-artifact-and-skill-contract issues/tk0131.pss.browser.p1.browser-text-artifact-and-skill-contract.md"
+          data-active="no"
         >
           <td>0131</td>
           <td><span class="badge kind">Task</span></td>
-          <td><span class="badge state state-doi">Doing</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
           <td>browser</td>
           <td>p1</td>
           <td class="slug">browser-text-artifact-and-skill-contract</td>
-          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0131.doi.browser.p1.browser-text-artifact-and-skill-contract.md">issues/tk0131.doi.browser.p1.browser-text-artifact-and-skill-contract.md</a></td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0131.pss.browser.p1.browser-text-artifact-and-skill-contract.md">issues/tk0131.pss.browser.p1.browser-text-artifact-and-skill-contract.md</a></td>
         </tr>
       
 
@@ -2881,18 +2913,18 @@
       
 
         <tr
-          data-state="tdo"
+          data-state="pss"
           data-board="browser"
-          data-search="0165 tk tdo browser p2 chromium-cookie-export-cli issues/tk0165.tdo.browser.p2.chromium-cookie-export-cli.md"
-          data-active="yes"
+          data-search="0165 tk pss browser p2 chromium-cookie-export-cli issues/tk0165.pss.browser.p2.chromium-cookie-export-cli.md"
+          data-active="no"
         >
           <td>0165</td>
           <td><span class="badge kind">Task</span></td>
-          <td><span class="badge state state-tdo">Todo</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
           <td>browser</td>
           <td>p2</td>
           <td class="slug">chromium-cookie-export-cli</td>
-          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0165.tdo.browser.p2.chromium-cookie-export-cli.md">issues/tk0165.tdo.browser.p2.chromium-cookie-export-cli.md</a></td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0165.pss.browser.p2.chromium-cookie-export-cli.md">issues/tk0165.pss.browser.p2.chromium-cookie-export-cli.md</a></td>
         </tr>
       
 
@@ -3169,6 +3201,38 @@
       
 
         <tr
+          data-state="cand"
+          data-board="docs"
+          data-search="0183 tk cand docs p0 doc-filename-tidy issues/tk0183.cand.docs.p0.doc-filename-tidy.md"
+          data-active="no"
+        >
+          <td>0183</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-cand">Cancelled</span></td>
+          <td>docs</td>
+          <td>p0</td>
+          <td class="slug">doc-filename-tidy</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0183.cand.docs.p0.doc-filename-tidy.md">issues/tk0183.cand.docs.p0.doc-filename-tidy.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="dne"
+          data-board="docs"
+          data-search="0184 tk dne docs p0 doc-filename-protocol-migration issues/tk0184.dne.docs.p0.doc-filename-protocol-migration.md"
+          data-active="no"
+        >
+          <td>0184</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-dne">Done</span></td>
+          <td>docs</td>
+          <td>p0</td>
+          <td class="slug">doc-filename-protocol-migration</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0184.dne.docs.p0.doc-filename-protocol-migration.md">issues/tk0184.dne.docs.p0.doc-filename-protocol-migration.md</a></td>
+        </tr>
+      
+
+        <tr
           data-state="dne"
           data-board="ghost"
           data-search="0186 tk dne ghost  ghost-skill-risk-confirmation-guidance issues/tk0186.dne.ghost.ghost-skill-risk-confirmation-guidance.md"
@@ -3217,14 +3281,14 @@
       
 
         <tr
-          data-state="tdo"
+          data-state="pss"
           data-board="docs"
-          data-search="0192 tk tdo docs p1 doc-directory-closure-and-active-link-cleanup issues/tk0192.pss.docs.p1.doc-directory-closure-and-active-link-cleanup.md"
-          data-active="yes"
+          data-search="0192 tk pss docs p1 doc-directory-closure-and-active-link-cleanup issues/tk0192.pss.docs.p1.doc-directory-closure-and-active-link-cleanup.md"
+          data-active="no"
         >
           <td>0192</td>
           <td><span class="badge kind">Task</span></td>
-          <td><span class="badge state state-tdo">Todo</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
           <td>docs</td>
           <td>p1</td>
           <td class="slug">doc-directory-closure-and-active-link-cleanup</td>
@@ -3265,34 +3329,34 @@
       
 
         <tr
-          data-state="tdo"
+          data-state="pss"
           data-board="docs"
-          data-search="0195 tk tdo docs p2 tasks-directory-archive-physical-closure issues/tk0195.tdo.docs.p2.tasks-directory-archive-physical-closure.md"
-          data-active="yes"
+          data-search="0195 tk pss docs p2 tasks-directory-archive-physical-closure issues/tk0195.pss.docs.p2.tasks-directory-archive-physical-closure.md"
+          data-active="no"
         >
           <td>0195</td>
           <td><span class="badge kind">Task</span></td>
-          <td><span class="badge state state-tdo">Todo</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
           <td>docs</td>
           <td>p2</td>
           <td class="slug">tasks-directory-archive-physical-closure</td>
-          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0195.tdo.docs.p2.tasks-directory-archive-physical-closure.md">issues/tk0195.tdo.docs.p2.tasks-directory-archive-physical-closure.md</a></td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0195.pss.docs.p2.tasks-directory-archive-physical-closure.md">issues/tk0195.pss.docs.p2.tasks-directory-archive-physical-closure.md</a></td>
         </tr>
       
 
         <tr
-          data-state="tdo"
+          data-state="pss"
           data-board="docs"
-          data-search="0196 tk tdo docs p2 aidocs-structure-closure-and-archive-cleanup issues/tk0196.tdo.docs.p2.aidocs-structure-closure-and-archive-cleanup.md"
-          data-active="yes"
+          data-search="0196 tk pss docs p2 aidocs-structure-closure-and-archive-cleanup issues/tk0196.pss.docs.p2.aidocs-structure-closure-and-archive-cleanup.md"
+          data-active="no"
         >
           <td>0196</td>
           <td><span class="badge kind">Task</span></td>
-          <td><span class="badge state state-tdo">Todo</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
           <td>docs</td>
           <td>p2</td>
           <td class="slug">aidocs-structure-closure-and-archive-cleanup</td>
-          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0196.tdo.docs.p2.aidocs-structure-closure-and-archive-cleanup.md">issues/tk0196.tdo.docs.p2.aidocs-structure-closure-and-archive-cleanup.md</a></td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0196.pss.docs.p2.aidocs-structure-closure-and-archive-cleanup.md">issues/tk0196.pss.docs.p2.aidocs-structure-closure-and-archive-cleanup.md</a></td>
         </tr>
       
 
@@ -3313,66 +3377,706 @@
       
 
         <tr
-          data-state="tdo"
+          data-state="pss"
           data-board="tools"
-          data-search="0198 tk tdo tools p1 managed-bash-runner-mainline issues/tk0198.tdo.tools.p1.managed-bash-runner-mainline.md"
-          data-active="yes"
+          data-search="0198 tk pss tools p1 managed-bash-runner-mainline issues/tk0198.pss.tools.p1.managed-bash-runner-mainline.md"
+          data-active="no"
         >
           <td>0198</td>
           <td><span class="badge kind">Task</span></td>
-          <td><span class="badge state state-tdo">Todo</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
           <td>tools</td>
           <td>p1</td>
           <td class="slug">managed-bash-runner-mainline</td>
-          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0198.tdo.tools.p1.managed-bash-runner-mainline.md">issues/tk0198.tdo.tools.p1.managed-bash-runner-mainline.md</a></td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0198.pss.tools.p1.managed-bash-runner-mainline.md">issues/tk0198.pss.tools.p1.managed-bash-runner-mainline.md</a></td>
         </tr>
       
 
         <tr
-          data-state="tdo"
+          data-state="pss"
           data-board="runtime"
-          data-search="0199 tk tdo runtime p1 managed-bash-bootstrap-contract issues/tk0199.tdo.runtime.p1.managed-bash-bootstrap-contract.md"
-          data-active="yes"
+          data-search="0199 tk pss runtime p1 managed-bash-bootstrap-contract issues/tk0199.pss.runtime.p1.managed-bash-bootstrap-contract.md"
+          data-active="no"
         >
           <td>0199</td>
           <td><span class="badge kind">Task</span></td>
-          <td><span class="badge state state-tdo">Todo</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
           <td>runtime</td>
           <td>p1</td>
           <td class="slug">managed-bash-bootstrap-contract</td>
-          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0199.tdo.runtime.p1.managed-bash-bootstrap-contract.md">issues/tk0199.tdo.runtime.p1.managed-bash-bootstrap-contract.md</a></td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0199.pss.runtime.p1.managed-bash-bootstrap-contract.md">issues/tk0199.pss.runtime.p1.managed-bash-bootstrap-contract.md</a></td>
         </tr>
       
 
         <tr
-          data-state="tdo"
+          data-state="pss"
           data-board="agent"
-          data-search="0200 tk tdo agent p1 shell-contract-doc-and-prompt-alignment issues/tk0200.tdo.agent.p1.shell-contract-doc-and-prompt-alignment.md"
-          data-active="yes"
+          data-search="0200 tk pss agent p1 shell-contract-doc-and-prompt-alignment issues/tk0200.pss.agent.p1.shell-contract-doc-and-prompt-alignment.md"
+          data-active="no"
         >
           <td>0200</td>
           <td><span class="badge kind">Task</span></td>
-          <td><span class="badge state state-tdo">Todo</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
           <td>agent</td>
           <td>p1</td>
           <td class="slug">shell-contract-doc-and-prompt-alignment</td>
-          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0200.tdo.agent.p1.shell-contract-doc-and-prompt-alignment.md">issues/tk0200.tdo.agent.p1.shell-contract-doc-and-prompt-alignment.md</a></td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0200.pss.agent.p1.shell-contract-doc-and-prompt-alignment.md">issues/tk0200.pss.agent.p1.shell-contract-doc-and-prompt-alignment.md</a></td>
         </tr>
       
 
         <tr
-          data-state="tdo"
+          data-state="pss"
           data-board="runtime"
-          data-search="0201 tk tdo runtime p2 optional-agent-toolset-bootstrap-pack issues/tk0201.tdo.runtime.p2.optional-agent-toolset-bootstrap-pack.md"
-          data-active="yes"
+          data-search="0201 tk pss runtime p2 optional-agent-toolset-bootstrap-pack issues/tk0201.pss.runtime.p2.optional-agent-toolset-bootstrap-pack.md"
+          data-active="no"
         >
           <td>0201</td>
           <td><span class="badge kind">Task</span></td>
-          <td><span class="badge state state-tdo">Todo</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
           <td>runtime</td>
           <td>p2</td>
           <td class="slug">optional-agent-toolset-bootstrap-pack</td>
-          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0201.tdo.runtime.p2.optional-agent-toolset-bootstrap-pack.md">issues/tk0201.tdo.runtime.p2.optional-agent-toolset-bootstrap-pack.md</a></td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0201.pss.runtime.p2.optional-agent-toolset-bootstrap-pack.md">issues/tk0201.pss.runtime.p2.optional-agent-toolset-bootstrap-pack.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="agent"
+          data-search="0202 tk pss agent p1 shared-skill-pool-and-persona-profile-mainline issues/tk0202.pss.agent.p1.shared-skill-pool-and-persona-profile-mainline.md"
+          data-active="no"
+        >
+          <td>0202</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>agent</td>
+          <td>p1</td>
+          <td class="slug">shared-skill-pool-and-persona-profile-mainline</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0202.pss.agent.p1.shared-skill-pool-and-persona-profile-mainline.md">issues/tk0202.pss.agent.p1.shared-skill-pool-and-persona-profile-mainline.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="agent"
+          data-search="0203 tk pss agent p0 doc-first-task-dispatch-and-delivery-supervision issues/tk0203.pss.agent.p0.doc-first-task-dispatch-and-delivery-supervision.md"
+          data-active="no"
+        >
+          <td>0203</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>agent</td>
+          <td>p0</td>
+          <td class="slug">doc-first-task-dispatch-and-delivery-supervision</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0203.pss.agent.p0.doc-first-task-dispatch-and-delivery-supervision.md">issues/tk0203.pss.agent.p0.doc-first-task-dispatch-and-delivery-supervision.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="runtime"
+          data-search="0204 tk pss runtime p0 workspace-heartbeat-alarm-and-reflection-mainline issues/tk0204.pss.runtime.p0.workspace-heartbeat-alarm-and-reflection-mainline.md"
+          data-active="no"
+        >
+          <td>0204</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>runtime</td>
+          <td>p0</td>
+          <td class="slug">workspace-heartbeat-alarm-and-reflection-mainline</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0204.pss.runtime.p0.workspace-heartbeat-alarm-and-reflection-mainline.md">issues/tk0204.pss.runtime.p0.workspace-heartbeat-alarm-and-reflection-mainline.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="runtime"
+          data-search="0205 tk pss runtime p0 work-continuity-truth-and-recovery-foundation issues/tk0205.pss.runtime.p0.work-continuity-truth-and-recovery-foundation.md"
+          data-active="no"
+        >
+          <td>0205</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>runtime</td>
+          <td>p0</td>
+          <td class="slug">work-continuity-truth-and-recovery-foundation</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0205.pss.runtime.p0.work-continuity-truth-and-recovery-foundation.md">issues/tk0205.pss.runtime.p0.work-continuity-truth-and-recovery-foundation.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="runtime"
+          data-search="0206 tk pss runtime p1 vitals-self-protection-projection-mainline issues/tk0206.pss.runtime.p1.vitals-self-protection-projection-mainline.md"
+          data-active="no"
+        >
+          <td>0206</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>runtime</td>
+          <td>p1</td>
+          <td class="slug">vitals-self-protection-projection-mainline</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0206.pss.runtime.p1.vitals-self-protection-projection-mainline.md">issues/tk0206.pss.runtime.p1.vitals-self-protection-projection-mainline.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="runtime"
+          data-search="0207 tk pss runtime p1 session-continuity-on-work-foundation issues/tk0207.pss.runtime.p1.session-continuity-on-work-foundation.md"
+          data-active="no"
+        >
+          <td>0207</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>runtime</td>
+          <td>p1</td>
+          <td class="slug">session-continuity-on-work-foundation</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0207.pss.runtime.p1.session-continuity-on-work-foundation.md">issues/tk0207.pss.runtime.p1.session-continuity-on-work-foundation.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="memory"
+          data-search="0208 tk pss memory p1 memory-file-truth-and-index-layer-demotion-audit issues/tk0208.pss.memory.p1.memory-file-truth-and-index-layer-demotion-audit.md"
+          data-active="no"
+        >
+          <td>0208</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>memory</td>
+          <td>p1</td>
+          <td class="slug">memory-file-truth-and-index-layer-demotion-audit</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0208.pss.memory.p1.memory-file-truth-and-index-layer-demotion-audit.md">issues/tk0208.pss.memory.p1.memory-file-truth-and-index-layer-demotion-audit.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="tools"
+          data-search="0209 tk pss tools p2 todo-keep-or-retire-and-file-first-closure issues/tk0209.pss.tools.p2.todo-keep-or-retire-and-file-first-closure.md"
+          data-active="no"
+        >
+          <td>0209</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>tools</td>
+          <td>p2</td>
+          <td class="slug">todo-keep-or-retire-and-file-first-closure</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0209.pss.tools.p2.todo-keep-or-retire-and-file-first-closure.md">issues/tk0209.pss.tools.p2.todo-keep-or-retire-and-file-first-closure.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="runtime"
+          data-search="0210 tk pss runtime p1 schedule-v1-to-v2-workspace-migration issues/tk0210.pss.runtime.p1.schedule-v1-to-v2-workspace-migration.md"
+          data-active="no"
+        >
+          <td>0210</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>runtime</td>
+          <td>p1</td>
+          <td class="slug">schedule-v1-to-v2-workspace-migration</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0210.pss.runtime.p1.schedule-v1-to-v2-workspace-migration.md">issues/tk0210.pss.runtime.p1.schedule-v1-to-v2-workspace-migration.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="agent"
+          data-search="0211 tk pss agent p1 tool-loop-module-thinning-and-provider-loop-dedup issues/tk0211.pss.agent.p1.tool-loop-module-thinning-and-provider-loop-dedup.md"
+          data-active="no"
+        >
+          <td>0211</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>agent</td>
+          <td>p1</td>
+          <td class="slug">tool-loop-module-thinning-and-provider-loop-dedup</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0211.pss.agent.p1.tool-loop-module-thinning-and-provider-loop-dedup.md">issues/tk0211.pss.agent.p1.tool-loop-module-thinning-and-provider-loop-dedup.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="tools"
+          data-search="0212 tk pss tools p1 tool-bus-dispatch-registry-thinning issues/tk0212.pss.tools.p1.tool-bus-dispatch-registry-thinning.md"
+          data-active="no"
+        >
+          <td>0212</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>tools</td>
+          <td>p1</td>
+          <td class="slug">tool-bus-dispatch-registry-thinning</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0212.pss.tools.p1.tool-bus-dispatch-registry-thinning.md">issues/tk0212.pss.tools.p1.tool-bus-dispatch-registry-thinning.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="runtime"
+          data-search="0213 tk pss runtime p0 real-test-heartbeat-persona-dispatch-smoke issues/tk0213.pss.runtime.p0.real-test-heartbeat-persona-dispatch-smoke.md"
+          data-active="no"
+        >
+          <td>0213</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>runtime</td>
+          <td>p0</td>
+          <td class="slug">real-test-heartbeat-persona-dispatch-smoke</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0213.pss.runtime.p0.real-test-heartbeat-persona-dispatch-smoke.md">issues/tk0213.pss.runtime.p0.real-test-heartbeat-persona-dispatch-smoke.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="web"
+          data-search="0214 tk pss web p1 real-test-create-html-page issues/tk0214.pss.web.p1.real-test-create-html-page.md"
+          data-active="no"
+        >
+          <td>0214</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>web</td>
+          <td>p1</td>
+          <td class="slug">real-test-create-html-page</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0214.pss.web.p1.real-test-create-html-page.md">issues/tk0214.pss.web.p1.real-test-create-html-page.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="web"
+          data-search="0215 tk pss web p1 real-test-theme-switch-followup issues/tk0215.pss.web.p1.real-test-theme-switch-followup.md"
+          data-active="no"
+        >
+          <td>0215</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>web</td>
+          <td>p1</td>
+          <td class="slug">real-test-theme-switch-followup</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0215.pss.web.p1.real-test-theme-switch-followup.md">issues/tk0215.pss.web.p1.real-test-theme-switch-followup.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="runtime"
+          data-search="0216 tk pss runtime p1 alarm-cron-file-contract-and-wake-mainline issues/tk0216.pss.runtime.p1.alarm-cron-file-contract-and-wake-mainline.md"
+          data-active="no"
+        >
+          <td>0216</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>runtime</td>
+          <td>p1</td>
+          <td class="slug">alarm-cron-file-contract-and-wake-mainline</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0216.pss.runtime.p1.alarm-cron-file-contract-and-wake-mainline.md">issues/tk0216.pss.runtime.p1.alarm-cron-file-contract-and-wake-mainline.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="runtime"
+          data-search="0217 tk pss runtime p1 reflection-candidate-review-and-daily-log-mainline issues/tk0217.pss.runtime.p1.reflection-candidate-review-and-daily-log-mainline.md"
+          data-active="no"
+        >
+          <td>0217</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>runtime</td>
+          <td>p1</td>
+          <td class="slug">reflection-candidate-review-and-daily-log-mainline</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0217.pss.runtime.p1.reflection-candidate-review-and-daily-log-mainline.md">issues/tk0217.pss.runtime.p1.reflection-candidate-review-and-daily-log-mainline.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="runtime"
+          data-search="0218 tk pss runtime p0 subagent-live-verification-via-feishu issues/tk0218.pss.runtime.p0.subagent-live-verification-via-feishu.md"
+          data-active="no"
+        >
+          <td>0218</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>runtime</td>
+          <td>p0</td>
+          <td class="slug">subagent-live-verification-via-feishu</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0218.pss.runtime.p0.subagent-live-verification-via-feishu.md">issues/tk0218.pss.runtime.p0.subagent-live-verification-via-feishu.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="memory"
+          data-search="0219 tk pss memory p1 memory-index-sha256-dirty-detection-and-debug-surface issues/tk0219.pss.memory.p1.memory-index-sha256-dirty-detection-and-debug-surface.md"
+          data-active="no"
+        >
+          <td>0219</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>memory</td>
+          <td>p1</td>
+          <td class="slug">memory-index-sha256-dirty-detection-and-debug-surface</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0219.pss.memory.p1.memory-index-sha256-dirty-detection-and-debug-surface.md">issues/tk0219.pss.memory.p1.memory-index-sha256-dirty-detection-and-debug-surface.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="io"
+          data-search="0226 tk pss io p1 feishu-event-and-artifact-delivery-mainline issues/tk0226.pss.io.p1.feishu-event-and-artifact-delivery-mainline.md"
+          data-active="no"
+        >
+          <td>0226</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>io</td>
+          <td>p1</td>
+          <td class="slug">feishu-event-and-artifact-delivery-mainline</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0226.pss.io.p1.feishu-event-and-artifact-delivery-mainline.md">issues/tk0226.pss.io.p1.feishu-event-and-artifact-delivery-mainline.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="io"
+          data-search="0227 tk pss io p1 feishu-live-delivery-receipt-smoke issues/tk0227.pss.io.p1.feishu-live-delivery-receipt-smoke.md"
+          data-active="no"
+        >
+          <td>0227</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>io</td>
+          <td>p1</td>
+          <td class="slug">feishu-live-delivery-receipt-smoke</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0227.pss.io.p1.feishu-live-delivery-receipt-smoke.md">issues/tk0227.pss.io.p1.feishu-live-delivery-receipt-smoke.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="memory"
+          data-search="0228 tk pss memory p1 append-log-truth-and-rebuild-contract issues/tk0228.pss.memory.p1.append-log-truth-and-rebuild-contract.md"
+          data-active="no"
+        >
+          <td>0228</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>memory</td>
+          <td>p1</td>
+          <td class="slug">append-log-truth-and-rebuild-contract</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0228.pss.memory.p1.append-log-truth-and-rebuild-contract.md">issues/tk0228.pss.memory.p1.append-log-truth-and-rebuild-contract.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="memory"
+          data-search="0229 tk pss memory p1 retrieval-on-append-and-index-read-path issues/tk0229.pss.memory.p1.retrieval-on-append-and-index-read-path.md"
+          data-active="no"
+        >
+          <td>0229</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>memory</td>
+          <td>p1</td>
+          <td class="slug">retrieval-on-append-and-index-read-path</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0229.pss.memory.p1.retrieval-on-append-and-index-read-path.md">issues/tk0229.pss.memory.p1.retrieval-on-append-and-index-read-path.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="memory"
+          data-search="0230 tk pss memory p1 summary-derived-view-and-promotion-boundary issues/tk0230.pss.memory.p1.summary-derived-view-and-promotion-boundary.md"
+          data-active="no"
+        >
+          <td>0230</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>memory</td>
+          <td>p1</td>
+          <td class="slug">summary-derived-view-and-promotion-boundary</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0230.pss.memory.p1.summary-derived-view-and-promotion-boundary.md">issues/tk0230.pss.memory.p1.summary-derived-view-and-promotion-boundary.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="memory"
+          data-search="0231 tk pss memory p1 cross-agent-sharing-on-file-truth issues/tk0231.pss.memory.p1.cross-agent-sharing-on-file-truth.md"
+          data-active="no"
+        >
+          <td>0231</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>memory</td>
+          <td>p1</td>
+          <td class="slug">cross-agent-sharing-on-file-truth</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0231.pss.memory.p1.cross-agent-sharing-on-file-truth.md">issues/tk0231.pss.memory.p1.cross-agent-sharing-on-file-truth.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="runtime"
+          data-search="0232 tk pss runtime p1 verification-command-and-result-contract issues/tk0232.pss.runtime.p1.verification-command-and-result-contract.md"
+          data-active="no"
+        >
+          <td>0232</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>runtime</td>
+          <td>p1</td>
+          <td class="slug">verification-command-and-result-contract</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0232.pss.runtime.p1.verification-command-and-result-contract.md">issues/tk0232.pss.runtime.p1.verification-command-and-result-contract.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="agent"
+          data-search="0233 tk pss agent p1 subagent-say-and-message-log-mainline issues/tk0233.pss.agent.p1.subagent-say-and-message-log-mainline.md"
+          data-active="no"
+        >
+          <td>0233</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>agent</td>
+          <td>p1</td>
+          <td class="slug">subagent-say-and-message-log-mainline</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0233.pss.agent.p1.subagent-say-and-message-log-mainline.md">issues/tk0233.pss.agent.p1.subagent-say-and-message-log-mainline.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="io"
+          data-search="0234 tk pss io p1 inbox-file-truth-and-minimal-lifecycle issues/tk0234.pss.io.p1.inbox-file-truth-and-minimal-lifecycle.md"
+          data-active="no"
+        >
+          <td>0234</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>io</td>
+          <td>p1</td>
+          <td class="slug">inbox-file-truth-and-minimal-lifecycle</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0234.pss.io.p1.inbox-file-truth-and-minimal-lifecycle.md">issues/tk0234.pss.io.p1.inbox-file-truth-and-minimal-lifecycle.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="docs"
+          data-search="0235 tk pss docs p1 readme-entry-thinning-and-smoke-split issues/tk0235.pss.docs.p1.readme-entry-thinning-and-smoke-split.md"
+          data-active="no"
+        >
+          <td>0235</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>docs</td>
+          <td>p1</td>
+          <td class="slug">readme-entry-thinning-and-smoke-split</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0235.pss.docs.p1.readme-entry-thinning-and-smoke-split.md">issues/tk0235.pss.docs.p1.readme-entry-thinning-and-smoke-split.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="docs"
+          data-search="0236 tk pss docs p1 agent-cognition-file-map issues/tk0236.pss.docs.p1.agent-cognition-file-map.md"
+          data-active="no"
+        >
+          <td>0236</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>docs</td>
+          <td>p1</td>
+          <td class="slug">agent-cognition-file-map</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0236.pss.docs.p1.agent-cognition-file-map.md">issues/tk0236.pss.docs.p1.agent-cognition-file-map.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="memory"
+          data-search="0236 tk pss memory p1 node-sqlite-runtime-evaluation-and-better-sqlite3-demotion issues/tk0236.pss.memory.p1.node-sqlite-runtime-evaluation-and-better-sqlite3-demotion.md"
+          data-active="no"
+        >
+          <td>0236</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>memory</td>
+          <td>p1</td>
+          <td class="slug">node-sqlite-runtime-evaluation-and-better-sqlite3-demotion</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0236.pss.memory.p1.node-sqlite-runtime-evaluation-and-better-sqlite3-demotion.md">issues/tk0236.pss.memory.p1.node-sqlite-runtime-evaluation-and-better-sqlite3-demotion.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="runtime"
+          data-search="0237 tk pss runtime p1 wake-job-and-record-file-contract issues/tk0237.pss.runtime.p1.wake-job-and-record-file-contract.md"
+          data-active="no"
+        >
+          <td>0237</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>runtime</td>
+          <td>p1</td>
+          <td class="slug">wake-job-and-record-file-contract</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0237.pss.runtime.p1.wake-job-and-record-file-contract.md">issues/tk0237.pss.runtime.p1.wake-job-and-record-file-contract.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="runtime"
+          data-search="0238 tk pss runtime p1 wake-record-claim-catchup-and-retention issues/tk0238.pss.runtime.p1.wake-record-claim-catchup-and-retention.md"
+          data-active="no"
+        >
+          <td>0238</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>runtime</td>
+          <td>p1</td>
+          <td class="slug">wake-record-claim-catchup-and-retention</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0238.pss.runtime.p1.wake-record-claim-catchup-and-retention.md">issues/tk0238.pss.runtime.p1.wake-record-claim-catchup-and-retention.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="runtime"
+          data-search="0239 tk pss runtime p1 work-capsule-builder-and-source-stamp issues/tk0239.pss.runtime.p1.work-capsule-builder-and-source-stamp.md"
+          data-active="no"
+        >
+          <td>0239</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>runtime</td>
+          <td>p1</td>
+          <td class="slug">work-capsule-builder-and-source-stamp</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0239.pss.runtime.p1.work-capsule-builder-and-source-stamp.md">issues/tk0239.pss.runtime.p1.work-capsule-builder-and-source-stamp.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="runtime"
+          data-search="0240 tk pss runtime p1 heartbeat-wake-consume-priority-and-mode-split issues/tk0240.pss.runtime.p1.heartbeat-wake-consume-priority-and-mode-split.md"
+          data-active="no"
+        >
+          <td>0240</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>runtime</td>
+          <td>p1</td>
+          <td class="slug">heartbeat-wake-consume-priority-and-mode-split</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0240.pss.runtime.p1.heartbeat-wake-consume-priority-and-mode-split.md">issues/tk0240.pss.runtime.p1.heartbeat-wake-consume-priority-and-mode-split.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="runtime"
+          data-search="0241 tk pss runtime p1 wake-vitals-policy-defer-and-degrade issues/tk0241.pss.runtime.p1.wake-vitals-policy-defer-and-degrade.md"
+          data-active="no"
+        >
+          <td>0241</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>runtime</td>
+          <td>p1</td>
+          <td class="slug">wake-vitals-policy-defer-and-degrade</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0241.pss.runtime.p1.wake-vitals-policy-defer-and-degrade.md">issues/tk0241.pss.runtime.p1.wake-vitals-policy-defer-and-degrade.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="runtime"
+          data-search="0242 tk pss runtime p1 work-continuity-bdd-lock issues/tk0242.pss.runtime.p1.work-continuity-bdd-lock.md"
+          data-active="no"
+        >
+          <td>0242</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>runtime</td>
+          <td>p1</td>
+          <td class="slug">work-continuity-bdd-lock</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0242.pss.runtime.p1.work-continuity-bdd-lock.md">issues/tk0242.pss.runtime.p1.work-continuity-bdd-lock.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="runtime"
+          data-search="0243 tk pss runtime p1 checkpoint-and-dispatch-drift-bdd-lock issues/tk0243.pss.runtime.p1.checkpoint-and-dispatch-drift-bdd-lock.md"
+          data-active="no"
+        >
+          <td>0243</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>runtime</td>
+          <td>p1</td>
+          <td class="slug">checkpoint-and-dispatch-drift-bdd-lock</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0243.pss.runtime.p1.checkpoint-and-dispatch-drift-bdd-lock.md">issues/tk0243.pss.runtime.p1.checkpoint-and-dispatch-drift-bdd-lock.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="runtime"
+          data-search="0244 tk pss runtime p1 work-capsule-rebuild-bdd-lock issues/tk0244.pss.runtime.p1.work-capsule-rebuild-bdd-lock.md"
+          data-active="no"
+        >
+          <td>0244</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>runtime</td>
+          <td>p1</td>
+          <td class="slug">work-capsule-rebuild-bdd-lock</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0244.pss.runtime.p1.work-capsule-rebuild-bdd-lock.md">issues/tk0244.pss.runtime.p1.work-capsule-rebuild-bdd-lock.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="runtime"
+          data-search="0245 tk pss runtime p1 vitals-defer-degrade-bdd-lock issues/tk0245.pss.runtime.p1.vitals-defer-degrade-bdd-lock.md"
+          data-active="no"
+        >
+          <td>0245</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>runtime</td>
+          <td>p1</td>
+          <td class="slug">vitals-defer-degrade-bdd-lock</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0245.pss.runtime.p1.vitals-defer-degrade-bdd-lock.md">issues/tk0245.pss.runtime.p1.vitals-defer-degrade-bdd-lock.md</a></td>
+        </tr>
+      
+
+        <tr
+          data-state="pss"
+          data-board="runtime"
+          data-search="0246 tk pss runtime p1 session-continuity-rebuild-bdd-lock issues/tk0246.pss.runtime.p1.session-continuity-rebuild-bdd-lock.md"
+          data-active="no"
+        >
+          <td>0246</td>
+          <td><span class="badge kind">Task</span></td>
+          <td><span class="badge state state-pss">Pass</span></td>
+          <td>runtime</td>
+          <td>p1</td>
+          <td class="slug">session-continuity-rebuild-bdd-lock</td>
+          <td><a href="file:///Users/admin/GitProjects/msgcode/issues/tk0246.pss.runtime.p1.session-continuity-rebuild-bdd-lock.md">issues/tk0246.pss.runtime.p1.session-continuity-rebuild-bdd-lock.md</a></td>
         </tr>
       
           </tbody>

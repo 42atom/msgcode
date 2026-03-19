@@ -7,11 +7,11 @@
 ## 唯一真相源
 
 - Issue:
-  - [0066-openclaw-agent-core-gap-analysis.md](/Users/admin/GitProjects/msgcode/issues/0066-openclaw-agent-core-gap-analysis.md)
+  - [tk0066.pss.agent.p1.openclaw-agent-core-gap-analysis.md](/Users/admin/GitProjects/msgcode/issues/tk0066.pss.agent.p1.openclaw-agent-core-gap-analysis.md)
 - Research:
-  - [research-260310-openclaw-agent-core-gap.md](/Users/admin/GitProjects/msgcode/docs/plan/rs0088.doi.agent.openclaw-agent-core-gap.md)
+  - [rs0088.dne.agent.openclaw-agent-core-gap.md](/Users/admin/GitProjects/msgcode/docs/plan/rs0088.dne.agent.openclaw-agent-core-gap.md)
 - Plan:
-  - [plan-260310-agent-core-gap-vs-openclaw.md](/Users/admin/GitProjects/msgcode/docs/plan/plagent-core-gap-vs-openclaw.md)
+  - [pl0066.pss.agent.agent-core-gap-vs-openclaw.md](/Users/admin/GitProjects/msgcode/docs/plan/pl0066.pss.agent.agent-core-gap-vs-openclaw.md)
 
 ## 核心原则
 
@@ -186,10 +186,10 @@
 任务：按 Phase 顺序把 Agent Core 收口成统一 Run Core，先从 Phase 1 开始，不要跨阶段大爆炸。
 
 唯一真相源：
-- Issue: /Users/admin/GitProjects/msgcode/issues/0066-openclaw-agent-core-gap-analysis.md
-- Research: /Users/admin/GitProjects/msgcode/docs/plan/rs0088.doi.agent.openclaw-agent-core-gap.md
-- Plan: /Users/admin/GitProjects/msgcode/docs/plan/plagent-core-gap-vs-openclaw.md
-- Task: /Users/admin/GitProjects/msgcode/docs/tasks/p6-agent-core-run-core-dispatch-pack.md
+- Issue: /Users/admin/GitProjects/msgcode/issues/tk0066.pss.agent.p1.openclaw-agent-core-gap-analysis.md
+- Research: /Users/admin/GitProjects/msgcode/docs/plan/rs0088.dne.agent.openclaw-agent-core-gap.md
+- Plan: /Users/admin/GitProjects/msgcode/docs/plan/pl0066.pss.agent.agent-core-gap-vs-openclaw.md
+- Task: /Users/admin/GitProjects/msgcode/docs/archive/tasks/p6-agent-core-run-core-dispatch-pack.md
 
 本轮范围：
 - 只做 Phase 1：Run 骨架落地

@@ -4,7 +4,7 @@
 
 ## 回链
 
-- Issue: [0008](../../issues/0008-mainline-quota-continuation-smoke.md)
+- Issue: [0008](../../../issues/tk0008.dne.tools.mainline-quota-continuation-smoke.md)
 - Plan: docs/plan/pl0008.dne.tools.mainline-quota-continuation-smoke.md
 ## Context
 
@@ -133,6 +133,6 @@
 
 ## Links
 
-- Parent Issue: issues/tk0007.dne.agent.tool-loop-quota-strategy.md
-- Task: docs/tasks/p5-7-r12-t8-tool-loop-quota-strategy.md
-- Heartbeat Task: docs/tasks/p5-7-r12-t1-heartbeat-event-wake.md
+- Parent Plan: docs/plan/pl0007.dne.agent.tool-loop-quota-strategy.md
+- Task: docs/archive/tasks/p5-7-r12-t8-tool-loop-quota-strategy.md
+- Heartbeat Task: docs/archive/tasks/p5-7-r12-t1-heartbeat-event-wake.md

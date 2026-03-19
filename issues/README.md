@@ -19,7 +19,7 @@ issues/
 ### 示例
 
 ```text
-tk0003.doi.feishu.p1.feishu-ws-transport-default-workspace.md
+tk0003.pss.feishu.p1.feishu-ws-transport-default-workspace.md
 tk0184.dne.docs.p0.doc-filename-protocol-migration.md
 ```
 

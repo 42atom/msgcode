@@ -3,7 +3,7 @@
 import fs from "node:fs";
 import path from "node:path";
 
-type Status = "tdo" | "doi" | "dne" | "bkd" | "cand";
+type Status = "tdo" | "doi" | "rvw" | "pss" | "dne" | "bkd" | "cand";
 type Kind = "tk" | "pl" | "rs";
 
 type IssueRecord = {
@@ -93,10 +93,21 @@ const LABEL_BOARD_ALIASES: Record<string, string> = {
 const STATUS_MAP: Record<string, Status> = {
   open: "tdo",
   doing: "doi",
+  review: "rvw",
+  rvw: "rvw",
+  pss: "pss",
+  pass: "pss",
+  "pass(review)": "pss",
   done: "dne",
+  dne: "dne",
   blocked: "bkd",
+  bkd: "bkd",
   wontfix: "cand",
+  cand: "cand",
 };
+
+const CURRENT_ISSUE_FILE_RE =
+  /^tk(?<id>\d{4})\.(?<state>tdo|doi|rvw|bkd|pss|dne|cand)\.(?<board>[a-z0-9-]+)\.(?:(?<prio>p[0-2])\.)?(?<slug>[a-z0-9-]+)\.md$/;
 
 const BOARD_RULES: Array<{ board: string; pattern: RegExp }> = [
   { board: "ghost", pattern: /\b(ghost|desktop|permission|screen-record|accessibility)\b/i },
@@ -215,46 +226,77 @@ function parseIssueRecords(): {
 
     const content = readText(filePath);
     const frontMatter = extractFrontMatter(content);
-    const idRaw = extractScalar(frontMatter, "id") || base.slice(0, 4);
-    const id = Number(idRaw);
-    const statusRaw = extractScalar(frontMatter, "status") || "open";
     const labels = extractList(frontMatter, "labels");
     const scope = extractScalar(frontMatter, "scope");
     const title = extractScalar(frontMatter, "title");
     const planDoc = extractScalar(frontMatter, "plan_doc");
-    const oldPath = path.relative(ROOT, filePath).replaceAll(path.sep, "/");
-    const oldSlug = slugify(base.replace(/^\d{4}-/, "").replace(/\.md$/, ""));
-    const boardDecision = deriveBoard({
-      labels,
-      text: `${title} ${scope} ${oldSlug}`,
-      defaultBoard: "runtime",
-    });
-    const state = mapStatus(statusRaw);
-    const prioMatch = `${title} ${scope} ${content}`.match(/\b(p0|p1|p2)\b/i);
-    const prio = prioMatch ? prioMatch[1].toLowerCase() : "";
-    const needsPriorityReview = (statusRaw === "open" || statusRaw === "doing") && prio === "";
-    const newFileName = [
-      `tk${String(id).padStart(4, "0")}`,
-      state,
-      boardDecision.board,
-      oldSlug,
-      prio || undefined,
-    ]
-      .filter(Boolean)
-      .join(".") + ".md";
+    const relativePath = path.relative(ROOT, filePath).replaceAll(path.sep, "/");
+    const currentMatch = base.match(CURRENT_ISSUE_FILE_RE);
+
+    let id = 0;
+    let state: Status = "tdo";
+    let prio = "";
+    let slug = "";
+    let board = "runtime";
+    let source = "rule:runtime";
+    let needsBoardReview = false;
+    let oldPath = relativePath;
+    let newPath = relativePath;
+    let statusRaw = extractScalar(frontMatter, "status") || "open";
+
+    if (currentMatch?.groups) {
+      id = Number(currentMatch.groups.id);
+      state = currentMatch.groups.state as Status;
+      board = currentMatch.groups.board;
+      prio = currentMatch.groups.prio ?? "";
+      slug = currentMatch.groups.slug;
+      source = "filename:current-protocol";
+      oldPath = `issues/${String(id).padStart(4, "0")}-${slug}.md`;
+      newPath = relativePath;
+    } else {
+      const idRaw = extractScalar(frontMatter, "id") || base.slice(0, 4);
+      id = Number(idRaw);
+      const oldSlug = slugify(base.replace(/^\d{4}-/, "").replace(/\.md$/, ""));
+      const boardDecision = deriveBoard({
+        labels,
+        text: `${title} ${scope} ${oldSlug}`,
+        defaultBoard: "runtime",
+      });
+      state = mapStatus(statusRaw);
+      const prioMatch = `${title} ${scope} ${content}`.match(/\b(p0|p1|p2)\b/i);
+      prio = prioMatch ? prioMatch[1].toLowerCase() : "";
+      slug = oldSlug;
+      board = boardDecision.board;
+      source = boardDecision.source;
+      needsBoardReview = boardDecision.needsReview;
+      newPath =
+        [
+          `tk${String(id).padStart(4, "0")}`,
+          state,
+          board,
+          prio || undefined,
+          slug,
+        ]
+          .filter(Boolean)
+          .join(".") + ".md";
+      newPath = `issues/${newPath}`;
+    }
+
+    const needsPriorityReview =
+      (state === "tdo" || state === "doi" || state === "rvw" || state === "bkd") && prio === "";
 
     const record: IssueRecord = {
       kind: "tk",
       id,
       oldPath,
-      newPath: `issues/${newFileName}`,
+      newPath,
       state,
-      board: boardDecision.board,
-      slug: oldSlug,
+      board,
+      slug,
       prio,
-      needsBoardReview: boardDecision.needsReview,
+      needsBoardReview,
       needsPriorityReview,
-      source: boardDecision.source,
+      source,
       statusRaw,
     };
 

@@ -2,7 +2,7 @@
 
 ## 回链
 
-- Issue: [0010](../../issues/0010-minimax-anthropic-provider.md)
+- Issue: [0010](/Users/admin/GitProjects/msgcode/issues/tk0010.dne.agent.minimax-anthropic-provider.md)
 - Plan: docs/plan/pl0010.dne.agent.minimax-anthropic-provider.md
 
 ## 目标

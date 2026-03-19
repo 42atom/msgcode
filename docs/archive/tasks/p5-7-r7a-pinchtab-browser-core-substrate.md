@@ -1,7 +1,7 @@
 # 任务单：P5.7-R7A（PinchTab Browser Core Substrate）
 
 Issue: 0004
-Plan: docs/plan/pl0004.doi.browser.web-transaction-platform-core.md
+Plan: docs/plan/pl0004.cand.browser.web-transaction-platform-core.md
 
 优先级：P1
 建议分支：`codex/p5-7-r7a-pinchtab-browser-core`
@@ -187,7 +187,7 @@ Plan: docs/plan/pl0004.doi.browser.web-transaction-platform-core.md
 ### Docs
 
 - `docs/plan/rs0013.dne.browser.pinchtab-validation.md`
-- `docs/plan/pl0004.doi.browser.web-transaction-platform-core.md`
+- `docs/plan/pl0004.cand.browser.web-transaction-platform-core.md`
 
 ### Code
 

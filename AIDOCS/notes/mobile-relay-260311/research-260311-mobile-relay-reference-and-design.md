@@ -25,7 +25,7 @@
 
 ### 1. 本地优先移动入口方案研究
 
-- Path: `docs/notes/research-260310-mobile-entry-options.md`
+- Path: `docs/plan/rs9005.dne.docs.mobile-entry-options.md`
 - 既有结论：
   - 当前主线仍是 `Feishu`
   - 下一条值得接的是 `Telegram`
@@ -37,7 +37,7 @@
 
 ### 2. 后 iMessage 通道策略
 
-- Path: `docs/design/plan-260310-post-imessage-channel-strategy.md`
+- Path: `docs/plan/pl0065.pss.feishu.post-imessage-channel-strategy.md`
 - 既有结论：
   - 只允许 `thin channel adapter`
   - 不做 transport platform
@@ -47,7 +47,7 @@
 
 ### 3. 终局架构节点
 
-- Path: `docs/notes/research-260310-future-architecture-node.md`
+- Path: `docs/plan/rs0066.dne.agent.future-architecture-node.md`
 - 既有结论：
   - 已明确存在 `Reachability` 这一层
   - 这层只负责触达、访问、深链与远程打开页面/服务
@@ -57,7 +57,7 @@
 
 ### 4. OpenClaw 对标的工程边界
 
-- Path: `docs/design/plan-260310-agent-core-gap-vs-openclaw.md`
+- Path: `docs/plan/pl0066.pss.agent.agent-core-gap-vs-openclaw.md`
 - 既有结论：
   - 当前要补的是统一 run lifecycle
   - 当前禁止把 OpenClaw 的 gateway / pairing / control plane 整套搬进来
@@ -274,10 +274,10 @@
 
 ### Docs
 
-- `docs/notes/research-260310-mobile-entry-options.md`
-- `docs/design/plan-260310-post-imessage-channel-strategy.md`
-- `docs/notes/research-260310-future-architecture-node.md`
-- `docs/design/plan-260310-agent-core-gap-vs-openclaw.md`
+- `docs/plan/rs9005.dne.docs.mobile-entry-options.md`
+- `docs/plan/pl0065.pss.feishu.post-imessage-channel-strategy.md`
+- `docs/plan/rs0066.dne.agent.future-architecture-node.md`
+- `docs/plan/pl0066.pss.agent.agent-core-gap-vs-openclaw.md`
 
 ### Code
 

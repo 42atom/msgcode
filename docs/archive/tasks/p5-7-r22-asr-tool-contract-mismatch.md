@@ -2,7 +2,7 @@
 
 ## 回链
 
-- Issue: [0046](../../issues/0046-asr-tool-contract-mismatch.md)
+- Issue: [0046](/Users/admin/GitProjects/msgcode/issues/tk0046.dne.tools.asr-tool-contract-mismatch.md)
 - Plan: docs/plan/pl0046.dne.tools.asr-tool-contract-mismatch.md
 
 ## 目标

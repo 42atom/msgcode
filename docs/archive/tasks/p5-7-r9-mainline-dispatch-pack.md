@@ -4,8 +4,8 @@
 
 ## 回链
 
-- Issue: [tk0009](../../issues/tk0009.doi.agent.p0.unix-mainline-refactor.md)
-- Plan: `docs/plan/pl0032.doi.agent.unix-mainline-refactor.md`
+- Issue: [tk0009](../../../issues/tk0009.pss.agent.p0.unix-mainline-refactor.md)
+- Plan: `docs/plan/pl0032.pss.agent.unix-mainline-refactor.md`
 
 ## 基线（已完成）
 
@@ -22,26 +22,26 @@
 ## 执行顺序（冻结）
 
 1. `R9-T2`：上下文余量感知 + 70% 自动 compact（✅）  
-   - 文档：`docs/tasks/p5-7-r9-t2-context-budget-auto-compact.md`
+   - 文档：`docs/archive/tasks/p5-7-r9-t2-context-budget-auto-compact.md`
 2. `R9-T3`：记忆默认开启 + `/clear` 边界硬锁（✅）  
-   - 文档：`docs/tasks/p5-7-r9-t3-memory-default-on-pi-baseline-and-branch-convergence.md`
+   - 文档：`docs/archive/tasks/p5-7-r9-t3-memory-default-on-pi-baseline-and-branch-convergence.md`
 3. `R9-T4`：`lmstudio` 命名去耦为 `agent-backend`（✅）  
-   - 文档：`docs/tasks/p5-7-r9-t4-agent-backend-neutral-naming-refactor.md`
+   - 文档：`docs/archive/tasks/p5-7-r9-t4-agent-backend-neutral-naming-refactor.md`
 4. `R9-T5`：CodexHandler `tmux/local-only` 策略守卫去重（✅）  
-   - 文档：`docs/tasks/p5-7-r9-t5-codex-policy-dedup.md`
+   - 文档：`docs/archive/tasks/p5-7-r9-t5-codex-policy-dedup.md`
 5. `R9-T6`：`lmstudio` 硬编码语义清理（✅）  
-   - 文档：`docs/tasks/p5-7-r9-t6-lmstudio-hardcode-purge.md`
+   - 文档：`docs/archive/tasks/p5-7-r9-t6-lmstudio-hardcode-purge.md`
 6. `R9-T7`：`lmstudio.ts` 兼容壳化 + agent-backend 核心拆分（🚧 执行中，Owner: Opus）  
-   - 文档：`docs/tasks/p5-7-r9-t7-agent-backend-core-extraction.md`
+   - 文档：`docs/archive/tasks/p5-7-r9-t7-agent-backend-core-extraction.md`
    - Issue：`issues/tk0002.dne.agent.r9-t7-agent-backend-core-extraction.md`
    - Plan：`docs/plan/pl0002.dne.agent.r9-t7-agent-backend-core-extraction.md`
 7. `R9-T8`：CLAUDE 文档协议目录对齐（✅ 插单完成）  
-   - 文档：`docs/tasks/p5-7-r9-t8-repo-protocol-alignment.md`
+   - 文档：`docs/archive/tasks/p5-7-r9-t8-repo-protocol-alignment.md`
 
 ## 后续派单（R9 收敛后）
 
 1. `P5.7-R10`：可用性稳定化派单包（真实冒烟阻断修复）
-   - 文档：`docs/tasks/p5-7-r10-usability-stabilization-pack.md`
+   - 文档：`docs/archive/tasks/p5-7-r10-usability-stabilization-pack.md`
 
 禁止并行跨单改动：必须前一单全绿签收后再开下一单。
 

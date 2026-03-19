@@ -6,7 +6,7 @@
 
 追踪：
 
-- Issue: `issues/0001-r9-t8-repo-protocol-alignment.md`
+- Issue: `issues/tk0001.dne.agent.r9-t8-repo-protocol-alignment.md`
 - Plan: `docs/plan/pl0001.dne.agent.r9-t8-repo-protocol-alignment.md`
 
 ## 背景

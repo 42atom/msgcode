@@ -1,7 +1,7 @@
 # 任务单：/help 命令单一注册表收口方案
 
 Issue: 0049  
-Plan: aidocs/plan/plan-260309-help-command-single-source.md
+Plan: AIDOCS/design/plan-260309-help-command-single-source.md
 
 ## 任务一句话
 
@@ -28,4 +28,4 @@ Plan: aidocs/plan/plan-260309-help-command-single-source.md
 
 ## 交付
 
-- `aidocs/plan/plan-260309-help-command-single-source.md`
+- `AIDOCS/design/plan-260309-help-command-single-source.md`

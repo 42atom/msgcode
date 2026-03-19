@@ -34,7 +34,7 @@ Plan: docs/plan/pl0005.dne.browser.llm-tool-manifest-single-source.md
 - src/lmstudio.ts（getToolsForLlm 改为从 manifest 派生）
 - src/tools/types.ts（ToolName 增加 list_directory/search_file/search_content/todo_read/todo_write）
 - src/config/workspace.ts（ToolName 同步更新）
-- issues/0005-browser-tool-not-exposed-to-llm.md（更新 notes）
+- issues/tk0005.dne.browser.browser-tool-not-exposed-to-llm.md（更新 notes）
 
 ## 结果（返工完成）
 

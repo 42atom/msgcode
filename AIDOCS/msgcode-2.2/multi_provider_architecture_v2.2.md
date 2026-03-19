@@ -578,4 +578,4 @@ export class RuntimeRouterHandler implements CommandHandler {
 - [Model Routing Spec v2.1](../msgcode-2.1/model_routing_spec_v2.1.md)
 - [Local Runners Spec v2.1](../msgcode-2.1/local_runners_spec_v2.1.md)
 - [README v2.2](./README.md)
-- [msgcode Issue Troubleshooting](../msgcode-issue-troubleshooting.md)
+- `msgcode Issue Troubleshooting`（旧导读已不在仓，保留名称仅作历史说明）

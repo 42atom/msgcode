@@ -1,7 +1,7 @@
 # 任务单：P5.7-R7（浏览器域：browser）
 
 Issue: 0004
-Plan: docs/plan/pl0004.doi.browser.web-transaction-platform-core.md
+Plan: docs/plan/pl0004.cand.browser.web-transaction-platform-core.md
 
 优先级：P2（R6 通过后执行）
 

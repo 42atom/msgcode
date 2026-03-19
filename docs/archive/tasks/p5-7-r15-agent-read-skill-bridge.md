@@ -2,7 +2,7 @@
 
 ## 回链
 
-- Issue: [0026](../../issues/0026-agent-read-skill-bridge.md)
+- Issue: [0026](../../../issues/tk0026.dne.agent.agent-read-skill-bridge.md)
 - Plan: docs/plan/pl0026.dne.agent.agent-read-skill-bridge.md
 
 ## 目标
