@@ -56,3 +56,21 @@ sh bootstrap/doctor-agent-pack.sh
 - `bootstrap/Brewfile.agent`
 
 这层是可选增强，不是默认主链。
+
+## Appliance 骨架
+
+这层服务本地 appliance，不再碰 `brew` / `npm install`。
+
+入口：
+
+```bash
+sh bootstrap/install-appliance.sh --bundle-root <bundle> --install-root <target>
+sh bootstrap/first-run-init.sh --install-root <target> --workspace acme/ops
+sh bootstrap/upgrade-appliance.sh --bundle-root <bundle> --install-root <target>
+```
+
+约束：
+
+- `install-appliance.sh` 只接收已经组装好的 `bundle-root/runtime`
+- `first-run-init.sh` 只负责调用 `msgcode init`
+- `upgrade-appliance.sh` 只替换安装目录下的 `runtime/`
