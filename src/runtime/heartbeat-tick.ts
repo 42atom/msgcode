@@ -357,9 +357,11 @@ async function writeVerificationEvidence(
       command: string;
       exitCode: number;
       ok: boolean;
-      stdout: string;
-      stderr: string;
+      stdoutTail: string;
+      stderrTail: string;
       durationMs: number;
+      fullOutputPath?: string;
+      error?: string;
     }>;
   }
 ): Promise<string> {
@@ -396,9 +398,11 @@ async function runTaskVerification(task: TaskDocumentRecord, workspacePath: stri
     command: string;
     exitCode: number;
     ok: boolean;
-    stdout: string;
-    stderr: string;
+    stdoutTail: string;
+    stderrTail: string;
     durationMs: number;
+    fullOutputPath?: string;
+    error?: string;
   }> = [];
 
   for (const command of commands) {
@@ -412,9 +416,11 @@ async function runTaskVerification(task: TaskDocumentRecord, workspacePath: stri
       command,
       exitCode: result.exitCode,
       ok: result.ok,
-      stdout: result.stdoutTail,
-      stderr: result.stderrTail,
+      stdoutTail: result.stdoutTail,
+      stderrTail: result.stderrTail,
       durationMs: result.durationMs,
+      fullOutputPath: result.fullOutputPath,
+      error: result.error,
     });
     if (!result.ok) {
       break;
