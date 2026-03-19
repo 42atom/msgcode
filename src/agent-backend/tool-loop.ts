@@ -945,6 +945,8 @@ function clipText(text: string, maxChars: number): string {
     return `${text.slice(0, maxChars)}...`;
 }
 
+const TOOL_RESULT_PREVIEW_MAX_CHARS = 512;
+
 /**
  * 回灌给模型的 tool_result 只保留可用预览，避免单次 read_file/big JSON 直接顶爆上下文。
  */
@@ -952,7 +954,7 @@ function serializeToolResultForConversation(result: unknown): string {
     if (result && typeof result === "object") {
         const previewText = (result as { previewText?: unknown }).previewText;
         if (typeof previewText === "string" && previewText.trim()) {
-            return previewText;
+            return clipText(previewText.trim(), TOOL_RESULT_PREVIEW_MAX_CHARS);
         }
         const asObj = result as Record<string, unknown>;
         const lines = ["[tool_result] preview unavailable"];
@@ -976,10 +978,10 @@ function serializeToolResultForConversation(result: unknown): string {
                 lines.push(message.trim());
             }
         }
-        return clipText(lines.join("\n"), 512);
+        return clipText(lines.join("\n"), TOOL_RESULT_PREVIEW_MAX_CHARS);
     }
     if (typeof result === "string" && result.trim()) {
-        return clipText(result.trim(), 512);
+        return clipText(result.trim(), TOOL_RESULT_PREVIEW_MAX_CHARS);
     }
     return "[tool_result] preview unavailable";
 }
