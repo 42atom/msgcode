@@ -41,7 +41,6 @@ function uniquePaths(paths: string[]): string[] {
 
 function resolveCompiledCandidates(
   kind: RuntimeEntryKind,
-  projectRoot: string,
   env: NodeJS.ProcessEnv
 ): string[] {
   const explicitKey = kind === "cli" ? "MSGCODE_CLI_ENTRY" : "MSGCODE_DAEMON_ENTRY";
@@ -52,8 +51,7 @@ function resolveCompiledCandidates(
     [
       explicit,
       runtimeRoot ? path.join(runtimeRoot, "app", `${kind}.js`) : "",
-      path.join(projectRoot, "app", `${kind}.js`),
-      path.join(projectRoot, "dist", `${kind}.js`),
+      runtimeRoot ? path.join(runtimeRoot, "dist", `${kind}.js`) : "",
     ].filter(Boolean) as string[]
   );
 }
@@ -79,7 +77,7 @@ export function resolveRuntimeEntry(
   const env = options?.env || process.env;
   const nodePath = options?.nodePath || process.execPath;
 
-  for (const candidate of resolveCompiledCandidates(kind, projectRoot, env)) {
+  for (const candidate of resolveCompiledCandidates(kind, env)) {
     if (!existsSync(candidate)) {
       continue;
     }

@@ -20,15 +20,18 @@ describe("runtime entry resolution", () => {
     await Promise.all(tempRoots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
   });
 
-  it("应优先使用 compiled daemon 入口", async () => {
+  it("显式提供 runtime root 时应优先使用 compiled daemon 入口", async () => {
     const root = await makeTempRoot();
     tempRoots.push(root);
-    const daemonPath = path.join(root, "dist", "daemon.js");
+    const runtimeRoot = path.join(root, "runtime");
+    const daemonPath = path.join(runtimeRoot, "dist", "daemon.js");
     await ensureFile(daemonPath);
 
     const result = resolveRuntimeEntry("daemon", {
       projectRoot: root,
-      env: {},
+      env: {
+        MSGCODE_RUNTIME_ROOT: runtimeRoot,
+      },
       nodePath: "/usr/local/bin/node",
     });
 
@@ -36,7 +39,7 @@ describe("runtime entry resolution", () => {
     expect(result.command).toBe("/usr/local/bin/node");
     expect(result.args).toEqual([daemonPath]);
     expect(result.entryPath).toBe(daemonPath);
-    expect(result.workingDirectory).toBe(root);
+    expect(result.workingDirectory).toBe(runtimeRoot);
   });
 
   it("应允许环境变量覆盖 compiled 入口", async () => {

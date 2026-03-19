@@ -144,8 +144,9 @@ program
 program
   .command("init")
   .description("初始化配置目录与 .env")
+  .option("--workspace <labelOrPath>", "同时初始化一个 workspace 骨架")
   .option("--overwrite-skills", "强制覆盖已存在的技能文件（默认仅首次创建）")
-  .action(async (options: { overwriteSkills?: boolean }) => {
+  .action(async (options: { workspace?: string; overwriteSkills?: boolean }) => {
     await initBot(options);
   });
 
@@ -566,15 +567,21 @@ async function restartManagedDaemon(): Promise<void> {
   console.log(`日志: ${runtime.stdoutPath}`);
 }
 
-async function initBot(options: { overwriteSkills?: boolean } = {}): Promise<void> {
+async function initBot(options: { workspace?: string; overwriteSkills?: boolean } = {}): Promise<void> {
   const envFile = path.join(CONFIG_DIR, ".env");
   const exampleFile = path.join(__dirname, "..", ".env.example");
+  const { ensureGlobalFirstRun, ensureWorkspaceFirstRun } = await import("./runtime/first-run-init.js");
+  const { getWorkspacePath } = await import("./cli/command-runner.js");
 
   await mkdir(CONFIG_DIR, { recursive: true });
   await mkdir(LOG_DIR, { recursive: true });
 
-  if (!existsSync(envFile)) {
-    await copyFile(exampleFile, envFile);
+  const globalResult = await ensureGlobalFirstRun({
+    configDir: CONFIG_DIR,
+    exampleEnvPath: exampleFile,
+  });
+
+  if (globalResult.created.includes(envFile)) {
     console.log(`已创建: ${envFile}`);
   } else {
     console.log(`已存在: ${envFile}`);
@@ -582,11 +589,24 @@ async function initBot(options: { overwriteSkills?: boolean } = {}): Promise<voi
 
   await copySkillsToUserConfig(options.overwriteSkills === true);
 
+  if (options.workspace) {
+    const workspacePath = getWorkspacePath(options.workspace);
+    const workspaceResult = await ensureWorkspaceFirstRun({ workspacePath });
+    console.log(`已初始化 workspace: ${workspaceResult.workspacePath}`);
+  }
+
   console.log("\n最短上手：");
   console.log("1) 编辑 ~/.config/msgcode/.env：设置白名单 + FEISHU_APP_ID + FEISHU_APP_SECRET");
-  console.log("2) 先跑：msgcode preflight");
-  console.log("3) 再启动：msgcode start");
-  console.log("4) 把机器人拉进飞书群，在群里发送：");
+  if (options.workspace) {
+    console.log(`2) 检查 workspace：${getWorkspacePath(options.workspace)}`);
+    console.log("3) 先跑：msgcode preflight");
+    console.log("4) 再启动：msgcode start");
+    console.log("5) 把机器人拉进飞书群，在群里发送：");
+  } else {
+    console.log("2) 先跑：msgcode preflight");
+    console.log("3) 再启动：msgcode start");
+    console.log("4) 把机器人拉进飞书群，在群里发送：");
+  }
   console.log("   /bind acme/ops");
   console.log("   /start");
 }

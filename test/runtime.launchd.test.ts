@@ -44,17 +44,15 @@ last exit reason = crashed
     expect(plist).toContain("<key>LOG_CONSOLE</key>");
   });
 
-  it("应优先使用 compiled daemon 入口，缺失时再回退到 tsx", () => {
+  it("开发态默认应回退到本地 tsx cli", () => {
     const config = resolveDaemonCommandConfig({
       ...process.env,
       PATH: "/opt/homebrew/bin:/usr/bin:/bin",
     });
 
     expect(config.programArguments[0]).toBe(process.execPath);
-    expect(
-      config.programArguments[1].includes("/dist/daemon.js")
-      || config.programArguments[1].includes("/node_modules/tsx/dist/cli.mjs")
-    ).toBe(true);
+    expect(config.programArguments[1]).toContain("/node_modules/tsx/dist/cli.mjs");
+    expect(config.programArguments[2]).toContain("/src/daemon.ts");
     expect(config.workingDirectory).toContain("/msgcode");
     expect(config.environment.LOG_CONSOLE).toBe("false");
     expect(config.environment.MSGCODE_DAEMON_SUPERVISOR).toBe("launchd");

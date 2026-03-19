@@ -13,12 +13,12 @@ const __dirname = dirname(__filename);
 
 const runtimeRoot = process.env.MSGCODE_RUNTIME_ROOT?.trim()
     ? process.env.MSGCODE_RUNTIME_ROOT.trim()
-    : join(__dirname, "..");
+    : "";
 const explicitCliEntry = process.env.MSGCODE_CLI_ENTRY?.trim() || "";
 const compiledCandidates = [
     explicitCliEntry,
-    join(runtimeRoot, "app", "cli.js"),
-    join(runtimeRoot, "dist", "cli.js"),
+    runtimeRoot ? join(runtimeRoot, "app", "cli.js") : "",
+    runtimeRoot ? join(runtimeRoot, "dist", "cli.js") : "",
 ].filter(Boolean);
 
 const compiledCliEntry = compiledCandidates.find((candidate) => existsSync(candidate));
