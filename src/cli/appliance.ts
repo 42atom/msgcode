@@ -7,6 +7,7 @@ import { createEnvelope, getWorkspacePath } from "./command-runner.js";
 import type { Diagnostic, Envelope, CommandStatus } from "../memory/types.js";
 import { getVersionInfo } from "../version.js";
 import { runAllProbes } from "../probe/index.js";
+import { readWorkspacePeopleState, type WorkspaceIdentityRecord, type WorkspacePendingPerson } from "../runtime/workspace-people.js";
 
 interface OrgCard {
   path: string;
@@ -52,6 +53,18 @@ interface ApplianceSitesData {
   workspacePath: string;
   sourcePath: string;
   sites: ApplianceSiteEntry[];
+}
+
+interface AppliancePeopleData {
+  workspacePath: string;
+  sourceDir: string;
+  pendingPath: string;
+  counts: {
+    people: number;
+    pending: number;
+  };
+  people: WorkspaceIdentityRecord[];
+  pending: WorkspacePendingPerson[];
 }
 
 function parseOrgField(content: string, label: string): string {
@@ -312,6 +325,67 @@ export function createApplianceCommand(): Command {
           sourcePath,
           sites,
         },
+        warnings,
+        errors
+      );
+      envelope.exitCode = errors.length > 0 ? 1 : 0;
+
+      console.log(JSON.stringify(envelope, null, 2));
+      process.exit(errors.length > 0 ? 1 : 0);
+    });
+
+  cmd
+    .command("people")
+    .description("输出工作区人物与待关联身份 JSON")
+    .requiredOption("--workspace <labelOrPath>", "Workspace 相对路径或绝对路径")
+    .option("--json", "JSON 格式输出")
+    .action(async (options: { workspace: string; json?: boolean }) => {
+      const startTime = Date.now();
+      const workspacePath = getWorkspacePath(options.workspace);
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      if (!existsSync(workspacePath)) {
+        errors.push({
+          code: "APPLIANCE_WORKSPACE_MISSING",
+          message: "工作区不存在",
+          hint: "先初始化 workspace，或传绝对路径",
+          details: { workspacePath, input: options.workspace },
+        });
+      }
+
+      const { data, warnings: peopleWarnings } = errors.length === 0
+        ? await readWorkspacePeopleState(workspacePath)
+        : {
+            data: {
+              workspacePath,
+              sourceDir: path.join(workspacePath, ".msgcode", "character-identity"),
+              pendingPath: path.join(workspacePath, ".msgcode", "people-pending.json"),
+              people: [],
+              pending: [],
+            },
+            warnings: [],
+          };
+      warnings.push(...peopleWarnings);
+
+      const payload: AppliancePeopleData = {
+        workspacePath: data.workspacePath,
+        sourceDir: data.sourceDir,
+        pendingPath: data.pendingPath,
+        counts: {
+          people: data.people.length,
+          pending: data.pending.length,
+        },
+        people: data.people,
+        pending: data.pending,
+      };
+
+      const status: CommandStatus = errors.length > 0 ? "error" : warnings.length > 0 ? "warning" : "pass";
+      const envelope: Envelope<AppliancePeopleData> = createEnvelope(
+        `msgcode appliance people --workspace ${options.workspace}`,
+        startTime,
+        status,
+        payload,
         warnings,
         errors
       );
