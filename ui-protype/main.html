@@ -19,9 +19,9 @@
               </div>
             </div>
             <nav class="top-icon-nav" aria-label="主导航">
-              <button class="icon-tab is-active" data-view="projects" aria-label="项目">
+              <button class="icon-tab is-active" data-view="projects" aria-label="工作区">
                 <span class="icon-tab__glyph">◫</span>
-                <span class="icon-tab__label">项目</span>
+                <span class="icon-tab__label">工作区</span>
               </button>
               <button class="icon-tab" data-view="base" aria-label="基座">
                 <span class="icon-tab__glyph">⌘</span>
@@ -30,6 +30,7 @@
               <button class="icon-tab" data-view="neighbor" aria-label="邻居">
                 <span class="icon-tab__glyph">◎</span>
                 <span class="icon-tab__label">邻居</span>
+                <span class="icon-tab__badge">2</span>
               </button>
             </nav>
           </div>
@@ -46,14 +47,38 @@
         <section class="view view--active" data-view-panel="projects">
           <div class="three-column">
             <section class="panel rail-panel">
-              <div class="panel-head">
-                <p class="eyebrow">Threads</p>
-                <h3>工作区与线程</h3>
+              <div class="panel-head panel-head--inline">
+                <div>
+                  <p class="eyebrow">Threads</p>
+                  <h3>场景工作区与线程</h3>
+                </div>
+                <button class="action-button action-button--ghost">＋ 新建线程</button>
               </div>
               <div class="thread-tree">
+                <section class="thread-section">
+                  <div class="thread-section__head">
+                    <p class="eyebrow">Recent</p>
+                    <span class="thread-section__meta">最近活跃</span>
+                  </div>
+                  <div class="thread-section__items">
+                    <article class="thread-list-item thread-list-item--compact is-selected" data-thread-key="web">
+                      <div class="thread-list-item__head">
+                        <strong>网页线程</strong>
+                        <span>刚刚</span>
+                      </div>
+                    </article>
+                    <article class="thread-list-item thread-list-item--compact" data-thread-key="feishu">
+                      <div class="thread-list-item__head">
+                        <strong>飞书线程</strong>
+                        <span>2 分钟前</span>
+                      </div>
+                    </article>
+                  </div>
+                </section>
+
                 <details class="workspace-group" open>
                   <summary class="workspace-group__title">
-                    <span class="workspace-group__name">acme/ops</span>
+                    <span class="workspace-group__name">family</span>
                     <a class="project-mini-link" href="./people.html" title="人物角色" aria-label="人物角色">
                       <span class="project-mini-link__icon" aria-hidden="true">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -65,47 +90,19 @@
                     </a>
                   </summary>
                   <div class="workspace-group__items">
-                    <article class="thread-list-item is-selected">
+                    <article class="thread-list-item is-selected" data-thread-key="web">
                       <div class="thread-list-item__head">
-                        <strong>网页主线程</strong>
+                        <strong>网页线程</strong>
                         <span>web</span>
                       </div>
-                      <small>已确认：先查退款，不动预算。</small>
                     </article>
-                    <article class="thread-list-item">
+                    <article class="thread-list-item" data-thread-key="feishu">
                       <div class="thread-list-item__head">
                         <strong>飞书线程</strong>
                         <span>feishu</span>
                       </div>
-                      <small>最近共识：财务站先复核退款波动。</small>
-                    </article>
-                    <article class="thread-list-item">
-                      <div class="thread-list-item__head">
-                        <strong>退款波动排查</strong>
-                        <span>sub</span>
-                      </div>
-                      <small>等待财务口径，未回主线程。</small>
-                    </article>
-                    <article class="thread-list-item">
-                      <div class="thread-list-item__head">
-                        <strong>内容复盘</strong>
-                        <span>sub</span>
-                      </div>
-                      <small>已形成摘要，当前未读取。</small>
                     </article>
                   </div>
-                </details>
-
-                <details class="workspace-group">
-                  <summary class="workspace-group__title">
-                    <span class="workspace-group__name">acme/finance</span>
-                  </summary>
-                </details>
-
-                <details class="workspace-group">
-                  <summary class="workspace-group__title">
-                    <span class="workspace-group__name">acme/xiaohongshu</span>
-                  </summary>
                 </details>
               </div>
             </section>
@@ -114,74 +111,84 @@
               <div class="panel-head panel-head--inline">
                 <div>
                   <p class="eyebrow">当前线程</p>
-                  <h3>网页主线程</h3>
+                  <h3 id="thread-title">网页线程</h3>
                 </div>
-                <div class="thread-header-meta">
-                  <span class="inline-chip">acme/ops</span>
-                  <span class="inline-chip">web</span>
-                  <span class="inline-chip inline-chip--muted">已共享共识</span>
+                <div class="thread-header-side">
+                  <div class="thread-header-meta">
+                    <span class="inline-chip">family</span>
+                    <span class="inline-chip" id="thread-channel-chip">web</span>
+                    <span class="inline-chip inline-chip--muted" id="thread-kind-chip">主线程</span>
+                  </div>
+                  <button id="observer-toggle" class="ghost-mini observer-toggle" type="button">工作状况</button>
                 </div>
               </div>
 
-              <div class="chat-log">
+              <div id="thread-status-strip" class="thread-status-strip">
+                共享近况：Chandler 的健康档案已建好；当前有 3 个接送提醒正在运行。
+              </div>
+
+              <div id="chat-log" class="chat-log">
                 <article class="bubble bubble--user">
-                  帮我整理今天的运营待办，并检查昨天投放数据有没有异常。
+                  今天为什么没有提醒我
                 </article>
                 <article class="bubble bubble--agent">
-                  已读取当前线程工作状况和共享共识。飞书侧已经确认先不动预算，退款波动排查还在子线程里等待财务复核。
+                  我查到了 pick-up-kids 任务的配置：周一至周五 11:45，消息是“通知用户 ⏰ 中午要接小孩回家了”，配置本身是正常的。
                 </article>
-                <article class="bubble bubble--agent bubble--muted">
-                  当前注入：本线程 Work Status / 共享共识 / recent memory
+                <article class="bubble bubble--user">
+                  帮我看看今天下午还有哪些接娃提醒。
                 </article>
               </div>
 
               <div class="composer">
-                <textarea rows="4">继续检查退款率波动的原因，并把要看的文件列出来。</textarea>
+                <textarea id="composer-input" rows="4">帮我看看今天下午还有哪些接娃提醒。</textarea>
+                <div id="composer-status" class="composer-status">输入只负责投递给 runtime；消息上屏以后端回写为准。</div>
                 <div class="composer-actions">
-                  <button class="action-button action-button--ghost">查看上下文</button>
-                  <button class="action-button">发给 Agent</button>
+                  <button class="action-button action-button--ghost">线程摘要</button>
+                  <button id="send-button" class="action-button">发给 Agent</button>
                 </div>
               </div>
             </section>
 
-            <section class="panel observer-panel">
-              <div class="panel-head">
-                <p class="eyebrow">工作状况与可观测性</p>
-                <h3>当前项目姿态</h3>
+            <section id="observer-panel" class="panel observer-panel">
+              <div class="panel-head panel-head--inline">
+                <div>
+                <p class="eyebrow">可观测</p>
+                <h3 id="observer-title">当前场景工作区</h3>
+                </div>
+                <button id="observer-close" class="ghost-mini observer-close" type="button">关闭</button>
               </div>
 
               <div class="observer-stack">
                 <section class="info-block">
                   <h4>工作状况 / Work Status</h4>
-                  <p>当前目标：整理运营待办并解释退款率波动。</p>
-                  <p>主假设：退款率上升与 3 月 18 日优惠策略调整有关。</p>
+                  <p id="work-status-line-1">最近在处理接送提醒是否正常，以及 Chandler 的健康记录整理。</p>
+                  <p id="work-status-line-2">当前关注：中午接娃提醒为什么没有按时出现。</p>
                 </section>
 
                 <section class="info-block">
-                  <h4>待办</h4>
-                  <ul>
-                    <li>看昨日投放日报</li>
-                    <li>检查退款明细和客服记录</li>
-                    <li>决定是否触发财务站复核</li>
-                  </ul>
-                </section>
-
-                <section class="info-block">
-                  <h4>最近动作</h4>
-                  <ul>
-                    <li>`verify pack custom` 失败 1 次</li>
-                    <li>写入 memory 候选 2 条</li>
-                    <li>读取 `tk0281` 和 `summary.md`</li>
-                  </ul>
-                </section>
-
-                <section class="info-block">
-                  <h4>证据入口</h4>
-                  <div class="inline-tags">
-                    <span>workstate.md</span>
-                    <span>dispatch</span>
-                    <span>evidence</span>
-                    <span>session</span>
+                  <h4 id="observer-secondary-title">日历 / 定时任务</h4>
+                  <div id="observer-secondary-content" class="schedule-list">
+                    <article class="schedule-item">
+                      <strong>11:45</strong>
+                      <div>
+                        <p>中午接小孩回家</p>
+                        <small>工作日提醒 · pick-up-kids</small>
+                      </div>
+                    </article>
+                    <article class="schedule-item">
+                      <strong>13:40</strong>
+                      <div>
+                        <p>送小孩上学</p>
+                        <small>工作日提醒 · send-kids-school</small>
+                      </div>
+                    </article>
+                    <article class="schedule-item">
+                      <strong>16:00</strong>
+                      <div>
+                        <p>放学接娃</p>
+                        <small>工作日提醒 · pickup-kid</small>
+                      </div>
+                    </article>
                   </div>
                 </section>
               </div>

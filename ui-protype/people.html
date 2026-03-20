@@ -15,12 +15,12 @@
               <div class="brand-mark">M</div>
               <div>
                 <p class="eyebrow">Workspace People</p>
-                <h1>acme/ops</h1>
+                <h1>family</h1>
               </div>
             </div>
           </div>
           <div class="status-cluster">
-            <a class="icon-link" href="./main.html" aria-label="返回项目页">⌂</a>
+            <a class="icon-link" href="./main.html" aria-label="返回工作区页">⌂</a>
           </div>
         </header>
 
@@ -28,7 +28,7 @@
           <section class="panel">
             <div class="panel-head panel-head--inline">
               <div>
-                <p class="eyebrow">当前工作区人物表</p>
+                <p class="eyebrow">当前场景工作区人物表</p>
                 <h3>人物（People）</h3>
               </div>
               <button id="fetch-channel-people" class="action-button">获取渠道人物</button>
@@ -41,7 +41,7 @@
                   <path d="M5.5 19.5a6.5 6.5 0 0 1 13 0"></path>
                 </svg>
               </div>
-              <h4>可以标识本工作区人物角色</h4>
+              <h4>可以标识本场景工作区人物角色</h4>
               <p>先获取当前渠道里的群成员，再决定谁要存入通讯录。</p>
             </div>
 
@@ -51,31 +51,7 @@
                   <h4>渠道人物</h4>
                 </div>
                 <div id="channel-people-list" class="people-list">
-                  <article class="pending-card" data-person-key="lin-finance">
-                    <div class="pending-head">
-                      <div>
-                        <h5>飞书：小林</h5>
-                        <p>id: 8811223 · 用户名: lin-finance</p>
-                      </div>
-                      <button class="ghost-mini js-save-person">存入通讯录</button>
-                    </div>
-                    <div class="pending-actions">
-                      <button class="ghost-mini">忽略</button>
-                    </div>
-                  </article>
-
-                  <article class="pending-card" data-person-key="zhou-ops">
-                    <div class="pending-head">
-                      <div>
-                        <h5>飞书：阿周</h5>
-                        <p>id: 8811888 · 用户名: zhou_ops</p>
-                      </div>
-                      <button class="ghost-mini js-save-person">存入通讯录</button>
-                    </div>
-                    <div class="pending-actions">
-                      <button class="ghost-mini">忽略</button>
-                    </div>
-                  </article>
+                  <div class="empty-inline">当前还没有可直接读取的渠道人物数据。</div>
                 </div>
               </section>
 
@@ -84,7 +60,22 @@
                   <h4>通讯录</h4>
                 </div>
                 <div id="address-book-list" class="people-list">
-                  <div class="empty-inline">还没有人物被存入通讯录。</div>
+                  <article class="person-card" data-tags="主用户">
+                    <div class="person-head">
+                      <div>
+                        <h5>sam</h5>
+                        <p>统一称谓：sam</p>
+                      </div>
+                      <button class="ghost-mini js-edit-person">编辑</button>
+                    </div>
+                    <div class="tag-chip-list">
+                      <span class="tag-chip">主用户</span>
+                    </div>
+                    <p class="person-note">备注：当前场景工作区默认主用户。</p>
+                    <div class="channel-chip-list">
+                      <span class="channel-chip">尚未关联渠道人物</span>
+                    </div>
+                  </article>
                 </div>
               </section>
             </div>

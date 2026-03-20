@@ -31,9 +31,8 @@ if (channelList && addressBookList) {
 
     const title = card.querySelector("h5")?.textContent ?? "未知人物";
     const meta = card.querySelector("p")?.textContent ?? "";
-    const key = card.dataset.personKey ?? "";
-    const unifiedTitle = key === "lin-finance" ? "财务" : "运营";
-    const tags = key === "lin-finance" ? ["用户", "财务"] : ["用户", "提需求"];
+    const unifiedTitle = "未命名人物";
+    const tags = ["待标注"];
     const emptyInline = addressBookList.querySelector(".empty-inline");
     if (emptyInline) emptyInline.remove();
 
