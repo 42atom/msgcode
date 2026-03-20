@@ -38,6 +38,20 @@ describe("appliance hall contract", () => {
       ].join("\n"),
       "utf8"
     );
+    await fs.writeFile(
+      path.join(workspacePath, ".msgcode", "sites.json"),
+      JSON.stringify({
+        sites: [
+          {
+            id: "family-calendar",
+            title: "家庭日历站",
+            entry: "/sites/family-calendar/index.html",
+            kind: "sidecar",
+          },
+        ],
+      }, null, 2),
+      "utf8"
+    );
 
     const { stdout } = await execFileAsync("node", [
       "--import",
@@ -68,5 +82,7 @@ describe("appliance hall contract", () => {
     expect(Array.isArray(payload.data.packs.builtin)).toBe(true);
     expect(Array.isArray(payload.data.packs.user)).toBe(true);
     expect(Array.isArray(payload.data.sites)).toBe(true);
+    expect(payload.data.sites).toHaveLength(1);
+    expect(payload.data.sites[0].id).toBe("family-calendar");
   });
 });

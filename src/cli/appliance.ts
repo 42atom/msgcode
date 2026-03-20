@@ -47,7 +47,7 @@ interface ApplianceHallData {
     }>;
   };
   packs: WorkspacePackSurfaceData;
-  sites: unknown[];
+  sites: ApplianceSiteEntry[];
 }
 
 interface ApplianceSiteEntry {
@@ -279,6 +279,8 @@ export function createApplianceCommand(): Command {
       warnings.push(...orgWarnings);
       const { data: packRegistry, warnings: packWarnings } = await readWorkspacePackRegistry(workspacePath);
       warnings.push(...packWarnings);
+      const { sites, warnings: siteWarnings } = await readSitesRegistry(workspacePath);
+      warnings.push(...siteWarnings);
 
       const report = await runAllProbes();
       const versionInfo = getVersionInfo();
@@ -302,7 +304,7 @@ export function createApplianceCommand(): Command {
           })),
         },
         packs: packRegistry,
-        sites: [],
+        sites,
       };
 
       const status = buildHallStatus(warnings, report.summary.status);
