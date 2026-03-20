@@ -39,6 +39,21 @@ interface ApplianceHallData {
   sites: unknown[];
 }
 
+interface ApplianceSiteEntry {
+  id: string;
+  title: string;
+  entry: string;
+  kind: "sidecar" | "external";
+  description?: string;
+  sourcePath: string;
+}
+
+interface ApplianceSitesData {
+  workspacePath: string;
+  sourcePath: string;
+  sites: ApplianceSiteEntry[];
+}
+
 function parseOrgField(content: string, label: string): string {
   const match = content.match(new RegExp(`^- ${label}：(.+)$`, "m"));
   return match?.[1]?.trim() ?? "";
@@ -93,6 +108,74 @@ function buildHallStatus(orgWarnings: Diagnostic[], runtimeStatus: string): Comm
   if (runtimeStatus === "warning") return "warning";
   if (orgWarnings.length > 0) return "warning";
   return "pass";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+async function readSitesRegistry(workspacePath: string): Promise<{ sites: ApplianceSiteEntry[]; warnings: Diagnostic[]; sourcePath: string }> {
+  const sourcePath = path.join(workspacePath, ".msgcode", "sites.json");
+  const warnings: Diagnostic[] = [];
+
+  if (!existsSync(sourcePath)) {
+    return { sites: [], warnings, sourcePath };
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(await readFile(sourcePath, "utf8"));
+  } catch (error) {
+    warnings.push({
+      code: "APPLIANCE_SITES_INVALID_JSON",
+      message: "sites.json 不是合法 JSON",
+      hint: "修正 .msgcode/sites.json，或先移走它",
+      details: { sourcePath, error: error instanceof Error ? error.message : String(error) },
+    });
+    return { sites: [], warnings, sourcePath };
+  }
+
+  const rawSites = isRecord(parsed) && Array.isArray(parsed.sites) ? parsed.sites : [];
+  const sites: ApplianceSiteEntry[] = [];
+
+  for (const [index, raw] of rawSites.entries()) {
+    if (!isRecord(raw)) {
+      warnings.push({
+        code: "APPLIANCE_SITE_INVALID_ENTRY",
+        message: "sites.json 含有非法站点项",
+        hint: "每个站点项都必须是对象",
+        details: { sourcePath, index },
+      });
+      continue;
+    }
+
+    const id = typeof raw.id === "string" ? raw.id.trim() : "";
+    const title = typeof raw.title === "string" ? raw.title.trim() : "";
+    const entry = typeof raw.entry === "string" ? raw.entry.trim() : "";
+    const kind = raw.kind === "external" ? "external" : "sidecar";
+    const description = typeof raw.description === "string" ? raw.description.trim() : undefined;
+
+    if (!id || !title || !entry) {
+      warnings.push({
+        code: "APPLIANCE_SITE_INCOMPLETE",
+        message: "sites.json 含有缺字段站点项",
+        hint: "每个站点至少包含 id / title / entry",
+        details: { sourcePath, index, id, title, entry },
+      });
+      continue;
+    }
+
+    sites.push({
+      id,
+      title,
+      entry,
+      kind,
+      description,
+      sourcePath,
+    });
+  }
+
+  return { sites, warnings, sourcePath };
 }
 
 export function createApplianceCommand(): Command {
@@ -192,6 +275,50 @@ export function createApplianceCommand(): Command {
         console.log(JSON.stringify(envelope, null, 2));
         process.exit(0);
       }
+    });
+
+  cmd
+    .command("sites")
+    .description("输出 sidecar 站点入口 JSON")
+    .requiredOption("--workspace <labelOrPath>", "Workspace 相对路径或绝对路径")
+    .option("--json", "JSON 格式输出")
+    .action(async (options: { workspace: string; json?: boolean }) => {
+      const startTime = Date.now();
+      const workspacePath = getWorkspacePath(options.workspace);
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      if (!existsSync(workspacePath)) {
+        errors.push({
+          code: "APPLIANCE_WORKSPACE_MISSING",
+          message: "工作区不存在",
+          hint: "先初始化 workspace，或传绝对路径",
+          details: { workspacePath, input: options.workspace },
+        });
+      }
+
+      const { sites, warnings: siteWarnings, sourcePath } = errors.length === 0
+        ? await readSitesRegistry(workspacePath)
+        : { sites: [], warnings: [], sourcePath: path.join(workspacePath, ".msgcode", "sites.json") };
+      warnings.push(...siteWarnings);
+
+      const status: CommandStatus = errors.length > 0 ? "error" : warnings.length > 0 ? "warning" : "pass";
+      const envelope: Envelope<ApplianceSitesData> = createEnvelope(
+        `msgcode appliance sites --workspace ${options.workspace}`,
+        startTime,
+        status,
+        {
+          workspacePath,
+          sourcePath,
+          sites,
+        },
+        warnings,
+        errors
+      );
+      envelope.exitCode = errors.length > 0 ? 1 : 0;
+
+      console.log(JSON.stringify(envelope, null, 2));
+      process.exit(errors.length > 0 ? 1 : 0);
     });
 
   return cmd;
