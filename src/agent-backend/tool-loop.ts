@@ -46,6 +46,7 @@ import {
 } from "../tools/manifest.js";
 import type { ToolName } from "../tools/types.js";
 import { getChromeRootInfo } from "../browser/chrome-root.js";
+import { readWorkspacePackSkillHints } from "../runtime/workspace-pack-skills.js";
 import {
     type MiniMaxAnthropicContentBlock,
     type MiniMaxAnthropicMessage,
@@ -581,6 +582,23 @@ async function buildOpenAiExecSystemPrompt(params: {
                         }
                         if (skillIds.length > 0) {
                             skillHint += `全局技能：${skillIds.join(", ")}\n`;
+                        }
+                    }
+                } catch {
+                    // 忽略
+                }
+            }
+            if (params.workspacePath) {
+                try {
+                    const { entries } = await readWorkspacePackSkillHints(params.workspacePath);
+                    if (entries.length > 0) {
+                        skillHint += "\n\n[工作区已安装能力包]\n";
+                        skillHint += "以下 skill 只属于当前工作区已安装 pack，不同步到全局 skills 索引；只有当前任务确实涉及对应能力包时，才读相应 SKILL.md。\n";
+                        for (const entry of entries) {
+                            skillHint += `- ${entry.packName} (${entry.packId})\n`;
+                            for (const skillPath of entry.skillPaths) {
+                                skillHint += `  - read_file 先读 ${skillPath}\n`;
+                            }
                         }
                     }
                 } catch {
