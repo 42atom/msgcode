@@ -17,6 +17,7 @@ import {
   readWorkspaceThreadSurface,
   type WorkspaceThreadSurfaceData,
 } from "../runtime/workspace-thread-surface.js";
+import { installWorkspaceWpkg } from "../runtime/workspace-wpkg-install.js";
 
 interface OrgCard {
   path: string;
@@ -74,6 +75,26 @@ interface AppliancePeopleData {
   };
   people: WorkspaceIdentityRecord[];
   pending: WorkspacePendingPerson[];
+}
+
+interface AppliancePackInstallData {
+  workspacePath: string;
+  wpkgPath: string;
+  installedPath: string;
+  pack: {
+    id: string;
+    name: string;
+    version: string;
+    enabled: boolean;
+  };
+  counts: {
+    sites: number;
+    skills: number;
+  };
+  files: {
+    packsPath: string;
+    sitesPath: string;
+  };
 }
 
 function parseOrgField(content: string, label: string): string {
@@ -343,6 +364,122 @@ export function createApplianceCommand(): Command {
 
       console.log(JSON.stringify(envelope, null, 2));
       process.exit(errors.length > 0 ? 1 : 0);
+    });
+
+  cmd
+    .command("install-pack")
+    .description("安装一个 wpkg 到工作区，并注册 packs/sites")
+    .requiredOption("--workspace <labelOrPath>", "Workspace 相对路径或绝对路径")
+    .requiredOption("--file <path>", "wpkg 文件路径")
+    .option("--json", "JSON 格式输出")
+    .action(async (options: { workspace: string; file: string; json?: boolean }) => {
+      const startTime = Date.now();
+      const workspacePath = getWorkspacePath(options.workspace);
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      if (!existsSync(workspacePath)) {
+        errors.push({
+          code: "APPLIANCE_WORKSPACE_MISSING",
+          message: "工作区不存在",
+          hint: "先初始化 workspace，或传绝对路径",
+          details: { workspacePath, input: options.workspace },
+        });
+      }
+
+      if (!existsSync(path.resolve(options.file))) {
+        errors.push({
+          code: "APPLIANCE_WPKG_MISSING",
+          message: "wpkg 文件不存在",
+          hint: "传入一个可读的 .wpkg 文件路径",
+          details: { file: options.file },
+        });
+      }
+
+      if (errors.length > 0) {
+        const envelope: Envelope<AppliancePackInstallData | null> = createEnvelope(
+          `msgcode appliance install-pack --workspace ${options.workspace} --file ${options.file}`,
+          startTime,
+          "error",
+          null,
+          warnings,
+          errors
+        );
+        envelope.exitCode = 1;
+        console.log(JSON.stringify(envelope, null, 2));
+        process.exit(1);
+      }
+
+      try {
+        const result = await installWorkspaceWpkg({
+          workspacePath,
+          wpkgPath: options.file,
+        });
+
+        if (result.pack.skills.length > 0) {
+          warnings.push({
+            code: "APPLIANCE_WPKG_SKILL_DISCOVERY_PENDING",
+            message: "已记录 pack skill 路径，但当前 runtime 尚未自动发现 wpkg skills",
+            hint: "后续由独立 skill registry 切片接通",
+            details: {
+              workspacePath,
+              packId: result.pack.id,
+              skills: result.pack.skills,
+            },
+          });
+        }
+
+        const status: CommandStatus = warnings.length > 0 ? "warning" : "pass";
+        const envelope: Envelope<AppliancePackInstallData> = createEnvelope(
+          `msgcode appliance install-pack --workspace ${options.workspace} --file ${options.file}`,
+          startTime,
+          status,
+          {
+            workspacePath: result.workspacePath,
+            wpkgPath: result.wpkgPath,
+            installedPath: result.installedPath,
+            pack: {
+              id: result.pack.id,
+              name: result.pack.name,
+              version: result.pack.version,
+              enabled: result.pack.enabled,
+            },
+            counts: {
+              sites: result.sites.length,
+              skills: result.pack.skills.length,
+            },
+            files: result.files,
+          },
+          warnings,
+          errors
+        );
+        envelope.exitCode = 0;
+        console.log(JSON.stringify(envelope, null, 2));
+        process.exit(0);
+      } catch (error) {
+        errors.push({
+          code: "APPLIANCE_WPKG_INSTALL_FAILED",
+          message: "wpkg 安装失败",
+          hint: "修正包内容或注册表后重试",
+          details: {
+            workspacePath,
+            file: path.resolve(options.file),
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
+
+        const envelope: Envelope<AppliancePackInstallData | null> = createEnvelope(
+          `msgcode appliance install-pack --workspace ${options.workspace} --file ${options.file}`,
+          startTime,
+          "error",
+          null,
+          warnings,
+          errors
+        );
+        envelope.exitCode = 1;
+        console.log(JSON.stringify(envelope, null, 2));
+        process.exit(1);
+      }
     });
 
   cmd

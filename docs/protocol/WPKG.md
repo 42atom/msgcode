@@ -195,9 +195,10 @@ links:
     {
       "id": "finance",
       "title": "财税站",
-      "entry": "/packs/company-finance/web/index.html",
+      "entry": ".msgcode/packs/user/company-finance/web/index.html",
       "kind": "sidecar",
-      "description": "财税主题站"
+      "description": "财税主题站",
+      "packId": "company-finance"
     }
   ]
 }
@@ -207,6 +208,25 @@ links:
 
 - 主界面显示站点入口
 - 壳打开对应站点
+
+当前最小安装切片已落地：
+
+- `msgcode appliance install-pack --workspace <workspace> --file <pack.wpkg>`
+
+它会：
+
+1. 解压 `.wpkg`
+2. 校验 `manifest.json`
+3. 落到 `<workspace>/.msgcode/packs/user/<pack-id>/`
+4. 更新 `packs.json`
+5. 更新 `sites.json`
+
+当前明确不做：
+
+- 升级
+- 卸载
+- 签名
+- 市场/支付
 
 ## Agent 发现
 
