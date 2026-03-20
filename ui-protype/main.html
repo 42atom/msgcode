@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>msgcode Main UI Prototype</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell app-shell--main">
+      <main class="main-stage">
+        <header class="topbar">
+          <div class="topbar-main">
+            <div class="brand-block brand-block--compact">
+              <div class="brand-mark">M</div>
+              <div>
+                <p class="eyebrow">Main UI</p>
+                <h1>msgcode</h1>
+              </div>
+            </div>
+            <nav class="top-icon-nav" aria-label="主导航">
+              <button class="icon-tab is-active" data-view="projects" aria-label="项目">
+                <span class="icon-tab__glyph">◫</span>
+                <span class="icon-tab__label">项目</span>
+              </button>
+              <button class="icon-tab" data-view="base" aria-label="基座">
+                <span class="icon-tab__glyph">⌘</span>
+                <span class="icon-tab__label">基座</span>
+              </button>
+              <button class="icon-tab" data-view="neighbor" aria-label="邻居">
+                <span class="icon-tab__glyph">◎</span>
+                <span class="icon-tab__label">邻居</span>
+              </button>
+            </nav>
+          </div>
+          <div class="status-cluster">
+            <a class="icon-link" href="./settings.html" aria-label="打开设置">⚙︎</a>
+            <div class="status-pill status-pill--ok">
+              <span class="status-dot"></span>
+              Runtime 正常
+            </div>
+            <div class="status-pill">v0.3.4-prototype</div>
+          </div>
+        </header>
+
+        <section class="view view--active" data-view-panel="projects">
+          <div class="three-column">
+            <section class="panel rail-panel">
+              <div class="panel-head">
+                <p class="eyebrow">Threads</p>
+                <h3>工作区与线程</h3>
+              </div>
+              <div class="thread-tree">
+                <details class="workspace-group" open>
+                  <summary class="workspace-group__title">
+                    <span class="workspace-group__name">acme/ops</span>
+                    <a class="project-mini-link" href="./people.html" title="人物角色" aria-label="人物角色">
+                      <span class="project-mini-link__icon" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M12 12a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7Z"></path>
+                          <path d="M5.5 19.5a6.5 6.5 0 0 1 13 0"></path>
+                        </svg>
+                      </span>
+                      <span class="project-mini-link__count">1</span>
+                    </a>
+                  </summary>
+                  <div class="workspace-group__items">
+                    <article class="thread-list-item is-selected">
+                      <div class="thread-list-item__head">
+                        <strong>网页主线程</strong>
+                        <span>web</span>
+                      </div>
+                      <small>已确认：先查退款，不动预算。</small>
+                    </article>
+                    <article class="thread-list-item">
+                      <div class="thread-list-item__head">
+                        <strong>飞书线程</strong>
+                        <span>feishu</span>
+                      </div>
+                      <small>最近共识：财务站先复核退款波动。</small>
+                    </article>
+                    <article class="thread-list-item">
+                      <div class="thread-list-item__head">
+                        <strong>退款波动排查</strong>
+                        <span>sub</span>
+                      </div>
+                      <small>等待财务口径，未回主线程。</small>
+                    </article>
+                    <article class="thread-list-item">
+                      <div class="thread-list-item__head">
+                        <strong>内容复盘</strong>
+                        <span>sub</span>
+                      </div>
+                      <small>已形成摘要，当前未读取。</small>
+                    </article>
+                  </div>
+                </details>
+
+                <details class="workspace-group">
+                  <summary class="workspace-group__title">
+                    <span class="workspace-group__name">acme/finance</span>
+                  </summary>
+                </details>
+
+                <details class="workspace-group">
+                  <summary class="workspace-group__title">
+                    <span class="workspace-group__name">acme/xiaohongshu</span>
+                  </summary>
+                </details>
+              </div>
+            </section>
+
+            <section class="panel chat-panel">
+              <div class="panel-head panel-head--inline">
+                <div>
+                  <p class="eyebrow">当前线程</p>
+                  <h3>网页主线程</h3>
+                </div>
+                <div class="thread-header-meta">
+                  <span class="inline-chip">acme/ops</span>
+                  <span class="inline-chip">web</span>
+                  <span class="inline-chip inline-chip--muted">已共享共识</span>
+                </div>
+              </div>
+
+              <div class="chat-log">
+                <article class="bubble bubble--user">
+                  帮我整理今天的运营待办，并检查昨天投放数据有没有异常。
+                </article>
+                <article class="bubble bubble--agent">
+                  已读取当前线程工作状况和共享共识。飞书侧已经确认先不动预算，退款波动排查还在子线程里等待财务复核。
+                </article>
+                <article class="bubble bubble--agent bubble--muted">
+                  当前注入：本线程 Work Status / 共享共识 / recent memory
+                </article>
+              </div>
+
+              <div class="composer">
+                <textarea rows="4">继续检查退款率波动的原因，并把要看的文件列出来。</textarea>
+                <div class="composer-actions">
+                  <button class="action-button action-button--ghost">查看上下文</button>
+                  <button class="action-button">发给 Agent</button>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel observer-panel">
+              <div class="panel-head">
+                <p class="eyebrow">工作状况与可观测性</p>
+                <h3>当前项目姿态</h3>
+              </div>
+
+              <div class="observer-stack">
+                <section class="info-block">
+                  <h4>工作状况 / Work Status</h4>
+                  <p>当前目标：整理运营待办并解释退款率波动。</p>
+                  <p>主假设：退款率上升与 3 月 18 日优惠策略调整有关。</p>
+                </section>
+
+                <section class="info-block">
+                  <h4>待办</h4>
+                  <ul>
+                    <li>看昨日投放日报</li>
+                    <li>检查退款明细和客服记录</li>
+                    <li>决定是否触发财务站复核</li>
+                  </ul>
+                </section>
+
+                <section class="info-block">
+                  <h4>最近动作</h4>
+                  <ul>
+                    <li>`verify pack custom` 失败 1 次</li>
+                    <li>写入 memory 候选 2 条</li>
+                    <li>读取 `tk0281` 和 `summary.md`</li>
+                  </ul>
+                </section>
+
+                <section class="info-block">
+                  <h4>证据入口</h4>
+                  <div class="inline-tags">
+                    <span>workstate.md</span>
+                    <span>dispatch</span>
+                    <span>evidence</span>
+                    <span>session</span>
+                  </div>
+                </section>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="base">
+          <div class="split-grid">
+            <section class="panel">
+              <div class="panel-head">
+                <p class="eyebrow">基座入口</p>
+                <h3>独立 Web 站点</h3>
+              </div>
+              <div class="site-grid">
+                <article class="site-card">
+                  <h4>财税站</h4>
+                  <p>工商信息、申报状态、财务提醒。</p>
+                  <a href="#">打开 sidecar</a>
+                </article>
+                <article class="site-card">
+                  <h4>组织站</h4>
+                  <p>员工信息、角色映射、群成员识别参考。</p>
+                  <a href="#">打开 sidecar</a>
+                </article>
+                <article class="site-card">
+                  <h4>小红书运营站</h4>
+                  <p>发文记录、复盘、数据走势。</p>
+                  <a href="#">打开 sidecar</a>
+                </article>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head panel-head--inline">
+                <div>
+                  <p class="eyebrow">已安装能力包</p>
+                  <h3>WPKG 草案视图</h3>
+                </div>
+                <button class="action-button">安装新包</button>
+              </div>
+
+              <div class="pack-group">
+                <div class="pack-group__head">
+                  <p class="eyebrow">默认（内置）</p>
+                  <span>随 appliance 提供</span>
+                </div>
+                <div class="pack-list">
+                  <article class="pack-card">
+                    <div>
+                      <h4>core-memory</h4>
+                      <p>SOUL / ORG / memory 主链与最小认知文件面。</p>
+                    </div>
+                    <div class="pack-meta">
+                      <span>内置</span>
+                      <small>v1.0.0</small>
+                    </div>
+                  </article>
+
+                  <article class="pack-card">
+                    <div>
+                      <h4>doctor-runtime</h4>
+                      <p>doctor、日志、runtime 健康检查与基础诊断入口。</p>
+                    </div>
+                    <div class="pack-meta">
+                      <span>内置</span>
+                      <small>v1.0.0</small>
+                    </div>
+                  </article>
+                </div>
+              </div>
+
+              <div class="pack-group">
+                <div class="pack-group__head">
+                  <p class="eyebrow">用户安装</p>
+                  <span>后续可增购 / 可维护</span>
+                </div>
+                <div class="pack-list">
+                  <article class="pack-card">
+                    <div>
+                      <h4>company-finance.wpkg</h4>
+                      <p>财税看板 + 财务 skill + 依赖清单。</p>
+                    </div>
+                    <div class="pack-meta">
+                      <span>已安装</span>
+                      <small>v0.1.0</small>
+                    </div>
+                  </article>
+
+                  <article class="pack-card">
+                    <div>
+                      <h4>xiaohongshu-ops.wpkg</h4>
+                      <p>内容运营站 + 发布日志 + 数据复盘。</p>
+                    </div>
+                    <div class="pack-meta">
+                      <span>已安装</span>
+                      <small>v0.2.1</small>
+                    </div>
+                  </article>
+
+                  <article class="pack-card pack-card--ghost">
+                    <div>
+                      <h4>private-health.wpkg</h4>
+                      <p>私人健康管家。先留可安装位置，不实现商业链。</p>
+                    </div>
+                    <div class="pack-meta">
+                      <span>未安装</span>
+                      <small>concept</small>
+                    </div>
+                  </article>
+                </div>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="neighbor">
+          <div class="doctor-grid">
+            <section class="panel">
+              <div class="panel-head panel-head--inline">
+                <div>
+                  <p class="eyebrow">Neighbor</p>
+                  <h3>邻居模块</h3>
+                </div>
+                <label class="switch-row">
+                  <span>已开启</span>
+                  <button class="toggle-switch is-on" type="button" aria-label="切换邻居模块">
+                    <span class="toggle-switch__dot"></span>
+                  </button>
+                </label>
+              </div>
+              <div class="timeline">
+                <div class="timeline-item">
+                  <strong>ops-room-mini</strong>
+                  <span>contact · 最近通讯 09:46</span>
+                </div>
+                <div class="timeline-item">
+                  <strong>finance-mini</strong>
+                  <span>known · 最近通讯 昨天 21:12</span>
+                </div>
+                <div class="timeline-item">
+                  <strong>mom-kitchen</strong>
+                  <span>discovered · 尚未建立联系人</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head panel-head--inline">
+                <div>
+                  <p class="eyebrow">最近往来</p>
+                  <h3>聊天记录 / 审计时间线</h3>
+                </div>
+                <a class="ghost-mini" href="./neighbor.html">打开完整模块</a>
+              </div>
+              <div class="neighbor-log">
+                <article class="neighbor-entry neighbor-entry--sys">
+                  <div class="neighbor-entry__body">
+                    <div class="neighbor-entry__meta">
+                      <strong>系统</strong>
+                      <span>09:42</span>
+                    </div>
+                    <p>发现节点 `ops-room-mini`，状态进入 discovered。</p>
+                  </div>
+                </article>
+                <article class="neighbor-entry neighbor-entry--peer">
+                  <div class="neighbor-entry__avatar">运</div>
+                  <div class="neighbor-entry__body">
+                    <div class="neighbor-entry__meta">
+                      <strong>ops-room-mini</strong>
+                      <span>09:44</span>
+                    </div>
+                    <p>你好，我可以提供运营日报摘要和渠道投放复盘。</p>
+                  </div>
+                </article>
+                <article class="neighbor-entry neighbor-entry--self">
+                  <div class="neighbor-entry__body">
+                    <div class="neighbor-entry__meta">
+                      <strong>sam@acme-ops</strong>
+                      <span>09:45</span>
+                    </div>
+                    <p>请给我一份昨日小红书投放摘要。</p>
+                  </div>
+                  <div class="neighbor-entry__avatar">我</div>
+                </article>
+              </div>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./main.js"></script>
+  </body>
+</html>

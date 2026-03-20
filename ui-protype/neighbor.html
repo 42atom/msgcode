@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>msgcode Neighbor Prototype</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell app-shell--main">
+      <main class="main-stage">
+        <header class="topbar">
+          <div class="topbar-main">
+            <div class="brand-block brand-block--compact">
+              <div class="brand-mark">M</div>
+              <div>
+                <p class="eyebrow">Neighbor</p>
+                <h1>邻居</h1>
+              </div>
+            </div>
+          </div>
+          <div class="status-cluster">
+            <a class="icon-link" href="./main.html" aria-label="返回主窗口">⌂</a>
+          </div>
+        </header>
+
+        <div class="split-grid">
+          <section class="panel">
+            <div class="panel-head panel-head--inline">
+              <div>
+                <p class="eyebrow">邻居模块</p>
+                <h3>已发现节点</h3>
+              </div>
+              <label class="switch-row">
+                <span>已开启</span>
+                <button class="toggle-switch is-on" id="neighbor-toggle" type="button" aria-label="切换邻居模块">
+                  <span class="toggle-switch__dot"></span>
+                </button>
+              </label>
+            </div>
+
+            <div class="neighbor-sidebar">
+              <section class="info-block">
+                <h4>当前节点</h4>
+                <p>sam@acme-ops</p>
+                <p id="neighbor-probe-summary">进入页面后自动探测一次…</p>
+              </section>
+
+              <section class="info-block">
+                <h4>当前模式</h4>
+                <p>第一阶段：发现 / 联系人 / 异步邮箱 / 可达探测</p>
+              </section>
+
+              <aside class="neighbor-node-list">
+                <article class="neighbor-node-card is-selected" data-node-id="ops-room-mini">
+                  <div class="neighbor-node-card__head">
+                    <strong>ops-room-mini</strong>
+                    <span>contact</span>
+                  </div>
+                  <p>运营同事节点</p>
+                  <small>最近通讯 09:46 · 探测中</small>
+                </article>
+
+                <article class="neighbor-node-card" data-node-id="finance-mini">
+                  <div class="neighbor-node-card__head">
+                    <strong>finance-mini</strong>
+                    <span>known</span>
+                  </div>
+                  <p>财务摘要节点</p>
+                  <small>最近通讯 昨天 21:12 · 探测中</small>
+                </article>
+
+                <article class="neighbor-node-card" data-node-id="mom-kitchen">
+                  <div class="neighbor-node-card__head">
+                    <strong>mom-kitchen</strong>
+                    <span>discovered</span>
+                  </div>
+                  <p>家庭菜谱节点</p>
+                  <small>最近通讯 无 · 探测中</small>
+                </article>
+              </aside>
+            </div>
+          </section>
+
+          <section class="panel" id="neighbor-log-panel">
+            <div class="panel-head panel-head--inline">
+              <div>
+                <p class="eyebrow">异步邮箱</p>
+                <h3 id="neighbor-thread-title">ops-room-mini</h3>
+              </div>
+              <div class="inline-tabs">
+                <button class="pill is-selected">邮箱记录</button>
+                <button class="pill">审计记录</button>
+              </div>
+            </div>
+
+            <section class="neighbor-conversation">
+              <div class="neighbor-log" id="neighbor-log"></div>
+
+            </section>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <script src="./neighbor.js"></script>
+  </body>
+</html>

@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>msgcode Settings Prototype</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-block">
+          <div class="brand-mark">M</div>
+          <div>
+            <p class="eyebrow">Settings</p>
+            <h1>msgcode</h1>
+          </div>
+        </div>
+
+        <nav class="main-nav" aria-label="设置导航">
+          <button class="nav-item is-active" data-view="organization">
+            <span class="nav-item__title">我的资料</span>
+          </button>
+          <button class="nav-item" data-view="general">
+            <span class="nav-item__title">通用</span>
+          </button>
+          <button class="nav-item" data-view="doctor">
+            <span class="nav-item__title">诊断</span>
+          </button>
+          <details class="nav-group" open>
+            <summary class="nav-group__title">
+              <span>智能体能力配置</span>
+              <button class="nav-group__action" type="button" id="capability-probe">⚡ 连接测试</button>
+            </summary>
+            <div class="nav-group__items">
+              <button class="nav-item nav-item--sub" data-view="brain">
+                <span class="nav-item__row">
+                  <span class="nav-item__title">大脑模型</span>
+                  <span class="nav-item__meta is-hidden" data-capability-meta="brain">
+                    <span class="probe-result probe-result--ok">132ms</span>
+                    <span class="mini-tag mini-tag--api">api</span>
+                  </span>
+                </span>
+              </button>
+              <button class="nav-item nav-item--sub" data-view="vision">
+                <span class="nav-item__row">
+                  <span class="nav-item__title">视觉模型</span>
+                  <span class="nav-item__meta is-hidden" data-capability-meta="vision">
+                    <span class="probe-result probe-result--offline">offline</span>
+                    <span class="mini-tag mini-tag--local">local</span>
+                  </span>
+                </span>
+              </button>
+              <button class="nav-item nav-item--sub" data-view="tts">
+                <span class="nav-item__row">
+                  <span class="nav-item__title">语音输出</span>
+                  <span class="nav-item__meta is-hidden" data-capability-meta="tts">
+                    <span class="probe-result probe-result--ok">248ms</span>
+                    <span class="mini-tag mini-tag--api">api</span>
+                  </span>
+                </span>
+              </button>
+              <button class="nav-item nav-item--sub" data-view="asr">
+                <span class="nav-item__row">
+                  <span class="nav-item__title">听觉识别</span>
+                  <span class="nav-item__meta is-hidden" data-capability-meta="asr">
+                    <span class="probe-result probe-result--ok">94ms</span>
+                    <span class="mini-tag mini-tag--local">local</span>
+                  </span>
+                </span>
+              </button>
+              <button class="nav-item nav-item--sub" data-view="image">
+                <span class="nav-item__row">
+                  <span class="nav-item__title">画图模型</span>
+                  <span class="nav-item__meta is-hidden" data-capability-meta="image">
+                    <span class="probe-result probe-result--ok">166ms</span>
+                    <span class="mini-tag mini-tag--api">api</span>
+                  </span>
+                </span>
+              </button>
+              <button class="nav-item nav-item--sub" data-view="video">
+                <span class="nav-item__row">
+                  <span class="nav-item__title">视频模型</span>
+                  <span class="nav-item__meta is-hidden" data-capability-meta="video">
+                    <span class="probe-result probe-result--offline">offline</span>
+                    <span class="mini-tag mini-tag--api">api</span>
+                  </span>
+                </span>
+              </button>
+              <button class="nav-item nav-item--sub" data-view="music">
+                <span class="nav-item__row">
+                  <span class="nav-item__title">音乐模型</span>
+                  <span class="nav-item__meta is-hidden" data-capability-meta="music">
+                    <span class="probe-result probe-result--ok">188ms</span>
+                    <span class="mini-tag mini-tag--api">api</span>
+                  </span>
+                </span>
+              </button>
+              <button class="nav-item nav-item--sub" data-view="search">
+                <span class="nav-item__row">
+                  <span class="nav-item__title">联网搜索</span>
+                  <span class="nav-item__meta is-hidden" data-capability-meta="search">
+                    <span class="probe-result probe-result--ok">121ms</span>
+                    <span class="mini-tag mini-tag--api">api</span>
+                  </span>
+                </span>
+              </button>
+            </div>
+          </details>
+        </nav>
+      </aside>
+
+      <main class="main-stage">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Settings</p>
+            <h2 id="view-title">我的资料</h2>
+          </div>
+          <div class="status-cluster">
+            <a class="icon-link" href="./main.html" aria-label="返回主窗口">⌂</a>
+          </div>
+        </header>
+
+        <section class="view view--active" data-view-panel="organization">
+          <section class="panel">
+            <div class="panel-head">
+              <p class="eyebrow">我的资料</p>
+              <h3>我的资料</h3>
+            </div>
+            <div class="settings-sections">
+              <section class="subpanel">
+                <div class="subpanel-head">
+                  <h4>我的称呼</h4>
+                </div>
+                <form class="form-grid">
+                  <label>
+                    <span>我的称呼</span>
+                    <input type="text" value="sam" />
+                  </label>
+                </form>
+              </section>
+
+              <section class="subpanel">
+                <div class="subpanel-head">
+                  <h4>智能体全局行为准则</h4>
+                </div>
+                <form class="form-grid">
+                  <label class="form-grid__full">
+                    <span>SOUL</span>
+                    <textarea rows="6">简洁直接，不抢用户决策；优先给出可执行结果，少说空话。</textarea>
+                  </label>
+                </form>
+              </section>
+
+              <section class="subpanel">
+                <div class="subpanel-head">
+                  <h4>组织信息</h4>
+                </div>
+                <form class="form-grid">
+                  <label>
+                    <span>组织名称</span>
+                    <input type="text" value="杭州山河小记信息咨询有限公司" />
+                  </label>
+                  <label>
+                    <span>位置城市</span>
+                    <input type="text" value="杭州" />
+                  </label>
+                </form>
+              </section>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" data-view-panel="general">
+          <section class="panel">
+            <div class="panel-head">
+              <p class="eyebrow">通用</p>
+              <h3>软件设置</h3>
+            </div>
+            <div class="settings-sections">
+              <section class="subpanel">
+                <div class="subpanel-head">
+                  <h4>运行</h4>
+                </div>
+                <form class="form-grid">
+                  <label>
+                    <span>默认工作区</span>
+                    <input type="text" value="acme/ops" />
+                  </label>
+                  <label>
+                    <span>多语言</span>
+                    <select>
+                      <option selected>中文</option>
+                      <option>English</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>日志路径</span>
+                    <input type="text" value="~/.config/msgcode/log" />
+                  </label>
+                  <label>
+                    <span>启动方式</span>
+                    <select>
+                      <option selected>开机自动拉起</option>
+                      <option>手动启动</option>
+                    </select>
+                  </label>
+                </form>
+              </section>
+
+              <section class="subpanel">
+                <div class="subpanel-head subpanel-head--inline">
+                  <h4>账号连接</h4>
+                  <button class="ghost-mini">连接账号</button>
+                </div>
+                <div class="account-box">
+                  <div class="account-row">
+                    <span>状态</span>
+                    <strong>未连接</strong>
+                  </div>
+                  <div class="account-row">
+                    <span>用途</span>
+                    <small>用于将来同步技能、wpkg 与授权信息</small>
+                  </div>
+                  <div class="account-row">
+                    <span>机构绑定</span>
+                    <small>连接后可识别当前用户与 appliance 所属机构</small>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" data-view-panel="doctor">
+          <section class="panel">
+            <div class="panel-head">
+              <p class="eyebrow">Doctor</p>
+              <h3>运行时健康检查</h3>
+            </div>
+            <div class="settings-sections">
+              <section class="subpanel">
+                <div class="subpanel-head">
+                  <h4>状态</h4>
+                </div>
+                <div class="timeline">
+                  <div class="timeline-item">
+                    <strong>Runtime</strong>
+                    <span>OK · 最近一次 probe 14 秒前</span>
+                  </div>
+                  <div class="timeline-item">
+                    <strong>Launcher</strong>
+                    <span>OK · compiled entry 已就绪</span>
+                  </div>
+                  <div class="timeline-item">
+                    <strong>Workspace</strong>
+                    <span>Warning · contacts 映射仍缺 2 人</span>
+                  </div>
+                </div>
+              </section>
+
+              <section class="subpanel">
+                <div class="subpanel-head">
+                  <h4>调试入口</h4>
+                </div>
+                <div class="doctor-actions">
+                  <button class="action-button action-button--ghost">打开 msgcode.log</button>
+                  <button class="action-button action-button--ghost">打开 evidence</button>
+                  <button class="action-button action-button--ghost">运行 doctor</button>
+                </div>
+                <pre class="log-preview">[runtime] heartbeat ok
+[verify] last exitCode=1
+[workstate] read injected before summary
+[sites] registry loaded: 3 entries</pre>
+              </section>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" data-view-panel="brain">
+          <section class="panel">
+            <div class="panel-head">
+              <div>
+                <p class="eyebrow">智能体能力配置</p>
+                <h3>大脑模型</h3>
+              </div>
+            </div>
+
+            <div class="provider-detail provider-detail--single">
+              <div class="provider-header">
+                <h4>MiniMax</h4>
+                <p>当前默认文字主模型</p>
+              </div>
+              <form class="provider-form">
+                <label>
+                  <span>当前提供商</span>
+                  <select>
+                    <option selected>MiniMax</option>
+                    <option>OpenAI Compatible</option>
+                    <option>OMLX</option>
+                    <option>LM Studio</option>
+                  </select>
+                </label>
+                <label>
+                  <span>API Base URL</span>
+                  <input type="text" value="https://api.minimax.chat/v1" />
+                </label>
+                <label>
+                  <span>主模型</span>
+                  <input type="text" value="MiniMax-M2.7" />
+                </label>
+                <label>
+                  <span>备用模型</span>
+                  <input type="text" value="Qwen3.5-27B-Claude-4.6-Opus-Distilled-MLX-4bit" />
+                </label>
+                <label>
+                  <span>自动回退</span>
+                  <select>
+                    <option selected>开启</option>
+                    <option>关闭</option>
+                  </select>
+                </label>
+                <label>
+                  <span>回退条件</span>
+                  <select>
+                    <option selected>连接失败 / 超时 / 服务不可用</option>
+                    <option>仅连接失败</option>
+                    <option>仅超时</option>
+                  </select>
+                </label>
+              </form>
+              <div class="info-block">
+                <p>当前口径：云端主跑，保留本地 OMLX 作为后手。</p>
+              </div>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" data-view-panel="vision">
+          <section class="panel">
+            <div class="panel-head">
+              <p class="eyebrow">智能体能力配置</p>
+              <h3>视觉模型</h3>
+            </div>
+            <div class="provider-detail provider-detail--single">
+              <div class="provider-header">
+                <h4>OMLX</h4>
+                <p>本地图像理解与视觉识别</p>
+              </div>
+              <form class="provider-form">
+                <label>
+                  <span>当前提供商</span>
+                  <select>
+                    <option>LM Studio</option>
+                    <option selected>OMLX</option>
+                  </select>
+                </label>
+                <label>
+                  <span>本地地址</span>
+                  <input type="text" value="http://127.0.0.1:8000" />
+                </label>
+                <label>
+                  <span>视觉模型</span>
+                  <input type="text" value="Qwen3.5-4B-MLX-4bit" />
+                </label>
+              </form>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" data-view-panel="tts">
+          <section class="panel">
+            <div class="panel-head">
+              <p class="eyebrow">智能体能力配置</p>
+              <h3>语音输出</h3>
+            </div>
+            <div class="provider-detail provider-detail--single">
+              <div class="provider-header">
+                <h4>Qwen3-TTS</h4>
+                <p>本地语音输出</p>
+              </div>
+              <form class="provider-form">
+                <label>
+                  <span>当前后端</span>
+                  <select>
+                    <option selected>Qwen3-TTS</option>
+                    <option>IndexTTS</option>
+                  </select>
+                </label>
+                <label>
+                  <span>模型</span>
+                  <input type="text" value="Qwen3-TTS-12Hz-0.6B-CustomVoice-8bit" />
+                </label>
+                <label>
+                  <span>Voice</span>
+                  <input type="text" value="Serena" />
+                </label>
+                <label>
+                  <span>Speed</span>
+                  <input type="text" value="1.5" />
+                </label>
+              </form>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" data-view-panel="asr">
+          <section class="panel">
+            <div class="panel-head">
+              <p class="eyebrow">智能体能力配置</p>
+              <h3>听觉识别</h3>
+            </div>
+            <div class="provider-detail provider-detail--single">
+              <div class="provider-header">
+                <h4>Whisper MLX</h4>
+                <p>本地语音转写</p>
+              </div>
+              <form class="provider-form">
+                <label>
+                  <span>当前后端</span>
+                  <select>
+                    <option selected>mlx-whisper</option>
+                  </select>
+                </label>
+                <label>
+                  <span>模型目录</span>
+                  <input type="text" value="~/Models/whisper-large-v3-mlx" />
+                </label>
+                <label>
+                  <span>语言</span>
+                  <input type="text" value="zh" />
+                </label>
+                <label>
+                  <span>自动转写</span>
+                  <input type="text" value="已开启" />
+                </label>
+              </form>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" data-view-panel="image">
+          <section class="panel">
+            <div class="panel-head">
+              <p class="eyebrow">智能体能力配置</p>
+              <h3>画图模型</h3>
+            </div>
+            <div class="provider-detail provider-detail--single">
+              <div class="provider-header">
+                <h4>MiniMax Image</h4>
+                <p>云端图片生成</p>
+              </div>
+              <form class="provider-form">
+                <label>
+                  <span>当前提供商</span>
+                  <select>
+                    <option selected>MiniMax</option>
+                    <option>Qwen Image</option>
+                  </select>
+                </label>
+                <label>
+                  <span>接口</span>
+                  <input type="text" value="图像生成 API" />
+                </label>
+              </form>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" data-view-panel="video">
+          <section class="panel">
+            <div class="panel-head">
+              <p class="eyebrow">智能体能力配置</p>
+              <h3>视频模型</h3>
+            </div>
+            <div class="provider-detail provider-detail--single">
+              <div class="provider-header">
+                <h4>MiniMax Video</h4>
+                <p>云端视频生成</p>
+              </div>
+              <form class="provider-form">
+                <label>
+                  <span>当前提供商</span>
+                  <select>
+                    <option selected>MiniMax</option>
+                  </select>
+                </label>
+                <label>
+                  <span>接口</span>
+                  <input type="text" value="异步视频生成 API" />
+                </label>
+              </form>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" data-view-panel="music">
+          <section class="panel">
+            <div class="panel-head">
+              <p class="eyebrow">智能体能力配置</p>
+              <h3>音乐模型</h3>
+            </div>
+            <div class="provider-detail provider-detail--single">
+              <div class="provider-header">
+                <h4>MiniMax Music</h4>
+                <p>云端音乐生成</p>
+              </div>
+              <form class="provider-form">
+                <label>
+                  <span>当前提供商</span>
+                  <select>
+                    <option selected>MiniMax</option>
+                  </select>
+                </label>
+                <label>
+                  <span>接口</span>
+                  <input type="text" value="音乐生成 API" />
+                </label>
+              </form>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" data-view-panel="search">
+          <section class="panel">
+            <div class="panel-head">
+              <p class="eyebrow">智能体能力配置</p>
+              <h3>联网搜索</h3>
+            </div>
+            <div class="provider-detail provider-detail--single">
+              <div class="empty-state">
+                <div class="empty-state__icon">◌</div>
+                <h4>尚未配置提供商</h4>
+                <p>新建后才会显示联网搜索的 provider 与当前状态。</p>
+                <button class="ghost-mini">新建提供商</button>
+              </div>
+            </div>
+          </section>
+        </section>
+
+      </main>
+    </div>
+
+    <script src="./settings.js"></script>
+  </body>
+</html>
