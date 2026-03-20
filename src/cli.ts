@@ -301,6 +301,11 @@ async function loadThreadCommands() {
   program.addCommand(createThreadCommand());
 }
 
+async function loadStatusLogCommands() {
+  const { createStatusLogCommand } = await import("./cli/status-log.js");
+  program.addCommand(createStatusLogCommand());
+}
+
 // Todo 命令组（P5.7-R5-1）
 async function loadTodoCommands() {
   const { createTodoCommand } = await import("./cli/todo.js");
@@ -359,6 +364,9 @@ async function main() {
   if (top === "thread") {
     await loadThreadCommands();
   }
+  if (top === "status-log") {
+    await loadStatusLogCommands();
+  }
   if (top === "todo") {
     await loadTodoCommands();
   }
@@ -392,6 +400,7 @@ async function main() {
     await loadPreflightCommands();
     await loadRunCommands();
     await loadThreadCommands();
+    await loadStatusLogCommands();
     await loadTodoCommands();
     await loadScheduleCommands();
     await loadGenCommands();
