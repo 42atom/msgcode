@@ -10,6 +10,10 @@ import { runAllProbes } from "../probe/index.js";
 import { readWorkspacePeopleState, type WorkspaceIdentityRecord, type WorkspacePendingPerson } from "../runtime/workspace-people.js";
 import { readWorkspacePackRegistry, type WorkspacePackSurfaceData } from "../runtime/workspace-packs.js";
 import {
+  readWorkspaceNeighborSurface,
+  type WorkspaceNeighborSurfaceData,
+} from "../runtime/workspace-neighbor.js";
+import {
   readWorkspaceThreadSurface,
   type WorkspaceThreadSurfaceData,
 } from "../runtime/workspace-thread-surface.js";
@@ -393,6 +397,59 @@ export function createApplianceCommand(): Command {
         startTime,
         status,
         payload,
+        warnings,
+        errors
+      );
+      envelope.exitCode = errors.length > 0 ? 1 : 0;
+
+      console.log(JSON.stringify(envelope, null, 2));
+      process.exit(errors.length > 0 ? 1 : 0);
+    });
+
+  cmd
+    .command("neighbor")
+    .description("输出邻居模块的只读 surface JSON")
+    .requiredOption("--workspace <labelOrPath>", "Workspace 相对路径或绝对路径")
+    .option("--json", "JSON 格式输出")
+    .action(async (options: { workspace: string; json?: boolean }) => {
+      const startTime = Date.now();
+      const workspacePath = getWorkspacePath(options.workspace);
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      if (!existsSync(workspacePath)) {
+        errors.push({
+          code: "APPLIANCE_WORKSPACE_MISSING",
+          message: "工作区不存在",
+          hint: "先初始化 workspace，或传绝对路径",
+          details: { workspacePath, input: options.workspace },
+        });
+      }
+
+      const { data, warnings: surfaceWarnings } = errors.length === 0
+        ? await readWorkspaceNeighborSurface(workspacePath)
+        : {
+            data: {
+              workspacePath,
+              configPath: path.join(workspacePath, ".msgcode", "neighbor", "config.json"),
+              neighborsPath: path.join(workspacePath, ".msgcode", "neighbor", "neighbors.json"),
+              mailboxPath: path.join(workspacePath, ".msgcode", "neighbor", "mailbox.jsonl"),
+              enabled: false,
+              self: { nodeId: "", publicIdentity: "" },
+              summary: { unreadCount: 0, lastMessageAt: "", lastProbeAt: "", reachableCount: 0 },
+              neighbors: [],
+              mailbox: { updatedAt: "", entries: [] },
+            },
+            warnings: [],
+          };
+      warnings.push(...surfaceWarnings);
+
+      const status: CommandStatus = errors.length > 0 ? "error" : warnings.length > 0 ? "warning" : "pass";
+      const envelope: Envelope<WorkspaceNeighborSurfaceData> = createEnvelope(
+        `msgcode appliance neighbor --workspace ${options.workspace}`,
+        startTime,
+        status,
+        data,
         warnings,
         errors
       );

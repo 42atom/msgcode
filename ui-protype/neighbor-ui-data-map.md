@@ -22,8 +22,8 @@
   - 全局默认对外身份
   - 不从工作区人物表取
   - 建议字段：
-    - `node_id`
-    - `public_identity`
+    - `nodeId`
+    - `publicIdentity`
 
 ### 左侧：局域网可见 / 最近探测 / 未读
 
@@ -32,12 +32,11 @@
   - 第一阶段目标 / 最近可达性探针（health）
   - 第一阶段消息 / 异步邮箱
 - 数据来源建议：
-  - `health`：
-    - `last_probe_at`
-    - `last_probe_ok`
-    - `latency_ms`
-  - 邮箱：
-    - `unread_count`
+  - `summary`：
+    - `unreadCount`
+    - `lastMessageAt`
+    - `lastProbeAt`
+    - `reachableCount`
 
 注意：
 
@@ -51,13 +50,13 @@
 - 数据来源建议：
   - `neighbors.json`
   - 每项最小字段：
-    - `node_id`
-    - `display_name`
+    - `nodeId`
+    - `displayName`
     - `state` (`discovered|known|contact`)
-    - `last_message_at`
-    - `last_probe_at`
-    - `last_probe_ok`
-    - `latency_ms`
+    - `lastMessageAt`
+    - `lastProbeAt`
+    - `lastProbeOk`
+    - `latencyMs`
 
 注意：
 
@@ -79,6 +78,14 @@
   - `handshake`
   - `message`
   - `delivery`
+
+- 每条最小字段：
+  - `at`
+  - `nodeId`
+  - `direction`
+  - `type`
+  - `summary`
+  - `unread`
 
 第二阶段才长成：
 
