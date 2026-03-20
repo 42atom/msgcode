@@ -65,7 +65,8 @@ describe("appliance hall contract", () => {
     expect(payload.data.org.taxRegion).toBe("新加坡");
     expect(payload.data.org.uscc).toBe("91350211MA12345678");
     expect(Array.isArray(payload.data.runtime.categories)).toBe(true);
-    expect(Array.isArray(payload.data.packs)).toBe(true);
+    expect(Array.isArray(payload.data.packs.builtin)).toBe(true);
+    expect(Array.isArray(payload.data.packs.user)).toBe(true);
     expect(Array.isArray(payload.data.sites)).toBe(true);
   });
 });

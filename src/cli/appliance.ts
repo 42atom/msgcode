@@ -8,6 +8,7 @@ import type { Diagnostic, Envelope, CommandStatus } from "../memory/types.js";
 import { getVersionInfo } from "../version.js";
 import { runAllProbes } from "../probe/index.js";
 import { readWorkspacePeopleState, type WorkspaceIdentityRecord, type WorkspacePendingPerson } from "../runtime/workspace-people.js";
+import { readWorkspacePackRegistry, type WorkspacePackSurfaceData } from "../runtime/workspace-packs.js";
 import {
   readWorkspaceThreadSurface,
   type WorkspaceThreadSurfaceData,
@@ -40,7 +41,7 @@ interface ApplianceHallData {
       message: string;
     }>;
   };
-  packs: unknown[];
+  packs: WorkspacePackSurfaceData;
   sites: unknown[];
 }
 
@@ -238,7 +239,7 @@ export function createApplianceCommand(): Command {
               summary: { status: "error", warnings: 0, errors: 1 },
               categories: [],
             },
-            packs: [],
+            packs: { builtin: [], user: [] },
             sites: [],
           },
           warnings,
@@ -251,6 +252,8 @@ export function createApplianceCommand(): Command {
 
       const { org, warnings: orgWarnings } = await readOrgCard(workspacePath);
       warnings.push(...orgWarnings);
+      const { data: packRegistry, warnings: packWarnings } = await readWorkspacePackRegistry(workspacePath);
+      warnings.push(...packWarnings);
 
       const report = await runAllProbes();
       const versionInfo = getVersionInfo();
@@ -273,7 +276,7 @@ export function createApplianceCommand(): Command {
             message: category.probes[0]?.message ?? "",
           })),
         },
-        packs: [],
+        packs: packRegistry,
         sites: [],
       };
 

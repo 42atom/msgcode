@@ -170,6 +170,21 @@ links:
 1. `builtin`
 2. `user`
 
+但 `hall.packs` 当前只暴露最小显示字段：
+
+1. `id`
+2. `name`
+3. `version`
+4. `enabled`
+
+不要把注册表里的：
+
+- `sourcePath`
+- `commercial`
+- `licenseType`
+
+直接带进主界面。
+
 ### sites.json
 
 建议沿用现有 `appliance sites` 合同：
