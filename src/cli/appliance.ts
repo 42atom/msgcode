@@ -8,6 +8,10 @@ import type { Diagnostic, Envelope, CommandStatus } from "../memory/types.js";
 import { getVersionInfo } from "../version.js";
 import { runAllProbes } from "../probe/index.js";
 import { readWorkspacePeopleState, type WorkspaceIdentityRecord, type WorkspacePendingPerson } from "../runtime/workspace-people.js";
+import {
+  readWorkspaceThreadSurface,
+  type WorkspaceThreadSurfaceData,
+} from "../runtime/workspace-thread-surface.js";
 
 interface OrgCard {
   path: string;
@@ -386,6 +390,56 @@ export function createApplianceCommand(): Command {
         startTime,
         status,
         payload,
+        warnings,
+        errors
+      );
+      envelope.exitCode = errors.length > 0 ? 1 : 0;
+
+      console.log(JSON.stringify(envelope, null, 2));
+      process.exit(errors.length > 0 ? 1 : 0);
+    });
+
+  cmd
+    .command("threads")
+    .description("输出主界面线程主视图 JSON")
+    .requiredOption("--workspace <labelOrPath>", "Workspace 相对路径或绝对路径")
+    .option("--json", "JSON 格式输出")
+    .action(async (options: { workspace: string; json?: boolean }) => {
+      const startTime = Date.now();
+      const workspacePath = getWorkspacePath(options.workspace);
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      if (!existsSync(workspacePath)) {
+        errors.push({
+          code: "APPLIANCE_WORKSPACE_MISSING",
+          message: "工作区不存在",
+          hint: "先初始化 workspace，或传绝对路径",
+          details: { workspacePath, input: options.workspace },
+        });
+      }
+
+      const { data, warnings: surfaceWarnings } = errors.length === 0
+        ? await readWorkspaceThreadSurface(workspacePath)
+        : {
+            data: {
+              workspacePath,
+              currentThreadId: "",
+              threads: [],
+              currentThread: null,
+              workStatus: { updatedAt: "", currentThreadEntries: [], recentEntries: [] },
+              schedules: [],
+            },
+            warnings: [],
+          };
+      warnings.push(...surfaceWarnings);
+
+      const status: CommandStatus = errors.length > 0 ? "error" : warnings.length > 0 ? "warning" : "pass";
+      const envelope: Envelope<WorkspaceThreadSurfaceData> = createEnvelope(
+        `msgcode appliance threads --workspace ${options.workspace}`,
+        startTime,
+        status,
+        data,
         warnings,
         errors
       );
