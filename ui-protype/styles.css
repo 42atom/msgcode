@@ -1042,6 +1042,13 @@ textarea {
   gap: 6px;
 }
 
+.thread-section__hint {
+  margin: -4px 2px 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
 .workspace-group {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
@@ -1057,6 +1064,13 @@ textarea {
   gap: 8px;
   padding: 10px 12px;
   cursor: pointer;
+}
+
+.pack-footnote {
+  margin: 8px 2px 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.35;
 }
 
 .workspace-group__title::-webkit-details-marker {

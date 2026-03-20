@@ -144,7 +144,8 @@ links:
 
 ```json
 {
-  "packs": [
+  "builtin": [],
+  "user": [
     {
       "id": "company-finance",
       "name": "公司财务包",
@@ -153,7 +154,7 @@ links:
       "enabled": true,
       "commercial": true,
       "licenseType": "paid",
-      "sourcePath": ".msgcode/packs/company-finance"
+      "sourcePath": ".msgcode/packs/user/company-finance"
     }
   ]
 }
@@ -164,10 +165,10 @@ links:
 - 主界面显示已安装 packs
 - 未来壳读取 pack 状态
 
-主界面展示时建议至少分两组：
+主界面展示时直接按这两组读取：
 
-1. 默认（内置）
-2. 用户安装
+1. `builtin`
+2. `user`
 
 ### sites.json
 
