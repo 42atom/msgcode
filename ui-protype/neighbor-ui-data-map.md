@@ -2,7 +2,7 @@
 
 对应计划：
 
-- [/Users/admin/GitProjects/msgcode/docs/plan/pl0291.tdo.agent.neighbor-coworker-optional-module.md](/Users/admin/GitProjects/msgcode/docs/plan/pl0291.tdo.agent.neighbor-coworker-optional-module.md)
+- [/Users/admin/GitProjects/msgcode/docs/plan/pl0291.pss.agent.neighbor-coworker-optional-module.md](/Users/admin/GitProjects/msgcode/docs/plan/pl0291.pss.agent.neighbor-coworker-optional-module.md)
 
 ## 页面块与数据来源
 
