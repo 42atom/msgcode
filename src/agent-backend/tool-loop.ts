@@ -963,7 +963,24 @@ function serializeToolResultForConversation(result: unknown): string {
     if (result && typeof result === "object") {
         const previewText = (result as { previewText?: unknown }).previewText;
         if (typeof previewText === "string" && previewText.trim()) {
-            return clipText(previewText.trim(), TOOL_RESULT_PREVIEW_MAX_CHARS);
+            const asObj = result as Record<string, unknown>;
+            const lines = [previewText.trim()];
+            const errorCode = typeof asObj.errorCode === "string" ? asObj.errorCode.trim() : "";
+            const exitCode = typeof asObj.exitCode === "number" || asObj.exitCode === null
+                ? String(asObj.exitCode)
+                : "";
+            const fullOutputPath = typeof asObj.fullOutputPath === "string" ? asObj.fullOutputPath.trim() : "";
+
+            if (errorCode && !lines.some((line) => line.includes("[errorCode]"))) {
+                lines.push(`[errorCode] ${errorCode}`);
+            }
+            if (exitCode && !lines.some((line) => line.includes("[exitCode]"))) {
+                lines.push(`[exitCode] ${exitCode}`);
+            }
+            if (fullOutputPath && !lines.some((line) => line.includes("[fullOutputPath]"))) {
+                lines.push(`[fullOutputPath] ${fullOutputPath}`);
+            }
+            return clipText(lines.join("\n"), TOOL_RESULT_PREVIEW_MAX_CHARS);
         }
         const asObj = result as Record<string, unknown>;
         const lines = ["[tool_result] preview unavailable"];

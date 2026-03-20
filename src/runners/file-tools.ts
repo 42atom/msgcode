@@ -18,7 +18,7 @@ const READ_FILE_INLINE_BYTE_LIMIT = 64 * 1024;
 const READ_FILE_PREVIEW_BYTES = 16 * 1024;
 const READ_FILE_TAIL_PREVIEW_BYTES = 4096;
 
-type FileRunnerErrorCode = "TOOL_NOT_ALLOWED" | "TOOL_EXEC_FAILED";
+type FileRunnerErrorCode = "TOOL_NOT_ALLOWED" | "TOOL_EXEC_FAILED" | (string & {});
 
 export interface EditFileEdit {
   oldText: string;
@@ -298,6 +298,9 @@ export async function runReadFileTool(
     }
 
     const nodeError = error as NodeJS.ErrnoException;
+    const nativeCode = typeof nodeError?.code === "string" && nodeError.code.trim()
+      ? nodeError.code.trim()
+      : "TOOL_EXEC_FAILED";
     let message = nodeError?.message || String(error);
     if (nodeError?.code === "ENOENT") {
       message = `文件不存在：${filePath}`;
@@ -307,7 +310,7 @@ export async function runReadFileTool(
 
     return {
       ok: false,
-      code: "TOOL_EXEC_FAILED",
+      code: nativeCode,
       message,
       previewText: message,
     };

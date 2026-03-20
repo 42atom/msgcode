@@ -132,7 +132,7 @@ export interface ToolContext {
  * - TOOL_EXEC_FAILED: 工具执行失败（非零退出码/异常抛出）
  * - EMPTY_DISPLAY_OUTPUT: 空展示输出失败（执行成功但无有效输出）
  */
-export type ToolErrorCode =
+type KnownToolErrorCode =
   | "MODEL_PROTOCOL_FAILED"   // 模型协议层失败
   | "TOOL_EXEC_FAILED"        // 工具执行失败
   | "EMPTY_DISPLAY_OUTPUT"    // 空展示输出失败
@@ -140,6 +140,8 @@ export type ToolErrorCode =
   | "TOOL_CONFIRM_REQUIRED"   // 需要用户确认
   | "TOOL_TIMEOUT"            // 工具超时
   | "TOOL_BAD_ARGS";          // 工具参数错误
+
+export type ToolErrorCode = KnownToolErrorCode | (string & {});
 
 export interface ToolResult<TTool extends ToolName = ToolName> {
   /** 成功与否 */
