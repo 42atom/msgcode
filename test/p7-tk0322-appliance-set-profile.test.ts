@@ -1,0 +1,209 @@
+import { afterEach, describe, expect, it } from "bun:test";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
+const execFileAsync = promisify(execFile);
+
+async function makeTempRoot(): Promise<string> {
+  return fs.mkdtemp(path.join(os.tmpdir(), "msgcode-appliance-set-profile-"));
+}
+
+describe("appliance set-profile contract", () => {
+  const tempRoots: string[] = [];
+
+  afterEach(async () => {
+    await Promise.all(tempRoots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })));
+  });
+
+  it("应通过正式 CLI 写入我的资料三份真相源", async () => {
+    const root = await makeTempRoot();
+    tempRoots.push(root);
+    const homeRoot = path.join(root, "home");
+    const workspaceRoot = path.join(root, "workspaces");
+    const workspacePath = path.join(workspaceRoot, "family");
+    await fs.mkdir(path.join(homeRoot, ".config", "msgcode"), { recursive: true });
+    await fs.mkdir(path.join(workspacePath, ".msgcode"), { recursive: true });
+
+    await fs.writeFile(path.join(workspacePath, ".msgcode", "config.json"), JSON.stringify({}, null, 2), "utf8");
+    await fs.writeFile(path.join(workspacePath, ".msgcode", "ORG.md"), "# 机构信息\n\n- 名称：旧组织\n- 位置城市：旧城市\n", "utf8");
+    await fs.writeFile(path.join(workspacePath, ".msgcode", "SOUL.md"), "# SOUL\n\n- 风格：旧风格\n", "utf8");
+
+    const { stdout } = await execFileAsync("node", [
+      "--import",
+      "tsx",
+      "src/cli.ts",
+      "appliance",
+      "set-profile",
+      "--workspace",
+      "family",
+      "--name",
+      "sam",
+      "--organization-name",
+      "Family Workspace",
+      "--city",
+      "Singapore",
+      "--soul",
+      "# SOUL\n\n- 风格：简洁、直接、可执行",
+      "--json",
+    ], {
+      cwd: "/Users/admin/GitProjects/msgcode",
+      env: {
+        ...process.env,
+        HOME: homeRoot,
+        WORKSPACE_ROOT: workspaceRoot,
+      },
+    });
+
+    const payload = JSON.parse(stdout);
+    expect(payload.exitCode).toBe(0);
+    expect(payload.status).toBe("pass");
+    expect(payload.data.changedFiles).toContain(path.join(workspacePath, ".msgcode", "config.json"));
+    expect(payload.data.changedFiles).toContain(path.join(workspacePath, ".msgcode", "ORG.md"));
+    expect(payload.data.changedFiles).toContain(path.join(workspacePath, ".msgcode", "SOUL.md"));
+    expect(payload.data.profile.profile.name).toBe("sam");
+    expect(payload.data.profile.organization.name).toBe("Family Workspace");
+    expect(payload.data.profile.organization.city).toBe("Singapore");
+    expect(payload.data.profile.soul.content).toContain("简洁、直接、可执行");
+
+    const config = JSON.parse(await fs.readFile(path.join(workspacePath, ".msgcode", "config.json"), "utf8"));
+    const orgContent = await fs.readFile(path.join(workspacePath, ".msgcode", "ORG.md"), "utf8");
+    const soulContent = await fs.readFile(path.join(workspacePath, ".msgcode", "SOUL.md"), "utf8");
+
+    expect(config["profile.name"]).toBe("sam");
+    expect(orgContent).toContain("- 名称：Family Workspace");
+    expect(orgContent).toContain("- 位置城市：Singapore");
+    expect(soulContent).toContain("简洁、直接、可执行");
+  });
+
+  it("部分字段更新时不应顺手覆盖其他真相文件", async () => {
+    const root = await makeTempRoot();
+    tempRoots.push(root);
+    const homeRoot = path.join(root, "home");
+    const workspaceRoot = path.join(root, "workspaces");
+    const workspacePath = path.join(workspaceRoot, "family");
+    await fs.mkdir(path.join(homeRoot, ".config", "msgcode"), { recursive: true });
+    await fs.mkdir(path.join(workspacePath, ".msgcode"), { recursive: true });
+
+    await fs.writeFile(path.join(workspacePath, ".msgcode", "config.json"), JSON.stringify({ "profile.name": "old" }, null, 2), "utf8");
+    await fs.writeFile(path.join(workspacePath, ".msgcode", "ORG.md"), "# 机构信息\n\n- 名称：旧组织\n- 位置城市：旧城市\n", "utf8");
+    await fs.writeFile(path.join(workspacePath, ".msgcode", "SOUL.md"), "# SOUL\n\n- 风格：旧风格\n", "utf8");
+
+    const { stdout } = await execFileAsync("node", [
+      "--import",
+      "tsx",
+      "src/cli.ts",
+      "appliance",
+      "set-profile",
+      "--workspace",
+      "family",
+      "--name",
+      "new-name",
+      "--json",
+    ], {
+      cwd: "/Users/admin/GitProjects/msgcode",
+      env: {
+        ...process.env,
+        HOME: homeRoot,
+        WORKSPACE_ROOT: workspaceRoot,
+      },
+    });
+
+    const payload = JSON.parse(stdout);
+    expect(payload.exitCode).toBe(0);
+    expect(payload.data.changedFiles).toEqual([path.join(workspacePath, ".msgcode", "config.json")]);
+    expect(payload.data.profile.profile.name).toBe("new-name");
+
+    const orgContent = await fs.readFile(path.join(workspacePath, ".msgcode", "ORG.md"), "utf8");
+    const soulContent = await fs.readFile(path.join(workspacePath, ".msgcode", "SOUL.md"), "utf8");
+    expect(orgContent).toContain("- 名称：旧组织");
+    expect(soulContent).toContain("旧风格");
+  });
+
+  it("没有 mutation 参数时应返回真实错误", async () => {
+    const root = await makeTempRoot();
+    tempRoots.push(root);
+    const homeRoot = path.join(root, "home");
+    const workspaceRoot = path.join(root, "workspaces");
+    const workspacePath = path.join(workspaceRoot, "family");
+    await fs.mkdir(path.join(homeRoot, ".config", "msgcode"), { recursive: true });
+    await fs.mkdir(path.join(workspacePath, ".msgcode"), { recursive: true });
+
+    const { stdout } = await execFileAsync("node", [
+      "--import",
+      "tsx",
+      "src/cli.ts",
+      "appliance",
+      "set-profile",
+      "--workspace",
+      "family",
+      "--json",
+    ], {
+      cwd: "/Users/admin/GitProjects/msgcode",
+      env: {
+        ...process.env,
+        HOME: homeRoot,
+        WORKSPACE_ROOT: workspaceRoot,
+      },
+    }).catch((error) => error);
+
+    const payload = JSON.parse(stdout);
+    expect(payload.exitCode).toBe(1);
+    expect(payload.status).toBe("error");
+    expect(payload.errors.some((item: { code?: string }) => item.code === "APPLIANCE_PROFILE_MUTATION_EMPTY")).toBe(true);
+  });
+
+  it("中途文件写失败时应诚实返回已落盘 changedFiles", async () => {
+    const root = await makeTempRoot();
+    tempRoots.push(root);
+    const homeRoot = path.join(root, "home");
+    const workspaceRoot = path.join(root, "workspaces");
+    const workspacePath = path.join(workspaceRoot, "family");
+    await fs.mkdir(path.join(homeRoot, ".config", "msgcode"), { recursive: true });
+    await fs.mkdir(path.join(workspacePath, ".msgcode", "SOUL.md"), { recursive: true });
+
+    await fs.writeFile(path.join(workspacePath, ".msgcode", "config.json"), JSON.stringify({}, null, 2), "utf8");
+    await fs.writeFile(path.join(workspacePath, ".msgcode", "ORG.md"), "# 机构信息\n\n- 名称：旧组织\n- 位置城市：旧城市\n", "utf8");
+
+    const { stdout } = await execFileAsync("node", [
+      "--import",
+      "tsx",
+      "src/cli.ts",
+      "appliance",
+      "set-profile",
+      "--workspace",
+      "family",
+      "--name",
+      "sam",
+      "--organization-name",
+      "Family Workspace",
+      "--city",
+      "Singapore",
+      "--soul",
+      "# SOUL\n\n- 风格：简洁、直接、可执行",
+      "--json",
+    ], {
+      cwd: "/Users/admin/GitProjects/msgcode",
+      env: {
+        ...process.env,
+        HOME: homeRoot,
+        WORKSPACE_ROOT: workspaceRoot,
+      },
+    }).catch((error) => error);
+
+    const payload = JSON.parse(stdout);
+    expect(payload.exitCode).toBe(1);
+    expect(payload.status).toBe("error");
+    expect(payload.data.changedFiles).toContain(path.join(workspacePath, ".msgcode", "config.json"));
+    expect(payload.data.changedFiles).toContain(path.join(workspacePath, ".msgcode", "ORG.md"));
+    expect(payload.errors.some((item: { code?: string }) => item.code === "APPLIANCE_PROFILE_MUTATION_FAILED")).toBe(true);
+    expect(payload.errors[0].details.failedFile).toBe(path.join(workspacePath, ".msgcode", "SOUL.md"));
+
+    const config = JSON.parse(await fs.readFile(path.join(workspacePath, ".msgcode", "config.json"), "utf8"));
+    const orgContent = await fs.readFile(path.join(workspacePath, ".msgcode", "ORG.md"), "utf8");
+    expect(config["profile.name"]).toBe("sam");
+    expect(orgContent).toContain("- 名称：Family Workspace");
+  });
+});

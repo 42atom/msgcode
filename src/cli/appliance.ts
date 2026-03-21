@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { Command } from "commander";
@@ -12,6 +12,7 @@ import { readWorkspacePackRegistry, type WorkspacePackSurfaceData } from "../run
 import { readWorkspaceProfileSurface, type WorkspaceProfileSurfaceData } from "../runtime/workspace-profile.js";
 import { readWorkspaceGeneralSurface, type WorkspaceGeneralSurfaceData } from "../runtime/workspace-general.js";
 import { readWorkspaceCapabilitySurface, type WorkspaceCapabilitySurfaceData } from "../runtime/workspace-capabilities.js";
+import { saveWorkspaceConfig } from "../config/workspace.js";
 import {
   readWorkspaceNeighborSurface,
   type WorkspaceNeighborSurfaceData,
@@ -80,6 +81,24 @@ interface ApplianceSettingsData {
   profile: ApplianceSurfaceSection<ApplianceProfileData>;
   general: ApplianceSurfaceSection<ApplianceGeneralData>;
   capabilities: ApplianceSurfaceSection<ApplianceCapabilityData>;
+}
+
+interface ApplianceProfileMutationData {
+  workspacePath: string;
+  changedFiles: string[];
+  profile: ApplianceProfileData;
+}
+
+class ApplianceProfileMutationError extends Error {
+  changedFiles: string[];
+  failedFile: string;
+
+  constructor(message: string, changedFiles: string[], failedFile: string) {
+    super(message);
+    this.name = "ApplianceProfileMutationError";
+    this.changedFiles = changedFiles;
+    this.failedFile = failedFile;
+  }
 }
 
 interface ApplianceRuntimeSurface {
@@ -239,6 +258,115 @@ function emptyCapabilityData(workspacePath: string): ApplianceCapabilityData {
   };
 }
 
+function defaultOrgContent(): string {
+  return [
+    "# 机构信息",
+    "",
+    "- 名称：",
+    "- 位置城市：",
+    "",
+  ].join("\n");
+}
+
+function normalizeLineInput(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  return value.trim();
+}
+
+function normalizeMultilineInput(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  return value.replace(/\r\n/g, "\n").trimEnd();
+}
+
+function upsertMarkdownField(content: string, label: string, value: string): string {
+  const line = `- ${label}：${value}`;
+  const pattern = new RegExp(`^- ${label}：.*$`, "m");
+  if (pattern.test(content)) {
+    return content.replace(pattern, line);
+  }
+
+  const trimmed = content.trimEnd();
+  if (!trimmed) {
+    return `${line}\n`;
+  }
+  return `${trimmed}\n${line}\n`;
+}
+
+async function saveWorkspaceProfileSurface(args: {
+  workspacePath: string;
+  profileName?: string;
+  organizationName?: string;
+  city?: string;
+  soul?: string;
+}): Promise<{ data: ApplianceProfileMutationData; warnings: Diagnostic[] }> {
+  const changedFiles: string[] = [];
+  const msgcodeDir = path.join(args.workspacePath, ".msgcode");
+  const configPath = path.join(msgcodeDir, "config.json");
+  const orgPath = path.join(msgcodeDir, "ORG.md");
+  const soulPath = path.join(msgcodeDir, "SOUL.md");
+
+  await mkdir(msgcodeDir, { recursive: true });
+
+  if (args.profileName !== undefined) {
+    try {
+      await saveWorkspaceConfig(args.workspacePath, { "profile.name": args.profileName });
+      changedFiles.push(configPath);
+    } catch (error) {
+      throw new ApplianceProfileMutationError(
+        error instanceof Error ? error.message : String(error),
+        changedFiles,
+        configPath,
+      );
+    }
+  }
+
+  if (args.organizationName !== undefined || args.city !== undefined) {
+    try {
+      const existingOrg = existsSync(orgPath) ? await readFile(orgPath, "utf8") : defaultOrgContent();
+      let nextOrg = existingOrg;
+      if (args.organizationName !== undefined) {
+        nextOrg = upsertMarkdownField(nextOrg, "名称", args.organizationName);
+      }
+      if (args.city !== undefined) {
+        nextOrg = upsertMarkdownField(nextOrg, "位置城市", args.city);
+      }
+      if (!nextOrg.endsWith("\n")) nextOrg = `${nextOrg}\n`;
+      await writeFile(orgPath, nextOrg, "utf8");
+      changedFiles.push(orgPath);
+    } catch (error) {
+      throw new ApplianceProfileMutationError(
+        error instanceof Error ? error.message : String(error),
+        changedFiles,
+        orgPath,
+      );
+    }
+  }
+
+  if (args.soul !== undefined) {
+    try {
+      const nextSoul = args.soul.endsWith("\n") ? args.soul : `${args.soul}\n`;
+      await writeFile(soulPath, nextSoul, "utf8");
+      changedFiles.push(soulPath);
+    } catch (error) {
+      throw new ApplianceProfileMutationError(
+        error instanceof Error ? error.message : String(error),
+        changedFiles,
+        soulPath,
+      );
+    }
+  }
+
+  const { data: profile, warnings } = await readWorkspaceProfileSurface(args.workspacePath);
+  return {
+    data: {
+      workspacePath: args.workspacePath,
+      changedFiles,
+      profile,
+    },
+    warnings,
+  };
+}
+
 function parseOrgField(content: string, label: string): string {
   const match = content.match(new RegExp(`^- ${label}：(.+)$`, "m"));
   return match?.[1]?.trim() ?? "";
@@ -387,6 +515,118 @@ async function readSitesRegistry(workspacePath: string): Promise<{ sites: Applia
 export function createApplianceCommand(): Command {
   const cmd = new Command("appliance");
   cmd.description("Appliance 主机壳合同（门厅 JSON）");
+
+  cmd
+    .command("set-profile")
+    .description("写入设置页“我的资料”真相源")
+    .requiredOption("--workspace <labelOrPath>", "Workspace 相对路径或绝对路径")
+    .option("--name <value>", "我的称呼")
+    .option("--organization-name <value>", "组织名称")
+    .option("--city <value>", "位置城市")
+    .option("--soul <value>", "SOUL 全量文本")
+    .option("--json", "JSON 格式输出")
+    .action(async (options: {
+      workspace: string;
+      name?: string;
+      organizationName?: string;
+      city?: string;
+      soul?: string;
+      json?: boolean;
+    }) => {
+      const startTime = Date.now();
+      const workspacePath = getWorkspacePath(options.workspace);
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      if (!existsSync(workspacePath)) {
+        errors.push(buildMissingWorkspaceError(workspacePath, options.workspace));
+      }
+
+      const profileName = normalizeLineInput(options.name);
+      const organizationName = normalizeLineInput(options.organizationName);
+      const city = normalizeLineInput(options.city);
+      const soul = normalizeMultilineInput(options.soul);
+      const hasMutation = profileName !== undefined || organizationName !== undefined || city !== undefined || soul !== undefined;
+
+      if (!hasMutation) {
+        errors.push({
+          code: "APPLIANCE_PROFILE_MUTATION_EMPTY",
+          message: "没有提供任何可写字段",
+          hint: "至少传一个：--name / --organization-name / --city / --soul",
+          details: { workspacePath },
+        });
+      }
+
+      if (errors.length > 0) {
+        const envelope: Envelope<ApplianceProfileMutationData | null> = createEnvelope(
+          `msgcode appliance set-profile --workspace ${options.workspace}`,
+          startTime,
+          "error",
+          null,
+          warnings,
+          errors
+        );
+        envelope.exitCode = 1;
+        console.log(JSON.stringify(envelope, null, 2));
+        process.exit(1);
+      }
+
+      try {
+        const { data, warnings: surfaceWarnings } = await saveWorkspaceProfileSurface({
+          workspacePath,
+          profileName,
+          organizationName,
+          city,
+          soul,
+        });
+        warnings.push(...surfaceWarnings);
+
+        const status: CommandStatus = warnings.length > 0 ? "warning" : "pass";
+        const envelope: Envelope<ApplianceProfileMutationData> = createEnvelope(
+          `msgcode appliance set-profile --workspace ${options.workspace}`,
+          startTime,
+          status,
+          data,
+          warnings,
+          errors
+        );
+        envelope.exitCode = 0;
+
+        console.log(JSON.stringify(envelope, null, 2));
+        process.exit(0);
+      } catch (error) {
+        const mutationError = error instanceof ApplianceProfileMutationError ? error : null;
+        const currentProfile = await readWorkspaceProfileSurface(workspacePath);
+        warnings.push(...currentProfile.warnings);
+        errors.push({
+          code: "APPLIANCE_PROFILE_MUTATION_FAILED",
+          message: "我的资料写入失败",
+          hint: "检查 failedFile 和 changedFiles，确认哪些真相文件已落盘",
+          details: {
+            workspacePath,
+            failedFile: mutationError?.failedFile ?? "",
+            changedFiles: mutationError?.changedFiles ?? [],
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
+
+        const envelope: Envelope<ApplianceProfileMutationData> = createEnvelope(
+          `msgcode appliance set-profile --workspace ${options.workspace}`,
+          startTime,
+          "error",
+          {
+            workspacePath,
+            changedFiles: mutationError?.changedFiles ?? [],
+            profile: currentProfile.data,
+          },
+          warnings,
+          errors
+        );
+        envelope.exitCode = 1;
+        console.log(JSON.stringify(envelope, null, 2));
+        process.exit(1);
+      }
+    });
 
   cmd
     .command("settings")
