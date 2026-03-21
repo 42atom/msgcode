@@ -17,11 +17,12 @@
  * - 新增：model.executor、model.responder
  */
 
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import type { ToolName, ToolingMode } from "../tools/types.js";
 import { GHOST_TOOL_NAMES } from "../runners/ghost-mcp-contract.js";
+import { atomicWriteFile } from "../runtime/fs-atomic.js";
 
 type LegacyAgentProviderAlias = "lmstudio" | "llama" | "claude";
 type StoredAgentProvider = AgentProvider | LegacyAgentProviderAlias;
@@ -315,8 +316,8 @@ export async function saveWorkspaceConfig(
     await mkdir(configDir, { recursive: true });
   }
 
-  // 读取现有配置（如果存在）
-  const existing = await loadWorkspaceConfig(projectDir);
+  // 写面必须严格读取；坏 config.json 不能静默当空对象覆盖回去
+  const existing = await readWorkspaceConfigForMutation(projectDir);
 
   // 合并配置
   const merged: WorkspaceConfig = {
@@ -325,7 +326,25 @@ export async function saveWorkspaceConfig(
   };
 
   // 写入配置文件
-  await writeFile(configPath, JSON.stringify(merged, null, 2), "utf-8");
+  await atomicWriteFile(configPath, JSON.stringify(merged, null, 2));
+}
+
+async function readWorkspaceConfigForMutation(projectDir: string): Promise<WorkspaceConfig> {
+  const configPath = getConfigPath(projectDir);
+  if (!existsSync(configPath)) {
+    return {};
+  }
+
+  const content = await readFile(configPath, "utf-8");
+  try {
+    const parsed = JSON.parse(content);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("workspace config.json 不是对象");
+    }
+    return parsed as WorkspaceConfig;
+  } catch (error) {
+    throw new Error(`workspace config.json 解析失败: ${error instanceof Error ? error.message : String(error)}`);
+  }
 }
 
 export async function saveCurrentSessionContext(

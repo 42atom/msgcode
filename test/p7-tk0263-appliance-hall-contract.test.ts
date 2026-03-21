@@ -85,4 +85,50 @@ describe("appliance hall contract", () => {
     expect(payload.data.sites).toHaveLength(1);
     expect(payload.data.sites[0].id).toBe("family-calendar");
   });
+
+  it("应兼容新 ORG 字段位置城市，且不再要求统一社会信用代码", async () => {
+    const root = await makeTempRoot();
+    tempRoots.push(root);
+    const homeRoot = path.join(root, "home");
+    const workspaceRoot = path.join(root, "workspaces");
+    const workspacePath = path.join(workspaceRoot, "family");
+    await fs.mkdir(path.join(homeRoot, ".config", "msgcode"), { recursive: true });
+    await fs.mkdir(path.join(workspacePath, ".msgcode"), { recursive: true });
+    await fs.writeFile(
+      path.join(workspacePath, ".msgcode", "ORG.md"),
+      [
+        "# 机构信息",
+        "",
+        "- 名称：Family Workspace",
+        "- 位置城市：Singapore",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+
+    const { stdout } = await execFileAsync("node", [
+      "--import",
+      "tsx",
+      "src/cli.ts",
+      "appliance",
+      "hall",
+      "--workspace",
+      "family",
+      "--json",
+    ], {
+      cwd: "/Users/admin/GitProjects/msgcode",
+      env: {
+        ...process.env,
+        HOME: homeRoot,
+        WORKSPACE_ROOT: workspaceRoot,
+      },
+    });
+
+    const payload = JSON.parse(stdout);
+    expect(payload.exitCode).toBe(0);
+    expect(payload.data.org.name).toBe("Family Workspace");
+    expect(payload.data.org.taxRegion).toBe("Singapore");
+    expect(payload.data.org.uscc).toBe("");
+    expect(payload.warnings.some((item: { code?: string }) => item.code === "APPLIANCE_ORG_INCOMPLETE")).toBe(false);
+  });
 });

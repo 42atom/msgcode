@@ -128,4 +128,51 @@ describe("appliance people-save contract", () => {
     const csv = await fs.readFile(csvPath, "utf8");
     expect(csv).toContain("feishu,feishu:oc_family,ou_sam,sam,owner,新备注,2026-03-10T14:19:49Z,");
   });
+
+  it("notes 带换行时应收成单行，避免写烂 csv", async () => {
+    const root = await makeTempRoot();
+    tempRoots.push(root);
+    const homeRoot = path.join(root, "home");
+    const workspaceRoot = path.join(root, "workspaces");
+    const workspacePath = path.join(workspaceRoot, "family");
+    await fs.mkdir(path.join(homeRoot, ".config", "msgcode"), { recursive: true });
+    await fs.mkdir(path.join(workspacePath, ".msgcode"), { recursive: true });
+
+    const { stdout } = await execFileAsync("node", [
+      "--import",
+      "tsx",
+      "src/cli.ts",
+      "appliance",
+      "people-save",
+      "--workspace",
+      "family",
+      "--channel",
+      "feishu",
+      "--chat-id",
+      "feishu:oc_family",
+      "--sender-id",
+      "ou_sam",
+      "--alias",
+      "sam",
+      "--notes",
+      "默认主要服务对象\n负责接娃",
+      "--json",
+    ], {
+      cwd: "/Users/admin/GitProjects/msgcode",
+      env: {
+        ...process.env,
+        HOME: homeRoot,
+        WORKSPACE_ROOT: workspaceRoot,
+      },
+    });
+
+    const payload = JSON.parse(stdout);
+    expect(payload.exitCode).toBe(0);
+    expect(payload.data.person.notes).toBe("默认主要服务对象 负责接娃");
+
+    const csvPath = path.join(workspacePath, ".msgcode", "character-identity", "feishu-oc_family.csv");
+    const csv = await fs.readFile(csvPath, "utf8");
+    expect(csv).toContain("默认主要服务对象 负责接娃");
+    expect(csv).not.toContain("默认主要服务对象\n负责接娃");
+  });
 });

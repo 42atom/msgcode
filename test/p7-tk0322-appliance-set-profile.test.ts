@@ -346,4 +346,46 @@ describe("appliance set-profile contract", () => {
     expect(config["profile.name"]).toBe("sam");
     expect(orgContent).toContain("- 名称：Family Workspace");
   });
+
+  it("坏 config.json 时不应静默当空对象覆盖回去", async () => {
+    const root = await makeTempRoot();
+    tempRoots.push(root);
+    const homeRoot = path.join(root, "home");
+    const workspaceRoot = path.join(root, "workspaces");
+    const workspacePath = path.join(workspaceRoot, "family");
+    await fs.mkdir(path.join(homeRoot, ".config", "msgcode"), { recursive: true });
+    await fs.mkdir(path.join(workspacePath, ".msgcode"), { recursive: true });
+
+    const configPath = path.join(workspacePath, ".msgcode", "config.json");
+    await fs.writeFile(configPath, "{bad json", "utf8");
+    await fs.writeFile(path.join(workspacePath, ".msgcode", "ORG.md"), "# 机构信息\n\n- 名称：旧组织\n- 位置城市：旧城市\n", "utf8");
+
+    const result = await execFileAsync("node", [
+      "--import",
+      "tsx",
+      "src/cli.ts",
+      "appliance",
+      "set-profile",
+      "--workspace",
+      "family",
+      "--name",
+      "sam",
+      "--json",
+    ], {
+      cwd: "/Users/admin/GitProjects/msgcode",
+      env: {
+        ...process.env,
+        HOME: homeRoot,
+        WORKSPACE_ROOT: workspaceRoot,
+      },
+    }).catch((error) => error);
+
+    const payload = JSON.parse(result.stdout);
+    expect(payload.exitCode).toBe(1);
+    expect(payload.status).toBe("error");
+    expect(payload.errors.some((item: { code?: string; details?: { failedFile?: string } }) =>
+      item.code === "APPLIANCE_PROFILE_MUTATION_FAILED" && item.details?.failedFile === configPath
+    )).toBe(true);
+    expect(await fs.readFile(configPath, "utf8")).toBe("{bad json");
+  });
 });

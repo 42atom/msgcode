@@ -29,8 +29,8 @@ export async function saveWorkspacePerson(input: SaveWorkspacePersonInput): Prom
   const channel = normalizeRequiredCell(input.channel, "人物 channel 不能为空");
   const chatId = normalizeRequiredCell(input.chatId, "人物 chatId 不能为空");
   const senderId = normalizeRequiredCell(input.senderId, "人物 senderId 不能为空");
-  const alias = normalizeRequiredCell(input.alias, "人物 alias 不能为空");
-  const notes = normalizeCell(input.notes);
+  const alias = normalizeRequiredSingleLineCell(input.alias, "人物 alias 不能为空");
+  const notes = normalizeSingleLineCell(input.notes);
   const filePath = getWorkspaceCharacterIdentityCsvPath(workspacePath, channel, chatId);
 
   const rows = existsSync(filePath)
@@ -82,8 +82,20 @@ function normalizeCell(value: unknown): string {
   return String(value ?? "").trim();
 }
 
+function normalizeSingleLineCell(value: unknown): string {
+  return normalizeCell(value).replace(/\r?\n+/g, " ").trim();
+}
+
 function normalizeRequiredCell(value: unknown, message: string): string {
   const normalized = normalizeCell(value);
+  if (!normalized) {
+    throw new Error(message);
+  }
+  return normalized;
+}
+
+function normalizeRequiredSingleLineCell(value: unknown, message: string): string {
+  const normalized = normalizeSingleLineCell(value);
   if (!normalized) {
     throw new Error(message);
   }

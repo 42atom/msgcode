@@ -438,19 +438,20 @@ async function readOrgCard(workspacePath: string): Promise<{ org: OrgCard; warni
   }
 
   const content = await readFile(orgPath, "utf8");
+  const taxRegion = parseOrgField(content, "位置城市") || parseOrgField(content, "交税地");
   const org = {
     path: orgPath,
     exists: true,
     name: parseOrgField(content, "名称"),
-    taxRegion: parseOrgField(content, "交税地"),
+    taxRegion,
     uscc: parseOrgField(content, "统一社会信用代码"),
   };
 
-  if (!org.name || !org.taxRegion || !org.uscc) {
+  if (!org.name || !org.taxRegion) {
     warnings.push({
       code: "APPLIANCE_ORG_INCOMPLETE",
       message: "ORG.md 缺少机构卡片字段",
-      hint: "补齐 名称 / 交税地 / 统一社会信用代码",
+      hint: "至少补齐 名称 和 位置城市（兼容旧字段 交税地）",
       details: { orgPath },
     });
   }
