@@ -1,4 +1,4 @@
-import { execFile, execFileSync } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
@@ -7,7 +7,6 @@ import { promisify } from "node:util";
 import { atomicWriteFile } from "./fs-atomic.js";
 
 const execFileAsync = promisify(execFile);
-const ZSTD_BIN = resolveZstdBinary();
 
 export interface InstallWorkspaceWpkgInput {
   workspacePath: string;
@@ -174,26 +173,31 @@ export async function installWorkspaceWpkg(input: InstallWorkspaceWpkgInput): Pr
 }
 
 async function extractWpkgArchive(wpkgPath: string, extractDir: string): Promise<void> {
-  if (!ZSTD_BIN) {
+  const zstdBin = await resolveZstdBinary();
+  if (!zstdBin) {
     throw new Error("wpkg 解包缺少 zstd，可执行路径未找到");
   }
 
-  await execFileAsync(
-    "/bin/sh",
-    [
-      "-c",
-      "\"$ZSTD_BIN\" -d -q -c \"$1\" | /usr/bin/tar -xf - -C \"$2\"",
-      "sh",
-      wpkgPath,
-      extractDir,
-    ],
-    {
-      env: {
-        ...process.env,
-        ZSTD_BIN,
-      },
-    }
-  );
+  const zstd = spawn(zstdBin, ["-d", "-q", "-c", wpkgPath], {
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const tar = spawn("/usr/bin/tar", ["-xf", "-", "-C", extractDir], {
+    stdio: ["pipe", "ignore", "pipe"],
+  });
+
+  zstd.stdout.pipe(tar.stdin);
+
+  const [zstdResult, tarResult] = await Promise.all([
+    waitForProcessExit(zstd),
+    waitForProcessExit(tar),
+  ]);
+
+  if (zstdResult.code !== 0) {
+    throw new Error(`wpkg zstd 解包失败: ${zstdResult.stderr || `exit ${zstdResult.code}`}`);
+  }
+  if (tarResult.code !== 0) {
+    throw new Error(`wpkg tar 解包失败: ${tarResult.stderr || `exit ${tarResult.code}`}`);
+  }
 }
 
 async function readWpkgManifest(extractDir: string): Promise<WpkgManifest> {
@@ -297,7 +301,7 @@ function normalizeStringList(raw: unknown): string[] {
   return raw.map((entry) => normalizeString(entry)).filter(Boolean);
 }
 
-function resolveZstdBinary(): string | null {
+async function resolveZstdBinary(): Promise<string | null> {
   const candidates = [
     process.env.ZSTD_BIN,
     "/opt/homebrew/bin/zstd",
@@ -311,11 +315,40 @@ function resolveZstdBinary(): string | null {
   }
 
   try {
-    const detected = execFileSync("/usr/bin/which", ["zstd"], { encoding: "utf8" }).trim();
+    const { stdout } = await execFileAsync("/usr/bin/which", ["zstd"], { encoding: "utf8" });
+    const detected = stdout.trim();
     return detected || null;
   } catch {
     return null;
   }
+}
+
+async function waitForProcessExit(proc: ChildProcess & { stderr: NodeJS.ReadableStream | null }): Promise<{ code: number; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const stderrChunks: Buffer[] = [];
+    let settled = false;
+
+    const settle = (fn: () => void) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      fn();
+    };
+
+    proc.stderr?.on("data", (chunk) => {
+      stderrChunks.push(Buffer.from(chunk));
+    });
+    proc.on("error", (error) => {
+      settle(() => reject(error));
+    });
+    proc.on("close", (code) => {
+      settle(() => resolve({
+        code: code ?? 1,
+        stderr: Buffer.concat(stderrChunks).toString("utf8").trim(),
+      }));
+    });
+  });
 }
 
 async function readPacksRegistryFile(filePath: string): Promise<PacksRegistryFile> {
