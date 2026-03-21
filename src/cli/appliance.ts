@@ -31,22 +31,7 @@ interface OrgCard {
 interface ApplianceHallData {
   workspacePath: string;
   org: OrgCard;
-  runtime: {
-    appVersion: string;
-    configPath: string;
-    logPath: string;
-    summary: {
-      status: string;
-      warnings: number;
-      errors: number;
-    };
-    categories: Array<{
-      key: string;
-      name: string;
-      status: string;
-      message: string;
-    }>;
-  };
+  runtime: ApplianceRuntimeSurface;
   packs: WorkspacePackSurfaceData;
   sites: ApplianceSiteEntry[];
 }
@@ -79,6 +64,28 @@ interface AppliancePeopleData {
 }
 
 interface ApplianceProfileData extends WorkspaceProfileSurfaceData {}
+
+interface ApplianceRuntimeSurface {
+  appVersion: string;
+  configPath: string;
+  logPath: string;
+  summary: {
+    status: string;
+    warnings: number;
+    errors: number;
+  };
+  categories: Array<{
+    key: string;
+    name: string;
+    status: string;
+    message: string;
+  }>;
+}
+
+interface ApplianceDoctorData {
+  workspacePath: string;
+  runtime: ApplianceRuntimeSurface;
+}
 
 interface AppliancePackInstallData {
   workspacePath: string;
@@ -154,6 +161,27 @@ function buildHallStatus(orgWarnings: Diagnostic[], runtimeStatus: string): Comm
   if (runtimeStatus === "warning") return "warning";
   if (orgWarnings.length > 0) return "warning";
   return "pass";
+}
+
+async function readRuntimeSurface(): Promise<ApplianceRuntimeSurface> {
+  const report = await runAllProbes();
+  const versionInfo = getVersionInfo();
+  return {
+    appVersion: versionInfo.appVersion,
+    configPath: versionInfo.configPath,
+    logPath: path.join(os.homedir(), ".config/msgcode/log/msgcode.log"),
+    summary: {
+      status: report.summary.status,
+      warnings: report.summary.warnings,
+      errors: report.summary.errors,
+    },
+    categories: Object.entries(report.categories).map(([key, category]) => ({
+      key,
+      name: category.name,
+      status: category.status,
+      message: category.probes[0]?.message ?? "",
+    })),
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -285,32 +313,16 @@ export function createApplianceCommand(): Command {
       const { sites, warnings: siteWarnings } = await readSitesRegistry(workspacePath);
       warnings.push(...siteWarnings);
 
-      const report = await runAllProbes();
-      const versionInfo = getVersionInfo();
+      const runtime = await readRuntimeSurface();
       const data: ApplianceHallData = {
         workspacePath,
         org,
-        runtime: {
-          appVersion: versionInfo.appVersion,
-          configPath: versionInfo.configPath,
-          logPath: path.join(os.homedir(), ".config/msgcode/log/msgcode.log"),
-          summary: {
-            status: report.summary.status,
-            warnings: report.summary.warnings,
-            errors: report.summary.errors,
-          },
-          categories: Object.entries(report.categories).map(([key, category]) => ({
-            key,
-            name: category.name,
-            status: category.status,
-            message: category.probes[0]?.message ?? "",
-          })),
-        },
+        runtime,
         packs: packRegistry,
         sites,
       };
 
-      const status = buildHallStatus(warnings, report.summary.status);
+      const status = buildHallStatus(warnings, runtime.summary.status);
       const envelope: Envelope<ApplianceHallData> = createEnvelope(
         `msgcode appliance hall --workspace ${options.workspace}`,
         startTime,
@@ -485,6 +497,50 @@ export function createApplianceCommand(): Command {
         console.log(JSON.stringify(envelope, null, 2));
         process.exit(1);
       }
+    });
+
+  cmd
+    .command("doctor")
+    .description("输出设置页诊断读面 JSON")
+    .requiredOption("--workspace <labelOrPath>", "Workspace 相对路径或绝对路径")
+    .option("--json", "JSON 格式输出")
+    .action(async (options: { workspace: string; json?: boolean }) => {
+      const startTime = Date.now();
+      const workspacePath = getWorkspacePath(options.workspace);
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      if (!existsSync(workspacePath)) {
+        errors.push({
+          code: "APPLIANCE_WORKSPACE_MISSING",
+          message: "工作区不存在",
+          hint: "先初始化 workspace，或传绝对路径",
+          details: { workspacePath, input: options.workspace },
+        });
+      }
+
+      const runtime = await readRuntimeSurface();
+      const status: CommandStatus = errors.length > 0
+        ? "error"
+        : runtime.summary.status === "error" || runtime.summary.status === "warning"
+          ? "warning"
+          : "pass";
+
+      const envelope: Envelope<ApplianceDoctorData> = createEnvelope(
+        `msgcode appliance doctor --workspace ${options.workspace}`,
+        startTime,
+        status,
+        {
+          workspacePath,
+          runtime,
+        },
+        warnings,
+        errors
+      );
+      envelope.exitCode = errors.length > 0 ? 1 : 0;
+
+      console.log(JSON.stringify(envelope, null, 2));
+      process.exit(errors.length > 0 ? 1 : 0);
     });
 
   cmd
