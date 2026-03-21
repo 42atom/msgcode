@@ -84,6 +84,8 @@ describe("P5.6.13-R2: 线程存储回归锁", () => {
             expect(content).toContain("---");
             expect(content).toContain(`threadId: ${threadInfo.threadId}`);
             expect(content).toContain(`chatId: ${chatId}`);
+            expect(content).toContain(`title: ${firstUserText}`);
+            expect(content).toContain("transport: unknown");
             expect(content).toContain("runtimeKind: agent");
             expect(content).toContain("agentProvider: lmstudio");
         });
@@ -288,11 +290,32 @@ describe("P5.6.13-R2: 线程存储回归锁", () => {
             // 验证必填字段
             expect(content).toMatch(/threadId:\s*[0-9a-f-]+/);
             expect(content).toMatch(/chatId:\s*.+/);
+            expect(content).toMatch(/title:\s*.+/);
+            expect(content).toMatch(/transport:\s*.+/);
             expect(content).toMatch(/workspace:\s*.+/);
             expect(content).toMatch(/workspacePath:\s*.+/);
             expect(content).toMatch(/createdAt:\s*\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
             expect(content).toMatch(/runtimeKind:\s*(agent|tmux)/);
             expect(content).toMatch(/agentProvider:\s*.+/);
+        });
+
+        it("标题会收成单行，transport 由 chatId 派生", async () => {
+            const runtimeMeta = {
+                kind: "agent" as const,
+                provider: "lmstudio",
+                tmuxClient: undefined,
+            };
+
+            const threadInfo = await ensureThread(chatId, workspacePath, "第一行\n第二行", runtimeMeta);
+            const content = await readThreadFile(threadInfo.filePath);
+
+            expect(threadInfo.title).toBe("第一行 第二行");
+            expect(content).toContain("title: 第一行 第二行");
+            expect(content).toContain("transport: unknown");
+
+            const feishuThread = await ensureThread("feishu:family-group", workspacePath, "接娃提醒", runtimeMeta);
+            const feishuContent = await readThreadFile(feishuThread.filePath);
+            expect(feishuContent).toContain("transport: feishu");
         });
 
         it("tmux 模式包含 tmuxClient 字段", async () => {

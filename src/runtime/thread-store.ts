@@ -19,6 +19,8 @@ import { logger } from "../logger/index.js";
 export interface ThreadInfo {
     threadId: string;      // UUID
     chatId: string;
+    title: string;
+    transport: string;
     workspacePath: string;
     filePath: string;      // 绝对路径
     turnCount: number;
@@ -48,28 +50,38 @@ const threadCache = new Map<string, ThreadState>();
 // ============================================
 
 /**
- * 清洗标题：保留原始标题，仅清洗非法文件名字符
- * - 删除非法字符：< > : " / \ | ? *
+ * 规范化标题：
+ * - 内部换行与连续空白收成单空格
  * - 裁剪前后空白
  * - 长度限制：最多 24 个可见字符
  */
-function sanitizeTitle(title: string): string {
-    // 裁剪空白
-    let sanitized = title.trim();
+function normalizeTitle(title: string): string {
+    let normalized = title.replace(/\s+/g, " ").trim();
 
-    // 长度限制：最多 24 个可见字符
-    if (sanitized.length > 24) {
-        sanitized = sanitized.slice(0, 24).trim();
+    if (normalized.length > 24) {
+        normalized = normalized.slice(0, 24).trim();
     }
 
-    // 删除非法文件名字符
-    sanitized = sanitized.replace(/[<>:"/\\|?*]/g, "");
+    return normalized || "untitled";
+}
 
-    // 再次裁剪空白（删除非法字符后可能产生新的前后空白）
-    sanitized = sanitized.trim();
+/**
+ * 生成文件名标题：在规范化标题基础上移除非法文件名字符
+ */
+function sanitizeFilenameTitle(title: string): string {
+    const sanitized = normalizeTitle(title)
+        .replace(/[<>:"/\\|?*]/g, "")
+        .trim();
 
-    // 如果清洗后为空，回退为 untitled
     return sanitized || "untitled";
+}
+
+function deriveTransport(chatId: string): string {
+    const raw = chatId.toLowerCase();
+    if (raw.startsWith("feishu:")) return "feishu";
+    if (raw.startsWith("web:")) return "web";
+    if (raw.startsWith("neighbor:")) return "neighbor";
+    return "unknown";
 }
 
 /**
@@ -130,6 +142,8 @@ function buildFrontMatter(
         "---",
         `threadId: ${threadInfo.threadId}`,
         `chatId: ${threadInfo.chatId}`,
+        `title: ${threadInfo.title}`,
+        `transport: ${threadInfo.transport}`,
         `workspace: ${path.basename(threadInfo.workspacePath)}`,
         `workspacePath: ${threadInfo.workspacePath}`,
         `createdAt: ${threadInfo.createdAt}`,
@@ -193,17 +207,21 @@ export async function ensureThread(
     await fs.mkdir(threadsDir, { recursive: true });
 
     // 生成标题
-    const title = sanitizeTitle(firstUserText);
+    const title = normalizeTitle(firstUserText);
+    const fileTitle = sanitizeFilenameTitle(firstUserText);
+    const transport = deriveTransport(chatId);
     const datePrefix = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
 
     // 生成唯一文件名
-    const filename = await generateUniqueFilename(threadsDir, datePrefix, title);
+    const filename = await generateUniqueFilename(threadsDir, datePrefix, fileTitle);
     const filePath = path.join(threadsDir, filename);
 
     // 构建 ThreadInfo
     const threadInfo: ThreadInfo = {
         threadId: randomUUID(),
         chatId,
+        title,
+        transport,
         workspacePath,
         filePath,
         turnCount: 0,

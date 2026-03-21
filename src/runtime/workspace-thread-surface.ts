@@ -191,8 +191,8 @@ function parseThreadSummary(filePath: string, content: string): ThreadSummary | 
   return {
     threadId,
     chatId,
-    title: deriveThreadTitle(filePath),
-    source: deriveThreadSource(chatId),
+    title: deriveThreadTitle(frontMatter, filePath),
+    source: deriveThreadSource(frontMatter, chatId),
     filePath,
     lastTurnAt: turnHeaders.sort((a, b) => b.localeCompare(a))[0] ?? "",
   };
@@ -251,8 +251,8 @@ async function readCurrentThread(filePath: string, warnings: Diagnostic[]): Prom
 
     return {
       threadId,
-      title: deriveThreadTitle(filePath),
-      source: deriveThreadSource(chatId),
+      title: deriveThreadTitle(frontMatter, filePath),
+      source: deriveThreadSource(frontMatter, chatId),
       lastTurnAt: messages[0]?.at ?? "",
       messages,
     };
@@ -294,13 +294,23 @@ function parseThreadMessages(body: string): WorkspaceThreadMessage[] {
   return messages.sort((a, b) => b.at.localeCompare(a.at));
 }
 
-function deriveThreadTitle(filePath: string): string {
+function deriveThreadTitle(frontMatter: Record<string, string>, filePath: string): string {
+  const explicitTitle = normalizeCell(frontMatter.title);
+  if (explicitTitle) {
+    return explicitTitle;
+  }
+
   const baseName = path.basename(filePath, ".md");
   const title = baseName.replace(/^\d{4}-\d{2}-\d{2}_/, "");
   return title.trim() || baseName;
 }
 
-function deriveThreadSource(chatId: string): string {
+function deriveThreadSource(frontMatter: Record<string, string>, chatId: string): string {
+  const explicitTransport = normalizeCell(frontMatter.transport).toLowerCase();
+  if (explicitTransport) {
+    return explicitTransport;
+  }
+
   const raw = chatId.toLowerCase();
   if (raw.startsWith("feishu:")) return "feishu";
   if (raw.startsWith("web:")) return "web";

@@ -52,6 +52,8 @@ describe("appliance threads contract", () => {
         "---",
         "threadId: thread-feishu",
         "chatId: feishu:oc_family",
+        "title: 接娃主线",
+        "transport: feishu",
         "workspace: family",
         `workspacePath: ${workspacePath}`,
         "createdAt: 2026-03-20T05:41:18.203Z",
@@ -78,6 +80,8 @@ describe("appliance threads contract", () => {
         "---",
         "threadId: thread-web",
         "chatId: web:family-main",
+        "title: 家庭网页线程",
+        "transport: web",
         "workspace: family",
         `workspacePath: ${workspacePath}`,
         "createdAt: 2026-03-19T02:10:00.000Z",
@@ -157,8 +161,10 @@ describe("appliance threads contract", () => {
     expect(payload.data.currentThreadId).toBe("thread-feishu");
     expect(payload.data.threads).toHaveLength(2);
     expect(payload.data.threads[0].threadId).toBe("thread-feishu");
+    expect(payload.data.threads[0].title).toBe("接娃主线");
     expect(payload.data.threads[0].source).toBe("feishu");
     expect(payload.data.currentThread.threadId).toBe("thread-feishu");
+    expect(payload.data.currentThread.title).toBe("接娃主线");
     expect(payload.data.currentThread.messages[0].user).toContain("我在门口准备好了");
     expect(payload.data.people.count).toBe(2);
     expect(payload.data.workStatus.updatedAt).toBe("2026-03-21T08:00:00.000Z");
@@ -274,6 +280,8 @@ describe("appliance threads contract", () => {
         "---",
         "threadId: thread-feishu",
         "chatId: feishu:oc_family",
+        "title: 接娃主线",
+        "transport: feishu",
         "workspace: family",
         `workspacePath: ${workspacePath}`,
         "createdAt: 2026-03-20T05:41:18.203Z",
@@ -315,6 +323,70 @@ describe("appliance threads contract", () => {
     const payload = JSON.parse(stdout);
     expect(payload.exitCode).toBe(0);
     expect(payload.data.currentThreadId).toBe("thread-feishu");
+  });
+
+  it("front matter 里的 title 和 transport 应优先于文件名与 chatId 推断", async () => {
+    const root = await makeTempRoot();
+    tempRoots.push(root);
+    const homeRoot = path.join(root, "home");
+    const workspaceRoot = path.join(root, "workspaces");
+    const workspacePath = path.join(workspaceRoot, "family");
+    const threadsDir = path.join(workspacePath, ".msgcode", "threads");
+    await fs.mkdir(path.join(homeRoot, ".config", "msgcode"), { recursive: true });
+    await fs.mkdir(threadsDir, { recursive: true });
+
+    await fs.writeFile(
+      path.join(threadsDir, "2026-03-20_文件名只是回退.md"),
+      [
+        "---",
+        "threadId: thread-web",
+        "chatId: web:family-main",
+        "title: 家庭总线",
+        "transport: feishu",
+        "workspace: family",
+        `workspacePath: ${workspacePath}`,
+        "createdAt: 2026-03-20T05:41:18.203Z",
+        "runtimeKind: agent",
+        "agentProvider: minimax",
+        "tmuxClient: none",
+        "---",
+        "",
+        "## Turn 1 - 2026-03-20T05:41:18.204Z",
+        "",
+        "### User",
+        "我在门口准备好了",
+        "",
+        "### Assistant",
+        "好的，去接小孩路上注意安全。",
+        "",
+      ].join("\n"),
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [
+      "--import",
+      "tsx",
+      "src/cli.ts",
+      "appliance",
+      "threads",
+      "--workspace",
+      "family",
+      "--json",
+    ], {
+      cwd: "/Users/admin/GitProjects/msgcode",
+      env: {
+        ...process.env,
+        HOME: homeRoot,
+        WORKSPACE_ROOT: workspaceRoot,
+      },
+    });
+
+    const payload = JSON.parse(stdout);
+    expect(payload.exitCode).toBe(0);
+    expect(payload.status).toBe("pass");
+    expect(payload.data.threads).toHaveLength(1);
+    expect(payload.data.threads[0].title).toBe("家庭总线");
+    expect(payload.data.threads[0].source).toBe("feishu");
   });
 
   it("配置里有 stale current chat 时不应偷退到最近线程", async () => {
