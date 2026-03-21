@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rename, stat } from "node:fs/promises";
 import path from "node:path";
 import type { Diagnostic } from "../memory/types.js";
+import { parseSimpleFrontMatter } from "./simple-front-matter.js";
 
 export interface WorkspaceArchiveWorkspaceEntry {
   name: string;
@@ -275,19 +276,6 @@ function parseArchivedThread(filePath: string, content: string): WorkspaceArchiv
     archivedPath: filePath,
     lastTurnAt: turnHeaders.sort((a, b) => b.localeCompare(a))[0] ?? "",
   };
-}
-
-function parseSimpleFrontMatter(content: string): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const line of content.split(/\r?\n/)) {
-    const index = line.indexOf(":");
-    if (index < 0) continue;
-    const key = line.slice(0, index).trim();
-    const value = line.slice(index + 1).trim();
-    if (!key) continue;
-    result[key] = value;
-  }
-  return result;
 }
 
 function deriveThreadTitle(frontMatter: Record<string, string>, filePath: string): string {

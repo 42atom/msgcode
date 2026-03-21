@@ -4,6 +4,7 @@ import path from "node:path";
 import type { Diagnostic } from "../memory/types.js";
 import { readWorkspaceStatusTail, type WorkspaceStatusRecord } from "./status-log.js";
 import { readWorkspacePeopleState } from "./workspace-people.js";
+import { parseSimpleFrontMatter } from "./simple-front-matter.js";
 
 export interface WorkspaceThreadListItem {
   threadId: string;
@@ -244,19 +245,6 @@ function parseThreadSummary(filePath: string, content: string): WorkspaceThreadS
     filePath,
     lastTurnAt: turnHeaders.sort((a, b) => b.localeCompare(a))[0] ?? "",
   };
-}
-
-function parseSimpleFrontMatter(content: string): Record<string, string> {
-  const result: Record<string, string> = {};
-  for (const line of content.split(/\r?\n/)) {
-    const index = line.indexOf(":");
-    if (index < 0) continue;
-    const key = line.slice(0, index).trim();
-    const value = line.slice(index + 1).trim();
-    if (!key) continue;
-    result[key] = value;
-  }
-  return result;
 }
 
 async function readCurrentThread(filePath: string, warnings: Diagnostic[]): Promise<WorkspaceCurrentThread | null> {
