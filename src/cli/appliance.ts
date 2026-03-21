@@ -22,6 +22,10 @@ import {
   readWorkspaceThreadSurface,
   type WorkspaceThreadSurfaceData,
 } from "../runtime/workspace-thread-surface.js";
+import {
+  readWorkspaceArchiveSurface,
+  type WorkspaceArchiveSurfaceData,
+} from "../runtime/workspace-archive.js";
 import { installWorkspaceWpkg } from "../runtime/workspace-wpkg-install.js";
 import { atomicWriteFile } from "../runtime/fs-atomic.js";
 
@@ -133,6 +137,8 @@ interface ApplianceDoctorData {
   workspacePath: string;
   runtime: ApplianceRuntimeSurface;
 }
+
+interface ApplianceArchiveData extends WorkspaceArchiveSurfaceData {}
 
 interface AppliancePackInstallData {
   workspacePath: string;
@@ -1425,6 +1431,50 @@ export function createApplianceCommand(): Command {
       const status: CommandStatus = errors.length > 0 ? "error" : warnings.length > 0 ? "warning" : "pass";
       const envelope: Envelope<WorkspaceThreadSurfaceData> = createEnvelope(
         `msgcode appliance threads --workspace ${options.workspace}`,
+        startTime,
+        status,
+        data,
+        warnings,
+        errors
+      );
+      envelope.exitCode = errors.length > 0 ? 1 : 0;
+
+      console.log(JSON.stringify(envelope, null, 2));
+      process.exit(errors.length > 0 ? 1 : 0);
+    });
+
+  cmd
+    .command("archive")
+    .description("输出历史归档主视图 JSON")
+    .requiredOption("--workspace <labelOrPath>", "Workspace 相对路径或绝对路径")
+    .option("--json", "JSON 格式输出")
+    .action(async (options: { workspace: string; json?: boolean }) => {
+      const startTime = Date.now();
+      const workspacePath = getWorkspacePath(options.workspace);
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      if (!existsSync(workspacePath)) {
+        errors.push(buildMissingWorkspaceError(workspacePath, options.workspace));
+      }
+
+      const { data, warnings: surfaceWarnings } = errors.length === 0
+        ? await readWorkspaceArchiveSurface(workspacePath)
+        : {
+            data: {
+              workspacePath,
+              workspaceArchiveRoot: path.join(path.dirname(workspacePath), ".archive"),
+              archivedThreadsPath: path.join(workspacePath, ".msgcode", "archived-threads"),
+              archivedWorkspaces: [],
+              archivedThreads: [],
+            },
+            warnings: [],
+          };
+      warnings.push(...surfaceWarnings);
+
+      const status: CommandStatus = errors.length > 0 ? "error" : warnings.length > 0 ? "warning" : "pass";
+      const envelope: Envelope<ApplianceArchiveData> = createEnvelope(
+        `msgcode appliance archive --workspace ${options.workspace}`,
         startTime,
         status,
         data,
