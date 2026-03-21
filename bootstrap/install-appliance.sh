@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+. "$SCRIPT_DIR/lib-appliance-preinstall.sh"
+
 usage() {
   echo "Usage: sh bootstrap/install-appliance.sh --bundle-root <path> --install-root <path>" >&2
 }
@@ -34,6 +37,8 @@ if [ -z "$BUNDLE_ROOT" ] || [ -z "$INSTALL_ROOT" ]; then
   usage
   exit 2
 fi
+
+run_appliance_preinstall_checks "install-appliance"
 
 BUNDLE_ROOT=$(cd "$BUNDLE_ROOT" && pwd)
 INSTALL_ROOT=$(mkdir -p "$INSTALL_ROOT" && cd "$INSTALL_ROOT" && pwd)

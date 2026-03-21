@@ -1,6 +1,9 @@
 #!/bin/sh
 set -eu
 
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname "$0")" && pwd)
+. "$SCRIPT_DIR/lib-appliance-preinstall.sh"
+
 usage() {
   echo "Usage: sh bootstrap/doctor-appliance.sh --install-root <path>" >&2
 }
@@ -29,6 +32,8 @@ if [ -z "$INSTALL_ROOT" ]; then
   usage
   exit 2
 fi
+
+run_appliance_preinstall_checks "doctor-appliance"
 
 INSTALL_ROOT=$(cd "$INSTALL_ROOT" && pwd)
 MANIFEST_PATH="$INSTALL_ROOT/appliance.manifest"

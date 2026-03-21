@@ -18,6 +18,28 @@ async function writeExecutable(filePath: string, content: string): Promise<void>
   await fs.chmod(filePath, 0o755);
 }
 
+async function createFakePreinstallDeps(
+  root: string,
+  options?: {
+    managedBash?: boolean;
+    zstd?: boolean;
+  }
+): Promise<NodeJS.ProcessEnv> {
+  const managedBashPath = path.join(root, "deps", "bash");
+  const zstdPath = path.join(root, "deps", "zstd");
+  if (options?.managedBash !== false) {
+    await writeExecutable(managedBashPath, "#!/bin/sh\nexit 0\n");
+  }
+  if (options?.zstd !== false) {
+    await writeExecutable(zstdPath, "#!/bin/sh\nexit 0\n");
+  }
+  return {
+    ...process.env,
+    MSGCODE_MANAGED_BASH_CANDIDATES: managedBashPath,
+    MSGCODE_ZSTD_CANDIDATES: zstdPath,
+  };
+}
+
 async function createFakeBundle(
   bundleRoot: string,
   markerText: string,
@@ -70,6 +92,7 @@ describe("appliance bootstrap scripts", () => {
     tempRoots.push(root);
     const bundleRoot = path.join(root, "bundle");
     const installRoot = path.join(root, "install");
+    const env = await createFakePreinstallDeps(root);
     await createFakeBundle(bundleRoot, "installed");
 
     await execFileAsync("sh", [
@@ -80,6 +103,7 @@ describe("appliance bootstrap scripts", () => {
       installRoot,
     ], {
       cwd: "/Users/admin/GitProjects/msgcode",
+      env,
     });
 
     expect(existsSync(path.join(installRoot, "runtime", "bin", "msgcode"))).toBe(true);
@@ -92,6 +116,7 @@ describe("appliance bootstrap scripts", () => {
     tempRoots.push(root);
     const bundleRoot = path.join(root, "bundle");
     const installRoot = path.join(root, "install");
+    const env = await createFakePreinstallDeps(root);
     await createFakeBundle(bundleRoot, "manifest", {
       runtimeDir: "core-runtime",
       launcherRel: "launcher/msgcode",
@@ -107,6 +132,7 @@ describe("appliance bootstrap scripts", () => {
       installRoot,
     ], {
       cwd: "/Users/admin/GitProjects/msgcode",
+      env,
     });
 
     expect(existsSync(path.join(installRoot, "core-runtime", "bin", "msgcode"))).toBe(true);
@@ -125,6 +151,7 @@ describe("appliance bootstrap scripts", () => {
     const installRoot = path.join(root, "install");
     const logPath = path.join(root, "msgcode.log");
     const markerPath = path.join(root, "marker.txt");
+    const env = await createFakePreinstallDeps(root);
     await createFakeBundle(bundleRoot, "first-run");
 
     await execFileAsync("sh", [
@@ -135,6 +162,7 @@ describe("appliance bootstrap scripts", () => {
       installRoot,
     ], {
       cwd: "/Users/admin/GitProjects/msgcode",
+      env,
     });
 
     await execFileAsync("sh", [
@@ -146,7 +174,7 @@ describe("appliance bootstrap scripts", () => {
     ], {
       cwd: "/Users/admin/GitProjects/msgcode",
       env: {
-        ...process.env,
+        ...env,
         MSGCODE_TEST_LOG: logPath,
         MSGCODE_TEST_MARKER: markerPath,
       },
@@ -167,6 +195,7 @@ describe("appliance bootstrap scripts", () => {
     const installRoot = path.join(root, "install");
     const logPath = path.join(root, "upgrade.log");
     const markerPath = path.join(root, "upgrade-marker.txt");
+    const env = await createFakePreinstallDeps(root);
     await createFakeBundle(bundleRoot1, "v1");
     await createFakeBundle(bundleRoot2, "v2");
 
@@ -178,6 +207,7 @@ describe("appliance bootstrap scripts", () => {
       installRoot,
     ], {
       cwd: "/Users/admin/GitProjects/msgcode",
+      env,
     });
 
     await execFileAsync("sh", [
@@ -188,11 +218,12 @@ describe("appliance bootstrap scripts", () => {
       installRoot,
     ], {
       cwd: "/Users/admin/GitProjects/msgcode",
+      env,
     });
 
     await execFileAsync(path.join(installRoot, "bin", "msgcode"), ["status"], {
       env: {
-        ...process.env,
+        ...env,
         MSGCODE_TEST_LOG: logPath,
         MSGCODE_TEST_MARKER: markerPath,
       },
@@ -210,6 +241,7 @@ describe("appliance bootstrap scripts", () => {
     tempRoots.push(root);
     const bundleRoot = path.join(root, "bundle");
     const installRoot = path.join(root, "install");
+    const env = await createFakePreinstallDeps(root);
     await createFakeBundle(bundleRoot, "doctor", {
       runtimeDir: "core-runtime",
       launcherRel: "launcher/msgcode",
@@ -225,6 +257,7 @@ describe("appliance bootstrap scripts", () => {
       installRoot,
     ], {
       cwd: "/Users/admin/GitProjects/msgcode",
+      env,
     });
 
     const { stdout } = await execFileAsync("sh", [
@@ -233,10 +266,67 @@ describe("appliance bootstrap scripts", () => {
       installRoot,
     ], {
       cwd: "/Users/admin/GitProjects/msgcode",
+      env,
     });
 
+    expect(stdout).toContain("[preinstall] managed-bash: ok");
+    expect(stdout).toContain("[preinstall] zstd: ok");
     expect(stdout).toContain("Appliance doctor 通过");
     expect(stdout).toContain("version=test-1.0.0");
+  });
+
+  it("install-appliance 应在托管 Bash 缺失时前置失败", async () => {
+    const root = await makeTempRoot();
+    tempRoots.push(root);
+    const bundleRoot = path.join(root, "bundle");
+    const installRoot = path.join(root, "install");
+    const env = await createFakePreinstallDeps(root, { managedBash: false, zstd: true });
+    await createFakeBundle(bundleRoot, "installed");
+
+    await expect(execFileAsync("sh", [
+      "bootstrap/install-appliance.sh",
+      "--bundle-root",
+      bundleRoot,
+      "--install-root",
+      installRoot,
+    ], {
+      cwd: "/Users/admin/GitProjects/msgcode",
+      env,
+    })).rejects.toMatchObject({
+      stderr: expect.stringContaining("Missing Core Appliance preinstall dependency: managed bash"),
+    });
+  });
+
+  it("doctor-appliance 应在 zstd 缺失时前置失败", async () => {
+    const root = await makeTempRoot();
+    tempRoots.push(root);
+    const bundleRoot = path.join(root, "bundle");
+    const installRoot = path.join(root, "install");
+    const installEnv = await createFakePreinstallDeps(root, { managedBash: true, zstd: true });
+    await createFakeBundle(bundleRoot, "doctor");
+
+    await execFileAsync("sh", [
+      "bootstrap/install-appliance.sh",
+      "--bundle-root",
+      bundleRoot,
+      "--install-root",
+      installRoot,
+    ], {
+      cwd: "/Users/admin/GitProjects/msgcode",
+      env: installEnv,
+    });
+
+    const doctorEnv = await createFakePreinstallDeps(path.join(root, "doctor-missing"), { managedBash: true, zstd: false });
+    await expect(execFileAsync("sh", [
+      "bootstrap/doctor-appliance.sh",
+      "--install-root",
+      installRoot,
+    ], {
+      cwd: "/Users/admin/GitProjects/msgcode",
+      env: doctorEnv,
+    })).rejects.toMatchObject({
+      stderr: expect.stringContaining("Missing Core Appliance preinstall dependency: zstd"),
+    });
   });
 
   it("rollback-appliance 应恢复上一个 runtime 与 manifest", async () => {
@@ -247,6 +337,7 @@ describe("appliance bootstrap scripts", () => {
     const installRoot = path.join(root, "install");
     const logPath = path.join(root, "rollback.log");
     const markerPath = path.join(root, "rollback-marker.txt");
+    const env = await createFakePreinstallDeps(root);
     await createFakeBundle(bundleRoot1, "v1", {
       runtimeDir: "core-runtime",
       launcherRel: "launcher/msgcode",
@@ -268,6 +359,7 @@ describe("appliance bootstrap scripts", () => {
       installRoot,
     ], {
       cwd: "/Users/admin/GitProjects/msgcode",
+      env,
     });
 
     await execFileAsync("sh", [
@@ -278,6 +370,7 @@ describe("appliance bootstrap scripts", () => {
       installRoot,
     ], {
       cwd: "/Users/admin/GitProjects/msgcode",
+      env,
     });
 
     await execFileAsync("sh", [
@@ -286,11 +379,12 @@ describe("appliance bootstrap scripts", () => {
       installRoot,
     ], {
       cwd: "/Users/admin/GitProjects/msgcode",
+      env,
     });
 
     await execFileAsync(path.join(installRoot, "launcher", "msgcode"), ["status"], {
       env: {
-        ...process.env,
+        ...env,
         MSGCODE_TEST_LOG: logPath,
         MSGCODE_TEST_MARKER: markerPath,
       },
