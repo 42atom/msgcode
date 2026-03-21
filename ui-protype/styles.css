@@ -1632,3 +1632,11 @@ textarea {
   overflow: auto;
   font-family: "SFMono-Regular", "Menlo", monospace;
 }
+
+.composer .log-preview {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  line-height: 1.45;
+}

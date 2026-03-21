@@ -14,6 +14,7 @@ const observerSecondaryContent = document.getElementById("observer-secondary-con
 const sendButton = document.getElementById("send-button");
 const composerInput = document.getElementById("composer-input");
 const composerStatus = document.getElementById("composer-status");
+const composerCommandPreview = document.getElementById("composer-command-preview");
 const observerPanel = document.getElementById("observer-panel");
 const observerToggle = document.getElementById("observer-toggle");
 const observerClose = document.getElementById("observer-close");
@@ -186,6 +187,7 @@ const threadSurfaceData = {
           assistant: "好的，路上慢点。",
         },
       ],
+      chatId: "feishu:family:door",
     },
     people: { count: 2 },
     workStatus: {
@@ -239,6 +241,7 @@ const threadSurfaceData = {
           assistant: "后续这条线又接上了一张眼科报告图片，话题开始从提醒排查转向报告解读。",
         },
       ],
+      chatId: "feishu:family:missed-reminder",
     },
     people: { count: 2 },
     workStatus: {
@@ -312,6 +315,7 @@ const threadSurfaceData = {
           assistant: "最后收口到 DS 是球镜度数，DC 是柱镜度数，AXIS 是散光轴位，并提醒要确认到底是裸眼还是矫正视力。",
         },
       ],
+      chatId: "feishu:family:vision",
     },
     people: { count: 2 },
     workStatus: {
@@ -365,6 +369,7 @@ const threadSurfaceData = {
           assistant: "最后确认消息内容应为“⏰中午要接小孩回家了”。",
         },
       ],
+      chatId: "feishu:family:copy-edit",
     },
     people: { count: 2 },
     workStatus: {
@@ -412,6 +417,7 @@ const threadSurfaceData = {
           assistant: "收到，这条线主要围绕提醒文案的统一调整。",
         },
       ],
+      chatId: "feishu:default:reminder",
     },
     people: { count: 0 },
     workStatus: {
@@ -445,6 +451,7 @@ const threadSurfaceData = {
           assistant: "你好。",
         },
       ],
+      chatId: "feishu:default:hi",
     },
     people: { count: 0 },
     workStatus: {
@@ -470,6 +477,7 @@ const threadSurfaceData = {
           assistant: "这是一条 smoke 线程，占位展示。后续应通过 archive 收起来。",
         },
       ],
+      chatId: "feishu:game01:smoke",
     },
     people: { count: 0 },
     workStatus: {
@@ -506,6 +514,7 @@ const threadSurfaceData = {
           assistant: "这里先只模拟线程，不展开正文。",
         },
       ],
+      chatId: "feishu:medicpass:model",
     },
     people: { count: 0 },
     workStatus: {
@@ -531,6 +540,7 @@ const threadSurfaceData = {
           assistant: "这条线先保留成工作区树中的真实标题示意。",
         },
       ],
+      chatId: "feishu:mylife:update",
     },
     people: { count: 0 },
     workStatus: {
@@ -556,6 +566,7 @@ const threadSurfaceData = {
           assistant: "这是一条 test-real 工作区的历史线程示意。",
         },
       ],
+      chatId: "feishu:test-real:subagent",
     },
     people: { count: 0 },
     workStatus: {
@@ -571,6 +582,10 @@ let selectedWorkspaceKey = "family";
 let selectedThreadId = "thread-family-door";
 let pendingDraftContext = null;
 
+function quoteCliArg(value) {
+  return `'${String(value ?? "").replaceAll("'", `'\\''`)}'`;
+}
+
 function buildSurfaceKey(workspaceKey, threadId) {
   return `${workspaceKey}:${threadId}`;
 }
@@ -581,6 +596,44 @@ function getSelectedSurface() {
 
 function getSelectedWorkspace() {
   return workspaceTreeData.workspaces.find((workspace) => workspace.key === selectedWorkspaceKey) ?? null;
+}
+
+function buildInboxAddCommand() {
+  const text = composerInput?.value || "";
+  const surface = getSelectedSurface();
+  const source = surface?.thread?.source || "";
+  const workspaceArg = quoteCliArg(selectedWorkspaceKey);
+  const textArg = quoteCliArg(text);
+
+  if (pendingDraftContext) {
+    return `msgcode inbox add --workspace ${workspaceArg} --chat-id ${quoteCliArg(pendingDraftContext.chatId)} --text ${textArg} --transport web --json`;
+  }
+
+  if (source === "web" && surface?.thread?.chatId) {
+    return `msgcode inbox add --workspace ${workspaceArg} --chat-id ${quoteCliArg(surface.thread.chatId)} --text ${textArg} --transport web --json`;
+  }
+
+  return "";
+}
+
+function renderComposerSurface() {
+  const surface = getSelectedSurface();
+  const source = surface?.thread?.source || "";
+  const command = buildInboxAddCommand();
+
+  if (composerStatus) {
+    if (pendingDraftContext) {
+      composerStatus.textContent = "当前是新的 web chatId 草稿上下文；首条消息会先进入 inbox，再由 runtime 落盘成 thread。";
+    } else if (source === "web") {
+      composerStatus.textContent = "当前输入会先投递到 runtime inbox；只有 runtime 落盘后，消息才会上屏。";
+    } else {
+      composerStatus.textContent = "当前选中的是非 web 线程；网页输入前请先点“新建聊天”。";
+    }
+  }
+
+  if (composerCommandPreview) {
+    composerCommandPreview.textContent = command || "msgcode inbox add --workspace <workspace> --chat-id <new-web-chat-id> --text <text> --transport web --json";
+  }
 }
 
 function renderThread() {
@@ -651,6 +704,8 @@ function renderThread() {
       </article>
     `).join("");
   }
+
+  renderComposerSurface();
 }
 
 function renderPendingDraftThread() {
@@ -687,6 +742,8 @@ function renderPendingDraftThread() {
       </article>
     `;
   }
+
+  renderComposerSurface();
 }
 
 function renderScheduleList(items) {
@@ -949,7 +1006,6 @@ if (newChatButton && composerStatus) {
       chatId: `web:${selectedWorkspaceKey}:${Date.now()}`,
     };
     selectedThreadId = "";
-    composerStatus.textContent = "已切到新的 web chatId 草稿上下文；首条消息发送后才会创建 thread。";
     renderWorkspaceTree();
     renderThread();
   });
@@ -957,14 +1013,35 @@ if (newChatButton && composerStatus) {
 
 if (sendButton && composerStatus) {
   sendButton.addEventListener("click", () => {
+    const command = buildInboxAddCommand();
+    const surface = getSelectedSurface();
+    const source = surface?.thread?.source || "";
+
+    if (!command) {
+      composerStatus.textContent = source === "web"
+        ? "当前线程缺少稳定 chatId，暂时不能投递。"
+        : "当前是非 web 线程；请先点“新建聊天”，再发给 Agent。";
+      renderComposerSurface();
+      return;
+    }
+
     sendButton.setAttribute("disabled", "true");
+    if (composerCommandPreview) {
+      composerCommandPreview.textContent = command;
+    }
     composerStatus.textContent = pendingDraftContext
       ? "已投递到新的 web chatId；等待 runtime 落盘后再出现在左侧线程树。"
-      : "已投递到 runtime inbox，等待线程回写后再上屏。";
+      : "已投递到当前 web 线程 inbox；等待 runtime 回写后再上屏。";
     setTimeout(() => {
       sendButton.removeAttribute("disabled");
-      composerStatus.textContent = "输入只负责投递给 runtime；消息上屏以后端回写为准。";
+      renderComposerSurface();
     }, 1800);
+  });
+}
+
+if (composerInput) {
+  composerInput.addEventListener("input", () => {
+    renderComposerSurface();
   });
 }
 
