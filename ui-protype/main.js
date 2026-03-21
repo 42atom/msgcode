@@ -12,10 +12,12 @@ const workStatusLine2 = document.getElementById("work-status-line-2");
 const observerSecondaryTitle = document.getElementById("observer-secondary-title");
 const observerSecondaryContent = document.getElementById("observer-secondary-content");
 const sendButton = document.getElementById("send-button");
+const composerInput = document.getElementById("composer-input");
 const composerStatus = document.getElementById("composer-status");
 const observerPanel = document.getElementById("observer-panel");
 const observerToggle = document.getElementById("observer-toggle");
 const observerClose = document.getElementById("observer-close");
+const newChatButton = document.getElementById("new-chat-button");
 
 const WORKSPACE_ORDER_STORAGE_KEY = "msgcode-ui-workspace-order";
 
@@ -567,6 +569,7 @@ const threadSurfaceData = {
 
 let selectedWorkspaceKey = "family";
 let selectedThreadId = "thread-family-door";
+let pendingDraftContext = null;
 
 function buildSurfaceKey(workspaceKey, threadId) {
   return `${workspaceKey}:${threadId}`;
@@ -581,6 +584,11 @@ function getSelectedWorkspace() {
 }
 
 function renderThread() {
+  if (pendingDraftContext && pendingDraftContext.workspaceKey === selectedWorkspaceKey && !selectedThreadId) {
+    renderPendingDraftThread();
+    return;
+  }
+
   const surface = getSelectedSurface();
   const workspace = getSelectedWorkspace();
   const currentThreadId = workspace?.currentThreadId || "";
@@ -642,6 +650,42 @@ function renderThread() {
         ${escapeHtml(message.assistant)}
       </article>
     `).join("");
+  }
+}
+
+function renderPendingDraftThread() {
+  if (threadTitle) {
+    threadTitle.textContent = "新网页聊天";
+  }
+  if (threadChannelChip) {
+    threadChannelChip.textContent = "web";
+  }
+  if (threadKindChip) {
+    threadKindChip.textContent = "草稿上下文";
+  }
+  if (observerTitle) {
+    observerTitle.textContent = "新网页聊天";
+  }
+  if (workStatusLine1) {
+    workStatusLine1.textContent = "当前只是新的 web chatId 草稿上下文。";
+    workStatusLine1.hidden = false;
+  }
+  if (workStatusLine2) {
+    workStatusLine2.textContent = "首条消息发出并落盘后，才会进入左侧活跃线程列表。";
+    workStatusLine2.hidden = false;
+  }
+  if (observerSecondaryTitle) {
+    observerSecondaryTitle.textContent = "最近工作状况";
+  }
+  if (observerSecondaryContent) {
+    observerSecondaryContent.innerHTML = renderStatusList([]);
+  }
+  if (chatLog) {
+    chatLog.innerHTML = `
+      <article class="bubble bubble--agent">
+        这里还没有真正的 thread 文件。首条消息发送后，runtime 才会创建新的 web thread。
+      </article>
+    `;
   }
 }
 
@@ -890,6 +934,7 @@ if (workspaceTree) {
       if (threadId) {
         selectedThreadId = threadId;
         if (workspaceKey) selectedWorkspaceKey = workspaceKey;
+        pendingDraftContext = null;
         renderWorkspaceTree();
         renderThread();
       }
@@ -897,10 +942,25 @@ if (workspaceTree) {
   });
 }
 
+if (newChatButton && composerStatus) {
+  newChatButton.addEventListener("click", () => {
+    pendingDraftContext = {
+      workspaceKey: selectedWorkspaceKey,
+      chatId: `web:${selectedWorkspaceKey}:${Date.now()}`,
+    };
+    selectedThreadId = "";
+    composerStatus.textContent = "已切到新的 web chatId 草稿上下文；首条消息发送后才会创建 thread。";
+    renderWorkspaceTree();
+    renderThread();
+  });
+}
+
 if (sendButton && composerStatus) {
   sendButton.addEventListener("click", () => {
     sendButton.setAttribute("disabled", "true");
-    composerStatus.textContent = "已投递到 runtime inbox，等待线程回写后再上屏。";
+    composerStatus.textContent = pendingDraftContext
+      ? "已投递到新的 web chatId；等待 runtime 落盘后再出现在左侧线程树。"
+      : "已投递到 runtime inbox，等待线程回写后再上屏。";
     setTimeout(() => {
       sendButton.removeAttribute("disabled");
       composerStatus.textContent = "输入只负责投递给 runtime；消息上屏以后端回写为准。";
