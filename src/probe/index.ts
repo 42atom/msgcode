@@ -18,6 +18,7 @@ import { probeDeps } from "./probes/deps.js";
 import { probeCodex } from "./probes/runner.js";
 import { probeTts } from "./probes/tts.js";
 import { probeInbound } from "./probes/inbound.js";
+import { appendTelemetryLedgerEntry } from "../runtime/telemetry-ledger.js";
 import { formatJson } from "./formatters/json.js";
 import { formatText } from "./formatters/text.js";
 import { safeProbe, aggregateStatus } from "./types.js";
@@ -45,6 +46,7 @@ const PROBE_CATEGORIES = [
  * 运行所有探针，生成完整状态报告
  */
 export async function runAllProbes(options?: ProbeOptions): Promise<StatusReport> {
+    const startedAt = Date.now();
     const timestamp = new Date().toISOString();
     const categories: StatusReport["categories"] = {};
     let totalWarnings = 0;
@@ -77,7 +79,7 @@ export async function runAllProbes(options?: ProbeOptions): Promise<StatusReport
         Object.values(categories).flatMap(c => c.probes)
     );
 
-    return {
+    const report = {
         version: "1.0",
         timestamp,
         summary: {
@@ -87,6 +89,9 @@ export async function runAllProbes(options?: ProbeOptions): Promise<StatusReport
         },
         categories,
     };
+
+    writeProbeTelemetrySummary(report, startedAt, "all");
+    return report;
 }
 
 /**
@@ -96,6 +101,7 @@ export async function runSingleProbe(
     category: string,
     options?: ProbeOptions
 ): Promise<StatusReport> {
+    const startedAt = Date.now();
     const timestamp = new Date().toISOString();
     const categories: StatusReport["categories"] = {};
     let warnings = 0;
@@ -122,7 +128,7 @@ export async function runSingleProbe(
     if (result.status === "warning") warnings++;
     if (result.status === "error") errors++;
 
-    return {
+    const report = {
         version: "1.0",
         timestamp,
         summary: {
@@ -132,6 +138,9 @@ export async function runSingleProbe(
         },
         categories,
     };
+
+    writeProbeTelemetrySummary(report, startedAt, category);
+    return report;
 }
 
 /**
@@ -142,4 +151,22 @@ export function formatReport(report: StatusReport, options: FormatOptions, comma
         return formatJson(report, command ?? "msgcode status", startTime ?? Date.now());
     }
     return formatText(report);
+}
+
+function writeProbeTelemetrySummary(report: StatusReport, startedAtMs: number, name: string): void {
+    try {
+        const count = Object.values(report.categories).reduce((total, category) => total + category.probes.length, 0);
+        appendTelemetryLedgerEntry(process.cwd(), {
+            ts: new Date().toISOString(),
+            kind: "probe",
+            source: "probe-index",
+            name,
+            ok: report.summary.status === "pass",
+            durationMs: Math.max(0, Date.now() - startedAtMs),
+            workspace: process.cwd(),
+            count,
+        });
+    } catch {
+        // best-effort probe telemetry
+    }
 }
