@@ -194,4 +194,41 @@ describe("tk0335: web composer runtime-router consumer", () => {
     expect(stillNew).toHaveLength(1);
     expect(stillNew[0]?.path).toBe(brokenPath);
   });
+
+  it("handler 逻辑失败时不应提前推进到 triaged", async () => {
+    const { createInboxRequest, listInboxRequests } = await import("../src/runtime/inbox-store.js");
+    const { consumeWebInboxRequest } = await import("../src/cli/inbox.js");
+    const handlersModule = await import("../src/handlers.js");
+    const originalHandle = handlersModule.RuntimeRouterHandler.prototype.handle;
+    handlersModule.RuntimeRouterHandler.prototype.handle = async () => ({
+      success: false,
+      error: "stubbed handler failure",
+      response: "",
+    });
+
+    try {
+      const created = await createInboxRequest(workspacePath, {
+        id: "web-msg-2",
+        transport: "web",
+        chatId: "web:family",
+        text: "帮我试试一个不存在的工具",
+        isFromMe: false,
+        date: Date.now(),
+        sender: "sam",
+        senderName: "sam",
+        handle: "sam",
+        isGroup: false,
+        messageType: "text",
+      });
+
+      await expect(consumeWebInboxRequest({ workspacePath })).rejects.toThrow("stubbed handler failure");
+
+      const stillNew = await listInboxRequests(workspacePath, { state: "new", transport: "web" });
+      const triaged = await listInboxRequests(workspacePath, { state: "triaged", transport: "web" });
+      expect(stillNew.map((item) => item.requestNumber)).toContain(created.requestNumber);
+      expect(triaged).toHaveLength(0);
+    } finally {
+      handlersModule.RuntimeRouterHandler.prototype.handle = originalHandle;
+    }
+  });
 });

@@ -129,7 +129,7 @@ describe("appliance people-save contract", () => {
     expect(csv).toContain("feishu,feishu:oc_family,ou_sam,sam,owner,新备注,2026-03-10T14:19:49Z,");
   });
 
-  it("notes 带换行时应收成单行，避免写烂 csv", async () => {
+  it("notes 带换行或回车时应收成单行，避免写烂 csv", async () => {
     const root = await makeTempRoot();
     tempRoots.push(root);
     const homeRoot = path.join(root, "home");
@@ -155,7 +155,7 @@ describe("appliance people-save contract", () => {
       "--alias",
       "sam",
       "--notes",
-      "默认主要服务对象\n负责接娃",
+      "默认主要服务对象\r\n负责接娃",
       "--json",
     ], {
       cwd: "/Users/admin/GitProjects/msgcode",
@@ -173,6 +173,7 @@ describe("appliance people-save contract", () => {
     const csvPath = path.join(workspacePath, ".msgcode", "character-identity", "feishu-oc_family.csv");
     const csv = await fs.readFile(csvPath, "utf8");
     expect(csv).toContain("默认主要服务对象 负责接娃");
-    expect(csv).not.toContain("默认主要服务对象\n负责接娃");
+    expect(csv).not.toContain("默认主要服务对象\r\n负责接娃");
+    expect(csv).not.toContain("\r");
   });
 });

@@ -130,17 +130,17 @@ function parseCsvLine(line: string): string[] {
 
 function renderCsvCell(value: string): string {
   const raw = String(value ?? "");
-  if (/[",\n]/.test(raw)) {
+  if (/[",\n\r]/.test(raw)) {
     return `"${raw.replace(/"/g, "\"\"")}"`;
   }
   return raw;
 }
 
-function normalizeCell(value: unknown): string {
+export function normalizeCell(value: unknown): string {
   return String(value ?? "").trim();
 }
 
-function normalizeRequiredCell(value: unknown, message: string): string {
+export function normalizeRequiredCell(value: unknown, message: string): string {
   const normalized = normalizeCell(value);
   if (!normalized) {
     throw new Error(message);

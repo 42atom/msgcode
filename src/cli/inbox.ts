@@ -95,12 +95,12 @@ export async function consumeWebInboxRequest(params: {
     originalMessage: message,
   });
 
-  const triaged = await advanceInboxRequestState(request, "triaged");
-
   if (!result.success) {
     const errorMessage = result.error || "RuntimeRouterHandler 返回失败";
     throw new Error(errorMessage);
   }
+
+  const triaged = await advanceInboxRequestState(request, "triaged");
 
   return {
     handled: true,

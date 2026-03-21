@@ -386,6 +386,9 @@ describe("appliance set-profile contract", () => {
     expect(payload.errors.some((item: { code?: string; details?: { failedFile?: string } }) =>
       item.code === "APPLIANCE_PROFILE_MUTATION_FAILED" && item.details?.failedFile === configPath
     )).toBe(true);
+    expect(payload.errors.some((item: { details?: { causeCode?: string } }) =>
+      item.details?.causeCode === "WORKSPACE_CONFIG_INVALID"
+    )).toBe(true);
     expect(await fs.readFile(configPath, "utf8")).toBe("{bad json");
   });
 });

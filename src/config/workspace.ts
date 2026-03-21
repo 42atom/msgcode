@@ -329,6 +329,18 @@ export async function saveWorkspaceConfig(
   await atomicWriteFile(configPath, JSON.stringify(merged, null, 2));
 }
 
+export class WorkspaceConfigMutationError extends Error {
+  code: "WORKSPACE_CONFIG_INVALID";
+  configPath: string;
+
+  constructor(configPath: string, message: string) {
+    super(message);
+    this.name = "WorkspaceConfigMutationError";
+    this.code = "WORKSPACE_CONFIG_INVALID";
+    this.configPath = configPath;
+  }
+}
+
 async function readWorkspaceConfigForMutation(projectDir: string): Promise<WorkspaceConfig> {
   const configPath = getConfigPath(projectDir);
   if (!existsSync(configPath)) {
@@ -343,7 +355,10 @@ async function readWorkspaceConfigForMutation(projectDir: string): Promise<Works
     }
     return parsed as WorkspaceConfig;
   } catch (error) {
-    throw new Error(`workspace config.json 解析失败: ${error instanceof Error ? error.message : String(error)}`);
+    throw new WorkspaceConfigMutationError(
+      configPath,
+      `workspace config.json 解析失败: ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 }
 

@@ -185,7 +185,7 @@ function parseRequestField(content: string, field: string): string {
 }
 
 function parseTextBlock(content: string): string {
-  const match = content.match(/^## Text\s+```text\s*[\r\n]+([\s\S]*?)\r?\n```/m);
+  const match = content.match(/^## Text\s+```text\s*[\r\n]+([\s\S]*?)[\r\n]```/m);
   if (!match) {
     return "";
   }

@@ -13,7 +13,7 @@ import { readWorkspacePackRegistry, type WorkspacePackSurfaceData } from "../run
 import { readWorkspaceProfileSurface, type WorkspaceProfileSurfaceData } from "../runtime/workspace-profile.js";
 import { readWorkspaceGeneralSurface, type WorkspaceGeneralSurfaceData } from "../runtime/workspace-general.js";
 import { readWorkspaceCapabilitySurface, type WorkspaceCapabilitySurfaceData } from "../runtime/workspace-capabilities.js";
-import { saveWorkspaceConfig } from "../config/workspace.js";
+import { saveWorkspaceConfig, WorkspaceConfigMutationError } from "../config/workspace.js";
 import {
   readWorkspaceNeighborSurface,
   type WorkspaceNeighborSurfaceData,
@@ -101,12 +101,14 @@ interface ApplianceProfileMutationData {
 class ApplianceProfileMutationError extends Error {
   changedFiles: string[];
   failedFile: string;
+  causeCode: string;
 
-  constructor(message: string, changedFiles: string[], failedFile: string) {
+  constructor(message: string, changedFiles: string[], failedFile: string, causeCode = "") {
     super(message);
     this.name = "ApplianceProfileMutationError";
     this.changedFiles = changedFiles;
     this.failedFile = failedFile;
+    this.causeCode = causeCode;
   }
 }
 
@@ -279,12 +281,12 @@ function defaultOrgContent(): string {
 
 function normalizeLineInput(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
-  return value.replace(/\r?\n+/g, " ").trim();
+  return value.replace(/[\r\n]+/g, " ").trim();
 }
 
 function normalizeMultilineInput(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
-  return value.replace(/\r\n/g, "\n").trimEnd();
+  return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trimEnd();
 }
 
 function upsertMarkdownField(content: string, label: string, value: string): string {
@@ -340,6 +342,7 @@ async function saveWorkspaceProfileSurface(args: {
         error instanceof Error ? error.message : String(error),
         changedFiles,
         configPath,
+        error instanceof WorkspaceConfigMutationError ? error.code : "",
       );
     }
   }
@@ -678,6 +681,7 @@ export function createApplianceCommand(): Command {
             workspacePath,
             failedFile: mutationError?.failedFile ?? "",
             changedFiles: mutationError?.changedFiles ?? [],
+            causeCode: mutationError?.causeCode ?? "",
             error: error instanceof Error ? error.message : String(error),
           },
         });

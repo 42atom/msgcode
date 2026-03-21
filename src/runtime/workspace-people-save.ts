@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import { atomicWriteFile } from "./fs-atomic.js";
 import {
   getWorkspaceCharacterIdentityCsvPath,
+  normalizeCell,
+  normalizeRequiredCell,
   parseWorkspacePeopleCsv,
   renderWorkspacePeopleCsv,
   type WorkspacePeopleCsvRow,
@@ -78,20 +80,8 @@ export async function saveWorkspacePerson(input: SaveWorkspacePersonInput): Prom
   };
 }
 
-function normalizeCell(value: unknown): string {
-  return String(value ?? "").trim();
-}
-
 function normalizeSingleLineCell(value: unknown): string {
-  return normalizeCell(value).replace(/\r?\n+/g, " ").trim();
-}
-
-function normalizeRequiredCell(value: unknown, message: string): string {
-  const normalized = normalizeCell(value);
-  if (!normalized) {
-    throw new Error(message);
-  }
-  return normalized;
+  return normalizeCell(value).replace(/[\r\n]+/g, " ").trim();
 }
 
 function normalizeRequiredSingleLineCell(value: unknown, message: string): string {
