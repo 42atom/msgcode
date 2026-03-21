@@ -21,7 +21,7 @@
             </div>
           </div>
           <div class="status-cluster">
-            <div class="status-pill">只看与恢复</div>
+            <div class="status-pill" id="archive-status">只看与恢复</div>
           </div>
         </header>
 
@@ -32,110 +32,21 @@
                 <p class="eyebrow">项目归档</p>
                 <h3>已归档工作区</h3>
               </div>
-              <div class="archive-list">
-                <article class="archive-item">
-                  <div class="archive-item__head">
-                    <div>
-                      <h4>smoke</h4>
-                      <p class="archive-item__path">/Users/admin/msgcode-workspaces/.archive/smoke</p>
-                    </div>
-                    <span class="inline-chip inline-chip--muted">workspace</span>
-                  </div>
-                  <div class="archive-item__meta">
-                    <span>归档原因：冒烟工作区</span>
-                    <span>最近活跃：03-20</span>
-                  </div>
-                  <div class="archive-item__actions">
-                    <button class="ghost-mini">查看</button>
-                    <button class="action-button action-button--ghost">恢复到活跃列表</button>
-                  </div>
-                </article>
-
-                <article class="archive-item">
-                  <div class="archive-item__head">
-                    <div>
-                      <h4>smoke-agent-cli</h4>
-                      <p class="archive-item__path">/Users/admin/msgcode-workspaces/.archive/smoke-agent-cli</p>
-                    </div>
-                    <span class="inline-chip inline-chip--muted">workspace</span>
-                  </div>
-                  <div class="archive-item__meta">
-                    <span>归档原因：测试残留</span>
-                    <span>最近活跃：03-18</span>
-                  </div>
-                  <div class="archive-item__actions">
-                    <button class="ghost-mini">查看</button>
-                    <button class="action-button action-button--ghost">恢复到活跃列表</button>
-                  </div>
-                </article>
-
-                <article class="archive-item">
-                  <div class="archive-item__head">
-                    <div>
-                      <h4>test-r9-smoke</h4>
-                      <p class="archive-item__path">/Users/admin/msgcode-workspaces/.archive/test-r9-smoke</p>
-                    </div>
-                    <span class="inline-chip inline-chip--muted">workspace</span>
-                  </div>
-                  <div class="archive-item__meta">
-                    <span>归档原因：阶段性测试结束</span>
-                    <span>最近活跃：03-17</span>
-                  </div>
-                  <div class="archive-item__actions">
-                    <button class="ghost-mini">查看</button>
-                    <button class="action-button action-button--ghost">恢复到活跃列表</button>
-                  </div>
-                </article>
-              </div>
+              <div class="archive-list" id="archived-workspaces"></div>
             </section>
 
             <section class="panel archive-panel">
               <div class="panel-head">
                 <p class="eyebrow">线程归档</p>
-                <h3>family 已归档线程</h3>
+                <h3 id="archived-threads-title">已归档线程</h3>
               </div>
-              <div class="archive-list">
-                <article class="archive-item">
-                  <div class="archive-item__head">
-                    <div>
-                      <h4>145了该接小孩了</h4>
-                      <p class="archive-item__path">family/.msgcode/archived-threads/copy-edit.md</p>
-                    </div>
-                    <span class="inline-chip inline-chip--muted">thread</span>
-                  </div>
-                  <div class="archive-item__meta">
-                    <span>来源：feishu</span>
-                    <span>chatId：feishu:oc_family</span>
-                  </div>
-                  <div class="archive-item__actions">
-                    <button class="ghost-mini">查看</button>
-                    <button class="action-button action-button--ghost">恢复到当前线程列表</button>
-                  </div>
-                </article>
-
-                <article class="archive-item">
-                  <div class="archive-item__head">
-                    <div>
-                      <h4>今天为什么没有提醒我</h4>
-                      <p class="archive-item__path">family/.msgcode/archived-threads/missed-reminder.md</p>
-                    </div>
-                    <span class="inline-chip inline-chip--muted">thread</span>
-                  </div>
-                  <div class="archive-item__meta">
-                    <span>来源：feishu</span>
-                    <span>状态：已收口</span>
-                  </div>
-                  <div class="archive-item__actions">
-                    <button class="ghost-mini">查看</button>
-                    <button class="action-button action-button--ghost">恢复到当前线程列表</button>
-                  </div>
-                </article>
-              </div>
+              <div class="archive-list" id="archived-threads"></div>
             </section>
           </div>
-          <p class="archive-footnote">主界面只显示活跃工作区和活跃线程。归档内容只在这里查看与恢复。</p>
+          <p class="archive-footnote" id="archive-footnote">主界面只显示活跃工作区和活跃线程。归档内容只在这里查看与恢复。</p>
         </section>
       </main>
     </div>
+    <script src="./archive.js"></script>
   </body>
 </html>

@@ -1307,6 +1307,11 @@ textarea {
   gap: 10px;
 }
 
+.archive-item--empty {
+  min-height: 88px;
+  align-content: center;
+}
+
 .archive-item__head {
   display: flex;
   justify-content: space-between;
