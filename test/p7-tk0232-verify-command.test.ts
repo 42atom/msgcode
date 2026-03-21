@@ -3,11 +3,20 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { executeVerifyRun } from "../src/cli/verify.js";
+import { getTelemetryLedgerPath } from "../src/runtime/telemetry-ledger.js";
 import { __resetBashRunnerTestDeps, __setBashRunnerTestDeps } from "../src/runners/bash-runner.js";
 import { writeDispatchRecord, loadDispatchRecords } from "../src/runtime/work-continuity.js";
 
 function createTempDir(prefix: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+}
+
+function readTelemetryLedgerEntries(ledgerPath: string): Array<Record<string, unknown>> {
+  return fs.readFileSync(ledgerPath, "utf8")
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
 describe("tk0232: verify command and result contract", () => {
@@ -65,6 +74,15 @@ accept: pass
     ]);
     expect(result.envelope.data.results).toHaveLength(2);
     expect(result.envelope.data.results.every((item) => item.ok)).toBe(true);
+
+    const ledgerPath = getTelemetryLedgerPath(workspace);
+    expect(fs.existsSync(ledgerPath)).toBe(true);
+    const entries = readTelemetryLedgerEntries(ledgerPath);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.kind).toBe("verify");
+    expect(entries[0]?.source).toBe("verify");
+    expect(entries[0]?.name).toBe("run");
+    expect(entries[0]?.ok).toBe(true);
   });
 
   it("R2: verify run 带 dispatch 时应把证据回写到 dispatch.result.evidence", async () => {
@@ -147,5 +165,14 @@ accept: fail
     expect(snapshot.taskId).toBe("tk5678");
     expect(snapshot.exitCode).toBe(9);
     expect(snapshot.stderrTail).toContain("boom");
+
+    const ledgerPath = getTelemetryLedgerPath(workspace);
+    expect(fs.existsSync(ledgerPath)).toBe(true);
+    const entries = readTelemetryLedgerEntries(ledgerPath);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.kind).toBe("verify");
+    expect(entries[0]?.source).toBe("verify");
+    expect(entries[0]?.name).toBe("run");
+    expect(entries[0]?.ok).toBe(false);
   });
 });

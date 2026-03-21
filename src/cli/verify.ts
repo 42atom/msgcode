@@ -1,9 +1,11 @@
 import { Command } from "commander";
 import path from "node:path";
 import type { Diagnostic } from "../memory/types.js";
+import { logger } from "../logger/index.js";
 import { createEnvelope, getWorkspacePath } from "./command-runner.js";
 import { loadTaskDocuments, appendDispatchVerificationEvidence } from "../runtime/work-continuity.js";
 import { runBashCommand } from "../runners/bash-runner.js";
+import { appendTelemetryLedgerEntry } from "../runtime/telemetry-ledger.js";
 import { writeFailureSnapshot, writeTaskEvidence } from "../runtime/failure-evidence.js";
 
 type VerifyCommandResult = {
@@ -39,6 +41,35 @@ function clipText(text: string, maxChars: number): string {
 
 function parseTimeoutMs(rawValue: unknown): number {
   return Math.max(1, Number.parseInt(String(rawValue), 10) || 120000);
+}
+
+function appendVerifyTelemetryLedgerEntry(params: {
+  workspacePath: string;
+  name: string;
+  ok: boolean;
+  durationMs: number;
+  errorCode?: string;
+}): void {
+  try {
+    appendTelemetryLedgerEntry(params.workspacePath, {
+      ts: new Date().toISOString(),
+      kind: "verify",
+      source: "verify",
+      name: params.name,
+      ok: params.ok,
+      durationMs: params.durationMs,
+      workspace: params.workspacePath,
+      errorCode: params.errorCode,
+      count: 1,
+    });
+  } catch (error) {
+    logger.warn("Verify telemetry ledger write failed", {
+      module: "verify",
+      workspacePath: params.workspacePath,
+      name: params.name,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 async function executeVerificationCommands(
@@ -179,12 +210,20 @@ export async function executeVerifyRun(options: {
   const command = "msgcode verify run";
   const warnings: Diagnostic[] = [];
   const errors: Diagnostic[] = [];
+  let workspacePath: string | undefined;
 
   try {
-    const workspacePath = getWorkspacePath(options.workspace);
+    workspacePath = getWorkspacePath(options.workspace);
     const { task, verificationCommands } = await loadTaskVerificationCommands(workspacePath, String(options.task));
 
     if (!task) {
+      appendVerifyTelemetryLedgerEntry({
+        workspacePath,
+        name: "run",
+        ok: false,
+        durationMs: Date.now() - startTime,
+        errorCode: "VERIFY_TASK_NOT_FOUND",
+      });
       errors.push({
         code: "VERIFY_TASK_NOT_FOUND",
         message: `任务不存在: ${options.task}`,
@@ -195,6 +234,13 @@ export async function executeVerifyRun(options: {
     }
 
     if (verificationCommands.length === 0) {
+      appendVerifyTelemetryLedgerEntry({
+        workspacePath,
+        name: "run",
+        ok: false,
+        durationMs: Date.now() - startTime,
+        errorCode: "VERIFY_COMMANDS_MISSING",
+      });
       warnings.push({
         code: "VERIFY_COMMANDS_MISSING",
         message: `任务 ${options.task} 没有声明 Verify 命令`,
@@ -234,6 +280,13 @@ export async function executeVerifyRun(options: {
       taskId: task.id,
       results,
     });
+    appendVerifyTelemetryLedgerEntry({
+      workspacePath,
+      name: "run",
+      ok,
+      durationMs: Date.now() - startTime,
+      errorCode: ok ? undefined : "VERIFY_COMMAND_FAILED",
+    });
     await appendVerificationEvidenceIfNeeded(workspacePath, options.dispatch, evidence, results, warnings);
 
     const envelope = createEnvelope(
@@ -257,6 +310,15 @@ export async function executeVerifyRun(options: {
 
     return { envelope, exitCode: ok ? (warnings.length > 0 ? 2 : 0) : 2 };
   } catch (error) {
+    if (workspacePath) {
+      appendVerifyTelemetryLedgerEntry({
+        workspacePath,
+        name: "run",
+        ok: false,
+        durationMs: Date.now() - startTime,
+        errorCode: "VERIFY_RUN_FAILED",
+      });
+    }
     errors.push({
       code: "VERIFY_RUN_FAILED",
       message: error instanceof Error ? error.message : String(error),
@@ -280,6 +342,7 @@ export async function executeVerifyPack(
   const command = `msgcode verify pack ${packValue}`;
   const warnings: Diagnostic[] = [];
   const errors: Diagnostic[] = [];
+  let workspacePath: string | undefined;
 
   try {
     const pack = String(packValue).trim().toLowerCase() as VerifyPackName;
@@ -293,7 +356,7 @@ export async function executeVerifyPack(
       return { envelope, exitCode: 1 };
     }
 
-    const workspacePath = getWorkspacePath(options.workspace);
+    workspacePath = getWorkspacePath(options.workspace);
     let taskPath: string | undefined;
     const explicitCommands = Array.isArray(options.command)
       ? options.command.map((value: string) => String(value).trim()).filter(Boolean)
@@ -303,6 +366,13 @@ export async function executeVerifyPack(
     if (pack === "custom" && verificationCommands.length === 0 && options.task) {
       const loaded = await loadTaskVerificationCommands(workspacePath, String(options.task));
       if (!loaded.task) {
+        appendVerifyTelemetryLedgerEntry({
+          workspacePath,
+          name: `pack:${pack}`,
+          ok: false,
+          durationMs: Date.now() - startTime,
+          errorCode: "VERIFY_TASK_NOT_FOUND",
+        });
         errors.push({
           code: "VERIFY_TASK_NOT_FOUND",
           message: `任务不存在: ${options.task}`,
@@ -316,6 +386,13 @@ export async function executeVerifyPack(
     }
 
     if (verificationCommands.length === 0) {
+      appendVerifyTelemetryLedgerEntry({
+        workspacePath,
+        name: `pack:${pack}`,
+        ok: false,
+        durationMs: Date.now() - startTime,
+        errorCode: "VERIFY_PACK_COMMANDS_MISSING",
+      });
       const hint = pack === "e2e"
         ? "e2e 需显式给出 browser 或 live smoke 命令；基座见 docs/testing/feishu-live-smoke.md"
         : pack === "custom"
@@ -363,6 +440,13 @@ export async function executeVerifyPack(
       pack,
       results,
     });
+    appendVerifyTelemetryLedgerEntry({
+      workspacePath,
+      name: `pack:${pack}`,
+      ok,
+      durationMs: Date.now() - startTime,
+      errorCode: ok ? undefined : "VERIFY_COMMAND_FAILED",
+    });
     await appendVerificationEvidenceIfNeeded(workspacePath, options.dispatch, evidence, results, warnings);
 
     const envelope = createEnvelope(
@@ -387,6 +471,15 @@ export async function executeVerifyPack(
 
     return { envelope, exitCode: ok ? (warnings.length > 0 ? 2 : 0) : 2 };
   } catch (error) {
+    if (workspacePath) {
+      appendVerifyTelemetryLedgerEntry({
+        workspacePath,
+        name: `pack:${String(packValue).trim().toLowerCase()}`,
+        ok: false,
+        durationMs: Date.now() - startTime,
+        errorCode: "VERIFY_PACK_FAILED",
+      });
+    }
     errors.push({
       code: "VERIFY_PACK_FAILED",
       message: error instanceof Error ? error.message : String(error),

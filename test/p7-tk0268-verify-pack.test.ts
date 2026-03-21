@@ -3,10 +3,19 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { executeVerifyPack } from "../src/cli/verify.js";
+import { getTelemetryLedgerPath } from "../src/runtime/telemetry-ledger.js";
 import { __resetBashRunnerTestDeps, __setBashRunnerTestDeps } from "../src/runners/bash-runner.js";
 
 function createTempDir(prefix: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+}
+
+function readTelemetryLedgerEntries(ledgerPath: string): Array<Record<string, unknown>> {
+  return fs.readFileSync(ledgerPath, "utf8")
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
 describe("tk0268: verify pack normalization for coding lane", () => {
@@ -99,5 +108,24 @@ accept: pass
     expect(result.envelope.data.pack).toBe("types");
     expect(result.envelope.data.verificationCommands).toEqual(["./node_modules/.bin/tsc --noEmit"]);
     expect(result.envelope.data.results).toHaveLength(1);
+  });
+
+  it("R5: custom pack 应追加 verify telemetry ledger", async () => {
+    const result = await executeVerifyPack("custom", {
+      workspace,
+      command: ["printf pack-ok"],
+    });
+
+    expect(result.envelope.status).toBe("pass");
+    expect(result.exitCode).toBe(0);
+
+    const ledgerPath = getTelemetryLedgerPath(workspace);
+    expect(fs.existsSync(ledgerPath)).toBe(true);
+    const entries = readTelemetryLedgerEntries(ledgerPath);
+    expect(entries).toHaveLength(1);
+    expect(entries[0]?.kind).toBe("verify");
+    expect(entries[0]?.source).toBe("verify");
+    expect(entries[0]?.name).toBe("pack:custom");
+    expect(entries[0]?.ok).toBe(true);
   });
 });
