@@ -15,12 +15,13 @@ import { describe, test, expect, beforeEach, afterEach, mock } from "bun:test";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, rmSync, writeFileSync, existsSync, readFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync, existsSync, readFileSync, readdirSync } from "node:fs";
 import type { ToolContext, ToolSource } from "../src/tools/types.js";
 import { executeTool, canExecuteTool, getToolPolicy } from "../src/tools/bus.js";
 import { recordToolEvent, getToolStats, clearToolEvents } from "../src/tools/telemetry.js";
 import type { ToolPolicy, ToolName } from "../src/tools/types.js";
 import { getToolPolicy as getWorkspaceToolPolicy } from "../src/config/workspace.js";
+import { appendTelemetryLedgerEntry, getTelemetryLedgerPath } from "../src/runtime/telemetry-ledger.js";
 
 describe("Tool Bus", () => {
   let tempWorkspace: string;
@@ -355,6 +356,64 @@ describe("Tool Bus", () => {
       expect(stats.topErrorCodes[0].count).toBe(1);
       expect(stats.bySource["slash-command"]).toBe(2);
       expect(stats.bySource["media-pipeline"]).toBe(1);
+    });
+
+    test("应该把 tool event 追加写入 telemetry ledger，且不落大字段", () => {
+      clearToolEvents();
+
+      recordToolEvent({
+        requestId: randomUUID(),
+        workspacePath: tempWorkspace,
+        tool: "bash",
+        source: "slash-command",
+        durationMs: 123,
+        ok: false,
+        errorCode: "TOOL_EXEC_FAILED",
+        errorMessage: "boom detail",
+        artifactPaths: ["/tmp/output.log"],
+        timestamp: Date.now(),
+      });
+
+      const ledgerPath = getTelemetryLedgerPath(tempWorkspace);
+      expect(existsSync(ledgerPath)).toBe(true);
+
+      const lines = readFileSync(ledgerPath, "utf8").trim().split("\n");
+      expect(lines).toHaveLength(1);
+      const entry = JSON.parse(lines[0]) as Record<string, unknown>;
+      expect(entry.kind).toBe("tool");
+      expect(entry.source).toBe("tool-bus");
+      expect(entry.name).toBe("bash");
+      expect(entry.ok).toBe(false);
+      expect(entry.errorCode).toBe("TOOL_EXEC_FAILED");
+      expect(entry.count).toBe(1);
+      expect(entry.errorMessage).toBeUndefined();
+      expect(entry.artifactPaths).toBeUndefined();
+    });
+
+    test("应该只保留最近 7 天 telemetry ledger", () => {
+      for (let day = 1; day <= 9; day++) {
+        appendTelemetryLedgerEntry(tempWorkspace, {
+          ts: `2026-03-0${day}T00:00:00.000Z`,
+          kind: "tool",
+          source: "tool-bus",
+          name: `tool-${day}`,
+          ok: true,
+          durationMs: day,
+        });
+      }
+
+      const telemetryDir = join(tempWorkspace, ".msgcode", "telemetry");
+      const ledgers = readdirSync(telemetryDir).filter((name) => name.endsWith(".ndjson")).sort();
+
+      expect(ledgers).toEqual([
+        "telemetry-2026-03-03.ndjson",
+        "telemetry-2026-03-04.ndjson",
+        "telemetry-2026-03-05.ndjson",
+        "telemetry-2026-03-06.ndjson",
+        "telemetry-2026-03-07.ndjson",
+        "telemetry-2026-03-08.ndjson",
+        "telemetry-2026-03-09.ndjson",
+      ]);
     });
   });
 

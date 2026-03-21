@@ -10,6 +10,7 @@
  */
 
 import { logger } from "../logger/index.js";
+import { appendTelemetryLedgerEntry } from "../runtime/telemetry-ledger.js";
 
 // ============================================
 // 类型定义
@@ -161,6 +162,28 @@ export function recordToolEvent(event: ToolEvent): void {
       artifactPaths: event.artifactPaths,
     }
   );
+
+  try {
+    appendTelemetryLedgerEntry(event.workspacePath, {
+      ts: new Date(event.timestamp).toISOString(),
+      kind: "tool",
+      source: "tool-bus",
+      name: event.tool,
+      ok: event.ok,
+      durationMs: event.durationMs,
+      workspace: event.workspacePath,
+      errorCode: event.errorCode,
+      count: 1,
+    });
+  } catch (error) {
+    logger.warn("Tool Bus telemetry ledger write failed", {
+      module: "tools-bus",
+      requestId: event.requestId,
+      workspacePath: event.workspacePath,
+      tool: event.tool,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 
   // 存入 ring buffer
   eventBuffer.push(event);
