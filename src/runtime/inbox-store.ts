@@ -15,6 +15,12 @@ export interface InboxRequestRecord {
   path: string;
 }
 
+export interface InboxRequestSelection {
+  state?: InboxRequestState;
+  transport?: string;
+  requestNumber?: string;
+}
+
 const INBOX_FILE_PATTERN =
   /^(?<requestNumber>rq\d{4})\.(?<state>new|triaged)\.(?<transport>[a-z0-9-]+)\.(?<slug>[a-z0-9-]+)\.md$/i;
 
@@ -163,6 +169,104 @@ function parseInboxFilename(filePath: string): InboxRequestRecord | null {
     transport: match.groups.transport.toLowerCase(),
     slug: match.groups.slug.toLowerCase(),
     path: filePath,
+  };
+}
+
+function parseFrontMatterField(content: string, field: string): string {
+  const escapedField = field.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = content.match(new RegExp(`^${escapedField}:\\s*(.*)$`, "m"));
+  return match?.[1]?.trim() || "";
+}
+
+function parseRequestField(content: string, field: string): string {
+  const escapedField = field.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = content.match(new RegExp(`^-\\s+${escapedField}:\\s*(.*)$`, "m"));
+  return match?.[1]?.trim() || "";
+}
+
+function parseTextBlock(content: string): string {
+  const match = content.match(/^## Text\s+```text\s*[\r\n]+([\s\S]*?)\r?\n```/m);
+  if (!match) {
+    return "";
+  }
+  const text = match[1] ?? "";
+  return text === "(empty)" ? "" : text;
+}
+
+function parseBooleanField(value: string): boolean | undefined {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  return undefined;
+}
+
+function parseNumberField(value: string): number | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+export async function listInboxRequests(
+  workspacePath: string,
+  selection: InboxRequestSelection = {}
+): Promise<InboxRequestRecord[]> {
+  const inboxDir = getInboxDir(workspacePath);
+  if (!existsSync(inboxDir)) {
+    return [];
+  }
+
+  const files = await readdir(inboxDir);
+  const records = files
+    .map((file) => parseInboxFilename(path.join(inboxDir, file)))
+    .filter((record): record is InboxRequestRecord => Boolean(record))
+    .filter((record) => {
+      if (selection.state && record.state !== selection.state) {
+        return false;
+      }
+      if (selection.transport && record.transport !== selection.transport) {
+        return false;
+      }
+      if (selection.requestNumber && record.requestNumber !== selection.requestNumber.toLowerCase()) {
+        return false;
+      }
+      return true;
+    })
+    .sort((left, right) => left.requestNumber.localeCompare(right.requestNumber));
+
+  return records;
+}
+
+export async function readInboxRequestMessage(request: InboxRequestRecord): Promise<InboundMessage> {
+  const content = await readFile(request.path, "utf8");
+  const createdAt = parseFrontMatterField(content, "created_at");
+  const requestId = parseFrontMatterField(content, "request_id");
+  const chatId = parseRequestField(content, "chat_id");
+  const sender = parseRequestField(content, "sender");
+  const senderName = parseRequestField(content, "sender_name");
+  const handle = parseRequestField(content, "handle");
+  const messageType = parseRequestField(content, "message_type") || "text";
+  const isGroup = parseBooleanField(parseRequestField(content, "is_group"));
+  const rowid = parseNumberField(parseRequestField(content, "rowid"));
+  const text = parseTextBlock(content);
+
+  if (!requestId || !chatId) {
+    throw new Error(`inbox 请求缺少 request_id 或 chat_id: ${request.path}`);
+  }
+
+  return {
+    id: requestId,
+    transport: request.transport,
+    chatId,
+    text,
+    isFromMe: false,
+    date: createdAt ? Date.parse(createdAt) : Date.now(),
+    sender,
+    senderName,
+    handle,
+    rowid,
+    isGroup,
+    messageType,
   };
 }
 
