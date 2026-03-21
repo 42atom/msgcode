@@ -17,6 +17,32 @@ const observerPanel = document.getElementById("observer-panel");
 const observerToggle = document.getElementById("observer-toggle");
 const observerClose = document.getElementById("observer-close");
 
+const WORKSPACE_ORDER_STORAGE_KEY = "msgcode-ui-workspace-order";
+
+const familySchedules = [
+  {
+    id: "pick-up-kids",
+    enabled: true,
+    cron: "45 11 * * 1-5",
+    tz: "Asia/Shanghai",
+    message: "通知用户 ⏰ 中午要接小孩回家了",
+  },
+  {
+    id: "send-kids-school",
+    enabled: true,
+    cron: "40 13 * * 1-5",
+    tz: "Asia/Shanghai",
+    message: "通知用户 ⏰: 1:40了该送小孩上学了",
+  },
+  {
+    id: "pickup-kid",
+    enabled: true,
+    cron: "0 16 * * 1-5",
+    tz: "Asia/Shanghai",
+    message: "通知用户去学校接娃 ⏰: 放学接娃",
+  },
+];
+
 const workspaceTreeData = {
   workspaceRoot: "/Users/admin/msgcode-workspaces",
   workspaces: [
@@ -26,35 +52,79 @@ const workspaceTreeData = {
     {
       key: "default",
       name: "default",
+      currentThreadId: "thread-default-reminder",
       threads: [
-        { key: "default-reminder", title: "以后所有定时提醒文字内容前面加一个‘⏰’,这样", source: "feishu" },
-        { key: "default-hi", title: "hi", source: "feishu" },
+        {
+          threadId: "thread-default-reminder",
+          title: "以后所有定时提醒文字内容前面加一个‘⏰’,这样",
+          source: "feishu",
+          lastTurnAt: "2026-03-18T08:20:00.000Z",
+        },
+        {
+          threadId: "thread-default-hi",
+          title: "hi",
+          source: "feishu",
+          lastTurnAt: "2026-03-17T02:10:00.000Z",
+        },
       ],
     },
     {
       key: "family",
       name: "family",
+      currentThreadId: "thread-family-door",
       peopleCount: 2,
       open: true,
       threads: [
-        { key: "door", title: "我在门口准备好了", source: "feishu", selected: true },
-        { key: "missed-reminder", title: "今天为什么没有提醒我", source: "feishu" },
-        { key: "vision", title: "@_user_1 你看看这个小朋友的视力检查结果", source: "feishu" },
-        { key: "copy-edit", title: "145了该接小孩了", source: "feishu" },
+        {
+          threadId: "thread-family-door",
+          title: "我在门口准备好了",
+          source: "feishu",
+          lastTurnAt: "2026-03-20T05:43:18.204Z",
+        },
+        {
+          threadId: "thread-family-missed-reminder",
+          title: "今天为什么没有提醒我",
+          source: "feishu",
+          lastTurnAt: "2026-03-19T02:14:00.000Z",
+        },
+        {
+          threadId: "thread-family-vision",
+          title: "@_user_1 你看看这个小朋友的视力检查结果",
+          source: "feishu",
+          lastTurnAt: "2026-03-17T07:10:00.000Z",
+        },
+        {
+          threadId: "thread-family-copy-edit",
+          title: "145了该接小孩了",
+          source: "feishu",
+          lastTurnAt: "2026-03-16T11:30:00.000Z",
+        },
       ],
     },
     {
       key: "game01",
       name: "game01",
+      currentThreadId: "thread-game01-smoke",
       threads: [
-        { key: "game01-smoke", title: "【SMOKE-SKILL-1771572317】-2", source: "feishu" },
+        {
+          threadId: "thread-game01-smoke",
+          title: "【SMOKE-SKILL-1771572317】-2",
+          source: "feishu",
+          lastTurnAt: "2026-03-14T10:00:00.000Z",
+        },
       ],
     },
     {
       key: "medicpass",
       name: "medicpass",
+      currentThreadId: "thread-medicpass-model",
       threads: [
-        { key: "medicpass-model", title: "你是什么模型", source: "feishu" },
+        {
+          threadId: "thread-medicpass-model",
+          title: "你是什么模型",
+          source: "feishu",
+          lastTurnAt: "2026-03-13T01:30:00.000Z",
+        },
       ],
     },
     { key: "mlx-whisper", name: "mlx-whisper", threads: [] },
@@ -62,8 +132,14 @@ const workspaceTreeData = {
     {
       key: "mylife",
       name: "mylife",
+      currentThreadId: "thread-mylife-update",
       threads: [
-        { key: "mylife-update", title: "之前是老代码 现在更新了", source: "feishu" },
+        {
+          threadId: "thread-mylife-update",
+          title: "之前是老代码 现在更新了",
+          source: "feishu",
+          lastTurnAt: "2026-03-10T08:15:00.000Z",
+        },
       ],
     },
     { key: "r9-smoke-20260222-181939", name: "r9-smoke-20260222-181939", threads: [] },
@@ -72,264 +148,559 @@ const workspaceTreeData = {
     {
       key: "test-real",
       name: "test-real",
+      currentThreadId: "thread-test-real-subagent",
       threads: [
-        { key: "test-real-subagent", title: "哥，先别实际委派。请读取 subagent 这个", source: "feishu" },
+        {
+          threadId: "thread-test-real-subagent",
+          title: "哥，先别实际委派。请读取 subagent 这个",
+          source: "feishu",
+          lastTurnAt: "2026-03-09T03:20:00.000Z",
+        },
       ],
     },
   ],
 };
 
-const threadData = {
-  door: {
-    title: "我在门口准备好了",
-    channel: "feishu",
-    kind: "当前线程",
-    messages: [
-      { role: "user", text: "我在门口准备好了" },
-      { role: "agent", text: "好的，Chandler的健康档案已经建好了。去接小孩的路上注意安全。" },
-      { role: "user", text: "好" },
-      { role: "agent", text: "好的，路上慢点。" },
-    ],
-    workStatus: [
-      "最新一条 family 线程，主要是出门前确认。",
-      "",
-    ],
-    secondaryTitle: "日历 / 定时任务",
-    secondaryHtml: `
-      <article class="schedule-item">
-        <strong>11:45</strong>
-        <div>
-          <p>pick-up-kids</p>
-          <small>通知用户 ⏰ 中午要接小孩回家了</small>
-        </div>
-      </article>
-      <article class="schedule-item">
-        <strong>13:40</strong>
-        <div>
-          <p>send-kids-school</p>
-          <small>通知用户 ⏰: 1:40了该送小孩上学了</small>
-        </div>
-      </article>
-      <article class="schedule-item">
-        <strong>16:00</strong>
-        <div>
-          <p>pickup-kid</p>
-          <small>通知用户去学校接娃 ⏰: 放学接娃</small>
-        </div>
-      </article>
-    `,
+const threadSurfaceData = {
+  "family:thread-family-door": {
+    workspacePath: "/Users/admin/msgcode-workspaces/family",
+    threadId: "thread-family-door",
+    thread: {
+      threadId: "thread-family-door",
+      title: "我在门口准备好了",
+      source: "feishu",
+      lastTurnAt: "2026-03-20T05:43:18.204Z",
+      messages: [
+        {
+          turn: 1,
+          at: "2026-03-20T05:41:18.204Z",
+          user: "我在门口准备好了",
+          assistant: "好的，Chandler的健康档案已经建好了。去接小孩的路上注意安全。",
+        },
+        {
+          turn: 2,
+          at: "2026-03-20T05:43:18.204Z",
+          user: "好",
+          assistant: "好的，路上慢点。",
+        },
+      ],
+    },
+    people: { count: 2 },
+    workStatus: {
+      updatedAt: "2026-03-20T05:43:18.204Z",
+      currentThreadEntries: [
+        {
+          timestamp: "2026-03-20T05:43:18.204Z",
+          thread: "我在门口准备好了",
+          kind: "state",
+          summary: "已经出门，当前这条线只剩路上确认。",
+          refPath: ".msgcode/threads/2026-03-20_feishu-door.md",
+          refLine: 23,
+          ref: ".msgcode/threads/2026-03-20_feishu-door.md#L23",
+          raw: "",
+        },
+      ],
+      recentEntries: [
+        {
+          timestamp: "2026-03-20T05:43:18.204Z",
+          thread: "我在门口准备好了",
+          kind: "state",
+          summary: "已经出门，当前这条线只剩路上确认。",
+          refPath: ".msgcode/threads/2026-03-20_feishu-door.md",
+          refLine: 23,
+          ref: ".msgcode/threads/2026-03-20_feishu-door.md#L23",
+          raw: "",
+        },
+      ],
+    },
+    schedules: familySchedules,
   },
-  "missed-reminder": {
-    title: "今天为什么没有提醒我",
-    channel: "feishu",
-    kind: "历史线程",
-    messages: [
-      { role: "user", text: "今天为什么没有提醒我" },
-      { role: "agent", text: "我查到了 pick-up-kids 的配置：周一至周五 11:45，消息是“通知用户 ⏰ 中午要接小孩回家了”，配置本身正常。" },
-      { role: "user", text: "帮我看看这个结果" },
-      { role: "agent", text: "后续这条线又接上了一张眼科报告图片，话题开始从提醒排查转向报告解读。" },
-    ],
-    workStatus: [
-      "围绕接娃提醒未触发的排查线。",
-      "相关真相源是 schedules 和日志。",
-    ],
-    secondaryTitle: "相关定时任务",
-    secondaryHtml: `
-      <article class="schedule-item">
-        <strong>11:45</strong>
-        <div>
-          <p>pick-up-kids</p>
-          <small>通知用户 ⏰ 中午要接小孩回家了</small>
-        </div>
-      </article>
-      <article class="schedule-item">
-        <strong>13:40</strong>
-        <div>
-          <p>send-kids-school</p>
-          <small>通知用户 ⏰: 1:40了该送小孩上学了</small>
-        </div>
-      </article>
-    `,
+  "family:thread-family-missed-reminder": {
+    workspacePath: "/Users/admin/msgcode-workspaces/family",
+    threadId: "thread-family-missed-reminder",
+    thread: {
+      threadId: "thread-family-missed-reminder",
+      title: "今天为什么没有提醒我",
+      source: "feishu",
+      lastTurnAt: "2026-03-19T02:14:00.000Z",
+      messages: [
+        {
+          turn: 1,
+          at: "2026-03-19T02:10:00.000Z",
+          user: "今天为什么没有提醒我",
+          assistant: "我查到了 pick-up-kids 的配置：周一至周五 11:45，消息是“通知用户 ⏰ 中午要接小孩回家了”，配置本身正常。",
+        },
+        {
+          turn: 2,
+          at: "2026-03-19T02:14:00.000Z",
+          user: "帮我看看这个结果",
+          assistant: "后续这条线又接上了一张眼科报告图片，话题开始从提醒排查转向报告解读。",
+        },
+      ],
+    },
+    people: { count: 2 },
+    workStatus: {
+      updatedAt: "2026-03-19T02:14:00.000Z",
+      currentThreadEntries: [
+        {
+          timestamp: "2026-03-19T02:14:00.000Z",
+          thread: "今天为什么没有提醒我",
+          kind: "state",
+          summary: "围绕接娃提醒未触发继续排查。",
+          refPath: ".msgcode/status.log",
+          refLine: 2,
+          ref: ".msgcode/status.log#L2",
+          raw: "",
+        },
+        {
+          timestamp: "2026-03-19T02:15:00.000Z",
+          thread: "今天为什么没有提醒我",
+          kind: "decision",
+          summary: "先看 schedules，再看运行日志。",
+          refPath: ".msgcode/status.log",
+          refLine: 3,
+          ref: ".msgcode/status.log#L3",
+          raw: "",
+        },
+      ],
+      recentEntries: [
+        {
+          timestamp: "2026-03-19T02:15:00.000Z",
+          thread: "今天为什么没有提醒我",
+          kind: "decision",
+          summary: "先看 schedules，再看运行日志。",
+          refPath: ".msgcode/status.log",
+          refLine: 3,
+          ref: ".msgcode/status.log#L3",
+          raw: "",
+        },
+        {
+          timestamp: "2026-03-19T02:14:00.000Z",
+          thread: "今天为什么没有提醒我",
+          kind: "state",
+          summary: "围绕接娃提醒未触发继续排查。",
+          refPath: ".msgcode/status.log",
+          refLine: 2,
+          ref: ".msgcode/status.log#L2",
+          raw: "",
+        },
+      ],
+    },
+    schedules: familySchedules.slice(0, 2),
   },
-  vision: {
-    title: "@_user_1 你看看这个小朋友的视力检查结果",
-    channel: "feishu",
-    kind: "历史线程",
-    messages: [
-      { role: "user", text: "@_user_1 你看看这个小朋友的视力检查结果 给我一些建议 7岁小朋友" },
-      { role: "agent", text: "先是把报告误解成右眼 300 度近视，后面又回到 DS / DC / AXIS 的解释，承认了前面的矛盾。" },
-      { role: "user", text: "@_user_1 你搜索一下相关信息 给出一个准确合理的信息 比如ds到底代表什么" },
-      { role: "agent", text: "最后收口到 DS 是球镜度数，DC 是柱镜度数，AXIS 是散光轴位，并提醒要确认到底是裸眼还是矫正视力。" },
-    ],
-    workStatus: [
-      "围绕视力检查报告的解读和修正。",
-      "",
-    ],
-    secondaryTitle: "相关记录",
-    secondaryHtml: `
-      <article class="schedule-item">
-        <strong>03-17</strong>
-        <div>
-          <p>视力检查讨论</p>
-          <small>thread markdown 中有完整对话与自我修正过程</small>
-        </div>
-      </article>
-      <article class="schedule-item">
-        <strong>DS/DC</strong>
-        <div>
-          <p>术语澄清</p>
-          <small>DS=球镜度数，DC=柱镜度数，AXIS=散光轴位</small>
-        </div>
-      </article>
-    `,
+  "family:thread-family-vision": {
+    workspacePath: "/Users/admin/msgcode-workspaces/family",
+    threadId: "thread-family-vision",
+    thread: {
+      threadId: "thread-family-vision",
+      title: "@_user_1 你看看这个小朋友的视力检查结果",
+      source: "feishu",
+      lastTurnAt: "2026-03-17T07:10:00.000Z",
+      messages: [
+        {
+          turn: 1,
+          at: "2026-03-17T06:48:00.000Z",
+          user: "@_user_1 你看看这个小朋友的视力检查结果 给我一些建议 7岁小朋友",
+          assistant: "先是把报告误解成右眼 300 度近视，后面又回到 DS / DC / AXIS 的解释，承认了前面的矛盾。",
+        },
+        {
+          turn: 2,
+          at: "2026-03-17T07:10:00.000Z",
+          user: "@_user_1 你搜索一下相关信息 给出一个准确合理的信息 比如ds到底代表什么",
+          assistant: "最后收口到 DS 是球镜度数，DC 是柱镜度数，AXIS 是散光轴位，并提醒要确认到底是裸眼还是矫正视力。",
+        },
+      ],
+    },
+    people: { count: 2 },
+    workStatus: {
+      updatedAt: "2026-03-17T07:10:00.000Z",
+      currentThreadEntries: [
+        {
+          timestamp: "2026-03-17T07:10:00.000Z",
+          thread: "@_user_1 你看看这个小朋友的视力检查结果",
+          kind: "decision",
+          summary: "DS/DC/AXIS 的解释已经收稳。",
+          refPath: ".msgcode/status.log",
+          refLine: 7,
+          ref: ".msgcode/status.log#L7",
+          raw: "",
+        },
+      ],
+      recentEntries: [
+        {
+          timestamp: "2026-03-17T07:10:00.000Z",
+          thread: "@_user_1 你看看这个小朋友的视力检查结果",
+          kind: "decision",
+          summary: "DS/DC/AXIS 的解释已经收稳。",
+          refPath: ".msgcode/status.log",
+          refLine: 7,
+          ref: ".msgcode/status.log#L7",
+          raw: "",
+        },
+      ],
+    },
+    schedules: [],
   },
-  "copy-edit": {
-    title: "145了该接小孩了",
-    channel: "feishu",
-    kind: "历史线程",
-    messages: [
-      { role: "user", text: "1:45了该接小孩了 这句话改成 ‘⏰中午要接小孩回家了’ 其他不变" },
-      { role: "agent", text: "这条线先没定位到任务，后面才回到 3 个 schedules，并开始实际改文案。" },
-      { role: "user", text: "是⏰中午要接小孩回家了 ,不是 ⏰中午要接小孩回了家" },
-      { role: "agent", text: "最后确认消息内容应为“⏰中午要接小孩回家了”。" },
-    ],
-    workStatus: [
-      "围绕接娃提醒文案修订的历史线程。",
-      "",
-    ],
-    secondaryTitle: "相关定时任务",
-    secondaryHtml: `
-      <article class="schedule-item">
-        <strong>11:45</strong>
-        <div>
-          <p>pick-up-kids</p>
-          <small>文案最终定为：通知用户 ⏰ 中午要接小孩回家了</small>
-        </div>
-      </article>
-    `,
+  "family:thread-family-copy-edit": {
+    workspacePath: "/Users/admin/msgcode-workspaces/family",
+    threadId: "thread-family-copy-edit",
+    thread: {
+      threadId: "thread-family-copy-edit",
+      title: "145了该接小孩了",
+      source: "feishu",
+      lastTurnAt: "2026-03-16T11:30:00.000Z",
+      messages: [
+        {
+          turn: 1,
+          at: "2026-03-16T11:20:00.000Z",
+          user: "1:45了该接小孩了 这句话改成 ‘⏰中午要接小孩回家了’ 其他不变",
+          assistant: "这条线先没定位到任务，后面才回到 3 个 schedules，并开始实际改文案。",
+        },
+        {
+          turn: 2,
+          at: "2026-03-16T11:30:00.000Z",
+          user: "是⏰中午要接小孩回家了 ,不是 ⏰中午要接小孩回了家",
+          assistant: "最后确认消息内容应为“⏰中午要接小孩回家了”。",
+        },
+      ],
+    },
+    people: { count: 2 },
+    workStatus: {
+      updatedAt: "2026-03-16T11:30:00.000Z",
+      currentThreadEntries: [
+        {
+          timestamp: "2026-03-16T11:30:00.000Z",
+          thread: "145了该接小孩了",
+          kind: "decision",
+          summary: "接娃提醒文案已改成“⏰中午要接小孩回家了”。",
+          refPath: ".msgcode/status.log",
+          refLine: 8,
+          ref: ".msgcode/status.log#L8",
+          raw: "",
+        },
+      ],
+      recentEntries: [
+        {
+          timestamp: "2026-03-16T11:30:00.000Z",
+          thread: "145了该接小孩了",
+          kind: "decision",
+          summary: "接娃提醒文案已改成“⏰中午要接小孩回家了”。",
+          refPath: ".msgcode/status.log",
+          refLine: 8,
+          ref: ".msgcode/status.log#L8",
+          raw: "",
+        },
+      ],
+    },
+    schedules: familySchedules.slice(0, 1),
   },
-  "default-reminder": {
-    title: "以后所有定时提醒文字内容前面加一个‘⏰’,这样",
-    channel: "feishu",
-    kind: "历史线程",
-    messages: [
-      { role: "user", text: "以后所有定时提醒文字内容前面加一个‘⏰’,这样更醒目。" },
-      { role: "agent", text: "收到，这条线主要围绕提醒文案的统一调整。" },
+  "default:thread-default-reminder": {
+    workspacePath: "/Users/admin/msgcode-workspaces/default",
+    threadId: "thread-default-reminder",
+    thread: {
+      threadId: "thread-default-reminder",
+      title: "以后所有定时提醒文字内容前面加一个‘⏰’,这样",
+      source: "feishu",
+      lastTurnAt: "2026-03-18T08:20:00.000Z",
+      messages: [
+        {
+          turn: 1,
+          at: "2026-03-18T08:20:00.000Z",
+          user: "以后所有定时提醒文字内容前面加一个‘⏰’,这样更醒目。",
+          assistant: "收到，这条线主要围绕提醒文案的统一调整。",
+        },
+      ],
+    },
+    people: { count: 0 },
+    workStatus: {
+      updatedAt: "2026-03-18T08:20:00.000Z",
+      currentThreadEntries: [],
+      recentEntries: [],
+    },
+    schedules: [
+      {
+        id: "pick-up-kids",
+        enabled: true,
+        cron: "45 11 * * 1-5",
+        tz: "Asia/Shanghai",
+        message: "文案统一调整为带 ⏰ 前缀",
+      },
     ],
-    workStatus: ["default 工作区的一条旧提醒调整线程。", ""],
-    secondaryTitle: "相关定时任务",
-    secondaryHtml: `
-      <article class="schedule-item">
-        <strong>11:45</strong>
-        <div>
-          <p>pick-up-kids</p>
-          <small>文案统一调整为带 ⏰ 前缀</small>
-        </div>
-      </article>
-    `,
   },
-  "default-hi": {
-    title: "hi",
-    channel: "feishu",
-    kind: "历史线程",
-    messages: [
-      { role: "user", text: "hi" },
-      { role: "agent", text: "你好。" },
-    ],
-    workStatus: ["default 工作区的早期测试线程。", ""],
-    secondaryTitle: "附记",
-    secondaryHtml: `
-      <article class="schedule-item">
-        <strong>旧线程</strong>
-        <div>
-          <p>保留为历史记录</p>
-          <small>适合后续归档</small>
-        </div>
-      </article>
-    `,
+  "default:thread-default-hi": {
+    workspacePath: "/Users/admin/msgcode-workspaces/default",
+    threadId: "thread-default-hi",
+    thread: {
+      threadId: "thread-default-hi",
+      title: "hi",
+      source: "feishu",
+      lastTurnAt: "2026-03-17T02:10:00.000Z",
+      messages: [
+        {
+          turn: 1,
+          at: "2026-03-17T02:10:00.000Z",
+          user: "hi",
+          assistant: "你好。",
+        },
+      ],
+    },
+    people: { count: 0 },
+    workStatus: {
+      updatedAt: "",
+      currentThreadEntries: [],
+      recentEntries: [],
+    },
+    schedules: [],
   },
-  "game01-smoke": {
-    title: "【SMOKE-SKILL-1771572317】-2",
-    channel: "feishu",
-    kind: "历史线程",
-    messages: [
-      { role: "user", text: "【SMOKE-SKILL-1771572317】-2" },
-      { role: "agent", text: "这是一条 smoke 线程，占位展示。后续应通过 archive 收起来。" },
-    ],
-    workStatus: ["这类冒烟线程是 archive 的典型目标。", ""],
-    secondaryTitle: "附记",
-    secondaryHtml: "",
+  "game01:thread-game01-smoke": {
+    workspacePath: "/Users/admin/msgcode-workspaces/game01",
+    threadId: "thread-game01-smoke",
+    thread: {
+      threadId: "thread-game01-smoke",
+      title: "【SMOKE-SKILL-1771572317】-2",
+      source: "feishu",
+      lastTurnAt: "2026-03-14T10:00:00.000Z",
+      messages: [
+        {
+          turn: 1,
+          at: "2026-03-14T10:00:00.000Z",
+          user: "【SMOKE-SKILL-1771572317】-2",
+          assistant: "这是一条 smoke 线程，占位展示。后续应通过 archive 收起来。",
+        },
+      ],
+    },
+    people: { count: 0 },
+    workStatus: {
+      updatedAt: "2026-03-14T10:00:00.000Z",
+      currentThreadEntries: [],
+      recentEntries: [
+        {
+          timestamp: "2026-03-14T10:00:00.000Z",
+          thread: "【SMOKE-SKILL-1771572317】-2",
+          kind: "state",
+          summary: "这类冒烟线程是 archive 的典型目标。",
+          refPath: ".msgcode/status.log",
+          refLine: 1,
+          ref: ".msgcode/status.log#L1",
+          raw: "",
+        },
+      ],
+    },
+    schedules: [],
   },
-  "medicpass-model": {
-    title: "你是什么模型",
-    channel: "feishu",
-    kind: "历史线程",
-    messages: [
-      { role: "user", text: "你是什么模型" },
-      { role: "agent", text: "这里先只模拟线程，不展开正文。" },
-    ],
-    workStatus: ["medicpass 工作区的一条历史问答。", ""],
-    secondaryTitle: "附记",
-    secondaryHtml: "",
+  "medicpass:thread-medicpass-model": {
+    workspacePath: "/Users/admin/msgcode-workspaces/medicpass",
+    threadId: "thread-medicpass-model",
+    thread: {
+      threadId: "thread-medicpass-model",
+      title: "你是什么模型",
+      source: "feishu",
+      lastTurnAt: "2026-03-13T01:30:00.000Z",
+      messages: [
+        {
+          turn: 1,
+          at: "2026-03-13T01:30:00.000Z",
+          user: "你是什么模型",
+          assistant: "这里先只模拟线程，不展开正文。",
+        },
+      ],
+    },
+    people: { count: 0 },
+    workStatus: {
+      updatedAt: "",
+      currentThreadEntries: [],
+      recentEntries: [],
+    },
+    schedules: [],
   },
-  "mylife-update": {
-    title: "之前是老代码 现在更新了",
-    channel: "feishu",
-    kind: "历史线程",
-    messages: [
-      { role: "user", text: "之前是老代码 现在更新了" },
-      { role: "agent", text: "这条线先保留成工作区树中的真实标题示意。" },
-    ],
-    workStatus: ["mylife 工作区的一条历史线程。", ""],
-    secondaryTitle: "附记",
-    secondaryHtml: "",
+  "mylife:thread-mylife-update": {
+    workspacePath: "/Users/admin/msgcode-workspaces/mylife",
+    threadId: "thread-mylife-update",
+    thread: {
+      threadId: "thread-mylife-update",
+      title: "之前是老代码 现在更新了",
+      source: "feishu",
+      lastTurnAt: "2026-03-10T08:15:00.000Z",
+      messages: [
+        {
+          turn: 1,
+          at: "2026-03-10T08:15:00.000Z",
+          user: "之前是老代码 现在更新了",
+          assistant: "这条线先保留成工作区树中的真实标题示意。",
+        },
+      ],
+    },
+    people: { count: 0 },
+    workStatus: {
+      updatedAt: "",
+      currentThreadEntries: [],
+      recentEntries: [],
+    },
+    schedules: [],
   },
-  "test-real-subagent": {
-    title: "哥，先别实际委派。请读取 subagent 这个",
-    channel: "feishu",
-    kind: "历史线程",
-    messages: [
-      { role: "user", text: "哥，先别实际委派。请读取 subagent 这个" },
-      { role: "agent", text: "这是一条 test-real 工作区的历史线程示意。" },
-    ],
-    workStatus: ["test-real 工作区的一条历史线程。", ""],
-    secondaryTitle: "附记",
-    secondaryHtml: "",
+  "test-real:thread-test-real-subagent": {
+    workspacePath: "/Users/admin/msgcode-workspaces/test-real",
+    threadId: "thread-test-real-subagent",
+    thread: {
+      threadId: "thread-test-real-subagent",
+      title: "哥，先别实际委派。请读取 subagent 这个",
+      source: "feishu",
+      lastTurnAt: "2026-03-09T03:20:00.000Z",
+      messages: [
+        {
+          turn: 1,
+          at: "2026-03-09T03:20:00.000Z",
+          user: "哥，先别实际委派。请读取 subagent 这个",
+          assistant: "这是一条 test-real 工作区的历史线程示意。",
+        },
+      ],
+    },
+    people: { count: 0 },
+    workStatus: {
+      updatedAt: "",
+      currentThreadEntries: [],
+      recentEntries: [],
+    },
+    schedules: [],
   },
 };
 
-const WORKSPACE_ORDER_STORAGE_KEY = "msgcode-ui-workspace-order";
-
 let selectedWorkspaceKey = "family";
-let selectedThreadKey = "door";
+let selectedThreadId = "thread-family-door";
 
-function renderThread(threadKey) {
-  const data = threadData[threadKey];
-  if (!data) return;
+function buildSurfaceKey(workspaceKey, threadId) {
+  return `${workspaceKey}:${threadId}`;
+}
 
-  if (threadTitle) threadTitle.textContent = data.title;
-  if (threadChannelChip) threadChannelChip.textContent = data.channel;
-  if (threadKindChip) threadKindChip.textContent = data.kind;
-  if (observerTitle) observerTitle.textContent = data.title;
+function getSelectedSurface() {
+  return threadSurfaceData[buildSurfaceKey(selectedWorkspaceKey, selectedThreadId)] ?? null;
+}
+
+function getSelectedWorkspace() {
+  return workspaceTreeData.workspaces.find((workspace) => workspace.key === selectedWorkspaceKey) ?? null;
+}
+
+function renderThread() {
+  const surface = getSelectedSurface();
+  const workspace = getSelectedWorkspace();
+  const currentThreadId = workspace?.currentThreadId || "";
+  const thread = surface?.thread ?? null;
+
+  if (threadTitle) {
+    threadTitle.textContent = thread?.title || "未找到线程";
+  }
+  if (threadChannelChip) {
+    threadChannelChip.textContent = thread?.source || "unknown";
+  }
+  if (threadKindChip) {
+    threadKindChip.textContent = selectedThreadId === currentThreadId ? "当前线程" : "历史线程";
+  }
+  if (observerTitle) {
+    observerTitle.textContent = thread?.title || "工作状况";
+  }
+
+  const primaryEntries = surface?.workStatus.currentThreadEntries ?? [];
+  const recentEntries = surface?.workStatus.recentEntries ?? [];
+  const line1 = primaryEntries[0]?.summary || recentEntries[0]?.summary || "暂无工作状况。";
+  const line2 = primaryEntries[1]?.summary
+    || (surface?.workStatus.updatedAt ? `最近更新时间：${formatTime(surface.workStatus.updatedAt)}` : "");
+
   if (workStatusLine1) {
-    workStatusLine1.textContent = data.workStatus[0] || "";
-    workStatusLine1.hidden = !data.workStatus[0];
+    workStatusLine1.textContent = line1;
+    workStatusLine1.hidden = !line1;
   }
   if (workStatusLine2) {
-    workStatusLine2.textContent = data.workStatus[1] || "";
-    workStatusLine2.hidden = !data.workStatus[1];
+    workStatusLine2.textContent = line2;
+    workStatusLine2.hidden = !line2;
   }
-  if (observerSecondaryTitle) observerSecondaryTitle.textContent = data.secondaryTitle;
-  if (observerSecondaryContent) observerSecondaryContent.innerHTML = data.secondaryHtml;
+
+  if (observerSecondaryTitle) {
+    observerSecondaryTitle.textContent = surface && surface.schedules.length > 0 ? "日历 / 定时任务" : "最近工作状况";
+  }
+  if (observerSecondaryContent) {
+    observerSecondaryContent.innerHTML = surface && surface.schedules.length > 0
+      ? renderScheduleList(surface.schedules)
+      : renderStatusList(recentEntries);
+  }
 
   if (chatLog) {
-    chatLog.innerHTML = data.messages
-      .map((message) => {
-        const klass = message.role === "user" ? "bubble bubble--user" : "bubble bubble--agent";
-        return `<article class="${klass}">${message.text}</article>`;
-      })
-      .join("");
+    if (!thread) {
+      chatLog.innerHTML = `
+        <article class="bubble bubble--agent">
+          当前线程不存在或已被归档。请从左侧重新选择活跃线程。
+        </article>
+      `;
+      return;
+    }
+
+    const orderedMessages = [...thread.messages].sort((a, b) => a.turn - b.turn);
+    chatLog.innerHTML = orderedMessages.map((message) => `
+      <article class="bubble bubble--user">
+        ${escapeHtml(message.user)}
+      </article>
+      <article class="bubble bubble--agent">
+        ${escapeHtml(message.assistant)}
+      </article>
+    `).join("");
   }
+}
+
+function renderScheduleList(items) {
+  if (items.length === 0) {
+    return `
+      <article class="schedule-item">
+        <div>
+          <p>暂无定时任务</p>
+        </div>
+      </article>
+    `;
+  }
+
+  return items.map((item) => `
+    <article class="schedule-item">
+      <strong>${escapeHtml(formatCronHint(item.cron))}</strong>
+      <div>
+        <p>${escapeHtml(item.id)}</p>
+        <small>${escapeHtml(item.message)}</small>
+      </div>
+    </article>
+  `).join("");
+}
+
+function renderStatusList(entries) {
+  if (entries.length === 0) {
+    return `
+      <article class="schedule-item">
+        <div>
+          <p>暂无共享近况</p>
+        </div>
+      </article>
+    `;
+  }
+
+  return entries.map((entry) => `
+    <article class="schedule-item">
+      <strong>${escapeHtml(formatTime(entry.timestamp))}</strong>
+      <div>
+        <p>${escapeHtml(entry.kind)}</p>
+        <small>${escapeHtml(entry.summary)}</small>
+      </div>
+    </article>
+  `).join("");
+}
+
+function formatTime(iso) {
+  if (!iso) return "";
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+  return `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function formatCronHint(cron) {
+  if (!cron) return "--";
+  const parts = String(cron).split(" ");
+  if (parts.length < 2) return cron;
+  return `${String(parts[1]).padStart(2, "0")}:${String(parts[0]).padStart(2, "0")}`;
 }
 
 function applyStoredWorkspaceOrder() {
@@ -371,7 +742,6 @@ function bindWorkspaceSorting() {
 
   const getDragAfterElement = (container, clientY) => {
     const draggableCards = [...container.querySelectorAll(".workspace-group:not(.is-dragging)")];
-
     return draggableCards.reduce(
       (closest, child) => {
         const box = child.getBoundingClientRect();
@@ -411,16 +781,16 @@ function bindWorkspaceSorting() {
     const card = target.closest(".workspace-group");
     if (!(card instanceof HTMLElement)) return;
     const workspaceKey = card.dataset.workspaceKey;
-    if (workspaceKey) {
-      const workspace = workspaceTreeData.workspaces.find((item) => item.key === workspaceKey);
-      if (workspace) workspace.open = card.open;
+    if (!workspaceKey) return;
+    const workspace = workspaceTreeData.workspaces.find((item) => item.key === workspaceKey);
+    if (workspace) {
+      workspace.open = card.open;
     }
   });
 
   workspaceTree.addEventListener("dragover", (event) => {
     event.preventDefault();
     if (!draggingWorkspace) return;
-
     const afterElement = getDragAfterElement(workspaceTree, event.clientY);
     if (!afterElement) {
       workspaceTree.appendChild(draggingWorkspace);
@@ -435,6 +805,7 @@ function syncWorkspaceOrderFromDom() {
   const order = Array.from(workspaceTree.querySelectorAll(".workspace-group"))
     .map((item) => item.dataset.workspaceKey)
     .filter(Boolean);
+
   workspaceTreeData.workspaces = order
     .map((key) => workspaceTreeData.workspaces.find((workspace) => workspace.key === key))
     .filter(Boolean);
@@ -443,53 +814,51 @@ function syncWorkspaceOrderFromDom() {
 function renderWorkspaceTree() {
   if (!workspaceTree) return;
 
-  workspaceTree.innerHTML = workspaceTreeData.workspaces
-    .map((workspace) => {
-      const threads = workspace.threads.length > 0
-        ? workspace.threads.map((thread) => `
-            <article class="thread-list-item${thread.key === selectedThreadKey ? " is-selected" : ""}" data-thread-key="${thread.key}" data-workspace-key="${workspace.key}">
-              <div class="thread-list-item__head">
-                <strong>${escapeHtml(thread.title)}</strong>
-                <span>${escapeHtml(thread.source)}</span>
-              </div>
-            </article>
-          `).join("")
-        : `
-            <article class="thread-list-item">
-              <div class="thread-list-item__head">
-                <strong>暂无线程</strong>
-                <span>0</span>
-              </div>
-            </article>
-          `;
+  workspaceTree.innerHTML = workspaceTreeData.workspaces.map((workspace) => {
+    const threads = workspace.threads.length > 0
+      ? workspace.threads.map((thread) => `
+          <article class="thread-list-item${thread.threadId === selectedThreadId ? " is-selected" : ""}" data-thread-id="${thread.threadId}" data-workspace-key="${workspace.key}">
+            <div class="thread-list-item__head">
+              <strong>${escapeHtml(thread.title)}</strong>
+              <span>${escapeHtml(thread.source)}</span>
+            </div>
+          </article>
+        `).join("")
+      : `
+          <article class="thread-list-item">
+            <div class="thread-list-item__head">
+              <strong>暂无线程</strong>
+              <span>0</span>
+            </div>
+          </article>
+        `;
 
-      const peopleLink = workspace.peopleCount !== undefined
-        ? `
-          <a class="project-mini-link" href="./people.html" title="人物角色" aria-label="人物角色">
-            <span class="project-mini-link__icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 12a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7Z"></path>
-                <path d="M5.5 19.5a6.5 6.5 0 0 1 13 0"></path>
-              </svg>
-            </span>
-            <span class="project-mini-link__count">${workspace.peopleCount}</span>
-          </a>
-        `
-        : "";
+    const peopleLink = workspace.peopleCount !== undefined
+      ? `
+        <a class="project-mini-link" href="./people.html" title="人物角色" aria-label="人物角色">
+          <span class="project-mini-link__icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 12a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7Z"></path>
+              <path d="M5.5 19.5a6.5 6.5 0 0 1 13 0"></path>
+            </svg>
+          </span>
+          <span class="project-mini-link__count">${workspace.peopleCount}</span>
+        </a>
+      `
+      : "";
 
-      return `
-        <details class="workspace-group${workspace.key === selectedWorkspaceKey ? " is-selected" : ""}" data-workspace-key="${workspace.key}" ${workspace.open ? "open" : ""}>
-          <summary class="workspace-group__title">
-            <span class="workspace-group__name">${escapeHtml(workspace.name)}</span>
-            ${peopleLink}
-          </summary>
-          <div class="workspace-group__items">
-            ${threads}
-          </div>
-        </details>
-      `;
-    })
-    .join("");
+    return `
+      <details class="workspace-group${workspace.key === selectedWorkspaceKey ? " is-selected" : ""}" data-workspace-key="${workspace.key}" ${workspace.open ? "open" : ""}>
+        <summary class="workspace-group__title">
+          <span class="workspace-group__name">${escapeHtml(workspace.name)}</span>
+          ${peopleLink}
+        </summary>
+        <div class="workspace-group__items">
+          ${threads}
+        </div>
+      </details>
+    `;
+  }).join("");
 
   bindWorkspaceSorting();
 }
@@ -514,15 +883,15 @@ if (workspaceTree) {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
 
-    const threadItem = target.closest("[data-thread-key]");
+    const threadItem = target.closest("[data-thread-id]");
     if (threadItem instanceof HTMLElement) {
-      const threadKey = threadItem.dataset.threadKey;
+      const threadId = threadItem.dataset.threadId;
       const workspaceKey = threadItem.dataset.workspaceKey;
-      if (threadKey) {
-        selectedThreadKey = threadKey;
+      if (threadId) {
+        selectedThreadId = threadId;
         if (workspaceKey) selectedWorkspaceKey = workspaceKey;
         renderWorkspaceTree();
-        renderThread(threadKey);
+        renderThread();
       }
     }
   });
@@ -553,4 +922,4 @@ if (observerClose && observerPanel) {
 
 applyStoredWorkspaceOrder();
 renderWorkspaceTree();
-renderThread(selectedThreadKey);
+renderThread();
