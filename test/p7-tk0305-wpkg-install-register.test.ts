@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it } from "bun:test";
 import fs from "node:fs/promises";
+import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
+const ZSTD_BIN = resolveZstdBinary();
 
 async function makeTempRoot(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), "msgcode-wpkg-install-"));
@@ -20,8 +22,29 @@ async function createWpkg(root: string, manifest: Record<string, unknown>): Prom
   await fs.writeFile(path.join(packDir, "skills", "finance-index", "SKILL.md"), "# finance\n", "utf8");
 
   const archivePath = path.join(root, `${String(manifest.id ?? "pack")}.wpkg`);
-  await execFileAsync("/usr/bin/zip", ["-qr", archivePath, "."], { cwd: packDir });
+  if (!ZSTD_BIN) {
+    throw new Error("测试环境缺少 zstd");
+  }
+  const tarPath = path.join(root, `${String(manifest.id ?? "pack")}.tar`);
+  await execFileAsync("/usr/bin/tar", ["-C", packDir, "-cf", tarPath, "."]);
+  await execFileAsync(ZSTD_BIN, ["-q", "-f", tarPath, "-o", archivePath]);
   return archivePath;
+}
+
+function resolveZstdBinary(): string | null {
+  const candidates = [
+    process.env.ZSTD_BIN,
+    "/opt/homebrew/bin/zstd",
+    "/usr/local/bin/zstd",
+  ].filter((value): value is string => Boolean(value));
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  return null;
 }
 
 describe("tk0305: wpkg install register slice", () => {

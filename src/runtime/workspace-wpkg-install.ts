@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { cp, mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { atomicWriteFile } from "./fs-atomic.js";
 
 const execFileAsync = promisify(execFile);
+const ZSTD_BIN = resolveZstdBinary();
 
 export interface InstallWorkspaceWpkgInput {
   workspacePath: string;
@@ -90,7 +91,7 @@ export async function installWorkspaceWpkg(input: InstallWorkspaceWpkgInput): Pr
   const extractDir = path.join(tempRoot, "pack");
   try {
     await mkdir(extractDir, { recursive: true });
-    await execFileAsync("/usr/bin/ditto", ["-x", "-k", wpkgPath, extractDir]);
+    await extractWpkgArchive(wpkgPath, extractDir);
 
     const manifest = await readWpkgManifest(extractDir);
     const installedPath = path.join(workspacePath, ".msgcode", "packs", "user", manifest.id);
@@ -170,6 +171,29 @@ export async function installWorkspaceWpkg(input: InstallWorkspaceWpkgInput): Pr
   } finally {
     await rm(tempRoot, { recursive: true, force: true });
   }
+}
+
+async function extractWpkgArchive(wpkgPath: string, extractDir: string): Promise<void> {
+  if (!ZSTD_BIN) {
+    throw new Error("wpkg 解包缺少 zstd，可执行路径未找到");
+  }
+
+  await execFileAsync(
+    "/bin/sh",
+    [
+      "-c",
+      "\"$ZSTD_BIN\" -d -q -c \"$1\" | /usr/bin/tar -xf - -C \"$2\"",
+      "sh",
+      wpkgPath,
+      extractDir,
+    ],
+    {
+      env: {
+        ...process.env,
+        ZSTD_BIN,
+      },
+    }
+  );
 }
 
 async function readWpkgManifest(extractDir: string): Promise<WpkgManifest> {
@@ -271,6 +295,27 @@ function normalizeStringList(raw: unknown): string[] {
     throw new Error("wpkg manifest.requires 必须是数组");
   }
   return raw.map((entry) => normalizeString(entry)).filter(Boolean);
+}
+
+function resolveZstdBinary(): string | null {
+  const candidates = [
+    process.env.ZSTD_BIN,
+    "/opt/homebrew/bin/zstd",
+    "/usr/local/bin/zstd",
+  ].filter((value): value is string => Boolean(value));
+
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  try {
+    const detected = execFileSync("/usr/bin/which", ["zstd"], { encoding: "utf8" }).trim();
+    return detected || null;
+  } catch {
+    return null;
+  }
 }
 
 async function readPacksRegistryFile(filePath: string): Promise<PacksRegistryFile> {
