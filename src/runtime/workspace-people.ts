@@ -18,7 +18,8 @@ export interface WorkspaceIdentityRecord {
 
 export interface WorkspacePendingPerson {
   channel: string;
-  channelId: string;
+  chatId: string;
+  senderId: string;
   username: string;
   displayName: string;
   seenAt: string;
@@ -154,16 +155,17 @@ async function readPendingPeople(pendingPath: string, warnings: Diagnostic[]): P
     }
 
     const channel = normalizeCell(raw.channel);
-    const channelId = normalizeCell(raw.channelId);
+    const chatId = normalizeCell(raw.chatId);
+    const senderId = normalizeCell(raw.senderId);
     const username = normalizeCell(raw.username);
     const displayName = normalizeCell(raw.displayName);
     const seenAt = normalizeCell(raw.seenAt);
 
-    if (!channel || !channelId) {
+    if (!channel || !chatId || !senderId) {
       warnings.push({
         code: "WORKSPACE_PEOPLE_PENDING_INCOMPLETE",
         message: "people-pending.json 含有缺字段条目",
-        hint: "每个待关联人物项至少包含 channel / channelId",
+        hint: "每个待关联人物项至少包含 channel / chatId / senderId",
         details: { pendingPath, index },
       });
       continue;
@@ -171,7 +173,8 @@ async function readPendingPeople(pendingPath: string, warnings: Diagnostic[]): P
 
     pending.push({
       channel,
-      channelId,
+      chatId,
+      senderId,
       username,
       displayName,
       seenAt,

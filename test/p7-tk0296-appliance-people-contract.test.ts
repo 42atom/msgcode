@@ -44,7 +44,8 @@ describe("appliance people contract", () => {
         pending: [
           {
             channel: "feishu",
-            channelId: "ou_grandpa",
+            chatId: "feishu:oc_family",
+            senderId: "ou_grandpa",
             username: "grandpa",
             displayName: "爷爷",
             seenAt: "2026-03-21T12:00:00Z",
@@ -82,6 +83,8 @@ describe("appliance people contract", () => {
     expect(payload.data.people[0].channel).toBe("feishu");
     expect(payload.data.people[0].senderId).toBe("ou_sam");
     expect(payload.data.pending[0].displayName).toBe("爷爷");
+    expect(payload.data.pending[0].chatId).toBe("feishu:oc_family");
+    expect(payload.data.pending[0].senderId).toBe("ou_grandpa");
     expect(payload.data.pendingPath).toBe(path.join(workspacePath, ".msgcode", "people-pending.json"));
   });
 
@@ -163,5 +166,54 @@ describe("appliance people contract", () => {
     expect(payload.data.pending).toEqual([]);
     expect(payload.warnings.some((warning: { code?: string }) => warning.code === "WORKSPACE_PEOPLE_INVALID_ROW")).toBe(true);
     expect(payload.warnings.some((warning: { code?: string }) => warning.code === "WORKSPACE_PEOPLE_PENDING_INVALID_JSON")).toBe(true);
+  });
+
+  it("旧 pending 键不应再被接受", async () => {
+    const root = await makeTempRoot();
+    tempRoots.push(root);
+    const homeRoot = path.join(root, "home");
+    const workspaceRoot = path.join(root, "workspaces");
+    const workspacePath = path.join(workspaceRoot, "family");
+    await fs.mkdir(path.join(homeRoot, ".config", "msgcode"), { recursive: true });
+    await fs.mkdir(path.join(workspacePath, ".msgcode"), { recursive: true });
+
+    await fs.writeFile(
+      path.join(workspacePath, ".msgcode", "people-pending.json"),
+      JSON.stringify({
+        pending: [
+          {
+            channel: "feishu",
+            channelId: "ou_legacy",
+            username: "legacy",
+            displayName: "旧成员",
+            seenAt: "2026-03-21T12:00:00Z",
+          },
+        ],
+      }, null, 2),
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [
+      "--import",
+      "tsx",
+      "src/cli.ts",
+      "appliance",
+      "people",
+      "--workspace",
+      "family",
+      "--json",
+    ], {
+      cwd: "/Users/admin/GitProjects/msgcode",
+      env: {
+        ...process.env,
+        HOME: homeRoot,
+        WORKSPACE_ROOT: workspaceRoot,
+      },
+    });
+
+    const payload = JSON.parse(stdout);
+    expect(payload.status).toBe("warning");
+    expect(payload.data.pending).toEqual([]);
+    expect(payload.warnings.some((warning: { code?: string }) => warning.code === "WORKSPACE_PEOPLE_PENDING_INCOMPLETE")).toBe(true);
   });
 });
