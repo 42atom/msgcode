@@ -448,6 +448,10 @@ describe("P7-TK0204: Heartbeat Tick Integration (最小可跑主链)", () => {
     expect(evidence.commands[0]?.exitCode).toBe(7);
     expect(evidence.commands[0]).toHaveProperty("stdoutTail");
     expect(evidence.commands[0]).toHaveProperty("stderrTail");
+
+    const evidenceDir = path.join(workspace, ".msgcode", "evidence");
+    const snapshots = fs.readdirSync(evidenceDir).filter((name) => /^verify-\d{8}T\d{6}Z-[a-z0-9]+\.json$/i.test(name));
+    expect(snapshots.length).toBe(1);
   });
 
   it("D3e: Verify 连续失败时任务应从 rvw 推进到 bkd", async () => {

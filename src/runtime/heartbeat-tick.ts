@@ -36,6 +36,12 @@ import {
 } from "./subagent.js";
 import { logger } from "../logger/index.js";
 import { runBashCommand } from "../runners/bash-runner.js";
+import {
+  getTaskEvidencePath,
+  readTaskEvidence,
+  writeFailureSnapshot,
+  writeTaskEvidence,
+} from "./failure-evidence.js";
 
 /**
  * Heartbeat Tick 配置
@@ -319,59 +325,6 @@ async function writeStatusSnapshot(
   writeFileSync(statusPath, `${lines.join("\n")}\n`);
 }
 
-function getEvidenceFilePath(workspacePath: string, taskId: string): string {
-  return path.join(workspacePath, ".msgcode", "evidence", `${taskId}.json`);
-}
-
-function readVerificationEvidence(workspacePath: string, taskId: string): {
-  taskId: string;
-  ok: boolean;
-  exitCode: number;
-  timestamp: string;
-} | null {
-  const evidencePath = getEvidenceFilePath(workspacePath, taskId);
-  if (!existsSync(evidencePath)) {
-    return null;
-  }
-  try {
-    return JSON.parse(readFileSync(evidencePath, "utf8")) as {
-      taskId: string;
-      ok: boolean;
-      exitCode: number;
-      timestamp: string;
-    };
-  } catch {
-    return null;
-  }
-}
-
-async function writeVerificationEvidence(
-  workspacePath: string,
-  taskId: string,
-  evidence: {
-    taskId: string;
-    ok: boolean;
-    exitCode: number;
-    timestamp: string;
-    commands: Array<{
-      command: string;
-      exitCode: number;
-      ok: boolean;
-      stdoutTail: string;
-      stderrTail: string;
-      durationMs: number;
-      fullOutputPath?: string;
-      error?: string;
-    }>;
-  }
-): Promise<string> {
-  const evidenceDir = path.join(workspacePath, ".msgcode", "evidence");
-  mkdirSync(evidenceDir, { recursive: true });
-  const evidencePath = getEvidenceFilePath(workspacePath, taskId);
-  writeFileSync(evidencePath, JSON.stringify(evidence, null, 2));
-  return evidencePath;
-}
-
 async function runTaskVerification(task: TaskDocumentRecord, workspacePath: string): Promise<{
   ok: boolean;
   exitCode: number;
@@ -383,13 +336,13 @@ async function runTaskVerification(task: TaskDocumentRecord, workspacePath: stri
     return { ok: true, exitCode: 0 };
   }
 
-  const existingEvidence = readVerificationEvidence(workspacePath, task.id);
+  const existingEvidence = readTaskEvidence(workspacePath, task.id);
   if (existingEvidence && existingEvidence.exitCode !== 0) {
     return {
       ok: false,
       exitCode: existingEvidence.exitCode,
       cachedFailure: true,
-      evidencePath: getEvidenceFilePath(workspacePath, task.id),
+      evidencePath: getTaskEvidencePath(workspacePath, task.id),
     };
   }
 
@@ -435,7 +388,21 @@ async function runTaskVerification(task: TaskDocumentRecord, workspacePath: stri
     timestamp: new Date().toISOString(),
     commands: commandResults,
   };
-  const evidencePath = await writeVerificationEvidence(workspacePath, task.id, evidence);
+  const evidencePath = await writeTaskEvidence(workspacePath, task.id, evidence);
+  if (failing) {
+    await writeFailureSnapshot(workspacePath, {
+      kind: "verify",
+      taskId: task.id,
+      timestamp: evidence.timestamp,
+      exitCode: failing.exitCode,
+      command: failing.command,
+      durationMs: failing.durationMs,
+      stdoutTail: failing.stdoutTail,
+      stderrTail: failing.stderrTail,
+      error: failing.error,
+      artifactRefs: failing.fullOutputPath ? [failing.fullOutputPath] : [],
+    });
+  }
   return {
     ok: evidence.ok,
     exitCode: evidence.exitCode,

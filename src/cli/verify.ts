@@ -4,6 +4,7 @@ import type { Diagnostic } from "../memory/types.js";
 import { createEnvelope, getWorkspacePath } from "./command-runner.js";
 import { loadTaskDocuments, appendDispatchVerificationEvidence } from "../runtime/work-continuity.js";
 import { runBashCommand } from "../runners/bash-runner.js";
+import { writeFailureSnapshot, writeTaskEvidence } from "../runtime/failure-evidence.js";
 
 type VerifyCommandResult = {
   command: string;
@@ -20,6 +21,14 @@ type VerifyPackName = "types" | "test" | "e2e" | "custom";
 type VerifyEnvelopeResult<T = Record<string, unknown>> = {
   envelope: ReturnType<typeof createEnvelope<T>>;
   exitCode: number;
+};
+
+type VerificationEvidenceRecord = {
+  taskId: string;
+  ok: boolean;
+  exitCode: number;
+  timestamp: string;
+  commands: VerifyCommandResult[];
 };
 
 function clipText(text: string, maxChars: number): string {
@@ -87,6 +96,54 @@ async function appendVerificationEvidenceIfNeeded(
       hint: "确认 dispatchId 是否正确",
     });
   }
+}
+
+function buildVerificationEvidence(taskId: string, results: VerifyCommandResult[]): VerificationEvidenceRecord {
+  const failing = results.find((item) => !item.ok);
+  return {
+    taskId,
+    ok: !failing,
+    exitCode: failing?.exitCode ?? 0,
+    timestamp: new Date().toISOString(),
+    commands: results,
+  };
+}
+
+async function writeTaskEvidenceIfNeeded(
+  workspacePath: string,
+  taskId: string | undefined,
+  results: VerifyCommandResult[]
+): Promise<string | undefined> {
+  if (!taskId) {
+    return undefined;
+  }
+  const evidence = buildVerificationEvidence(taskId, results);
+  return await writeTaskEvidence(workspacePath, taskId, evidence);
+}
+
+async function writeFailureSnapshotIfNeeded(params: {
+  workspacePath: string;
+  taskId?: string;
+  pack?: VerifyPackName;
+  results: VerifyCommandResult[];
+}): Promise<string | undefined> {
+  const failing = params.results.find((item) => !item.ok);
+  if (!failing) {
+    return undefined;
+  }
+  return await writeFailureSnapshot(params.workspacePath, {
+    kind: "verify",
+    taskId: params.taskId,
+    pack: params.pack,
+    timestamp: new Date().toISOString(),
+    exitCode: failing.exitCode,
+    command: failing.command,
+    durationMs: failing.durationMs,
+    stdoutTail: failing.stdoutTail,
+    stderrTail: failing.stderrTail,
+    error: failing.error,
+    artifactRefs: failing.fullOutputPath ? [failing.fullOutputPath] : [],
+  });
 }
 
 function getPackDefaultCommands(pack: VerifyPackName): string[] {
@@ -171,6 +228,12 @@ export async function executeVerifyRun(options: {
       })),
     });
 
+    const taskEvidencePath = await writeTaskEvidenceIfNeeded(workspacePath, task.id, results);
+    const failureSnapshotPath = await writeFailureSnapshotIfNeeded({
+      workspacePath,
+      taskId: task.id,
+      results,
+    });
     await appendVerificationEvidenceIfNeeded(workspacePath, options.dispatch, evidence, results, warnings);
 
     const envelope = createEnvelope(
@@ -184,6 +247,8 @@ export async function executeVerifyRun(options: {
         ok,
         results,
         evidence,
+        taskEvidencePath,
+        failureSnapshotPath,
         dispatchId: options.dispatch || undefined,
       },
       warnings,
@@ -291,6 +356,13 @@ export async function executeVerifyPack(
       })),
     });
 
+    const taskEvidencePath = await writeTaskEvidenceIfNeeded(workspacePath, options.task, results);
+    const failureSnapshotPath = await writeFailureSnapshotIfNeeded({
+      workspacePath,
+      taskId: options.task,
+      pack,
+      results,
+    });
     await appendVerificationEvidenceIfNeeded(workspacePath, options.dispatch, evidence, results, warnings);
 
     const envelope = createEnvelope(
@@ -305,6 +377,8 @@ export async function executeVerifyPack(
         ok,
         results,
         evidence,
+        taskEvidencePath,
+        failureSnapshotPath,
         dispatchId: options.dispatch || undefined,
       },
       warnings,

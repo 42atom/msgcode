@@ -103,4 +103,49 @@ accept: pass
     expect(evidence.commands[0]).toHaveProperty("stdoutTail");
     expect(evidence.commands[0]).toHaveProperty("stderrTail");
   });
+
+  it("R3: verify run 失败时应写任务证据和 verify 快照", async () => {
+    fs.writeFileSync(path.join(workspace, "issues", "tk5678.tdo.runtime.verify-fail.p1.md"), `---
+owner: agent
+assignee: codex
+reviewer: user
+why: test verify fail
+scope: test
+risk: low
+accept: fail
+---
+
+# Task
+
+测试 verify fail
+
+## Verify
+
+- \`node -e "console.error('boom'); process.exit(9)"\`
+`, "utf8");
+
+    const result = await executeVerifyRun({
+      workspace,
+      task: "tk5678",
+    });
+
+    expect(result.envelope.status).toBe("warning");
+    expect(result.exitCode).toBe(2);
+    expect(result.envelope.data.ok).toBe(false);
+    expect(typeof result.envelope.data.taskEvidencePath).toBe("string");
+    expect(typeof result.envelope.data.failureSnapshotPath).toBe("string");
+    expect(fs.existsSync(String(result.envelope.data.taskEvidencePath))).toBe(true);
+    expect(fs.existsSync(String(result.envelope.data.failureSnapshotPath))).toBe(true);
+
+    const snapshot = JSON.parse(fs.readFileSync(String(result.envelope.data.failureSnapshotPath), "utf8")) as {
+      kind: string;
+      taskId?: string;
+      exitCode?: number;
+      stderrTail?: string;
+    };
+    expect(snapshot.kind).toBe("verify");
+    expect(snapshot.taskId).toBe("tk5678");
+    expect(snapshot.exitCode).toBe(9);
+    expect(snapshot.stderrTail).toContain("boom");
+  });
 });
