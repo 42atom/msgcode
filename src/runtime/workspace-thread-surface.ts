@@ -12,6 +12,15 @@ export interface WorkspaceThreadListItem {
   lastTurnAt: string;
 }
 
+export interface WorkspaceThreadSummary {
+  threadId: string;
+  chatId: string;
+  title: string;
+  source: string;
+  filePath: string;
+  lastTurnAt: string;
+}
+
 export interface WorkspaceThreadMessage {
   turn: number;
   at: string;
@@ -51,19 +60,10 @@ export interface WorkspaceThreadSurfaceData {
   schedules: WorkspaceScheduleItem[];
 }
 
-interface ThreadSummary {
-  threadId: string;
-  chatId: string;
-  title: string;
-  source: string;
-  filePath: string;
-  lastTurnAt: string;
-}
-
 export async function readWorkspaceThreadSurface(workspacePath: string): Promise<{ data: WorkspaceThreadSurfaceData; warnings: Diagnostic[] }> {
   const warnings: Diagnostic[] = [];
   const currentChat = await readCurrentChatSelector(path.join(workspacePath, ".msgcode", "config.json"), warnings);
-  const threads = await readThreadSummaries(workspacePath, warnings);
+  const threads = await readWorkspaceThreadSummaries(workspacePath, warnings);
   const { data: peopleState, warnings: peopleWarnings } = await readWorkspacePeopleState(workspacePath);
   warnings.push(...peopleWarnings);
   const currentThreadSummary = pickCurrentThread(threads, currentChat);
@@ -129,7 +129,7 @@ async function readCurrentChatSelector(configPath: string, warnings: Diagnostic[
   }
 }
 
-async function readThreadSummaries(workspacePath: string, warnings: Diagnostic[]): Promise<ThreadSummary[]> {
+export async function readWorkspaceThreadSummaries(workspacePath: string, warnings: Diagnostic[]): Promise<WorkspaceThreadSummary[]> {
   const threadsDir = path.join(workspacePath, ".msgcode", "threads");
   if (!existsSync(threadsDir)) {
     return [];
@@ -139,7 +139,7 @@ async function readThreadSummaries(workspacePath: string, warnings: Diagnostic[]
     .filter((name) => name.endsWith(".md"))
     .sort((a, b) => a.localeCompare(b, "zh-CN"));
 
-  const threads: ThreadSummary[] = [];
+  const threads: WorkspaceThreadSummary[] = [];
   for (const fileName of fileNames) {
     const filePath = path.join(threadsDir, fileName);
     try {
@@ -168,7 +168,7 @@ async function readThreadSummaries(workspacePath: string, warnings: Diagnostic[]
   return threads.sort((a, b) => b.lastTurnAt.localeCompare(a.lastTurnAt));
 }
 
-function parseThreadSummary(filePath: string, content: string): ThreadSummary | null {
+function parseThreadSummary(filePath: string, content: string): WorkspaceThreadSummary | null {
   const match = content.match(/^---\n([\s\S]*?)\n---\n\n([\s\S]*)$/);
   if (!match) {
     return null;
@@ -325,7 +325,7 @@ function deriveThreadStatusLabel(source: string): string {
   return "";
 }
 
-function pickCurrentThread(threads: ThreadSummary[], currentChat: { guid: string; chatId: string; hasConfiguredCurrent: boolean }): ThreadSummary | null {
+function pickCurrentThread(threads: WorkspaceThreadSummary[], currentChat: { guid: string; chatId: string; hasConfiguredCurrent: boolean }): WorkspaceThreadSummary | null {
   if (threads.length === 0) {
     return null;
   }

@@ -35,6 +35,12 @@ import {
   type WorkspaceThreadSurfaceData,
 } from "../runtime/workspace-thread-surface.js";
 import {
+  getWorkspaceRootArchivePath,
+  getWorkspaceRootPath,
+  readWorkspaceTreeSurface,
+  type WorkspaceTreeSurfaceData,
+} from "../runtime/workspace-tree-surface.js";
+import {
   archiveWorkspace,
   archiveThread,
   getArchivedWorkspacePath,
@@ -171,6 +177,7 @@ interface ApplianceDoctorData {
 }
 
 interface ApplianceArchiveData extends WorkspaceArchiveSurfaceData {}
+interface ApplianceWorkspaceTreeData extends WorkspaceTreeSurfaceData {}
 
 interface ApplianceWorkspaceArchiveMutationData {
   workspaceName: string;
@@ -1672,6 +1679,52 @@ export function createApplianceCommand(): Command {
       const status: CommandStatus = errors.length > 0 ? "error" : warnings.length > 0 ? "warning" : "pass";
       const envelope: Envelope<WorkspaceNeighborSurfaceData> = createEnvelope(
         `msgcode appliance neighbor --workspace ${options.workspace}`,
+        startTime,
+        status,
+        data,
+        warnings,
+        errors
+      );
+      envelope.exitCode = errors.length > 0 ? 1 : 0;
+
+      console.log(JSON.stringify(envelope, null, 2));
+      process.exit(errors.length > 0 ? 1 : 0);
+    });
+
+  cmd
+    .command("workspace-tree")
+    .description("输出主界面左侧工作区树 JSON")
+    .option("--json", "JSON 格式输出")
+    .action(async (options: { json?: boolean }) => {
+      const startTime = Date.now();
+      const workspaceRoot = getWorkspaceRootPath();
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      if (!existsSync(workspaceRoot)) {
+        errors.push({
+          code: "APPLIANCE_WORKSPACE_ROOT_MISSING",
+          message: "工作区根目录不存在",
+          hint: "检查 WORKSPACE_ROOT 或先创建 msgcode-workspaces",
+          details: { workspaceRoot },
+        });
+      }
+
+      const { data, warnings: surfaceWarnings } = errors.length === 0
+        ? await readWorkspaceTreeSurface(workspaceRoot)
+        : {
+            data: {
+              workspaceRoot,
+              workspaceArchiveRoot: getWorkspaceRootArchivePath(workspaceRoot),
+              workspaces: [],
+            },
+            warnings: [],
+          };
+      warnings.push(...surfaceWarnings);
+
+      const status: CommandStatus = errors.length > 0 ? "error" : warnings.length > 0 ? "warning" : "pass";
+      const envelope: Envelope<ApplianceWorkspaceTreeData> = createEnvelope(
+        "msgcode appliance workspace-tree",
         startTime,
         status,
         data,
