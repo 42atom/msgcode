@@ -144,4 +144,171 @@ describe("appliance capabilities contract", () => {
     });
     expect(payload.warnings.some((warning: { code?: string }) => warning.code === "WORKSPACE_CAPABILITY_TMUX_MODE")).toBe(true);
   });
+
+  it("应只写回当前活跃 lane 的 brain 能力位", async () => {
+    const root = await makeTempRoot();
+    tempRoots.push(root);
+    const homeRoot = path.join(root, "home");
+    const workspaceRoot = path.join(root, "workspaces");
+    const workspacePath = path.join(workspaceRoot, "family");
+    await fs.mkdir(path.join(homeRoot, ".config", "msgcode"), { recursive: true });
+    await fs.mkdir(path.join(workspacePath, ".msgcode"), { recursive: true });
+
+    await fs.writeFile(
+      path.join(workspacePath, ".msgcode", "config.json"),
+      JSON.stringify({
+        "runtime.kind": "agent",
+        "agent.provider": "agent-backend",
+      }, null, 2),
+      "utf8",
+    );
+
+    const { stdout } = await execFileAsync("node", [
+      "--import",
+      "tsx",
+      "src/cli.ts",
+      "appliance",
+      "set-capability",
+      "--workspace",
+      "family",
+      "--id",
+      "brain",
+      "--model",
+      "glm-4.6-mini",
+      "--json",
+    ], {
+      cwd: "/Users/admin/GitProjects/msgcode",
+      env: {
+        ...process.env,
+        HOME: homeRoot,
+        WORKSPACE_ROOT: workspaceRoot,
+      },
+    });
+
+    const payload = JSON.parse(stdout);
+    expect(payload.exitCode).toBe(0);
+    expect(payload.status).toBe("pass");
+    expect(payload.data.changedFiles).toContain(path.join(workspacePath, ".msgcode", "config.json"));
+    expect(payload.data.mutation).toMatchObject({
+      capabilityId: "brain",
+      lane: "local",
+      configKey: "model.local.text",
+      model: "glm-4.6-mini",
+    });
+    expect(payload.data.capabilities.capabilities.find((item: { id: string }) => item.id === "brain")).toMatchObject({
+      configured: true,
+      source: "local",
+      model: "glm-4.6-mini",
+    });
+
+    const config = JSON.parse(await fs.readFile(path.join(workspacePath, ".msgcode", "config.json"), "utf8"));
+    expect(config["model.local.text"]).toBe("glm-4.6-mini");
+  });
+
+  it("clear 应把当前活跃 lane 的 brain 显式覆盖清成 auto", async () => {
+    const root = await makeTempRoot();
+    tempRoots.push(root);
+    const homeRoot = path.join(root, "home");
+    const workspaceRoot = path.join(root, "workspaces");
+    const workspacePath = path.join(workspaceRoot, "family");
+    await fs.mkdir(path.join(homeRoot, ".config", "msgcode"), { recursive: true });
+    await fs.mkdir(path.join(workspacePath, ".msgcode"), { recursive: true });
+
+    await fs.writeFile(
+      path.join(workspacePath, ".msgcode", "config.json"),
+      JSON.stringify({
+        "runtime.kind": "agent",
+        "agent.provider": "agent-backend",
+        "model.local.text": "glm-4.6",
+      }, null, 2),
+      "utf8",
+    );
+
+    const { stdout } = await execFileAsync("node", [
+      "--import",
+      "tsx",
+      "src/cli.ts",
+      "appliance",
+      "set-capability",
+      "--workspace",
+      "family",
+      "--id",
+      "brain",
+      "--clear",
+      "--json",
+    ], {
+      cwd: "/Users/admin/GitProjects/msgcode",
+      env: {
+        ...process.env,
+        HOME: homeRoot,
+        WORKSPACE_ROOT: workspaceRoot,
+      },
+    });
+
+    const payload = JSON.parse(stdout);
+    expect(payload.exitCode).toBe(0);
+    expect(payload.status).toBe("pass");
+    expect(payload.data.mutation).toMatchObject({
+      capabilityId: "brain",
+      lane: "local",
+      configKey: "model.local.text",
+      model: "",
+    });
+    expect(payload.data.capabilities.capabilities.find((item: { id: string }) => item.id === "brain")).toMatchObject({
+      configured: true,
+      source: "local",
+      model: "auto",
+    });
+
+    const config = JSON.parse(await fs.readFile(path.join(workspacePath, ".msgcode", "config.json"), "utf8"));
+    expect(config["model.local.text"]).toBe("");
+  });
+
+  it("无统一真相源的能力位应正式报只读错误", async () => {
+    const root = await makeTempRoot();
+    tempRoots.push(root);
+    const homeRoot = path.join(root, "home");
+    const workspaceRoot = path.join(root, "workspaces");
+    const workspacePath = path.join(workspaceRoot, "family");
+    await fs.mkdir(path.join(homeRoot, ".config", "msgcode"), { recursive: true });
+    await fs.mkdir(path.join(workspacePath, ".msgcode"), { recursive: true });
+    await fs.writeFile(
+      path.join(workspacePath, ".msgcode", "config.json"),
+      JSON.stringify({
+        "runtime.kind": "agent",
+        "agent.provider": "agent-backend",
+      }, null, 2),
+      "utf8",
+    );
+
+    const result = await execFileAsync("node", [
+      "--import",
+      "tsx",
+      "src/cli.ts",
+      "appliance",
+      "set-capability",
+      "--workspace",
+      "family",
+      "--id",
+      "image",
+      "--model",
+      "wan2.6",
+      "--json",
+    ], {
+      cwd: "/Users/admin/GitProjects/msgcode",
+      env: {
+        ...process.env,
+        HOME: homeRoot,
+        WORKSPACE_ROOT: workspaceRoot,
+      },
+    }).catch((error) => error);
+
+    const payload = JSON.parse(result.stdout);
+    expect(payload.exitCode).toBe(1);
+    expect(payload.status).toBe("error");
+    expect(payload.errors.some((item: { code?: string; details?: { errorCode?: string } }) =>
+      item.code === "APPLIANCE_CAPABILITY_MUTATION_FAILED"
+        && item.details?.errorCode === "WORKSPACE_CAPABILITY_READ_ONLY"
+    )).toBe(true);
+  });
 });
