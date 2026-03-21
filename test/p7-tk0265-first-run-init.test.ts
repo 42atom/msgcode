@@ -45,8 +45,10 @@ describe("first-run init", () => {
     expect(existsSync(path.join(workspacePath, "AIDOCS", "reports"))).toBe(true);
 
     const orgContent = await fs.readFile(path.join(workspacePath, ".msgcode", "ORG.md"), "utf8");
+    const configContent = JSON.parse(await fs.readFile(path.join(workspacePath, ".msgcode", "config.json"), "utf8"));
     expect(orgContent).toContain("名称：");
     expect(orgContent).toContain("交税地：");
     expect(orgContent).toContain("统一社会信用代码：");
+    expect(configContent["profile.name"]).toBe("");
   });
 });

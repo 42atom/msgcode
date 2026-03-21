@@ -33,6 +33,10 @@ type StoredAgentProvider = AgentProvider | LegacyAgentProviderAlias;
  * P5.7-R24: backend lanes - 新增 model.local.* / model.api.*
  */
 export interface WorkspaceConfig {
+  // ==================== 设置页：我的资料 ====================
+  /** 我的称呼（设置页“我的资料”） */
+  "profile.name"?: string;
+
   // ==================== 记忆注入配置 ====================
   /** 记忆注入开关（默认 false） */
   "memory.inject.enabled"?: boolean;
@@ -230,6 +234,7 @@ export type TmuxClient = "codex" | "claude-code";
  * P5.7-R3e: 新增 model.executor/model.responder 默认值
  */
 export const DEFAULT_WORKSPACE_CONFIG: Required<WorkspaceConfig> = {
+  "profile.name": "",
   "memory.inject.enabled": true, // 测试期默认开启记忆注入
   "memory.inject.topK": 5,
   "memory.inject.maxChars": 2000,

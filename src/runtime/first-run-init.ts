@@ -141,6 +141,7 @@ export async function ensureWorkspaceFirstRun(args: {
     result.existing.push(configPath);
   } else {
     await saveWorkspaceConfig(result.workspacePath, {
+      "profile.name": "",
       "runtime.kind": "agent",
       "agent.provider": "agent-backend",
     });
