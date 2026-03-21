@@ -6,64 +6,155 @@ const threadChannelChip = document.getElementById("thread-channel-chip");
 const threadKindChip = document.getElementById("thread-kind-chip");
 const chatLog = document.getElementById("chat-log");
 const observerTitle = document.getElementById("observer-title");
-const loadingError = document.getElementById("loading-error");
-const loadingErrorDetail = document.getElementById("loading-error-detail");
+const prototypeNote = document.getElementById("prototype-note");
+const prototypeNoteDetail = document.getElementById("prototype-note-detail");
 const workStatusLine1 = document.getElementById("work-status-line-1");
 const workStatusLine2 = document.getElementById("work-status-line-2");
 const observerSecondaryTitle = document.getElementById("observer-secondary-title");
 const observerSecondaryContent = document.getElementById("observer-secondary-content");
 
 const state = {
-  selectedWorkspace: "",
-  selectedThreadId: "",
-  loadingError: "",
+  selectedWorkspace: "family",
+  selectedThreadId: "copy-edit",
 };
 
-function getSurfaceBridge() {
-  const bridge = window.msgcodeReadonlySurface;
-  if (!bridge || typeof bridge.runCommand !== "function") {
-    throw new Error("缺少只读线程面桥接：window.msgcodeReadonlySurface.runCommand");
-  }
-  return bridge;
-}
-
-async function runSurfaceCommand(command, args) {
-  const bridge = getSurfaceBridge();
-  const envelope = await bridge.runCommand(command, args);
-  if (!envelope || typeof envelope !== "object") {
-    throw new Error(`无效 surface 响应：${command}`);
-  }
-  return envelope;
-}
-
-function setStatus(text, kind = "idle") {
-  if (!surfaceStatus) return;
-  surfaceStatus.textContent = text;
-  surfaceStatus.classList.toggle("status-pill--ok", kind === "ok");
-}
-
-function setLoadingError(text) {
-  state.loadingError = text;
-  if (loadingError) {
-    loadingError.textContent = summarizeSurfaceMessage(text);
-  }
-  if (loadingErrorDetail) {
-    loadingErrorDetail.textContent = text || "当前无额外错误细节。";
-  }
-}
+const prototypeSurface = {
+  note: {
+    title: "原型研究面",
+    body: "这里只保留静态阅读和演示，不走正式宿主桥接。",
+    detail: "一级入口保留，三栏结构保留，正式实现另走 src。",
+  },
+  workspaces: [
+    {
+      name: "family",
+      currentThreadId: "copy-edit",
+      threads: [
+        {
+          threadId: "copy-edit",
+          title: "Copy Edit",
+          source: "prototype",
+          channel: "draft",
+          kind: "readonly",
+          messages: [
+            {
+              turn: 1,
+              user: "把开场再收短一点。",
+              assistant: "可以，保留一条主线，把背景说明压成一句。",
+            },
+            {
+              turn: 2,
+              user: "一级入口还要留吗？",
+              assistant: "留，作为原型研究面的一部分。",
+            },
+          ],
+          workStatus: [
+            "当前关注点：原型说明收口。",
+            "最近动作：保留 settings 入口，不做正式桥接。",
+          ],
+          observer: [
+            "该线程用于演示静态布局与阅读节奏。",
+            "不承载正式读面联通。",
+          ],
+          schedule: [
+            { cron: "0 9 * * 1", id: "prototype-review", message: "检查原型口径是否仍然干净。" },
+          ],
+        },
+        {
+          threadId: "family-notes",
+          title: "Family Notes",
+          source: "prototype",
+          channel: "notes",
+          kind: "readonly",
+          messages: [
+            {
+              turn: 1,
+              user: "这个页面的任务是什么？",
+              assistant: "展示静态原型，不接正式运行时。",
+            },
+          ],
+          workStatus: [
+            "当前关注点：静态展示。",
+            "最近动作：保留既定入口。",
+          ],
+          observer: [
+            "用于演示多线程样式，但不代表真实工作流。",
+          ],
+          schedule: [],
+        },
+      ],
+    },
+    {
+      name: "ops-room",
+      currentThreadId: "ops-brief",
+      threads: [
+        {
+          threadId: "ops-brief",
+          title: "Ops Brief",
+          source: "prototype",
+          channel: "report",
+          kind: "readonly",
+          messages: [
+            {
+              turn: 1,
+              user: "今天的状态怎么样？",
+              assistant: "一切都在原型研究面里。",
+            },
+          ],
+          workStatus: [
+            "当前关注点：保持页面可静态阅读。",
+            "最近动作：去掉正式桥接依赖。",
+          ],
+          observer: [
+            "这里仍然只是示意区，不是运行态控制面。",
+          ],
+          schedule: [
+            { cron: "30 14 * * 3", id: "design-sync", message: "回看结构是否还像原型。" },
+          ],
+        },
+      ],
+    },
+    {
+      name: "lab",
+      currentThreadId: "prototype-audit",
+      threads: [
+        {
+          threadId: "prototype-audit",
+          title: "Prototype Audit",
+          source: "prototype",
+          channel: "audit",
+          kind: "readonly",
+          messages: [
+            {
+              turn: 1,
+              user: "还剩哪些正式 UI 痕迹？",
+              assistant: "已收掉桥接、加载失败和正式读面空态路径。",
+            },
+            {
+              turn: 2,
+              user: "这页现在做什么？",
+              assistant: "做静态演示，保留一级入口和 UX 结构。",
+            },
+          ],
+          workStatus: [
+            "当前关注点：边界清晰。",
+            "最近动作：把主窗口退回原型研究面。",
+          ],
+          observer: [
+            "这个线程用于人工巡检原型表面。",
+            "点击不同工作区可以切换示例内容。",
+          ],
+          schedule: [],
+        },
+      ],
+    },
+  ],
+};
 
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;");
-}
-
-function formatTime(iso) {
-  if (!iso) return "";
-  const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return iso;
-  return `${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} ${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 }
 
 function formatCronHint(cron) {
@@ -73,28 +164,24 @@ function formatCronHint(cron) {
   return `${String(parts[1]).padStart(2, "0")}:${String(parts[0]).padStart(2, "0")}`;
 }
 
-function renderEmptyState(title, body) {
-  return `
-    <div class="empty-state">
-      <div class="empty-state__icon">○</div>
-      <h4>${escapeHtml(title)}</h4>
-      <p>${escapeHtml(body)}</p>
-    </div>
-  `;
+function summarizeThread(thread) {
+  const firstMessage = thread.messages[0];
+  if (!firstMessage) return "静态演示线程";
+  return firstMessage.assistant || firstMessage.user || "静态演示线程";
 }
 
-function summarizeSurfaceMessage(message) {
-  if (!message) return "读取正常";
-  if (message.includes("window.msgcodeReadonlySurface.runCommand")) {
-    return "宿主桥接缺失";
-  }
-  if (message.includes("workspace-tree")) {
-    return "工作区读取失败";
-  }
-  if (message.includes("thread")) {
-    return "线程读取失败";
-  }
-  return message.length > 28 ? `${message.slice(0, 28)}...` : message;
+function getWorkspace(workspaceName) {
+  return prototypeSurface.workspaces.find((workspace) => workspace.name === workspaceName) || prototypeSurface.workspaces[0];
+}
+
+function getThread(workspaceName, threadId) {
+  const workspace = getWorkspace(workspaceName);
+  return workspace.threads.find((thread) => thread.threadId === threadId) || workspace.threads[0];
+}
+
+function setStatus(text) {
+  if (!surfaceStatus) return;
+  surfaceStatus.textContent = text;
 }
 
 function renderRailEmptyState(title, body) {
@@ -137,10 +224,8 @@ function renderStatusList(entries) {
 
   return entries.map((entry) => `
     <article class="schedule-item">
-      <strong>${escapeHtml(formatTime(entry.timestamp))}</strong>
       <div>
-        <p>${escapeHtml(entry.kind || "status")}</p>
-        <small>${escapeHtml(entry.summary || "")}</small>
+        <p>${escapeHtml(entry)}</p>
       </div>
     </article>
   `).join("");
@@ -168,254 +253,133 @@ function renderScheduleList(items) {
   `).join("");
 }
 
-function pickInitialSelection(workspaces) {
-  if (state.selectedWorkspace && workspaces.some((workspace) => workspace.name === state.selectedWorkspace)) {
-    const current = workspaces.find((workspace) => workspace.name === state.selectedWorkspace);
-    if (current && state.selectedThreadId && current.threads.some((thread) => thread.threadId === state.selectedThreadId)) {
-      return;
-    }
-    state.selectedThreadId = current?.currentThreadId || current?.threads[0]?.threadId || "";
-    return;
-  }
-
-  const firstWorkspaceWithThread = workspaces.find((workspace) => workspace.currentThreadId || workspace.threads.length > 0);
-  const initialWorkspace = firstWorkspaceWithThread || workspaces[0] || null;
-  state.selectedWorkspace = initialWorkspace?.name || "";
-  state.selectedThreadId = initialWorkspace?.currentThreadId || initialWorkspace?.threads[0]?.threadId || "";
+function pickInitialSelection() {
+  const workspace = getWorkspace(state.selectedWorkspace);
+  const thread = getThread(workspace.name, state.selectedThreadId);
+  state.selectedWorkspace = workspace.name;
+  state.selectedThreadId = thread.threadId;
+  return { workspace, thread };
 }
 
-function renderWorkspaceTree(surface) {
+function renderWorkspaceTree() {
   if (!workspaceTree) return;
-  const workspaces = surface?.data?.workspaces || [];
 
+  const workspaces = prototypeSurface.workspaces;
   if (workspaces.length === 0) {
-    workspaceTree.innerHTML = renderRailEmptyState("暂无活跃工作区", "还没有可选线程。");
+    workspaceTree.innerHTML = renderRailEmptyState("暂无示例工作区", "原型数据为空。");
     return;
   }
 
-  pickInitialSelection(workspaces);
-
   workspaceTree.innerHTML = workspaces.map((workspace) => {
-    const workspaceName = workspace.name || "";
-    const isSelectedWorkspace = workspaceName === state.selectedWorkspace;
-    const currentThreadId = workspace.currentThreadId || "";
+    const isSelectedWorkspace = workspace.name === state.selectedWorkspace;
     const threads = Array.isArray(workspace.threads) ? workspace.threads : [];
-    const body = threads.length > 0
-      ? threads.map((thread) => {
-        const selected = isSelectedWorkspace && thread.threadId === state.selectedThreadId;
-        return `
-          <article
-            class="thread-list-item${selected ? " is-selected" : ""}"
-            data-thread-id="${escapeHtml(thread.threadId || "")}"
-            data-workspace="${escapeHtml(workspaceName)}"
-          >
-            <div class="thread-list-item__head">
-              <strong>${escapeHtml(thread.title || thread.threadId || "未命名线程")}</strong>
-              <span>${escapeHtml(thread.source || "unknown")}</span>
-            </div>
-          </article>
-        `;
-      }).join("")
-      : `
-        <article class="thread-list-item">
+    const items = threads.map((thread) => {
+      const selected = isSelectedWorkspace && thread.threadId === state.selectedThreadId;
+      return `
+        <article
+          class="thread-list-item${selected ? " is-selected" : ""}"
+          data-thread-id="${escapeHtml(thread.threadId)}"
+          data-workspace="${escapeHtml(workspace.name)}"
+        >
           <div class="thread-list-item__head">
-            <strong>暂无线程</strong>
-            <span>0</span>
+            <strong>${escapeHtml(thread.title)}</strong>
+            <span>${escapeHtml(thread.source)}</span>
           </div>
         </article>
       `;
+    }).join("");
 
     return `
-      <details
-        class="workspace-group${isSelectedWorkspace ? " is-selected" : ""}"
-        data-workspace="${escapeHtml(workspaceName)}"
-        data-current-thread-id="${escapeHtml(currentThreadId)}"
-        data-first-thread-id="${escapeHtml(threads[0]?.threadId || "")}"
-        open
-      >
+      <details class="workspace-group${isSelectedWorkspace ? " is-selected" : ""}" data-workspace="${escapeHtml(workspace.name)}" open>
         <summary class="workspace-group__title">
-          <span class="workspace-group__name">${escapeHtml(workspaceName)}</span>
+          <span class="workspace-group__name">${escapeHtml(workspace.name)}</span>
           <span class="inline-chip inline-chip--muted">${threads.length}</span>
         </summary>
         <div class="workspace-group__items">
-          ${body}
+          ${items}
         </div>
       </details>
     `;
   }).join("");
 }
 
-function renderThreadPlaceholder(title, body) {
-  if (threadTitle) {
-    threadTitle.textContent = title;
-  }
-  if (threadWorkspaceChip) {
-    threadWorkspaceChip.textContent = state.selectedWorkspace || "workspace";
-  }
-  if (threadChannelChip) {
-    threadChannelChip.textContent = "readonly";
-  }
-  if (threadKindChip) {
-    threadKindChip.textContent = state.selectedThreadId ? "thread" : "empty";
-  }
-  if (observerTitle) {
-    observerTitle.textContent = title;
-  }
-  if (chatLog) {
-    chatLog.innerHTML = renderThreadEmptyState(title, body);
-  }
-  if (workStatusLine1) {
-    workStatusLine1.textContent = "等待线程数据。";
-  }
-  if (workStatusLine2) {
-    workStatusLine2.textContent = state.selectedThreadId ? "选中线程后会显示最新工作状况。" : "左侧选择线程后显示这里。";
-  }
-  if (observerSecondaryTitle) {
-    observerSecondaryTitle.textContent = "最近工作状况";
-  }
-  if (observerSecondaryContent) {
-    observerSecondaryContent.innerHTML = `
-      <article class="schedule-item schedule-item--placeholder">
-        <div>
-          <p>暂无附加信息</p>
-          <small>线程载入后这里会显示最近工作状况。</small>
-        </div>
-      </article>
-    `;
-  }
-}
-
-function renderThreadSurface(surface) {
-  const data = surface?.data || {};
-  const thread = data.thread || null;
-  const workStatus = data.workStatus || { updatedAt: "", currentThreadEntries: [], recentEntries: [] };
-  const schedules = Array.isArray(data.schedules) ? data.schedules : [];
-  const currentThreadId = getCurrentWorkspaceThreadId();
-  const errorMessage = surface?.errors?.[0]?.message || "";
-
-  setLoadingError(errorMessage);
-
-  if (!thread) {
-    renderThreadPlaceholder("未选中线程", errorMessage || "当前工作区没有可读线程。");
-    return;
-  }
-
-  if (threadTitle) {
-    threadTitle.textContent = thread.title || thread.threadId || "未命名线程";
-  }
-  if (threadWorkspaceChip) {
-    threadWorkspaceChip.textContent = state.selectedWorkspace || "workspace";
-  }
-  if (threadChannelChip) {
-    threadChannelChip.textContent = thread.source || "unknown";
-  }
-  if (threadKindChip) {
-    threadKindChip.textContent = thread.threadId === currentThreadId ? "当前线程" : "历史线程";
-  }
-  if (observerTitle) {
-    observerTitle.textContent = thread.title || "线程附带信息";
-  }
-
-  const primaryEntries = Array.isArray(workStatus.currentThreadEntries) ? workStatus.currentThreadEntries : [];
-  const recentEntries = Array.isArray(workStatus.recentEntries) ? workStatus.recentEntries : [];
-  const line1 = primaryEntries[0]?.summary || recentEntries[0]?.summary || "暂无工作状况。";
-  const line2 = primaryEntries[1]?.summary || (workStatus.updatedAt ? `最近更新时间：${formatTime(workStatus.updatedAt)}` : "");
-
-  if (workStatusLine1) {
-    workStatusLine1.textContent = line1;
-  }
-  if (workStatusLine2) {
-    workStatusLine2.textContent = line2;
-  }
-  if (observerSecondaryTitle) {
-    observerSecondaryTitle.textContent = schedules.length > 0 ? "日历 / 定时任务" : "最近工作状况";
-  }
-  if (observerSecondaryContent) {
-    observerSecondaryContent.innerHTML = schedules.length > 0
-      ? renderScheduleList(schedules)
-      : renderStatusList(recentEntries);
-  }
-
+function renderThreadSurface() {
+  const { workspace, thread } = pickInitialSelection();
   const messages = Array.isArray(thread.messages) ? [...thread.messages].sort((a, b) => (a.turn || 0) - (b.turn || 0)) : [];
+  const workStatus = Array.isArray(thread.workStatus) ? thread.workStatus : [];
+  const observer = Array.isArray(thread.observer) ? thread.observer : [];
+  const schedule = Array.isArray(thread.schedule) ? thread.schedule : [];
+
+  setStatus("静态原型数据已加载");
+
+  if (threadTitle) {
+    threadTitle.textContent = thread.title;
+  }
+  if (threadWorkspaceChip) {
+    threadWorkspaceChip.textContent = workspace.name;
+  }
+  if (threadChannelChip) {
+    threadChannelChip.textContent = thread.channel || thread.source || "prototype";
+  }
+  if (threadKindChip) {
+    threadKindChip.textContent = thread.kind || "readonly";
+  }
+  if (observerTitle) {
+    observerTitle.textContent = thread.title;
+  }
+  if (prototypeNote) {
+    prototypeNote.textContent = prototypeSurface.note.title;
+  }
+  if (prototypeNoteDetail) {
+    prototypeNoteDetail.textContent = prototypeSurface.note.body;
+  }
+  if (workStatusLine1) {
+    workStatusLine1.textContent = workStatus[0] || "暂无工作状况。";
+  }
+  if (workStatusLine2) {
+    workStatusLine2.textContent = workStatus[1] || prototypeSurface.note.detail;
+  }
+  if (observerSecondaryTitle) {
+    observerSecondaryTitle.textContent = schedule.length > 0 ? "日历 / 定时任务" : "观察说明";
+  }
+  if (observerSecondaryContent) {
+    observerSecondaryContent.innerHTML = schedule.length > 0 ? renderScheduleList(schedule) : renderStatusList(observer);
+  }
   if (chatLog) {
     chatLog.innerHTML = messages.length > 0
       ? messages.map((message) => `
         <article class="bubble bubble--user">${escapeHtml(message.user || "")}</article>
         <article class="bubble bubble--agent">${escapeHtml(message.assistant || "")}</article>
       `).join("")
-      : renderThreadEmptyState("线程没有正文", "当前线程还没有消息内容。");
+      : renderThreadEmptyState("静态原型", "这里保留正文区结构，但不接正式宿主读取。");
   }
 }
 
-function getCurrentWorkspaceThreadId() {
-  const selectedWorkspace = workspaceTree?.querySelector(`[data-workspace="${CSS.escape(state.selectedWorkspace)}"]`);
-  return selectedWorkspace instanceof HTMLElement ? selectedWorkspace.dataset.currentThreadId || "" : "";
-}
-
-async function loadThreadSurface() {
-  if (!state.selectedWorkspace || !state.selectedThreadId) {
-    setStatus("workspace-tree 已加载，等待选择线程", "ok");
-    setLoadingError("");
-    renderThreadPlaceholder("未选中线程", "请先从左侧选择一条活跃线程。");
-    return;
-  }
-
-  setStatus(`读取 thread: ${state.selectedWorkspace}/${state.selectedThreadId}`, "idle");
-  try {
-    const envelope = await runSurfaceCommand("thread", {
-      workspace: state.selectedWorkspace,
-      threadId: state.selectedThreadId,
-    });
-    renderThreadSurface(envelope);
-    setStatus(`thread 已加载: ${state.selectedWorkspace}/${state.selectedThreadId}`, envelope.status === "pass" ? "ok" : "idle");
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    setLoadingError(message);
-    renderThreadPlaceholder("线程读取失败", message);
-    setStatus("thread 读取失败", "idle");
-  }
-}
-
-async function loadWorkspaceTree() {
-  setStatus("读取 workspace-tree...", "idle");
-  try {
-    const envelope = await runSurfaceCommand("workspace-tree", {});
-    renderWorkspaceTree(envelope);
-    const warningMessage = envelope?.warnings?.[0]?.message || "";
-    setLoadingError(warningMessage);
-    setStatus("workspace-tree 已加载", envelope.status === "pass" ? "ok" : "idle");
-    await loadThreadSurface();
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    setLoadingError(message);
-    if (workspaceTree) {
-      workspaceTree.innerHTML = renderRailEmptyState("工作区暂不可读", "稍后重试或检查宿主桥接。");
-    }
-    renderThreadPlaceholder("只读线程面未联通", message);
-    setStatus("workspace-tree 读取失败", "idle");
-  }
+function selectThread(workspaceName, threadId) {
+  state.selectedWorkspace = workspaceName;
+  state.selectedThreadId = threadId;
+  renderWorkspaceTree();
+  renderThreadSurface();
 }
 
 if (workspaceTree) {
-  workspaceTree.addEventListener("click", async (event) => {
+  workspaceTree.addEventListener("click", (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
 
     const threadItem = target.closest("[data-thread-id]");
     if (threadItem instanceof HTMLElement) {
-      state.selectedWorkspace = threadItem.dataset.workspace || "";
-      state.selectedThreadId = threadItem.dataset.threadId || "";
-      await loadWorkspaceTree();
+      selectThread(threadItem.dataset.workspace || state.selectedWorkspace, threadItem.dataset.threadId || state.selectedThreadId);
       return;
     }
 
     const workspaceItem = target.closest("[data-workspace]");
     if (workspaceItem instanceof HTMLElement) {
-      state.selectedWorkspace = workspaceItem.dataset.workspace || "";
-      state.selectedThreadId = workspaceItem.dataset.currentThreadId || workspaceItem.dataset.firstThreadId || "";
-      await loadWorkspaceTree();
+      const workspace = getWorkspace(workspaceItem.dataset.workspace || state.selectedWorkspace);
+      selectThread(workspace.name, workspace.currentThreadId || workspace.threads[0]?.threadId || state.selectedThreadId);
     }
   });
 }
 
-loadWorkspaceTree();
+renderWorkspaceTree();
+renderThreadSurface();
