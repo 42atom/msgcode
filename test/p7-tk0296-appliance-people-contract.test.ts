@@ -216,4 +216,74 @@ describe("appliance people contract", () => {
     expect(payload.data.pending).toEqual([]);
     expect(payload.warnings.some((warning: { code?: string }) => warning.code === "WORKSPACE_PEOPLE_PENDING_INCOMPLETE")).toBe(true);
   });
+
+  it("已认领的人物不应继续出现在 pending 列表", async () => {
+    const root = await makeTempRoot();
+    tempRoots.push(root);
+    const homeRoot = path.join(root, "home");
+    const workspaceRoot = path.join(root, "workspaces");
+    const workspacePath = path.join(workspaceRoot, "family");
+    const identityDir = path.join(workspacePath, ".msgcode", "character-identity");
+    await fs.mkdir(path.join(homeRoot, ".config", "msgcode"), { recursive: true });
+    await fs.mkdir(identityDir, { recursive: true });
+
+    await fs.writeFile(
+      path.join(identityDir, "feishu-oc_family.csv"),
+      [
+        "channel,chat_id,sender_id,alias,role,notes,first_seen_at,last_seen_at",
+        "feishu,feishu:oc_family,ou_grandpa,爷爷,,家庭成员,2026-03-21T10:00:00Z,2026-03-21T11:00:00Z",
+      ].join("\n"),
+      "utf8"
+    );
+
+    await fs.writeFile(
+      path.join(workspacePath, ".msgcode", "people-pending.json"),
+      JSON.stringify({
+        pending: [
+          {
+            channel: "feishu",
+            chatId: "feishu:oc_family",
+            senderId: "ou_grandpa",
+            username: "grandpa",
+            displayName: "爷爷",
+            seenAt: "2026-03-21T12:00:00Z",
+          },
+          {
+            channel: "feishu",
+            chatId: "feishu:oc_family",
+            senderId: "ou_new",
+            username: "newcomer",
+            displayName: "新成员",
+            seenAt: "2026-03-21T12:05:00Z",
+          },
+        ],
+      }, null, 2),
+      "utf8"
+    );
+
+    const { stdout } = await execFileAsync("node", [
+      "--import",
+      "tsx",
+      "src/cli.ts",
+      "appliance",
+      "people",
+      "--workspace",
+      "family",
+      "--json",
+    ], {
+      cwd: "/Users/admin/GitProjects/msgcode",
+      env: {
+        ...process.env,
+        HOME: homeRoot,
+        WORKSPACE_ROOT: workspaceRoot,
+      },
+    });
+
+    const payload = JSON.parse(stdout);
+    expect(payload.exitCode).toBe(0);
+    expect(payload.data.counts.people).toBe(1);
+    expect(payload.data.counts.pending).toBe(1);
+    expect(payload.data.pending).toHaveLength(1);
+    expect(payload.data.pending[0].senderId).toBe("ou_new");
+  });
 });

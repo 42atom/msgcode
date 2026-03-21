@@ -7,7 +7,13 @@ import { createEnvelope, getWorkspacePath } from "./command-runner.js";
 import type { Diagnostic, Envelope, CommandStatus } from "../memory/types.js";
 import { getVersionInfo } from "../version.js";
 import { runAllProbes } from "../probe/index.js";
-import { readWorkspacePeopleState, type WorkspaceIdentityRecord, type WorkspacePendingPerson } from "../runtime/workspace-people.js";
+import {
+  readWorkspacePeopleState,
+  saveWorkspacePendingPerson,
+  type SaveWorkspacePendingPersonResult,
+  type WorkspaceIdentityRecord,
+  type WorkspacePendingPerson,
+} from "../runtime/workspace-people.js";
 import { saveWorkspacePerson, type SaveWorkspacePersonResult } from "../runtime/workspace-people-save.js";
 import { readWorkspacePackRegistry, type WorkspacePackSurfaceData } from "../runtime/workspace-packs.js";
 import { readWorkspaceProfileSurface, type WorkspaceProfileSurfaceData } from "../runtime/workspace-profile.js";
@@ -89,6 +95,13 @@ interface AppliancePeopleMutationData {
   changedFiles: string[];
   created: boolean;
   person: WorkspaceIdentityRecord;
+}
+
+interface AppliancePeoplePendingMutationData {
+  workspacePath: string;
+  changedFiles: string[];
+  created: boolean;
+  pending: WorkspacePendingPerson;
 }
 
 interface ApplianceProfileData extends WorkspaceProfileSurfaceData {}
@@ -1456,6 +1469,113 @@ export function createApplianceCommand(): Command {
     });
 
   cmd
+    .command("people-pending-add")
+    .description("写入工作区待关联人物 pending")
+    .requiredOption("--workspace <labelOrPath>", "Workspace 相对路径或绝对路径")
+    .requiredOption("--channel <value>", "渠道名")
+    .requiredOption("--chat-id <value>", "chatId")
+    .requiredOption("--sender-id <value>", "senderId")
+    .option("--username <value>", "渠道用户名")
+    .option("--display-name <value>", "渠道显示名")
+    .option("--seen-at <value>", "最近出现时间")
+    .option("--json", "JSON 格式输出")
+    .action(async (options: {
+      workspace: string;
+      channel: string;
+      chatId: string;
+      senderId: string;
+      username?: string;
+      displayName?: string;
+      seenAt?: string;
+      json?: boolean;
+    }) => {
+      const startTime = Date.now();
+      const workspacePath = getWorkspacePath(options.workspace);
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      if (!existsSync(workspacePath)) {
+        errors.push(buildMissingWorkspaceError(workspacePath, options.workspace));
+      }
+
+      const channel = normalizeLineInput(options.channel);
+      const chatId = normalizeLineInput(options.chatId);
+      const senderId = normalizeLineInput(options.senderId);
+      const username = normalizeLineInput(options.username);
+      const displayName = normalizeLineInput(options.displayName);
+      const seenAt = normalizeLineInput(options.seenAt);
+
+      if (!channel || !chatId || !senderId || (!username && !displayName)) {
+        errors.push({
+          code: "APPLIANCE_PEOPLE_PENDING_MUTATION_EMPTY",
+          message: "待关联人物写入缺少关键字段",
+          hint: "至少传齐 --channel / --chat-id / --sender-id，并提供 --username 或 --display-name",
+          details: { workspacePath },
+        });
+      }
+
+      if (errors.length > 0) {
+        const envelope: Envelope<AppliancePeoplePendingMutationData | null> = createEnvelope(
+          `msgcode appliance people-pending-add --workspace ${options.workspace}`,
+          startTime,
+          "error",
+          null,
+          warnings,
+          errors,
+        );
+        envelope.exitCode = 1;
+        console.log(JSON.stringify(envelope, null, 2));
+        process.exit(1);
+      }
+
+      try {
+        const result = await saveWorkspacePendingPerson({
+          workspacePath,
+          channel: channel!,
+          chatId: chatId!,
+          senderId: senderId!,
+          username,
+          displayName,
+          seenAt,
+        });
+
+        const envelope: Envelope<AppliancePeoplePendingMutationData> = createEnvelope(
+          `msgcode appliance people-pending-add --workspace ${options.workspace}`,
+          startTime,
+          "pass",
+          mapPeoplePendingMutationPayload(result),
+          warnings,
+          errors,
+        );
+        envelope.exitCode = 0;
+        console.log(JSON.stringify(envelope, null, 2));
+        process.exit(0);
+      } catch (error) {
+        errors.push({
+          code: "APPLIANCE_PEOPLE_PENDING_MUTATION_FAILED",
+          message: "待关联人物写入失败",
+          hint: "检查 people-pending.json 是否可读、字段是否完整",
+          details: {
+            workspacePath,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
+
+        const envelope: Envelope<AppliancePeoplePendingMutationData | null> = createEnvelope(
+          `msgcode appliance people-pending-add --workspace ${options.workspace}`,
+          startTime,
+          "error",
+          null,
+          warnings,
+          errors,
+        );
+        envelope.exitCode = 1;
+        console.log(JSON.stringify(envelope, null, 2));
+        process.exit(1);
+      }
+    });
+
+  cmd
     .command("people")
     .description("输出工作区人物与待关联身份 JSON")
     .requiredOption("--workspace <labelOrPath>", "Workspace 相对路径或绝对路径")
@@ -1895,5 +2015,14 @@ function mapPeopleMutationPayload(result: SaveWorkspacePersonResult): ApplianceP
       firstSeenAt: result.row.firstSeenAt,
       lastSeenAt: result.row.lastSeenAt,
     },
+  };
+}
+
+function mapPeoplePendingMutationPayload(result: SaveWorkspacePendingPersonResult): AppliancePeoplePendingMutationData {
+  return {
+    workspacePath: result.workspacePath,
+    changedFiles: [result.pendingPath],
+    created: result.created,
+    pending: result.person,
   };
 }

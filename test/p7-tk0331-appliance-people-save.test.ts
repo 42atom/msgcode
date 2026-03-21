@@ -176,4 +176,84 @@ describe("appliance people-save contract", () => {
     expect(csv).not.toContain("默认主要服务对象\r\n负责接娃");
     expect(csv).not.toContain("\r");
   });
+
+  it("应创建或更新 people-pending.json，并保持唯一键 upsert", async () => {
+    const root = await makeTempRoot();
+    tempRoots.push(root);
+    const homeRoot = path.join(root, "home");
+    const workspaceRoot = path.join(root, "workspaces");
+    const workspacePath = path.join(workspaceRoot, "family");
+    await fs.mkdir(path.join(homeRoot, ".config", "msgcode"), { recursive: true });
+    await fs.mkdir(path.join(workspacePath, ".msgcode"), { recursive: true });
+
+    const first = await execFileAsync("node", [
+      "--import",
+      "tsx",
+      "src/cli.ts",
+      "appliance",
+      "people-pending-add",
+      "--workspace",
+      "family",
+      "--channel",
+      "feishu",
+      "--chat-id",
+      "feishu:oc_family",
+      "--sender-id",
+      "ou_mom",
+      "--display-name",
+      "妈妈",
+      "--json",
+    ], {
+      cwd: "/Users/admin/GitProjects/msgcode",
+      env: {
+        ...process.env,
+        HOME: homeRoot,
+        WORKSPACE_ROOT: workspaceRoot,
+      },
+    });
+
+    const firstPayload = JSON.parse(first.stdout);
+    expect(firstPayload.exitCode).toBe(0);
+    expect(firstPayload.data.created).toBe(true);
+    expect(firstPayload.data.pending.displayName).toBe("妈妈");
+
+    const second = await execFileAsync("node", [
+      "--import",
+      "tsx",
+      "src/cli.ts",
+      "appliance",
+      "people-pending-add",
+      "--workspace",
+      "family",
+      "--channel",
+      "feishu",
+      "--chat-id",
+      "feishu:oc_family",
+      "--sender-id",
+      "ou_mom",
+      "--username",
+      "mom_user",
+      "--display-name",
+      "妈妈",
+      "--json",
+    ], {
+      cwd: "/Users/admin/GitProjects/msgcode",
+      env: {
+        ...process.env,
+        HOME: homeRoot,
+        WORKSPACE_ROOT: workspaceRoot,
+      },
+    });
+
+    const secondPayload = JSON.parse(second.stdout);
+    expect(secondPayload.exitCode).toBe(0);
+    expect(secondPayload.data.created).toBe(false);
+    expect(secondPayload.data.pending.username).toBe("mom_user");
+
+    const pendingPath = path.join(workspacePath, ".msgcode", "people-pending.json");
+    const pending = JSON.parse(await fs.readFile(pendingPath, "utf8"));
+    expect(pending.pending).toHaveLength(1);
+    expect(pending.pending[0].senderId).toBe("ou_mom");
+    expect(pending.pending[0].username).toBe("mom_user");
+  });
 });
