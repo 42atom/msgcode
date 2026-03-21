@@ -31,7 +31,9 @@ import {
   type WorkspaceNeighborSurfaceData,
 } from "../runtime/workspace-neighbor.js";
 import {
+  readWorkspaceThreadDetailSurface,
   readWorkspaceThreadSurface,
+  type WorkspaceThreadDetailSurfaceData,
   type WorkspaceThreadSurfaceData,
 } from "../runtime/workspace-thread-surface.js";
 import {
@@ -178,6 +180,7 @@ interface ApplianceDoctorData {
 
 interface ApplianceArchiveData extends WorkspaceArchiveSurfaceData {}
 interface ApplianceWorkspaceTreeData extends WorkspaceTreeSurfaceData {}
+interface ApplianceThreadData extends WorkspaceThreadDetailSurfaceData {}
 
 interface ApplianceWorkspaceArchiveMutationData {
   workspaceName: string;
@@ -1776,6 +1779,71 @@ export function createApplianceCommand(): Command {
       const status: CommandStatus = errors.length > 0 ? "error" : warnings.length > 0 ? "warning" : "pass";
       const envelope: Envelope<WorkspaceThreadSurfaceData> = createEnvelope(
         `msgcode appliance threads --workspace ${options.workspace}`,
+        startTime,
+        status,
+        data,
+        warnings,
+        errors
+      );
+      envelope.exitCode = errors.length > 0 ? 1 : 0;
+
+      console.log(JSON.stringify(envelope, null, 2));
+      process.exit(errors.length > 0 ? 1 : 0);
+    });
+
+  cmd
+    .command("thread")
+    .description("输出单条线程正文 JSON")
+    .requiredOption("--workspace <labelOrPath>", "Workspace 相对路径或绝对路径")
+    .requiredOption("--thread-id <threadId>", "要读取的线程 ID")
+    .option("--json", "JSON 格式输出")
+    .action(async (options: { workspace: string; threadId: string; json?: boolean }) => {
+      const startTime = Date.now();
+      const workspacePath = getWorkspacePath(options.workspace);
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+      const requestedThreadId = String(options.threadId ?? "").trim();
+
+      if (!existsSync(workspacePath)) {
+        errors.push(buildMissingWorkspaceError(workspacePath, options.workspace));
+      }
+
+      const { data, warnings: surfaceWarnings, found, readable } = errors.length === 0
+        ? await readWorkspaceThreadDetailSurface(workspacePath, requestedThreadId)
+        : {
+            data: {
+              workspacePath,
+              threadId: requestedThreadId,
+              thread: null,
+              people: { count: 0 },
+              workStatus: { updatedAt: "", currentThreadEntries: [], recentEntries: [] },
+              schedules: [],
+            },
+            warnings: [],
+            found: false,
+            readable: false,
+          };
+      warnings.push(...surfaceWarnings);
+
+      if (errors.length === 0 && !found) {
+        errors.push({
+          code: "APPLIANCE_THREAD_MISSING",
+          message: "线程不存在",
+          hint: "检查 threadId 是否仍在活跃线程列表中，或是否已归档",
+          details: { workspacePath, threadId: requestedThreadId },
+        });
+      } else if (errors.length === 0 && !readable) {
+        errors.push({
+          code: "APPLIANCE_THREAD_UNREADABLE",
+          message: "线程文件不可读",
+          hint: "修正 thread markdown，再重新读取",
+          details: { workspacePath, threadId: requestedThreadId },
+        });
+      }
+
+      const status: CommandStatus = errors.length > 0 ? "error" : warnings.length > 0 ? "warning" : "pass";
+      const envelope: Envelope<ApplianceThreadData> = createEnvelope(
+        `msgcode appliance thread --workspace ${options.workspace} --thread-id ${options.threadId}`,
         startTime,
         status,
         data,

@@ -60,6 +60,21 @@ export interface WorkspaceThreadSurfaceData {
   schedules: WorkspaceScheduleItem[];
 }
 
+export interface WorkspaceThreadDetailSurfaceData {
+  workspacePath: string;
+  threadId: string;
+  thread: WorkspaceCurrentThread | null;
+  people: {
+    count: number;
+  };
+  workStatus: {
+    updatedAt: string;
+    currentThreadEntries: WorkspaceStatusRecord[];
+    recentEntries: WorkspaceStatusRecord[];
+  };
+  schedules: WorkspaceScheduleItem[];
+}
+
 export async function readWorkspaceThreadSurface(workspacePath: string): Promise<{ data: WorkspaceThreadSurfaceData; warnings: Diagnostic[] }> {
   const warnings: Diagnostic[] = [];
   const currentChat = await readCurrentChatSelector(path.join(workspacePath, ".msgcode", "config.json"), warnings);
@@ -71,12 +86,7 @@ export async function readWorkspaceThreadSurface(workspacePath: string): Promise
     ? await readCurrentThread(currentThreadSummary.filePath, warnings)
     : null;
   const recentStatusEntries = readWorkspaceStatusTail({ workspacePath });
-  const currentThreadEntries = currentThread
-    ? recentStatusEntries.filter((entry) => {
-        const sourceLabel = deriveThreadStatusLabel(currentThread.source);
-        return entry.thread === currentThread.title || (sourceLabel !== "" && entry.thread === sourceLabel);
-      })
-    : [];
+  const currentThreadEntries = filterThreadStatusEntries(recentStatusEntries, currentThread);
   const schedules = await readSchedules(workspacePath, warnings);
 
   return {
@@ -101,6 +111,44 @@ export async function readWorkspaceThreadSurface(workspacePath: string): Promise
       schedules,
     },
     warnings,
+  };
+}
+
+export async function readWorkspaceThreadDetailSurface(
+  workspacePath: string,
+  threadId: string,
+): Promise<{ data: WorkspaceThreadDetailSurfaceData; warnings: Diagnostic[]; found: boolean; readable: boolean }> {
+  const warnings: Diagnostic[] = [];
+  const normalizedThreadId = normalizeCell(threadId);
+  const threads = await readWorkspaceThreadSummaries(workspacePath, warnings);
+  const { data: peopleState, warnings: peopleWarnings } = await readWorkspacePeopleState(workspacePath);
+  warnings.push(...peopleWarnings);
+  const threadSummary = threads.find((thread) => thread.threadId === normalizedThreadId) ?? null;
+  const thread = threadSummary
+    ? await readCurrentThread(threadSummary.filePath, warnings)
+    : null;
+  const recentStatusEntries = readWorkspaceStatusTail({ workspacePath });
+  const currentThreadEntries = filterThreadStatusEntries(recentStatusEntries, thread);
+  const schedules = await readSchedules(workspacePath, warnings);
+
+  return {
+    data: {
+      workspacePath,
+      threadId: normalizedThreadId,
+      thread,
+      people: {
+        count: peopleState.people.length,
+      },
+      workStatus: {
+        updatedAt: recentStatusEntries[0]?.timestamp ?? "",
+        currentThreadEntries,
+        recentEntries: recentStatusEntries,
+      },
+      schedules,
+    },
+    warnings,
+    found: threadSummary !== null,
+    readable: thread !== null,
   };
 }
 
@@ -323,6 +371,18 @@ function deriveThreadStatusLabel(source: string): string {
   if (source === "web") return "网页线程";
   if (source === "neighbor") return "邻居线程";
   return "";
+}
+
+function filterThreadStatusEntries(
+  recentStatusEntries: WorkspaceStatusRecord[],
+  thread: WorkspaceCurrentThread | null,
+): WorkspaceStatusRecord[] {
+  if (!thread) {
+    return [];
+  }
+
+  const sourceLabel = deriveThreadStatusLabel(thread.source);
+  return recentStatusEntries.filter((entry) => entry.thread === thread.title || (sourceLabel !== "" && entry.thread === sourceLabel));
 }
 
 function pickCurrentThread(threads: WorkspaceThreadSummary[], currentChat: { guid: string; chatId: string; hasConfiguredCurrent: boolean }): WorkspaceThreadSummary | null {
