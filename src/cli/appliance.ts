@@ -23,6 +23,7 @@ import {
   type WorkspaceThreadSurfaceData,
 } from "../runtime/workspace-thread-surface.js";
 import { installWorkspaceWpkg } from "../runtime/workspace-wpkg-install.js";
+import { atomicWriteFile } from "../runtime/fs-atomic.js";
 
 interface OrgCard {
   path: string;
@@ -278,7 +279,7 @@ function defaultOrgContent(): string {
 
 function normalizeLineInput(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
-  return value.trim();
+  return value.replace(/\r?\n+/g, " ").trim();
 }
 
 function normalizeMultilineInput(value: string | undefined): string | undefined {
@@ -297,6 +298,21 @@ function upsertMarkdownField(content: string, label: string, value: string): str
   if (!trimmed) {
     return `${line}\n`;
   }
+
+  const lines = trimmed.split("\n");
+  const sectionIndex = lines.findIndex((item) => item.trim() === "# 机构信息");
+  if (sectionIndex >= 0) {
+    let insertAt = sectionIndex + 1;
+    while (insertAt < lines.length && lines[insertAt].trim() === "") {
+      insertAt += 1;
+    }
+    while (insertAt < lines.length && /^- [^：]+：.*$/.test(lines[insertAt])) {
+      insertAt += 1;
+    }
+    lines.splice(insertAt, 0, line);
+    return `${lines.join("\n")}\n`;
+  }
+
   return `${trimmed}\n${line}\n`;
 }
 
@@ -339,7 +355,7 @@ async function saveWorkspaceProfileSurface(args: {
         nextOrg = upsertMarkdownField(nextOrg, "位置城市", args.city);
       }
       if (!nextOrg.endsWith("\n")) nextOrg = `${nextOrg}\n`;
-      await writeFile(orgPath, nextOrg, "utf8");
+      await atomicWriteFile(orgPath, nextOrg);
       changedFiles.push(orgPath);
     } catch (error) {
       throw new ApplianceProfileMutationError(
@@ -353,7 +369,7 @@ async function saveWorkspaceProfileSurface(args: {
   if (args.soul !== undefined) {
     try {
       const nextSoul = args.soul.endsWith("\n") ? args.soul : `${args.soul}\n`;
-      await writeFile(soulPath, nextSoul, "utf8");
+      await atomicWriteFile(soulPath, nextSoul);
       changedFiles.push(soulPath);
     } catch (error) {
       throw new ApplianceProfileMutationError(
