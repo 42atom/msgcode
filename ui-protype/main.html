@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
+    <!-- 桌面 App 原型：最小窗口宽度 1100px / 高度 680px；不支持移动端或纵向堆叠响应式。 -->
     <div class="app-shell app-shell--main">
       <main class="main-stage">
         <header class="topbar">
@@ -14,72 +15,329 @@
             <div class="brand-block brand-block--compact">
               <div class="brand-mark">M</div>
               <div>
-                <p class="eyebrow">Prototype Research Surface</p>
+                <p class="eyebrow">Main UI</p>
                 <h1>msgcode</h1>
               </div>
             </div>
-            <div class="status-cluster">
-              <div id="surface-status" class="status-pill">静态原型已就绪</div>
-            </div>
+            <nav class="top-icon-nav" aria-label="主导航">
+              <button class="icon-tab is-active" data-view="projects" aria-label="工作区">
+                <span class="icon-tab__glyph">◫</span>
+                <span class="icon-tab__label">工作区</span>
+              </button>
+              <button class="icon-tab" data-view="base" aria-label="基座">
+                <span class="icon-tab__glyph">⌘</span>
+                <span class="icon-tab__label">基座</span>
+              </button>
+              <button class="icon-tab" data-view="neighbor" aria-label="邻居">
+                <span class="icon-tab__glyph">◎</span>
+                <span class="icon-tab__label">邻居</span>
+                <span class="icon-tab__badge">2</span>
+              </button>
+            </nav>
           </div>
           <div class="status-cluster">
-            <div class="status-pill">workspace-tree</div>
-            <div class="status-pill">thread</div>
-            <a class="icon-link" href="./settings.html" aria-label="打开设置" title="Settings">S</a>
+            <a class="icon-link" href="./settings.html" aria-label="打开设置">⚙︎</a>
+            <div class="status-pill status-pill--ok">
+              <span class="status-dot"></span>
+              Runtime 正常
+            </div>
+            <div class="status-pill">v0.3.4-prototype</div>
           </div>
         </header>
 
-        <div class="three-column">
-          <section class="panel rail-panel">
-            <div class="panel-head">
-              <p class="eyebrow">Workspaces</p>
-              <h3>活跃工作区与线程</h3>
-            </div>
-            <div id="workspace-tree" class="thread-tree"></div>
-          </section>
-
-          <section class="panel chat-panel">
-            <div class="panel-head panel-head--inline">
-              <div>
-                <p class="eyebrow">当前线程</p>
-                <h3 id="thread-title">未加载</h3>
-              </div>
-              <div class="thread-header-side">
-                <div class="thread-header-meta">
-                  <span id="thread-workspace-chip" class="inline-chip inline-chip--muted">workspace</span>
-                  <span id="thread-channel-chip" class="inline-chip inline-chip--muted">source</span>
-                  <span id="thread-kind-chip" class="inline-chip inline-chip--muted">readonly</span>
+        <section class="view view--active" data-view-panel="projects">
+          <div class="three-column">
+            <section class="panel rail-panel">
+              <div class="panel-head panel-head--inline">
+                <div>
+                  <p class="eyebrow">Workspaces</p>
+                  <h3>msgcode 工作区</h3>
+                </div>
+                <div class="rail-actions">
+                  <a
+                    class="icon-link icon-link--small"
+                    href="./archive.html"
+                    title="历史归档"
+                    aria-label="历史归档"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M4 7h16"></path>
+                      <path d="M6 11v7h12v-7"></path>
+                      <path d="M9 11v-4h6v4"></path>
+                    </svg>
+                  </a>
+                  <button
+                    class="icon-link icon-link--small"
+                    type="button"
+                    title="新建聊天"
+                    aria-label="新建聊天"
+                  >
+                    <!-- 新建聊天只切到新的 web chatId 草稿上下文；真正的 thread 仍由 runtime 在第一条消息落盘时创建。 -->
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M12 20h9"></path>
+                      <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                    </svg>
+                  </button>
                 </div>
               </div>
-            </div>
-            <div id="chat-log" class="chat-log"></div>
-          </section>
+              <div id="workspace-tree" class="thread-tree">
+              </div>
+            </section>
 
-          <section class="panel observer-panel">
-            <div class="panel-head">
-              <p class="eyebrow">Observer</p>
-              <h3 id="observer-title">线程附带信息</h3>
-            </div>
-            <div class="observer-stack">
-              <section class="info-block">
-                <h4 id="prototype-note">原型研究面</h4>
-                <p id="prototype-note-detail" class="info-note prototype-note__detail">这里只保留静态阅读和演示，不走正式宿主桥接。</p>
-                <p class="info-note">一级入口保留，三栏结构保留，正式实现另走 src。</p>
-              </section>
+            <section class="panel chat-panel">
+              <div class="panel-head panel-head--inline">
+                <div>
+                  <p class="eyebrow">当前线程</p>
+                  <h3 id="thread-title">我在门口准备好了</h3>
+                </div>
+                <div class="thread-header-side">
+                  <div class="thread-header-meta">
+                    <span class="inline-chip">family</span>
+                    <span class="inline-chip" id="thread-channel-chip">feishu</span>
+                    <span class="inline-chip inline-chip--muted" id="thread-kind-chip">当前线程</span>
+                  </div>
+                  <button id="observer-toggle" class="ghost-mini observer-toggle" type="button">工作状况</button>
+                </div>
+              </div>
 
-              <section class="info-block">
-                <h4>工作状况 / Work Status</h4>
-                <p id="work-status-line-1">暂无工作状况。</p>
-                <p id="work-status-line-2"></p>
-              </section>
+              <div id="chat-log" class="chat-log">
+                <article class="bubble bubble--user">
+                  我在门口准备好了
+                </article>
+                <article class="bubble bubble--agent">
+                  好的，Chandler的健康档案已经建好了。去接小孩的路上注意安全。
+                </article>
+              </div>
 
-              <section class="info-block">
-                <h4 id="observer-secondary-title">日历 / 定时任务</h4>
-                <div id="observer-secondary-content" class="schedule-list"></div>
-              </section>
-            </div>
-          </section>
-        </div>
+              <div class="composer">
+                <textarea id="composer-input" rows="4">帮我看看今天下午还有哪些接娃提醒。</textarea>
+                <div id="composer-status" class="composer-status">输入只负责投递给 runtime；消息上屏以后端回写为准。</div>
+                <div class="composer-actions">
+                  <button class="action-button action-button--ghost">线程摘要</button>
+                  <button id="send-button" class="action-button">发给 Agent</button>
+                </div>
+              </div>
+            </section>
+
+            <section id="observer-panel" class="panel observer-panel">
+              <div class="panel-head panel-head--inline">
+                <div>
+                <p class="eyebrow">可观测</p>
+                <h3 id="observer-title">当前场景工作区</h3>
+                </div>
+                <button id="observer-close" class="ghost-mini observer-close" type="button">关闭</button>
+              </div>
+
+              <div class="observer-stack">
+                <section class="info-block">
+                  <h4>工作状况 / Work Status</h4>
+                  <p id="work-status-line-1">最近在处理接送提醒是否正常，以及 Chandler 的健康记录整理。</p>
+                  <p id="work-status-line-2">当前关注：中午接娃提醒为什么没有按时出现。</p>
+                </section>
+
+                <section class="info-block">
+                  <h4 id="observer-secondary-title">日历 / 定时任务</h4>
+                  <div id="observer-secondary-content" class="schedule-list">
+                    <article class="schedule-item">
+                      <strong>11:45</strong>
+                      <div>
+                        <p>中午接小孩回家</p>
+                        <small>工作日提醒 · pick-up-kids</small>
+                      </div>
+                    </article>
+                    <article class="schedule-item">
+                      <strong>13:40</strong>
+                      <div>
+                        <p>送小孩上学</p>
+                        <small>工作日提醒 · send-kids-school</small>
+                      </div>
+                    </article>
+                    <article class="schedule-item">
+                      <strong>16:00</strong>
+                      <div>
+                        <p>放学接娃</p>
+                        <small>工作日提醒 · pickup-kid</small>
+                      </div>
+                    </article>
+                  </div>
+                </section>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="base">
+          <div class="split-grid">
+            <section class="panel">
+              <div class="panel-head">
+                <p class="eyebrow">基座入口</p>
+                <h3>独立 Web 站点</h3>
+              </div>
+              <div class="site-grid">
+                <article class="site-card">
+                  <h4>财税站</h4>
+                  <p>工商信息、申报状态、财务提醒。</p>
+                  <a href="#">打开 sidecar</a>
+                </article>
+                <article class="site-card">
+                  <h4>组织站</h4>
+                  <p>员工信息、角色映射、群成员识别参考。</p>
+                  <a href="#">打开 sidecar</a>
+                </article>
+                <article class="site-card">
+                  <h4>小红书运营站</h4>
+                  <p>发文记录、复盘、数据走势。</p>
+                  <a href="#">打开 sidecar</a>
+                </article>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head panel-head--inline">
+                <div>
+                  <p class="eyebrow">已安装能力包</p>
+                  <h3>WPKG 草案视图</h3>
+                </div>
+                <button class="action-button">安装新包</button>
+              </div>
+
+              <div class="pack-group">
+                <div class="pack-group__head">
+                  <p class="eyebrow">默认（内置）</p>
+                  <span>随 appliance 提供</span>
+                </div>
+                <div class="pack-list">
+                  <article class="pack-card">
+                    <div>
+                      <h4>core-memory</h4>
+                      <p>SOUL / ORG / memory 主链与最小认知文件面。</p>
+                    </div>
+                    <div class="pack-meta">
+                      <span>内置</span>
+                      <small>v1.0.0</small>
+                    </div>
+                  </article>
+
+                  <article class="pack-card">
+                    <div>
+                      <h4>doctor-runtime</h4>
+                      <p>doctor、日志、runtime 健康检查与基础诊断入口。</p>
+                    </div>
+                    <div class="pack-meta">
+                      <span>内置</span>
+                      <small>v1.0.0</small>
+                    </div>
+                  </article>
+                </div>
+              </div>
+
+              <div class="pack-group">
+                <div class="pack-group__head">
+                  <p class="eyebrow">用户安装</p>
+                  <span>当前已安装</span>
+                </div>
+                <div class="pack-list">
+                  <article class="pack-card">
+                    <div>
+                      <h4>company-finance.wpkg</h4>
+                      <p>财税看板 + 财务 skill + 依赖清单。</p>
+                    </div>
+                    <div class="pack-meta">
+                      <span>已安装</span>
+                      <small>v0.1.0</small>
+                    </div>
+                  </article>
+
+                  <article class="pack-card">
+                    <div>
+                      <h4>xiaohongshu-ops.wpkg</h4>
+                      <p>内容运营站 + 发布日志 + 数据复盘。</p>
+                    </div>
+                    <div class="pack-meta">
+                      <span>已安装</span>
+                      <small>v0.2.1</small>
+                    </div>
+                  </article>
+                </div>
+                <p class="pack-footnote">更多能力包后续开放。</p>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" data-view-panel="neighbor">
+          <div class="doctor-grid">
+            <section class="panel">
+              <div class="panel-head panel-head--inline">
+                <div>
+                  <p class="eyebrow">Neighbor</p>
+                  <h3>邻居模块</h3>
+                </div>
+                <label class="switch-row">
+                  <span>已开启</span>
+                  <button class="toggle-switch is-on" type="button" aria-label="切换邻居模块">
+                    <span class="toggle-switch__dot"></span>
+                  </button>
+                </label>
+              </div>
+              <div class="timeline">
+                <div class="timeline-item">
+                  <strong>ops-room-mini</strong>
+                  <span>contact · 最近通讯 09:46</span>
+                </div>
+                <div class="timeline-item">
+                  <strong>finance-mini</strong>
+                  <span>known · 最近通讯 昨天 21:12</span>
+                </div>
+                <div class="timeline-item">
+                  <strong>mom-kitchen</strong>
+                  <span>discovered · 尚未建立联系人</span>
+                </div>
+              </div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head panel-head--inline">
+                <div>
+                  <p class="eyebrow">最近往来</p>
+                  <h3>聊天记录 / 审计时间线</h3>
+                </div>
+                <a class="ghost-mini" href="./neighbor.html">打开完整模块</a>
+              </div>
+              <div class="neighbor-log">
+                <article class="neighbor-entry neighbor-entry--sys">
+                  <div class="neighbor-entry__body">
+                    <div class="neighbor-entry__meta">
+                      <strong>系统</strong>
+                      <span>09:42</span>
+                    </div>
+                    <p>发现节点 `ops-room-mini`，状态进入 discovered。</p>
+                  </div>
+                </article>
+                <article class="neighbor-entry neighbor-entry--peer">
+                  <div class="neighbor-entry__avatar">运</div>
+                  <div class="neighbor-entry__body">
+                    <div class="neighbor-entry__meta">
+                      <strong>ops-room-mini</strong>
+                      <span>09:44</span>
+                    </div>
+                    <p>你好，我可以提供运营日报摘要和渠道投放复盘。</p>
+                  </div>
+                </article>
+                <article class="neighbor-entry neighbor-entry--self">
+                  <div class="neighbor-entry__body">
+                    <div class="neighbor-entry__meta">
+                      <strong>sam@acme-ops</strong>
+                      <span>09:45</span>
+                    </div>
+                    <p>请给我一份昨日小红书投放摘要。</p>
+                  </div>
+                  <div class="neighbor-entry__avatar">我</div>
+                </article>
+              </div>
+            </section>
+          </div>
+        </section>
       </main>
     </div>
 

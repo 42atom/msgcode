@@ -765,89 +765,6 @@ textarea {
   color: var(--muted);
 }
 
-.compact-empty-state {
-  display: grid;
-  gap: 6px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  background: rgba(248, 250, 252, 0.72);
-}
-
-.compact-empty-state--rail {
-  align-content: start;
-}
-
-.compact-empty-state__row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  min-width: 0;
-}
-
-.compact-empty-state strong,
-.compact-empty-state p {
-  min-width: 0;
-}
-
-.compact-empty-state strong {
-  font-size: 0.86rem;
-}
-
-.compact-empty-state p {
-  margin: 0;
-  color: var(--muted);
-  line-height: 1.45;
-}
-
-.thread-empty-state {
-  display: grid;
-  gap: 12px;
-  align-content: start;
-  padding-top: 2px;
-}
-
-.thread-empty-state__head {
-  display: grid;
-  gap: 4px;
-}
-
-.thread-empty-state__head strong,
-.thread-empty-state__head p {
-  margin: 0;
-}
-
-.thread-empty-state__head p {
-  color: var(--muted);
-  line-height: 1.5;
-}
-
-.thread-empty-state__placeholder {
-  display: grid;
-  gap: 8px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md);
-  background: rgba(248, 250, 252, 0.72);
-}
-
-.thread-empty-state__line {
-  display: block;
-  height: 9px;
-  border-radius: 999px;
-  background: rgba(148, 163, 184, 0.22);
-  width: 74%;
-}
-
-.thread-empty-state__line--wide {
-  width: 92%;
-}
-
-.thread-empty-state__line--short {
-  width: 48%;
-}
-
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -1220,7 +1137,6 @@ textarea {
   background: #ffffff;
   padding: 9px 10px;
   cursor: pointer;
-  min-width: 0;
 }
 
 .thread-list-item.is-selected {
@@ -1238,18 +1154,6 @@ textarea {
   gap: 8px;
   align-items: flex-start;
   font-size: 0.84rem;
-  min-width: 0;
-}
-
-.thread-list-item__head strong,
-.thread-list-item__head span {
-  min-width: 0;
-}
-
-.thread-list-item__head strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .thread-list-item small {
@@ -1282,7 +1186,7 @@ textarea {
   display: grid;
   align-content: start;
   gap: 14px;
-  padding: 6px 0 0;
+  padding: 6px 0;
   min-height: 0;
   overflow: auto;
   padding-right: 4px;
@@ -1359,20 +1263,6 @@ textarea {
 .pack-card,
 .timeline-item {
   padding: 12px;
-}
-
-.info-note {
-  margin: 6px 0 0;
-  color: var(--muted);
-  font-size: 0.78rem;
-  line-height: 1.45;
-  word-break: break-word;
-}
-
-.prototype-note__detail {
-  margin: 0;
-  color: var(--muted);
-  line-height: 1.5;
 }
 
 .rail-panel,
@@ -1462,10 +1352,6 @@ textarea {
   line-height: 1.5;
 }
 
-.archive-command-panel {
-  margin-top: 12px;
-}
-
 .schedule-list {
   display: grid;
   gap: 8px;
@@ -1483,10 +1369,6 @@ textarea {
 .schedule-item:first-child {
   border-top: 0;
   padding-top: 0;
-}
-
-.schedule-item--placeholder {
-  grid-template-columns: 1fr;
 }
 
 .schedule-item strong {
@@ -1745,12 +1627,4 @@ textarea {
   color: #d9e6de;
   overflow: auto;
   font-family: "SFMono-Regular", "Menlo", monospace;
-}
-
-.composer .log-preview {
-  margin-top: 8px;
-  padding: 10px 12px;
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  line-height: 1.45;
 }

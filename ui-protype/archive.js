@@ -3,7 +3,6 @@ const archiveFootnote = document.getElementById("archive-footnote");
 const archivedWorkspacesNode = document.getElementById("archived-workspaces");
 const archivedThreadsNode = document.getElementById("archived-threads");
 const archivedThreadsTitle = document.getElementById("archived-threads-title");
-const archiveCommandPreview = document.getElementById("archive-command-preview");
 
 const archiveSurfaceData = {
   workspacePath: "/Users/admin/msgcode-workspaces/family",
@@ -68,11 +67,6 @@ function workspaceNameFromPath(workspacePath) {
 
 function setArchiveStatus(text) {
   archiveStatus.textContent = text;
-}
-
-function setArchiveCommand(command) {
-  if (!archiveCommandPreview) return;
-  archiveCommandPreview.textContent = command;
 }
 
 function renderEmpty(text) {
@@ -162,71 +156,39 @@ function renderArchiveSurface() {
   updateFootnote();
 }
 
-function restoreWorkspaceCommand(name) {
-  return `msgcode appliance restore-workspace --workspace ${name} --json`;
-}
-
-function restoreThreadCommand(threadId) {
-  return `msgcode appliance restore-thread --workspace ${workspaceNameFromPath(archiveSurfaceData.workspacePath)} --thread-id ${threadId} --json`;
-}
-
-function viewWorkspaceCommand(name) {
-  return `msgcode appliance archive --workspace ${name} --json`;
-}
-
-function viewThreadCommand(threadId) {
-  return `msgcode appliance thread --workspace ${workspaceNameFromPath(archiveSurfaceData.workspacePath)} --thread-id ${threadId} --json`;
-}
-
-async function simulateMutation(command, applyMutation) {
-  setArchiveCommand(command);
-  setArchiveStatus("调用中...");
-  await new Promise((resolve) => window.setTimeout(resolve, 700));
-  applyMutation();
-}
-
 document.addEventListener("click", (event) => {
   const target = event.target instanceof HTMLElement ? event.target : null;
   if (!target) return;
 
   const workspaceView = target.closest("[data-workspace-view]");
   if (workspaceView instanceof HTMLElement) {
-    const name = workspaceView.dataset.workspaceView || "";
-    setArchiveCommand(viewWorkspaceCommand(name));
-    setArchiveStatus(`查看工作区：${name}`);
+    setArchiveStatus(`查看工作区：${workspaceView.dataset.workspaceView}`);
     return;
   }
 
   const workspaceRestore = target.closest("[data-workspace-restore]");
   if (workspaceRestore instanceof HTMLElement) {
     const name = workspaceRestore.dataset.workspaceRestore || "";
-    void simulateMutation(restoreWorkspaceCommand(name), () => {
-      state.archivedWorkspaces = state.archivedWorkspaces.filter((workspace) => workspace.name !== name);
-      renderArchiveSurface();
-      setArchiveStatus(`已恢复工作区：${name}`);
-    });
+    state.archivedWorkspaces = state.archivedWorkspaces.filter((workspace) => workspace.name !== name);
+    renderArchiveSurface();
+    setArchiveStatus(`已恢复工作区：${name}`);
     return;
   }
 
   const threadView = target.closest("[data-thread-view]");
   if (threadView instanceof HTMLElement) {
-    const threadId = threadView.dataset.threadView || "";
-    setArchiveCommand(viewThreadCommand(threadId));
-    setArchiveStatus(`查看线程：${threadId}`);
+    setArchiveStatus(`查看线程：${threadView.dataset.threadView}`);
     return;
   }
 
   const threadRestore = target.closest("[data-thread-restore]");
   if (threadRestore instanceof HTMLElement) {
     const threadId = threadRestore.dataset.threadRestore || "";
-    void simulateMutation(restoreThreadCommand(threadId), () => {
-      const restored = state.archivedThreads.find((thread) => thread.threadId === threadId);
-      state.archivedThreads = state.archivedThreads.filter((thread) => thread.threadId !== threadId);
-      renderArchiveSurface();
-      setArchiveStatus(`已恢复线程：${restored ? restored.title : threadId}`);
-    });
+    const restored = state.archivedThreads.find((thread) => thread.threadId === threadId);
+    state.archivedThreads = state.archivedThreads.filter((thread) => thread.threadId !== threadId);
+    renderArchiveSurface();
+    setArchiveStatus(`已恢复线程：${restored ? restored.title : threadId}`);
   }
 });
 
 renderArchiveSurface();
-setArchiveCommand(`msgcode appliance archive --workspace ${workspaceNameFromPath(archiveSurfaceData.workspacePath)} --json`);
