@@ -33,6 +33,13 @@ export interface WorkspaceArchiveMutationResult {
   archivedPath: string;
 }
 
+export interface WorkspaceThreadArchiveMutationResult {
+  workspacePath: string;
+  threadId: string;
+  sourcePath: string;
+  targetPath: string;
+}
+
 export function getWorkspaceArchiveRoot(workspacePath: string): string {
   return path.join(path.dirname(workspacePath), ".archive");
 }
@@ -47,6 +54,10 @@ export function getArchivedWorkspacePath(workspacePath: string): string {
 
 export function getRestoredWorkspacePath(archivedWorkspacePath: string): string {
   return path.join(path.dirname(path.dirname(archivedWorkspacePath)), path.basename(archivedWorkspacePath));
+}
+
+export function getWorkspaceThreadsPath(workspacePath: string): string {
+  return path.join(workspacePath, ".msgcode", "threads");
 }
 
 export async function readWorkspaceArchiveSurface(workspacePath: string): Promise<{ data: WorkspaceArchiveSurfaceData; warnings: Diagnostic[] }> {
@@ -95,6 +106,46 @@ export async function restoreWorkspace(archivedWorkspacePath: string): Promise<W
     workspacePath,
     workspaceArchiveRoot,
     archivedPath: archivedWorkspacePath,
+  };
+}
+
+export async function archiveThread(workspacePath: string, threadId: string): Promise<WorkspaceThreadArchiveMutationResult> {
+  const sourcePath = await findThreadFileById(getWorkspaceThreadsPath(workspacePath), threadId);
+  if (!sourcePath) {
+    throw new Error(`thread not found: ${threadId}`);
+  }
+
+  const archivedThreadsPath = getWorkspaceArchivedThreadsPath(workspacePath);
+  const targetPath = path.join(archivedThreadsPath, path.basename(sourcePath));
+
+  await mkdir(archivedThreadsPath, { recursive: true });
+  await rename(sourcePath, targetPath);
+
+  return {
+    workspacePath,
+    threadId,
+    sourcePath,
+    targetPath,
+  };
+}
+
+export async function restoreThread(workspacePath: string, threadId: string): Promise<WorkspaceThreadArchiveMutationResult> {
+  const sourcePath = await findThreadFileById(getWorkspaceArchivedThreadsPath(workspacePath), threadId);
+  if (!sourcePath) {
+    throw new Error(`archived thread not found: ${threadId}`);
+  }
+
+  const threadsPath = getWorkspaceThreadsPath(workspacePath);
+  const targetPath = path.join(threadsPath, path.basename(sourcePath));
+
+  await mkdir(threadsPath, { recursive: true });
+  await rename(sourcePath, targetPath);
+
+  return {
+    workspacePath,
+    threadId,
+    sourcePath,
+    targetPath,
   };
 }
 
@@ -165,6 +216,35 @@ async function readArchivedThreads(threadsPath: string, warnings: Diagnostic[]):
   }
 
   return threads.sort((a, b) => b.lastTurnAt.localeCompare(a.lastTurnAt));
+}
+
+async function findThreadFileById(threadsPath: string, threadId: string): Promise<string | null> {
+  if (!existsSync(threadsPath)) {
+    return null;
+  }
+
+  const fileNames = (await readdir(threadsPath))
+    .filter((name) => name.endsWith(".md"))
+    .sort((a, b) => a.localeCompare(b, "zh-CN"));
+
+  for (const fileName of fileNames) {
+    const filePath = path.join(threadsPath, fileName);
+    try {
+      const content = await readFile(filePath, "utf8");
+      const match = content.match(/^---\n([\s\S]*?)\n---\n/m);
+      if (!match) {
+        continue;
+      }
+      const frontMatter = parseSimpleFrontMatter(match[1] ?? "");
+      if (normalizeCell(frontMatter.threadId) === threadId) {
+        return filePath;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
 }
 
 function parseArchivedThread(filePath: string, content: string): WorkspaceArchiveThreadEntry | null {

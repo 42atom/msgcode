@@ -24,9 +24,11 @@ import {
 } from "../runtime/workspace-thread-surface.js";
 import {
   archiveWorkspace,
+  archiveThread,
   getArchivedWorkspacePath,
   getRestoredWorkspacePath,
   readWorkspaceArchiveSurface,
+  restoreThread,
   restoreWorkspace,
   type WorkspaceArchiveSurfaceData,
 } from "../runtime/workspace-archive.js";
@@ -149,6 +151,14 @@ interface ApplianceWorkspaceArchiveMutationData {
   workspacePath: string;
   workspaceArchiveRoot: string;
   archivedPath: string;
+  action: "archive" | "restore";
+}
+
+interface ApplianceThreadArchiveMutationData {
+  workspacePath: string;
+  threadId: string;
+  sourcePath: string;
+  targetPath: string;
   action: "archive" | "restore";
 }
 
@@ -1598,6 +1608,112 @@ export function createApplianceCommand(): Command {
       const status: CommandStatus = errors.length > 0 ? "error" : warnings.length > 0 ? "warning" : "pass";
       const envelope: Envelope<ApplianceWorkspaceArchiveMutationData> = createEnvelope(
         `msgcode appliance restore-workspace --workspace ${options.workspace}`,
+        startTime,
+        status,
+        data,
+        warnings,
+        errors
+      );
+      envelope.exitCode = errors.length > 0 ? 1 : 0;
+
+      console.log(JSON.stringify(envelope, null, 2));
+      process.exit(errors.length > 0 ? 1 : 0);
+    });
+
+  cmd
+    .command("archive-thread")
+    .description("归档当前工作区线程")
+    .requiredOption("--workspace <labelOrPath>", "Workspace 相对路径或绝对路径")
+    .requiredOption("--thread-id <threadId>", "要归档的线程 ID")
+    .option("--json", "JSON 格式输出")
+    .action(async (options: { workspace: string; threadId: string; json?: boolean }) => {
+      const startTime = Date.now();
+      const workspacePath = getWorkspacePath(options.workspace);
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      if (!existsSync(workspacePath)) {
+        errors.push(buildMissingWorkspaceError(workspacePath, options.workspace));
+      }
+
+      let data: ApplianceThreadArchiveMutationData = {
+        workspacePath,
+        threadId: String(options.threadId).trim(),
+        sourcePath: "",
+        targetPath: "",
+        action: "archive",
+      };
+
+      if (errors.length === 0) {
+        try {
+          const result = await archiveThread(workspacePath, data.threadId);
+          data = { ...result, action: "archive" };
+        } catch (error) {
+          errors.push({
+            code: "WORKSPACE_THREAD_ARCHIVE_FAILED",
+            message: "线程归档失败",
+            hint: "检查 threadId 是否存在，或目标归档文件是否同名冲突",
+            details: { workspacePath, threadId: data.threadId, error: error instanceof Error ? error.message : String(error) },
+          });
+        }
+      }
+
+      const status: CommandStatus = errors.length > 0 ? "error" : warnings.length > 0 ? "warning" : "pass";
+      const envelope: Envelope<ApplianceThreadArchiveMutationData> = createEnvelope(
+        `msgcode appliance archive-thread --workspace ${options.workspace} --thread-id ${options.threadId}`,
+        startTime,
+        status,
+        data,
+        warnings,
+        errors
+      );
+      envelope.exitCode = errors.length > 0 ? 1 : 0;
+
+      console.log(JSON.stringify(envelope, null, 2));
+      process.exit(errors.length > 0 ? 1 : 0);
+    });
+
+  cmd
+    .command("restore-thread")
+    .description("恢复当前工作区归档线程")
+    .requiredOption("--workspace <labelOrPath>", "Workspace 相对路径或绝对路径")
+    .requiredOption("--thread-id <threadId>", "要恢复的线程 ID")
+    .option("--json", "JSON 格式输出")
+    .action(async (options: { workspace: string; threadId: string; json?: boolean }) => {
+      const startTime = Date.now();
+      const workspacePath = getWorkspacePath(options.workspace);
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      if (!existsSync(workspacePath)) {
+        errors.push(buildMissingWorkspaceError(workspacePath, options.workspace));
+      }
+
+      let data: ApplianceThreadArchiveMutationData = {
+        workspacePath,
+        threadId: String(options.threadId).trim(),
+        sourcePath: "",
+        targetPath: "",
+        action: "restore",
+      };
+
+      if (errors.length === 0) {
+        try {
+          const result = await restoreThread(workspacePath, data.threadId);
+          data = { ...result, action: "restore" };
+        } catch (error) {
+          errors.push({
+            code: "WORKSPACE_THREAD_RESTORE_FAILED",
+            message: "线程恢复失败",
+            hint: "检查 archived-threads 下是否存在该 threadId，或活跃 threads 中是否有同名文件",
+            details: { workspacePath, threadId: data.threadId, error: error instanceof Error ? error.message : String(error) },
+          });
+        }
+      }
+
+      const status: CommandStatus = errors.length > 0 ? "error" : warnings.length > 0 ? "warning" : "pass";
+      const envelope: Envelope<ApplianceThreadArchiveMutationData> = createEnvelope(
+        `msgcode appliance restore-thread --workspace ${options.workspace} --thread-id ${options.threadId}`,
         startTime,
         status,
         data,
