@@ -68,6 +68,19 @@ interface AppliancePeopleData {
 interface ApplianceProfileData extends WorkspaceProfileSurfaceData {}
 interface ApplianceGeneralData extends WorkspaceGeneralSurfaceData {}
 interface ApplianceCapabilityData extends WorkspaceCapabilitySurfaceData {}
+interface ApplianceSurfaceSection<T> {
+  status: CommandStatus;
+  warnings: Diagnostic[];
+  errors: Diagnostic[];
+  data: T;
+}
+
+interface ApplianceSettingsData {
+  workspacePath: string;
+  profile: ApplianceSurfaceSection<ApplianceProfileData>;
+  general: ApplianceSurfaceSection<ApplianceGeneralData>;
+  capabilities: ApplianceSurfaceSection<ApplianceCapabilityData>;
+}
 
 interface ApplianceRuntimeSurface {
   appVersion: string;
@@ -108,6 +121,121 @@ interface AppliancePackInstallData {
   files: {
     packsPath: string;
     sitesPath: string;
+  };
+}
+
+function buildSectionStatus(warnings: Diagnostic[], errors: Diagnostic[]): CommandStatus {
+  if (errors.length > 0) return "error";
+  if (warnings.length > 0) return "warning";
+  return "pass";
+}
+
+function aggregateSectionStatus(sections: Array<ApplianceSurfaceSection<unknown>>): CommandStatus {
+  if (sections.some((section) => section.status === "error")) return "error";
+  if (sections.some((section) => section.status === "warning")) return "warning";
+  return "pass";
+}
+
+function summarizeSectionDiagnostics(
+  section: "profile" | "general" | "capabilities",
+  entry: ApplianceSurfaceSection<unknown>,
+): { warnings: Diagnostic[]; errors: Diagnostic[] } {
+  const warnings: Diagnostic[] = [];
+  const errors: Diagnostic[] = [];
+
+  if (entry.errors.length > 0) {
+    errors.push({
+      code: "APPLIANCE_SETTINGS_SECTION_ERROR",
+      message: `${section} 分段存在错误`,
+      hint: `查看 data.${section}.errors 获取该分段详情`,
+      details: {
+        section,
+        count: entry.errors.length,
+        firstCode: entry.errors[0]?.code ?? "",
+        firstMessage: entry.errors[0]?.message ?? "",
+      },
+    });
+  }
+
+  if (entry.warnings.length > 0) {
+    warnings.push({
+      code: "APPLIANCE_SETTINGS_SECTION_WARNING",
+      message: `${section} 分段存在警告`,
+      hint: `查看 data.${section}.warnings 获取该分段详情`,
+      details: {
+        section,
+        count: entry.warnings.length,
+        firstCode: entry.warnings[0]?.code ?? "",
+        firstMessage: entry.warnings[0]?.message ?? "",
+      },
+    });
+  }
+
+  return { warnings, errors };
+}
+
+function buildMissingWorkspaceError(workspacePath: string, input: string): Diagnostic {
+  return {
+    code: "APPLIANCE_WORKSPACE_MISSING",
+    message: "工作区不存在",
+    hint: "先初始化 workspace，或传绝对路径",
+    details: { workspacePath, input },
+  };
+}
+
+function emptyProfileData(workspacePath: string): ApplianceProfileData {
+  return {
+    workspacePath,
+    profile: {
+      sourcePath: path.join(workspacePath, ".msgcode", "config.json"),
+      name: "",
+    },
+    soul: {
+      path: path.join(workspacePath, ".msgcode", "SOUL.md"),
+      exists: false,
+      content: "",
+    },
+    organization: {
+      path: path.join(workspacePath, ".msgcode", "ORG.md"),
+      exists: false,
+      name: "",
+      city: "",
+      cityField: "" as const,
+    },
+  };
+}
+
+function emptyGeneralData(workspacePath: string): ApplianceGeneralData {
+  return {
+    workspacePath,
+    workspaceRoot: "",
+    log: {
+      dir: path.join(os.homedir(), ".config", "msgcode", "log"),
+      filePath: path.join(os.homedir(), ".config", "msgcode", "log", "msgcode.log"),
+      stdoutPath: path.join(os.homedir(), ".config", "msgcode", "log", "daemon.stdout.log"),
+      stderrPath: path.join(os.homedir(), ".config", "msgcode", "log", "daemon.stderr.log"),
+    },
+    startup: {
+      mode: "manual",
+      supported: false,
+      label: "",
+      installed: false,
+      status: "missing",
+      plistPath: "",
+    },
+  };
+}
+
+function emptyCapabilityData(workspacePath: string): ApplianceCapabilityData {
+  return {
+    workspacePath,
+    runtime: {
+      kind: "agent",
+      lane: "local",
+      agentProvider: "none",
+      tmuxClient: "none",
+    },
+    capabilities: [],
   };
 }
 
@@ -261,6 +389,103 @@ export function createApplianceCommand(): Command {
   cmd.description("Appliance 主机壳合同（门厅 JSON）");
 
   cmd
+    .command("settings")
+    .description("输出 settings 页 core 读面 JSON")
+    .requiredOption("--workspace <labelOrPath>", "Workspace 相对路径或绝对路径")
+    .option("--json", "JSON 格式输出")
+    .action(async (options: { workspace: string; json?: boolean }) => {
+      const startTime = Date.now();
+      const workspacePath = getWorkspacePath(options.workspace);
+      const envelopeWarnings: Diagnostic[] = [];
+      const envelopeErrors: Diagnostic[] = [];
+
+      let profile: ApplianceSurfaceSection<ApplianceProfileData>;
+      let general: ApplianceSurfaceSection<ApplianceGeneralData>;
+      let capabilities: ApplianceSurfaceSection<ApplianceCapabilityData>;
+
+      if (!existsSync(workspacePath)) {
+        const workspaceError = buildMissingWorkspaceError(workspacePath, options.workspace);
+        envelopeErrors.push(workspaceError);
+
+        profile = {
+          status: "error",
+          warnings: [],
+          errors: [workspaceError],
+          data: emptyProfileData(workspacePath),
+        };
+        general = {
+          status: "error",
+          warnings: [],
+          errors: [workspaceError],
+          data: emptyGeneralData(workspacePath),
+        };
+        capabilities = {
+          status: "error",
+          warnings: [],
+          errors: [workspaceError],
+          data: emptyCapabilityData(workspacePath),
+        };
+      } else {
+        const [profileSurface, generalSurface, capabilitySurface] = await Promise.all([
+          readWorkspaceProfileSurface(workspacePath),
+          readWorkspaceGeneralSurface(workspacePath),
+          readWorkspaceCapabilitySurface(workspacePath),
+        ]);
+
+        profile = {
+          status: buildSectionStatus(profileSurface.warnings, []),
+          warnings: profileSurface.warnings,
+          errors: [],
+          data: profileSurface.data,
+        };
+
+        general = {
+          status: buildSectionStatus(generalSurface.warnings, []),
+          warnings: generalSurface.warnings,
+          errors: [],
+          data: generalSurface.data,
+        };
+
+        capabilities = {
+          status: buildSectionStatus(capabilitySurface.warnings, []),
+          warnings: capabilitySurface.warnings,
+          errors: [],
+          data: capabilitySurface.data,
+        };
+      }
+
+      const sections = [profile, general, capabilities];
+      const sectionDiagnostics = [
+        summarizeSectionDiagnostics("profile", profile),
+        summarizeSectionDiagnostics("general", general),
+        summarizeSectionDiagnostics("capabilities", capabilities),
+      ];
+      envelopeWarnings.push(...sectionDiagnostics.flatMap((item) => item.warnings));
+      envelopeErrors.push(...sectionDiagnostics.flatMap((item) => item.errors));
+      const envelopeStatus = envelopeErrors.length > 0
+        ? "error"
+        : aggregateSectionStatus(sections);
+
+      const envelope: Envelope<ApplianceSettingsData> = createEnvelope(
+        `msgcode appliance settings --workspace ${options.workspace}`,
+        startTime,
+        envelopeStatus,
+        {
+          workspacePath,
+          profile,
+          general,
+          capabilities,
+        },
+        envelopeWarnings,
+        envelopeErrors
+      );
+      envelope.exitCode = envelopeErrors.length > 0 ? 1 : 0;
+
+      console.log(JSON.stringify(envelope, null, 2));
+      process.exit(envelopeErrors.length > 0 ? 1 : 0);
+    });
+
+  cmd
     .command("hall")
     .description("输出 Electron/壳可直接消费的门厅 JSON")
     .requiredOption("--workspace <labelOrPath>", "Workspace 相对路径或绝对路径")
@@ -272,12 +497,7 @@ export function createApplianceCommand(): Command {
       const errors: Diagnostic[] = [];
 
       if (!existsSync(workspacePath)) {
-        errors.push({
-          code: "APPLIANCE_WORKSPACE_MISSING",
-          message: "工作区不存在",
-          hint: "先初始化 workspace，或传绝对路径",
-          details: { workspacePath, input: options.workspace },
-        });
+        errors.push(buildMissingWorkspaceError(workspacePath, options.workspace));
 
         const envelope = createEnvelope<ApplianceHallData>(
           `msgcode appliance hall --workspace ${options.workspace}`,
@@ -355,12 +575,7 @@ export function createApplianceCommand(): Command {
       const errors: Diagnostic[] = [];
 
       if (!existsSync(workspacePath)) {
-        errors.push({
-          code: "APPLIANCE_WORKSPACE_MISSING",
-          message: "工作区不存在",
-          hint: "先初始化 workspace，或传绝对路径",
-          details: { workspacePath, input: options.workspace },
-        });
+        errors.push(buildMissingWorkspaceError(workspacePath, options.workspace));
       }
 
       const { sites, warnings: siteWarnings, sourcePath } = errors.length === 0
@@ -400,12 +615,7 @@ export function createApplianceCommand(): Command {
       const errors: Diagnostic[] = [];
 
       if (!existsSync(workspacePath)) {
-        errors.push({
-          code: "APPLIANCE_WORKSPACE_MISSING",
-          message: "工作区不存在",
-          hint: "先初始化 workspace，或传绝对路径",
-          details: { workspacePath, input: options.workspace },
-        });
+        errors.push(buildMissingWorkspaceError(workspacePath, options.workspace));
       }
 
       if (!existsSync(path.resolve(options.file))) {
@@ -515,37 +725,12 @@ export function createApplianceCommand(): Command {
       const errors: Diagnostic[] = [];
 
       if (!existsSync(workspacePath)) {
-        errors.push({
-          code: "APPLIANCE_WORKSPACE_MISSING",
-          message: "工作区不存在",
-          hint: "先初始化 workspace，或传绝对路径",
-          details: { workspacePath, input: options.workspace },
-        });
+        errors.push(buildMissingWorkspaceError(workspacePath, options.workspace));
       }
 
       const { data, warnings: surfaceWarnings } = errors.length === 0
         ? await readWorkspaceGeneralSurface(workspacePath)
-        : {
-            data: {
-              workspacePath,
-              workspaceRoot: "",
-              log: {
-                dir: path.join(os.homedir(), ".config", "msgcode", "log"),
-                filePath: path.join(os.homedir(), ".config", "msgcode", "log", "msgcode.log"),
-                stdoutPath: path.join(os.homedir(), ".config", "msgcode", "log", "daemon.stdout.log"),
-                stderrPath: path.join(os.homedir(), ".config", "msgcode", "log", "daemon.stderr.log"),
-              },
-              startup: {
-                mode: "manual" as const,
-                supported: false,
-                label: "",
-                installed: false,
-                status: "missing" as const,
-                plistPath: "",
-              },
-            },
-            warnings: [],
-          };
+        : { data: emptyGeneralData(workspacePath), warnings: [] };
       warnings.push(...surfaceWarnings);
 
       const status: CommandStatus = errors.length > 0 ? "error" : warnings.length > 0 ? "warning" : "pass";
@@ -575,29 +760,12 @@ export function createApplianceCommand(): Command {
       const errors: Diagnostic[] = [];
 
       if (!existsSync(workspacePath)) {
-        errors.push({
-          code: "APPLIANCE_WORKSPACE_MISSING",
-          message: "工作区不存在",
-          hint: "先初始化 workspace，或传绝对路径",
-          details: { workspacePath, input: options.workspace },
-        });
+        errors.push(buildMissingWorkspaceError(workspacePath, options.workspace));
       }
 
       const { data, warnings: surfaceWarnings } = errors.length === 0
         ? await readWorkspaceCapabilitySurface(workspacePath)
-        : {
-            data: {
-              workspacePath,
-              runtime: {
-                kind: "agent" as const,
-                lane: "local" as const,
-                agentProvider: "none" as const,
-                tmuxClient: "none" as const,
-              },
-              capabilities: [],
-            },
-            warnings: [],
-          };
+        : { data: emptyCapabilityData(workspacePath), warnings: [] };
       warnings.push(...surfaceWarnings);
 
       const status: CommandStatus = errors.length > 0 ? "error" : warnings.length > 0 ? "warning" : "pass";
@@ -627,12 +795,7 @@ export function createApplianceCommand(): Command {
       const errors: Diagnostic[] = [];
 
       if (!existsSync(workspacePath)) {
-        errors.push({
-          code: "APPLIANCE_WORKSPACE_MISSING",
-          message: "工作区不存在",
-          hint: "先初始化 workspace，或传绝对路径",
-          details: { workspacePath, input: options.workspace },
-        });
+        errors.push(buildMissingWorkspaceError(workspacePath, options.workspace));
       }
 
       const runtime = await readRuntimeSurface();
@@ -671,38 +834,12 @@ export function createApplianceCommand(): Command {
       const errors: Diagnostic[] = [];
 
       if (!existsSync(workspacePath)) {
-        errors.push({
-          code: "APPLIANCE_WORKSPACE_MISSING",
-          message: "工作区不存在",
-          hint: "先初始化 workspace，或传绝对路径",
-          details: { workspacePath, input: options.workspace },
-        });
+        errors.push(buildMissingWorkspaceError(workspacePath, options.workspace));
       }
 
       const { data, warnings: surfaceWarnings } = errors.length === 0
         ? await readWorkspaceProfileSurface(workspacePath)
-        : {
-            data: {
-              workspacePath,
-              profile: {
-                sourcePath: path.join(workspacePath, ".msgcode", "config.json"),
-                name: "",
-              },
-              soul: {
-                path: path.join(workspacePath, ".msgcode", "SOUL.md"),
-                exists: false,
-                content: "",
-              },
-              organization: {
-                path: path.join(workspacePath, ".msgcode", "ORG.md"),
-                exists: false,
-                name: "",
-                city: "",
-                cityField: "" as const,
-              },
-            },
-            warnings: [],
-          };
+        : { data: emptyProfileData(workspacePath), warnings: [] };
       warnings.push(...surfaceWarnings);
 
       const status: CommandStatus = errors.length > 0 ? "error" : warnings.length > 0 ? "warning" : "pass";
@@ -732,12 +869,7 @@ export function createApplianceCommand(): Command {
       const errors: Diagnostic[] = [];
 
       if (!existsSync(workspacePath)) {
-        errors.push({
-          code: "APPLIANCE_WORKSPACE_MISSING",
-          message: "工作区不存在",
-          hint: "先初始化 workspace，或传绝对路径",
-          details: { workspacePath, input: options.workspace },
-        });
+        errors.push(buildMissingWorkspaceError(workspacePath, options.workspace));
       }
 
       const { data, warnings: peopleWarnings } = errors.length === 0
