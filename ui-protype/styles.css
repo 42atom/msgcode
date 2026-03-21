@@ -362,6 +362,12 @@ button {
   font-size: 0.9rem;
 }
 
+.rail-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .icon-link svg {
   width: 15px;
   height: 15px;
@@ -1271,6 +1277,74 @@ textarea {
   min-height: 0;
   overflow: auto;
   padding-right: 2px;
+}
+
+.archive-grid {
+  align-items: start;
+}
+
+.archive-panel {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.archive-list {
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.archive-item {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: #ffffff;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.archive-item__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.archive-item__head h4 {
+  margin: 0 0 4px;
+  font-size: 0.92rem;
+}
+
+.archive-item__path {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
+.archive-item__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.archive-item__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.archive-footnote {
+  margin: 10px 2px 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
 }
 
 .schedule-list {

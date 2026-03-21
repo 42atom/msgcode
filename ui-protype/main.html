@@ -53,17 +53,31 @@
                   <p class="eyebrow">Workspaces</p>
                   <h3>msgcode 工作区</h3>
                 </div>
-                <button
-                  class="icon-link icon-link--small"
-                  type="button"
-                  title="新建聊天"
-                  aria-label="新建聊天"
-                >
-                  <svg viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M12 20h9"></path>
-                    <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
-                  </svg>
-                </button>
+                <div class="rail-actions">
+                  <a
+                    class="icon-link icon-link--small"
+                    href="./archive.html"
+                    title="历史归档"
+                    aria-label="历史归档"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M4 7h16"></path>
+                      <path d="M6 11v7h12v-7"></path>
+                      <path d="M9 11v-4h6v4"></path>
+                    </svg>
+                  </a>
+                  <button
+                    class="icon-link icon-link--small"
+                    type="button"
+                    title="新建聊天"
+                    aria-label="新建聊天"
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M12 20h9"></path>
+                      <path d="M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5z"></path>
+                    </svg>
+                  </button>
+                </div>
               </div>
               <div id="workspace-tree" class="thread-tree">
                 <details class="workspace-group" data-workspace-key="acme" draggable="true">
@@ -156,21 +170,9 @@
                         <span>feishu</span>
                       </div>
                     </article>
-                    <article class="thread-list-item" data-thread-key="missed-reminder">
-                      <div class="thread-list-item__head">
-                        <strong>今天为什么没有提醒我</strong>
-                        <span>feishu</span>
-                      </div>
-                    </article>
                     <article class="thread-list-item" data-thread-key="vision">
                       <div class="thread-list-item__head">
                         <strong>你看看这个小朋友的视力检查结果</strong>
-                        <span>feishu</span>
-                      </div>
-                    </article>
-                    <article class="thread-list-item" data-thread-key="copy-edit">
-                      <div class="thread-list-item__head">
-                        <strong>145了该接小孩了</strong>
                         <span>feishu</span>
                       </div>
                     </article>
@@ -263,45 +265,6 @@
                 <details class="workspace-group" data-workspace-key="skill-wpkg" draggable="true">
                   <summary class="workspace-group__title">
                     <span class="workspace-group__name">skill-wpkg</span>
-                  </summary>
-                  <div class="workspace-group__items">
-                    <article class="thread-list-item">
-                      <div class="thread-list-item__head">
-                        <strong>暂无线程</strong>
-                        <span>0</span>
-                      </div>
-                    </article>
-                  </div>
-                </details>
-                <details class="workspace-group" data-workspace-key="smoke" draggable="true">
-                  <summary class="workspace-group__title">
-                    <span class="workspace-group__name">smoke</span>
-                  </summary>
-                  <div class="workspace-group__items">
-                    <article class="thread-list-item">
-                      <div class="thread-list-item__head">
-                        <strong>暂无线程</strong>
-                        <span>0</span>
-                      </div>
-                    </article>
-                  </div>
-                </details>
-                <details class="workspace-group" data-workspace-key="smoke-agent-cli" draggable="true">
-                  <summary class="workspace-group__title">
-                    <span class="workspace-group__name">smoke-agent-cli</span>
-                  </summary>
-                  <div class="workspace-group__items">
-                    <article class="thread-list-item">
-                      <div class="thread-list-item__head">
-                        <strong>暂无线程</strong>
-                        <span>0</span>
-                      </div>
-                    </article>
-                  </div>
-                </details>
-                <details class="workspace-group" data-workspace-key="test-r9-smoke" draggable="true">
-                  <summary class="workspace-group__title">
-                    <span class="workspace-group__name">test-r9-smoke</span>
                   </summary>
                   <div class="workspace-group__items">
                     <article class="thread-list-item">
