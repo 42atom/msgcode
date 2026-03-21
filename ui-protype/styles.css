@@ -1352,6 +1352,10 @@ textarea {
   line-height: 1.5;
 }
 
+.archive-command-panel {
+  margin-top: 12px;
+}
+
 .schedule-list {
   display: grid;
   gap: 8px;
