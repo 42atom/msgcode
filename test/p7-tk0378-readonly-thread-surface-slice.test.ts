@@ -16,7 +16,7 @@ describe("readonly thread surface slice", () => {
     expect(mainHtml).toContain('id="workspace-tree"');
     expect(mainHtml).toContain('id="chat-log"');
     expect(mainHtml).toContain('id="observer-secondary-content"');
-    expect(mainHtml).not.toContain("settings.html");
+    expect(mainHtml).toContain('href="./settings.html"');
     expect(mainHtml).not.toContain("archive.html");
     expect(mainHtml).not.toContain('id="new-chat-button"');
     expect(mainHtml).not.toContain('id="send-button"');

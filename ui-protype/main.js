@@ -7,6 +7,7 @@ const threadKindChip = document.getElementById("thread-kind-chip");
 const chatLog = document.getElementById("chat-log");
 const observerTitle = document.getElementById("observer-title");
 const loadingError = document.getElementById("loading-error");
+const loadingErrorDetail = document.getElementById("loading-error-detail");
 const workStatusLine1 = document.getElementById("work-status-line-1");
 const workStatusLine2 = document.getElementById("work-status-line-2");
 const observerSecondaryTitle = document.getElementById("observer-secondary-title");
@@ -44,7 +45,10 @@ function setStatus(text, kind = "idle") {
 function setLoadingError(text) {
   state.loadingError = text;
   if (loadingError) {
-    loadingError.textContent = text || "读取正常";
+    loadingError.textContent = summarizeSurfaceMessage(text);
+  }
+  if (loadingErrorDetail) {
+    loadingErrorDetail.textContent = text || "当前无额外错误细节。";
   }
 }
 
@@ -76,6 +80,47 @@ function renderEmptyState(title, body) {
       <h4>${escapeHtml(title)}</h4>
       <p>${escapeHtml(body)}</p>
     </div>
+  `;
+}
+
+function summarizeSurfaceMessage(message) {
+  if (!message) return "读取正常";
+  if (message.includes("window.msgcodeReadonlySurface.runCommand")) {
+    return "宿主桥接缺失";
+  }
+  if (message.includes("workspace-tree")) {
+    return "工作区读取失败";
+  }
+  if (message.includes("thread")) {
+    return "线程读取失败";
+  }
+  return message.length > 28 ? `${message.slice(0, 28)}...` : message;
+}
+
+function renderRailEmptyState(title, body) {
+  return `
+    <section class="compact-empty-state compact-empty-state--rail" aria-label="${escapeHtml(title)}">
+      <div class="compact-empty-state__row">
+        <strong>${escapeHtml(title)}</strong>
+      </div>
+      <p>${escapeHtml(body)}</p>
+    </section>
+  `;
+}
+
+function renderThreadEmptyState(title, body) {
+  return `
+    <section class="thread-empty-state" aria-label="${escapeHtml(title)}">
+      <header class="thread-empty-state__head">
+        <strong>${escapeHtml(title)}</strong>
+        <p>${escapeHtml(body)}</p>
+      </header>
+      <div class="thread-empty-state__placeholder">
+        <span class="thread-empty-state__line thread-empty-state__line--wide"></span>
+        <span class="thread-empty-state__line"></span>
+        <span class="thread-empty-state__line thread-empty-state__line--short"></span>
+      </div>
+    </section>
   `;
 }
 
@@ -144,7 +189,7 @@ function renderWorkspaceTree(surface) {
   const workspaces = surface?.data?.workspaces || [];
 
   if (workspaces.length === 0) {
-    workspaceTree.innerHTML = renderEmptyState("暂无活跃工作区", "workspace-tree 当前没有返回可选线程。");
+    workspaceTree.innerHTML = renderRailEmptyState("暂无活跃工作区", "还没有可选线程。");
     return;
   }
 
@@ -217,19 +262,26 @@ function renderThreadPlaceholder(title, body) {
     observerTitle.textContent = title;
   }
   if (chatLog) {
-    chatLog.innerHTML = renderEmptyState(title, body);
+    chatLog.innerHTML = renderThreadEmptyState(title, body);
   }
   if (workStatusLine1) {
-    workStatusLine1.textContent = body;
+    workStatusLine1.textContent = "等待线程数据。";
   }
   if (workStatusLine2) {
-    workStatusLine2.textContent = "";
+    workStatusLine2.textContent = state.selectedThreadId ? "选中线程后会显示最新工作状况。" : "左侧选择线程后显示这里。";
   }
   if (observerSecondaryTitle) {
     observerSecondaryTitle.textContent = "最近工作状况";
   }
   if (observerSecondaryContent) {
-    observerSecondaryContent.innerHTML = renderStatusList([]);
+    observerSecondaryContent.innerHTML = `
+      <article class="schedule-item schedule-item--placeholder">
+        <div>
+          <p>暂无附加信息</p>
+          <small>线程载入后这里会显示最近工作状况。</small>
+        </div>
+      </article>
+    `;
   }
 }
 
@@ -291,7 +343,7 @@ function renderThreadSurface(surface) {
         <article class="bubble bubble--user">${escapeHtml(message.user || "")}</article>
         <article class="bubble bubble--agent">${escapeHtml(message.assistant || "")}</article>
       `).join("")
-      : renderEmptyState("线程没有正文", "thread 读面返回成功，但没有消息体。");
+      : renderThreadEmptyState("线程没有正文", "当前线程还没有消息内容。");
   }
 }
 
@@ -337,7 +389,7 @@ async function loadWorkspaceTree() {
     const message = error instanceof Error ? error.message : String(error);
     setLoadingError(message);
     if (workspaceTree) {
-      workspaceTree.innerHTML = renderEmptyState("workspace-tree 读取失败", message);
+      workspaceTree.innerHTML = renderRailEmptyState("工作区暂不可读", "稍后重试或检查宿主桥接。");
     }
     renderThreadPlaceholder("只读线程面未联通", message);
     setStatus("workspace-tree 读取失败", "idle");
