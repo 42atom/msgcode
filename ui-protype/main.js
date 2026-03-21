@@ -1,10 +1,7 @@
 const navItems = document.querySelectorAll("[data-view]");
 const panels = document.querySelectorAll("[data-view-panel]");
 
-const workspaceCards = document.querySelectorAll("[data-workspace-key]");
 const workspaceTree = document.getElementById("workspace-tree");
-
-const threadItems = document.querySelectorAll("[data-thread-key]");
 const threadTitle = document.getElementById("thread-title");
 const threadChannelChip = document.getElementById("thread-channel-chip");
 const threadKindChip = document.getElementById("thread-kind-chip");
@@ -19,6 +16,68 @@ const composerStatus = document.getElementById("composer-status");
 const observerPanel = document.getElementById("observer-panel");
 const observerToggle = document.getElementById("observer-toggle");
 const observerClose = document.getElementById("observer-close");
+
+const workspaceTreeData = {
+  workspaceRoot: "/Users/admin/msgcode-workspaces",
+  workspaces: [
+    { key: "acme", name: "acme", threads: [] },
+    { key: "artifacts", name: "artifacts", threads: [] },
+    { key: "charai", name: "charai", threads: [] },
+    {
+      key: "default",
+      name: "default",
+      threads: [
+        { key: "default-reminder", title: "以后所有定时提醒文字内容前面加一个‘⏰’,这样", source: "feishu" },
+        { key: "default-hi", title: "hi", source: "feishu" },
+      ],
+    },
+    {
+      key: "family",
+      name: "family",
+      peopleCount: 2,
+      open: true,
+      threads: [
+        { key: "door", title: "我在门口准备好了", source: "feishu", selected: true },
+        { key: "missed-reminder", title: "今天为什么没有提醒我", source: "feishu" },
+        { key: "vision", title: "@_user_1 你看看这个小朋友的视力检查结果", source: "feishu" },
+        { key: "copy-edit", title: "145了该接小孩了", source: "feishu" },
+      ],
+    },
+    {
+      key: "game01",
+      name: "game01",
+      threads: [
+        { key: "game01-smoke", title: "【SMOKE-SKILL-1771572317】-2", source: "feishu" },
+      ],
+    },
+    {
+      key: "medicpass",
+      name: "medicpass",
+      threads: [
+        { key: "medicpass-model", title: "你是什么模型", source: "feishu" },
+      ],
+    },
+    { key: "mlx-whisper", name: "mlx-whisper", threads: [] },
+    { key: "mycompany", name: "mycompany", threads: [] },
+    {
+      key: "mylife",
+      name: "mylife",
+      threads: [
+        { key: "mylife-update", title: "之前是老代码 现在更新了", source: "feishu" },
+      ],
+    },
+    { key: "r9-smoke-20260222-181939", name: "r9-smoke-20260222-181939", threads: [] },
+    { key: "real-test", name: "real-test", threads: [] },
+    { key: "skill-wpkg", name: "skill-wpkg", threads: [] },
+    {
+      key: "test-real",
+      name: "test-real",
+      threads: [
+        { key: "test-real-subagent", title: "哥，先别实际委派。请读取 subagent 这个", source: "feishu" },
+      ],
+    },
+  ],
+};
 
 const threadData = {
   door: {
@@ -149,9 +208,100 @@ const threadData = {
       </article>
     `,
   },
+  "default-reminder": {
+    title: "以后所有定时提醒文字内容前面加一个‘⏰’,这样",
+    channel: "feishu",
+    kind: "历史线程",
+    messages: [
+      { role: "user", text: "以后所有定时提醒文字内容前面加一个‘⏰’,这样更醒目。" },
+      { role: "agent", text: "收到，这条线主要围绕提醒文案的统一调整。" },
+    ],
+    workStatus: ["default 工作区的一条旧提醒调整线程。", ""],
+    secondaryTitle: "相关定时任务",
+    secondaryHtml: `
+      <article class="schedule-item">
+        <strong>11:45</strong>
+        <div>
+          <p>pick-up-kids</p>
+          <small>文案统一调整为带 ⏰ 前缀</small>
+        </div>
+      </article>
+    `,
+  },
+  "default-hi": {
+    title: "hi",
+    channel: "feishu",
+    kind: "历史线程",
+    messages: [
+      { role: "user", text: "hi" },
+      { role: "agent", text: "你好。" },
+    ],
+    workStatus: ["default 工作区的早期测试线程。", ""],
+    secondaryTitle: "附记",
+    secondaryHtml: `
+      <article class="schedule-item">
+        <strong>旧线程</strong>
+        <div>
+          <p>保留为历史记录</p>
+          <small>适合后续归档</small>
+        </div>
+      </article>
+    `,
+  },
+  "game01-smoke": {
+    title: "【SMOKE-SKILL-1771572317】-2",
+    channel: "feishu",
+    kind: "历史线程",
+    messages: [
+      { role: "user", text: "【SMOKE-SKILL-1771572317】-2" },
+      { role: "agent", text: "这是一条 smoke 线程，占位展示。后续应通过 archive 收起来。" },
+    ],
+    workStatus: ["这类冒烟线程是 archive 的典型目标。", ""],
+    secondaryTitle: "附记",
+    secondaryHtml: "",
+  },
+  "medicpass-model": {
+    title: "你是什么模型",
+    channel: "feishu",
+    kind: "历史线程",
+    messages: [
+      { role: "user", text: "你是什么模型" },
+      { role: "agent", text: "这里先只模拟线程，不展开正文。" },
+    ],
+    workStatus: ["medicpass 工作区的一条历史问答。", ""],
+    secondaryTitle: "附记",
+    secondaryHtml: "",
+  },
+  "mylife-update": {
+    title: "之前是老代码 现在更新了",
+    channel: "feishu",
+    kind: "历史线程",
+    messages: [
+      { role: "user", text: "之前是老代码 现在更新了" },
+      { role: "agent", text: "这条线先保留成工作区树中的真实标题示意。" },
+    ],
+    workStatus: ["mylife 工作区的一条历史线程。", ""],
+    secondaryTitle: "附记",
+    secondaryHtml: "",
+  },
+  "test-real-subagent": {
+    title: "哥，先别实际委派。请读取 subagent 这个",
+    channel: "feishu",
+    kind: "历史线程",
+    messages: [
+      { role: "user", text: "哥，先别实际委派。请读取 subagent 这个" },
+      { role: "agent", text: "这是一条 test-real 工作区的历史线程示意。" },
+    ],
+    workStatus: ["test-real 工作区的一条历史线程。", ""],
+    secondaryTitle: "附记",
+    secondaryHtml: "",
+  },
 };
 
 const WORKSPACE_ORDER_STORAGE_KEY = "msgcode-ui-workspace-order";
+
+let selectedWorkspaceKey = "family";
+let selectedThreadKey = "door";
 
 function renderThread(threadKey) {
   const data = threadData[threadKey];
@@ -180,41 +330,42 @@ function renderThread(threadKey) {
       })
       .join("");
   }
-
-  for (const item of threadItems) {
-    item.classList.toggle("is-selected", item.dataset.threadKey === threadKey);
-  }
 }
 
 function applyStoredWorkspaceOrder() {
-  if (!workspaceTree || workspaceCards.length === 0) return;
-
+  if (!workspaceTree) return;
   try {
     const raw = window.localStorage.getItem(WORKSPACE_ORDER_STORAGE_KEY);
     if (!raw) return;
     const order = JSON.parse(raw);
     if (!Array.isArray(order)) return;
-
-    const workspaceMap = new Map(Array.from(workspaceCards).map((card) => [card.dataset.workspaceKey, card]));
+    const workspaceMap = new Map(workspaceTreeData.workspaces.map((workspace) => [workspace.key, workspace]));
+    const next = [];
     for (const workspaceKey of order) {
-      const card = workspaceMap.get(workspaceKey);
-      if (card) workspaceTree.appendChild(card);
+      const workspace = workspaceMap.get(workspaceKey);
+      if (workspace) {
+        next.push(workspace);
+        workspaceMap.delete(workspaceKey);
+      }
     }
+    for (const workspace of workspaceTreeData.workspaces) {
+      if (workspaceMap.has(workspace.key)) next.push(workspace);
+    }
+    workspaceTreeData.workspaces = next;
   } catch (error) {
     console.warn("failed to restore workspace order", error);
   }
 }
 
 function saveWorkspaceOrder() {
-  if (!workspaceTree) return;
-  const order = Array.from(workspaceTree.querySelectorAll(".workspace-group"))
-    .map((item) => item.dataset.workspaceKey)
-    .filter(Boolean);
+  const order = workspaceTreeData.workspaces.map((item) => item.key);
   window.localStorage.setItem(WORKSPACE_ORDER_STORAGE_KEY, JSON.stringify(order));
 }
 
 function bindWorkspaceSorting() {
-  if (!workspaceTree || workspaceCards.length === 0) return;
+  if (!workspaceTree) return;
+  if (workspaceTree.dataset.sortBound === "true") return;
+  workspaceTree.dataset.sortBound = "true";
 
   let draggingWorkspace = null;
 
@@ -234,22 +385,37 @@ function bindWorkspaceSorting() {
     ).element;
   };
 
-  for (const card of workspaceCards) {
-    card.addEventListener("dragstart", () => {
-      draggingWorkspace = card;
-      card.classList.add("is-dragging");
-    });
+  workspaceTree.addEventListener("dragstart", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const card = target.closest(".workspace-group");
+    if (!(card instanceof HTMLElement)) return;
+    draggingWorkspace = card;
+    card.classList.add("is-dragging");
+  });
 
-    card.addEventListener("dragend", () => {
-      card.classList.remove("is-dragging");
-      draggingWorkspace = null;
-      saveWorkspaceOrder();
-    });
+  workspaceTree.addEventListener("dragend", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const card = target.closest(".workspace-group");
+    if (!(card instanceof HTMLElement)) return;
+    card.classList.remove("is-dragging");
+    draggingWorkspace = null;
+    syncWorkspaceOrderFromDom();
+    saveWorkspaceOrder();
+  });
 
-    card.addEventListener("click", () => {
-      for (const current of workspaceCards) current.classList.toggle("is-selected", current === card);
-    });
-  }
+  workspaceTree.addEventListener("toggle", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    const card = target.closest(".workspace-group");
+    if (!(card instanceof HTMLElement)) return;
+    const workspaceKey = card.dataset.workspaceKey;
+    if (workspaceKey) {
+      const workspace = workspaceTreeData.workspaces.find((item) => item.key === workspaceKey);
+      if (workspace) workspace.open = card.open;
+    }
+  });
 
   workspaceTree.addEventListener("dragover", (event) => {
     event.preventDefault();
@@ -264,6 +430,77 @@ function bindWorkspaceSorting() {
   });
 }
 
+function syncWorkspaceOrderFromDom() {
+  if (!workspaceTree) return;
+  const order = Array.from(workspaceTree.querySelectorAll(".workspace-group"))
+    .map((item) => item.dataset.workspaceKey)
+    .filter(Boolean);
+  workspaceTreeData.workspaces = order
+    .map((key) => workspaceTreeData.workspaces.find((workspace) => workspace.key === key))
+    .filter(Boolean);
+}
+
+function renderWorkspaceTree() {
+  if (!workspaceTree) return;
+
+  workspaceTree.innerHTML = workspaceTreeData.workspaces
+    .map((workspace) => {
+      const threads = workspace.threads.length > 0
+        ? workspace.threads.map((thread) => `
+            <article class="thread-list-item${thread.key === selectedThreadKey ? " is-selected" : ""}" data-thread-key="${thread.key}" data-workspace-key="${workspace.key}">
+              <div class="thread-list-item__head">
+                <strong>${escapeHtml(thread.title)}</strong>
+                <span>${escapeHtml(thread.source)}</span>
+              </div>
+            </article>
+          `).join("")
+        : `
+            <article class="thread-list-item">
+              <div class="thread-list-item__head">
+                <strong>暂无线程</strong>
+                <span>0</span>
+              </div>
+            </article>
+          `;
+
+      const peopleLink = workspace.peopleCount !== undefined
+        ? `
+          <a class="project-mini-link" href="./people.html" title="人物角色" aria-label="人物角色">
+            <span class="project-mini-link__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 12a3.5 3.5 0 1 0 0-7a3.5 3.5 0 0 0 0 7Z"></path>
+                <path d="M5.5 19.5a6.5 6.5 0 0 1 13 0"></path>
+              </svg>
+            </span>
+            <span class="project-mini-link__count">${workspace.peopleCount}</span>
+          </a>
+        `
+        : "";
+
+      return `
+        <details class="workspace-group${workspace.key === selectedWorkspaceKey ? " is-selected" : ""}" data-workspace-key="${workspace.key}" ${workspace.open ? "open" : ""}>
+          <summary class="workspace-group__title">
+            <span class="workspace-group__name">${escapeHtml(workspace.name)}</span>
+            ${peopleLink}
+          </summary>
+          <div class="workspace-group__items">
+            ${threads}
+          </div>
+        </details>
+      `;
+    })
+    .join("");
+
+  bindWorkspaceSorting();
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;");
+}
+
 for (const item of navItems) {
   item.addEventListener("click", () => {
     const target = item.dataset.view;
@@ -272,10 +509,22 @@ for (const item of navItems) {
   });
 }
 
-for (const item of threadItems) {
-  item.addEventListener("click", () => {
-    const threadKey = item.dataset.threadKey;
-    if (threadKey) renderThread(threadKey);
+if (workspaceTree) {
+  workspaceTree.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+
+    const threadItem = target.closest("[data-thread-key]");
+    if (threadItem instanceof HTMLElement) {
+      const threadKey = threadItem.dataset.threadKey;
+      const workspaceKey = threadItem.dataset.workspaceKey;
+      if (threadKey) {
+        selectedThreadKey = threadKey;
+        if (workspaceKey) selectedWorkspaceKey = workspaceKey;
+        renderWorkspaceTree();
+        renderThread(threadKey);
+      }
+    }
   });
 }
 
@@ -303,5 +552,5 @@ if (observerClose && observerPanel) {
 }
 
 applyStoredWorkspaceOrder();
-bindWorkspaceSorting();
-renderThread("door");
+renderWorkspaceTree();
+renderThread(selectedThreadKey);
