@@ -11,6 +11,7 @@
     "start": "tsx src/cli.ts start debug",
     "build:runtime": "rm -rf dist && ./node_modules/.bin/tsc -p tsconfig.json",
     "build:artifact": "NODE_OPTIONS=\"--import tsx\" node scripts/build-artifact.ts",
+    "build:app": "NODE_OPTIONS=\"--import tsx\" node scripts/build-app-bundle.ts",
     "test": "npm run test:bun",
     "test:bun": "LOG_FILE=false LOG_LEVEL=warn PATH=\"$HOME/.bun/bin:$PATH\" bun test",
     "cli:node": "node --import tsx src/cli.ts",
