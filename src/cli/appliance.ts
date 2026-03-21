@@ -391,6 +391,24 @@ async function saveWorkspaceProfileSurface(args: {
   };
 }
 
+async function safeReadWorkspaceProfileSurface(workspacePath: string): Promise<{ data: ApplianceProfileData; warnings: Diagnostic[] }> {
+  try {
+    return await readWorkspaceProfileSurface(workspacePath);
+  } catch (error) {
+    return {
+      data: emptyProfileData(workspacePath),
+      warnings: [
+        {
+          code: "APPLIANCE_PROFILE_RECOVERY_READ_FAILED",
+          message: "写入失败后回读我的资料也失败",
+          hint: "检查 .msgcode/config.json / ORG.md / SOUL.md 是否可读",
+          details: { workspacePath, error: error instanceof Error ? error.message : String(error) },
+        },
+      ],
+    };
+  }
+}
+
 function parseOrgField(content: string, label: string): string {
   const match = content.match(new RegExp(`^- ${label}：(.+)$`, "m"));
   return match?.[1]?.trim() ?? "";
@@ -547,6 +565,7 @@ export function createApplianceCommand(): Command {
     .option("--name <value>", "我的称呼")
     .option("--organization-name <value>", "组织名称")
     .option("--city <value>", "位置城市")
+    .option("--soul-file <path>", "SOUL 文本文件路径")
     .option("--soul <value>", "SOUL 全量文本")
     .option("--json", "JSON 格式输出")
     .action(async (options: {
@@ -554,6 +573,7 @@ export function createApplianceCommand(): Command {
       name?: string;
       organizationName?: string;
       city?: string;
+      soulFile?: string;
       soul?: string;
       json?: boolean;
     }) => {
@@ -569,14 +589,41 @@ export function createApplianceCommand(): Command {
       const profileName = normalizeLineInput(options.name);
       const organizationName = normalizeLineInput(options.organizationName);
       const city = normalizeLineInput(options.city);
-      const soul = normalizeMultilineInput(options.soul);
+      let soul: string | undefined;
+
+      if (options.soulFile && options.soul !== undefined) {
+        errors.push({
+          code: "APPLIANCE_PROFILE_SOUL_INPUT_CONFLICT",
+          message: "SOUL 输入来源冲突",
+          hint: "只保留一个：--soul-file 或 --soul",
+          details: { workspacePath, soulFile: options.soulFile },
+        });
+      } else if (options.soulFile) {
+        try {
+          soul = normalizeMultilineInput(await readFile(options.soulFile, "utf8"));
+        } catch (error) {
+          errors.push({
+            code: "APPLIANCE_PROFILE_SOUL_FILE_READ_FAILED",
+            message: "SOUL 文件读取失败",
+            hint: "检查 --soul-file 路径是否存在且可读",
+            details: {
+              workspacePath,
+              soulFile: options.soulFile,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          });
+        }
+      } else {
+        soul = normalizeMultilineInput(options.soul);
+      }
+
       const hasMutation = profileName !== undefined || organizationName !== undefined || city !== undefined || soul !== undefined;
 
       if (!hasMutation) {
         errors.push({
           code: "APPLIANCE_PROFILE_MUTATION_EMPTY",
           message: "没有提供任何可写字段",
-          hint: "至少传一个：--name / --organization-name / --city / --soul",
+          hint: "至少传一个：--name / --organization-name / --city / --soul-file / --soul",
           details: { workspacePath },
         });
       }
@@ -620,7 +667,7 @@ export function createApplianceCommand(): Command {
         process.exit(0);
       } catch (error) {
         const mutationError = error instanceof ApplianceProfileMutationError ? error : null;
-        const currentProfile = await readWorkspaceProfileSurface(workspacePath);
+        const currentProfile = await safeReadWorkspaceProfileSurface(workspacePath);
         warnings.push(...currentProfile.warnings);
         errors.push({
           code: "APPLIANCE_PROFILE_MUTATION_FAILED",

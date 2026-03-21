@@ -30,6 +30,8 @@ describe("appliance set-profile contract", () => {
     await fs.writeFile(path.join(workspacePath, ".msgcode", "config.json"), JSON.stringify({}, null, 2), "utf8");
     await fs.writeFile(path.join(workspacePath, ".msgcode", "ORG.md"), "# 机构信息\n\n- 名称：旧组织\n- 位置城市：旧城市\n", "utf8");
     await fs.writeFile(path.join(workspacePath, ".msgcode", "SOUL.md"), "# SOUL\n\n- 风格：旧风格\n", "utf8");
+    const soulDraftPath = path.join(root, "draft-soul.md");
+    await fs.writeFile(soulDraftPath, "# SOUL\n\n- 风格：简洁、直接、可执行", "utf8");
 
     const { stdout } = await execFileAsync("node", [
       "--import",
@@ -45,8 +47,8 @@ describe("appliance set-profile contract", () => {
       "Family Workspace",
       "--city",
       "Singapore",
-      "--soul",
-      "# SOUL\n\n- 风格：简洁、直接、可执行",
+      "--soul-file",
+      soulDraftPath,
       "--json",
     ], {
       cwd: "/Users/admin/GitProjects/msgcode",
@@ -256,6 +258,41 @@ describe("appliance set-profile contract", () => {
     expect(payload.errors.some((item: { code?: string }) => item.code === "APPLIANCE_PROFILE_MUTATION_EMPTY")).toBe(true);
   });
 
+  it("坏的 soul-file 路径也应返回正式 JSON 错误", async () => {
+    const root = await makeTempRoot();
+    tempRoots.push(root);
+    const homeRoot = path.join(root, "home");
+    const workspaceRoot = path.join(root, "workspaces");
+    const workspacePath = path.join(workspaceRoot, "family");
+    await fs.mkdir(path.join(homeRoot, ".config", "msgcode"), { recursive: true });
+    await fs.mkdir(path.join(workspacePath, ".msgcode"), { recursive: true });
+
+    const { stdout } = await execFileAsync("node", [
+      "--import",
+      "tsx",
+      "src/cli.ts",
+      "appliance",
+      "set-profile",
+      "--workspace",
+      "family",
+      "--soul-file",
+      path.join(root, "missing-soul.md"),
+      "--json",
+    ], {
+      cwd: "/Users/admin/GitProjects/msgcode",
+      env: {
+        ...process.env,
+        HOME: homeRoot,
+        WORKSPACE_ROOT: workspaceRoot,
+      },
+    }).catch((error) => error);
+
+    const payload = JSON.parse(stdout);
+    expect(payload.exitCode).toBe(1);
+    expect(payload.status).toBe("error");
+    expect(payload.errors.some((item: { code?: string }) => item.code === "APPLIANCE_PROFILE_SOUL_FILE_READ_FAILED")).toBe(true);
+  });
+
   it("中途文件写失败时应诚实返回已落盘 changedFiles", async () => {
     const root = await makeTempRoot();
     tempRoots.push(root);
@@ -267,6 +304,8 @@ describe("appliance set-profile contract", () => {
 
     await fs.writeFile(path.join(workspacePath, ".msgcode", "config.json"), JSON.stringify({}, null, 2), "utf8");
     await fs.writeFile(path.join(workspacePath, ".msgcode", "ORG.md"), "# 机构信息\n\n- 名称：旧组织\n- 位置城市：旧城市\n", "utf8");
+    const soulDraftPath = path.join(root, "draft-soul.md");
+    await fs.writeFile(soulDraftPath, "# SOUL\n\n- 风格：简洁、直接、可执行", "utf8");
 
     const { stdout } = await execFileAsync("node", [
       "--import",
@@ -282,8 +321,8 @@ describe("appliance set-profile contract", () => {
       "Family Workspace",
       "--city",
       "Singapore",
-      "--soul",
-      "# SOUL\n\n- 风格：简洁、直接、可执行",
+      "--soul-file",
+      soulDraftPath,
       "--json",
     ], {
       cwd: "/Users/admin/GitProjects/msgcode",
