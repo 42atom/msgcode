@@ -10,6 +10,7 @@ import { runAllProbes } from "../probe/index.js";
 import { readWorkspacePeopleState, type WorkspaceIdentityRecord, type WorkspacePendingPerson } from "../runtime/workspace-people.js";
 import { readWorkspacePackRegistry, type WorkspacePackSurfaceData } from "../runtime/workspace-packs.js";
 import { readWorkspaceProfileSurface, type WorkspaceProfileSurfaceData } from "../runtime/workspace-profile.js";
+import { readWorkspaceGeneralSurface, type WorkspaceGeneralSurfaceData } from "../runtime/workspace-general.js";
 import {
   readWorkspaceNeighborSurface,
   type WorkspaceNeighborSurfaceData,
@@ -64,6 +65,7 @@ interface AppliancePeopleData {
 }
 
 interface ApplianceProfileData extends WorkspaceProfileSurfaceData {}
+interface ApplianceGeneralData extends WorkspaceGeneralSurfaceData {}
 
 interface ApplianceRuntimeSurface {
   appVersion: string;
@@ -497,6 +499,66 @@ export function createApplianceCommand(): Command {
         console.log(JSON.stringify(envelope, null, 2));
         process.exit(1);
       }
+    });
+
+  cmd
+    .command("general")
+    .description("输出设置页通用读面 JSON")
+    .requiredOption("--workspace <labelOrPath>", "Workspace 相对路径或绝对路径")
+    .option("--json", "JSON 格式输出")
+    .action(async (options: { workspace: string; json?: boolean }) => {
+      const startTime = Date.now();
+      const workspacePath = getWorkspacePath(options.workspace);
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      if (!existsSync(workspacePath)) {
+        errors.push({
+          code: "APPLIANCE_WORKSPACE_MISSING",
+          message: "工作区不存在",
+          hint: "先初始化 workspace，或传绝对路径",
+          details: { workspacePath, input: options.workspace },
+        });
+      }
+
+      const { data, warnings: surfaceWarnings } = errors.length === 0
+        ? await readWorkspaceGeneralSurface(workspacePath)
+        : {
+            data: {
+              workspacePath,
+              workspaceRoot: "",
+              log: {
+                dir: path.join(os.homedir(), ".config", "msgcode", "log"),
+                filePath: path.join(os.homedir(), ".config", "msgcode", "log", "msgcode.log"),
+                stdoutPath: path.join(os.homedir(), ".config", "msgcode", "log", "daemon.stdout.log"),
+                stderrPath: path.join(os.homedir(), ".config", "msgcode", "log", "daemon.stderr.log"),
+              },
+              startup: {
+                mode: "manual" as const,
+                supported: false,
+                label: "",
+                installed: false,
+                status: "missing" as const,
+                plistPath: "",
+              },
+            },
+            warnings: [],
+          };
+      warnings.push(...surfaceWarnings);
+
+      const status: CommandStatus = errors.length > 0 ? "error" : warnings.length > 0 ? "warning" : "pass";
+      const envelope: Envelope<ApplianceGeneralData> = createEnvelope(
+        `msgcode appliance general --workspace ${options.workspace}`,
+        startTime,
+        status,
+        data,
+        warnings,
+        errors
+      );
+      envelope.exitCode = errors.length > 0 ? 1 : 0;
+
+      console.log(JSON.stringify(envelope, null, 2));
+      process.exit(errors.length > 0 ? 1 : 0);
     });
 
   cmd
