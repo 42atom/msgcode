@@ -155,6 +155,76 @@ describe("tk0335: web composer runtime-router consumer", () => {
     expect(commandNames).toContain("msgcode inbox consume-web");
   });
 
+  it("同一 web chatId 二次消费时，应续写同一 thread 而不是裂成新文件", async () => {
+    const { createInboxRequest } = await import("../src/runtime/inbox-store.js");
+    const { consumeWebInboxRequest } = await import("../src/cli/inbox.js");
+    const { close } = await import("../src/runtime/thread-store.js");
+    const { loadWindow } = await import("../src/session-window.js");
+
+    globalThis.fetch = async () =>
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: { role: "assistant", content: "好的，我继续接着说。" },
+              finish_reason: "stop",
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }
+      );
+
+    await createInboxRequest(workspacePath, {
+      id: "web-msg-a",
+      transport: "web",
+      chatId: "web:family",
+      text: "第一条",
+      isFromMe: false,
+      date: Date.now(),
+      sender: "sam",
+      senderName: "sam",
+      handle: "sam",
+      isGroup: false,
+      messageType: "text",
+    });
+
+    const first = await consumeWebInboxRequest({ workspacePath });
+    expect(first.handled).toBe(true);
+
+    close();
+
+    await createInboxRequest(workspacePath, {
+      id: "web-msg-b",
+      transport: "web",
+      chatId: "web:family",
+      text: "第二条",
+      isFromMe: false,
+      date: Date.now(),
+      sender: "sam",
+      senderName: "sam",
+      handle: "sam",
+      isGroup: false,
+      messageType: "text",
+    });
+
+    const second = await consumeWebInboxRequest({ workspacePath });
+    expect(second.handled).toBe(true);
+
+    const threadsDir = path.join(workspacePath, ".msgcode", "threads");
+    const threadFiles = await fsp.readdir(threadsDir);
+    expect(threadFiles).toHaveLength(1);
+
+    const threadContent = await fsp.readFile(path.join(threadsDir, threadFiles[0]), "utf8");
+    expect(threadContent).toContain("## Turn 1");
+    expect(threadContent).toContain("## Turn 2");
+
+    const windowMessages = await loadWindow(workspacePath, "web:family");
+    expect(windowMessages).toHaveLength(4);
+  });
+
   it("没有待消费 web 请求时应返回 handled=false", async () => {
     const { consumeWebInboxRequest } = await import("../src/cli/inbox.js");
     const consumed = await consumeWebInboxRequest({ workspacePath });

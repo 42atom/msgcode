@@ -13,7 +13,7 @@ import { describe, it, expect, beforeEach, afterEach } from "bun:test";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { ensureThread, appendTurn, resetThread, getThreadInfo } from "../src/runtime/thread-store.js";
+import { ensureThread, appendTurn, resetThread, getThreadInfo, close } from "../src/runtime/thread-store.js";
 
 // ============================================
 // 测试工具
@@ -342,6 +342,37 @@ describe("P5.6.13-R2: 线程存储回归锁", () => {
 
         it("getThreadInfo 返回 undefined 当线程不存在", async () => {
             expect(getThreadInfo("non-existent-chat")).toBeUndefined();
+        });
+    });
+
+    describe("R2-8: web chatId 跨进程续线", () => {
+        it("web chatId 在缓存清空后应续写同一线程文件", async () => {
+            const runtimeMeta = {
+                kind: "agent" as const,
+                provider: "lmstudio",
+                tmuxClient: undefined,
+            };
+
+            const webChatId = "web:family-main";
+            const threadInfo1 = await ensureThread(webChatId, workspacePath, "今晚还有什么安排？", runtimeMeta);
+            await appendTurn(webChatId, "今晚还有什么安排？", "18:30 接娃。");
+
+            close();
+
+            const threadInfo2 = await ensureThread(webChatId, workspacePath, "这个 chatId 继续续话", runtimeMeta);
+            await appendTurn(webChatId, "还有别的安排吗？", "回家后吃饭。");
+
+            expect(threadInfo2.threadId).toBe(threadInfo1.threadId);
+            expect(threadInfo2.filePath).toBe(threadInfo1.filePath);
+
+            const files = await listThreads(workspacePath);
+            expect(files.length).toBe(1);
+
+            const content = await readThreadFile(threadInfo1.filePath);
+            expect(content).toContain("## Turn 1");
+            expect(content).toContain("## Turn 2");
+            expect(content).toContain("### User\n今晚还有什么安排？");
+            expect(content).toContain("### User\n还有别的安排吗？");
         });
     });
 });

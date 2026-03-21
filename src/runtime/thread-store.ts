@@ -38,6 +38,11 @@ interface ThreadState {
     lastTurnTime: string;
 }
 
+interface StoredThreadState {
+    info: ThreadInfo;
+    lastTurnTime: string;
+}
+
 // ============================================
 // 内存状态（进程级缓存）
 // ============================================
@@ -82,6 +87,90 @@ function deriveTransport(chatId: string): string {
     if (raw.startsWith("web:")) return "web";
     if (raw.startsWith("neighbor:")) return "neighbor";
     return "unknown";
+}
+
+function parseSimpleFrontMatter(content: string): Record<string, string> {
+    const result: Record<string, string> = {};
+    for (const line of content.split(/\r?\n/)) {
+        const index = line.indexOf(":");
+        if (index < 0) continue;
+        const key = line.slice(0, index).trim();
+        const value = line.slice(index + 1).trim();
+        if (!key) continue;
+        result[key] = value;
+    }
+    return result;
+}
+
+function deriveTitleFromFilename(filePath: string): string {
+    const baseName = path.basename(filePath, ".md");
+    const title = baseName.replace(/^\d{4}-\d{2}-\d{2}_/, "");
+    return title.trim() || baseName;
+}
+
+function parseStoredThread(filePath: string, content: string): StoredThreadState | null {
+    const match = content.match(/^---\n([\s\S]*?)\n---\n\n?([\s\S]*)$/);
+    if (!match) {
+        return null;
+    }
+
+    const frontMatter = parseSimpleFrontMatter(match[1] ?? "");
+    const threadId = frontMatter.threadId?.trim() ?? "";
+    const chatId = frontMatter.chatId?.trim() ?? "";
+    if (!threadId || !chatId) {
+        return null;
+    }
+
+    const body = match[2] ?? "";
+    const turnHeaders = Array.from(body.matchAll(/^## Turn \d+ - (.+)$/gm))
+        .map((header) => header[1]?.trim() ?? "")
+        .filter(Boolean);
+    const lastTurnTime = turnHeaders.sort((a, b) => b.localeCompare(a))[0] ?? (frontMatter.createdAt?.trim() || "");
+
+    return {
+        info: {
+            threadId,
+            chatId,
+            title: frontMatter.title?.trim() || deriveTitleFromFilename(filePath),
+            transport: frontMatter.transport?.trim() || deriveTransport(chatId),
+            workspacePath: frontMatter.workspacePath?.trim() || path.dirname(path.dirname(path.dirname(filePath))),
+            filePath,
+            turnCount: turnHeaders.length,
+            createdAt: frontMatter.createdAt?.trim() || "",
+        },
+        lastTurnTime,
+    };
+}
+
+async function findExistingWebThread(workspacePath: string, chatId: string): Promise<StoredThreadState | null> {
+    if (deriveTransport(chatId) !== "web") {
+        return null;
+    }
+
+    const threadsDir = getThreadsDir(workspacePath);
+    try {
+        const fileNames = (await fs.readdir(threadsDir))
+            .filter((name) => name.endsWith(".md"))
+            .sort((a, b) => a.localeCompare(b, "zh-CN"));
+
+        const matched: StoredThreadState[] = [];
+        for (const fileName of fileNames) {
+            const filePath = path.join(threadsDir, fileName);
+            const content = await fs.readFile(filePath, "utf-8");
+            const parsed = parseStoredThread(filePath, content);
+            if (parsed?.info.chatId === chatId) {
+                matched.push(parsed);
+            }
+        }
+
+        if (matched.length === 0) {
+            return null;
+        }
+
+        return matched.sort((a, b) => b.lastTurnTime.localeCompare(a.lastTurnTime))[0] ?? null;
+    } catch {
+        return null;
+    }
 }
 
 /**
@@ -205,6 +294,18 @@ export async function ensureThread(
     // 创建 threads 目录
     const threadsDir = getThreadsDir(workspacePath);
     await fs.mkdir(threadsDir, { recursive: true });
+
+    const restored = await findExistingWebThread(workspacePath, chatId);
+    if (restored) {
+        threadCache.set(chatId, restored);
+        logger.debug("Thread restored from disk", {
+            module: "thread-store",
+            chatId,
+            threadId: restored.info.threadId,
+            threadPath: restored.info.filePath,
+        });
+        return restored.info;
+    }
 
     // 生成标题
     const title = normalizeTitle(firstUserText);
