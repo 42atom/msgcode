@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Diagnostic } from "../memory/types.js";
+import { parseWorkspacePeopleCsv } from "./workspace-people-csv.js";
 
 export interface WorkspaceIdentityRecord {
   sourcePath: string;
@@ -74,20 +75,20 @@ async function readKnownPeople(sourceDir: string, warnings: Diagnostic[]): Promi
   for (const fileName of entries) {
     const sourcePath = path.join(sourceDir, fileName);
     const content = await readFile(sourcePath, "utf8");
-    const rows = parseCsvRows(content);
+    const rows = parseWorkspacePeopleCsv(content);
     if (rows.length === 0) {
       continue;
     }
 
     for (const [index, row] of rows.entries()) {
       const channel = normalizeCell(row.channel);
-      const chatId = normalizeCell(row.chat_id);
-      const channelId = normalizeCell(row.sender_id);
+      const chatId = normalizeCell(row.chatId);
+      const channelId = normalizeCell(row.senderId);
       const alias = normalizeCell(row.alias);
       const role = normalizeCell(row.role);
       const note = normalizeCell(row.notes);
-      const firstSeenAt = normalizeCell(row.first_seen_at);
-      const lastSeenAt = normalizeCell(row.last_seen_at);
+      const firstSeenAt = normalizeCell(row.firstSeenAt);
+      const lastSeenAt = normalizeCell(row.lastSeenAt);
 
       if (!channel || !chatId || !channelId) {
         warnings.push({
@@ -180,65 +181,6 @@ async function readPendingPeople(pendingPath: string, warnings: Diagnostic[]): P
 
   return pending;
 }
-
-function parseCsvRows(content: string): Array<Record<string, string>> {
-  const lines = content
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  if (lines.length < 2) {
-    return [];
-  }
-
-  const headers = parseCsvLine(lines[0] ?? "");
-  if (headers.length === 0) {
-    return [];
-  }
-
-  return lines.slice(1).map((line) => {
-    const values = parseCsvLine(line);
-    const row: Record<string, string> = {};
-    for (let i = 0; i < headers.length; i += 1) {
-      const key = headers[i]?.trim();
-      if (!key) continue;
-      row[key] = values[i] ?? "";
-    }
-    return row;
-  });
-}
-
-function parseCsvLine(line: string): string[] {
-  const values: string[] = [];
-  let current = "";
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i += 1) {
-    const char = line[i];
-    if (char === "\"") {
-      const next = line[i + 1];
-      if (inQuotes && next === "\"") {
-        current += "\"";
-        i += 1;
-        continue;
-      }
-      inQuotes = !inQuotes;
-      continue;
-    }
-
-    if (char === "," && !inQuotes) {
-      values.push(current.trim());
-      current = "";
-      continue;
-    }
-
-    current += char;
-  }
-
-  values.push(current.trim());
-  return values;
-}
-
 function normalizeCell(value: unknown): string {
   return String(value ?? "").trim();
 }

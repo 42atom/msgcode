@@ -8,6 +8,7 @@ import type { Diagnostic, Envelope, CommandStatus } from "../memory/types.js";
 import { getVersionInfo } from "../version.js";
 import { runAllProbes } from "../probe/index.js";
 import { readWorkspacePeopleState, type WorkspaceIdentityRecord, type WorkspacePendingPerson } from "../runtime/workspace-people.js";
+import { saveWorkspacePerson, type SaveWorkspacePersonResult } from "../runtime/workspace-people-save.js";
 import { readWorkspacePackRegistry, type WorkspacePackSurfaceData } from "../runtime/workspace-packs.js";
 import { readWorkspaceProfileSurface, type WorkspaceProfileSurfaceData } from "../runtime/workspace-profile.js";
 import { readWorkspaceGeneralSurface, type WorkspaceGeneralSurfaceData } from "../runtime/workspace-general.js";
@@ -64,6 +65,13 @@ interface AppliancePeopleData {
   };
   people: WorkspaceIdentityRecord[];
   pending: WorkspacePendingPerson[];
+}
+
+interface AppliancePeopleMutationData {
+  workspacePath: string;
+  changedFiles: string[];
+  created: boolean;
+  person: WorkspaceIdentityRecord;
 }
 
 interface ApplianceProfileData extends WorkspaceProfileSurfaceData {}
@@ -1098,6 +1106,110 @@ export function createApplianceCommand(): Command {
     });
 
   cmd
+    .command("people-save")
+    .description("写入工作区人物簿 CSV")
+    .requiredOption("--workspace <labelOrPath>", "Workspace 相对路径或绝对路径")
+    .requiredOption("--channel <value>", "渠道名")
+    .requiredOption("--chat-id <value>", "chatId")
+    .requiredOption("--sender-id <value>", "senderId")
+    .requiredOption("--alias <value>", "统一称谓")
+    .option("--notes <value>", "备注")
+    .option("--json", "JSON 格式输出")
+    .action(async (options: {
+      workspace: string;
+      channel: string;
+      chatId: string;
+      senderId: string;
+      alias: string;
+      notes?: string;
+      json?: boolean;
+    }) => {
+      const startTime = Date.now();
+      const workspacePath = getWorkspacePath(options.workspace);
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      if (!existsSync(workspacePath)) {
+        errors.push(buildMissingWorkspaceError(workspacePath, options.workspace));
+      }
+
+      const channel = normalizeLineInput(options.channel);
+      const chatId = normalizeLineInput(options.chatId);
+      const senderId = normalizeLineInput(options.senderId);
+      const alias = normalizeLineInput(options.alias);
+      const notes = normalizeMultilineInput(options.notes);
+
+      if (!channel || !chatId || !senderId || !alias) {
+        errors.push({
+          code: "APPLIANCE_PEOPLE_MUTATION_EMPTY",
+          message: "人物写入缺少关键字段",
+          hint: "至少传齐 --channel / --chat-id / --sender-id / --alias",
+          details: { workspacePath },
+        });
+      }
+
+      if (errors.length > 0) {
+        const envelope: Envelope<AppliancePeopleMutationData | null> = createEnvelope(
+          `msgcode appliance people-save --workspace ${options.workspace}`,
+          startTime,
+          "error",
+          null,
+          warnings,
+          errors,
+        );
+        envelope.exitCode = 1;
+        console.log(JSON.stringify(envelope, null, 2));
+        process.exit(1);
+      }
+
+      try {
+        const result = await saveWorkspacePerson({
+          workspacePath,
+          channel: channel!,
+          chatId: chatId!,
+          senderId: senderId!,
+          alias: alias!,
+          notes,
+        });
+
+        const payload: AppliancePeopleMutationData = mapPeopleMutationPayload(result);
+        const envelope: Envelope<AppliancePeopleMutationData> = createEnvelope(
+          `msgcode appliance people-save --workspace ${options.workspace}`,
+          startTime,
+          "pass",
+          payload,
+          warnings,
+          errors,
+        );
+        envelope.exitCode = 0;
+        console.log(JSON.stringify(envelope, null, 2));
+        process.exit(0);
+      } catch (error) {
+        errors.push({
+          code: "APPLIANCE_PEOPLE_MUTATION_FAILED",
+          message: "人物写入失败",
+          hint: "检查 channel/chatId/senderId 和目标 CSV 路径",
+          details: {
+            workspacePath,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
+
+        const envelope: Envelope<AppliancePeopleMutationData | null> = createEnvelope(
+          `msgcode appliance people-save --workspace ${options.workspace}`,
+          startTime,
+          "error",
+          null,
+          warnings,
+          errors,
+        );
+        envelope.exitCode = 1;
+        console.log(JSON.stringify(envelope, null, 2));
+        process.exit(1);
+      }
+    });
+
+  cmd
     .command("people")
     .description("输出工作区人物与待关联身份 JSON")
     .requiredOption("--workspace <labelOrPath>", "Workspace 相对路径或绝对路径")
@@ -1258,4 +1370,23 @@ export function createApplianceCommand(): Command {
     });
 
   return cmd;
+}
+
+function mapPeopleMutationPayload(result: SaveWorkspacePersonResult): AppliancePeopleMutationData {
+  return {
+    workspacePath: result.workspacePath,
+    changedFiles: [result.filePath],
+    created: result.created,
+    person: {
+      sourcePath: result.filePath,
+      channel: result.row.channel,
+      chatId: result.row.chatId,
+      senderId: result.row.senderId,
+      alias: result.row.alias,
+      role: result.row.role,
+      notes: result.row.notes,
+      firstSeenAt: result.row.firstSeenAt,
+      lastSeenAt: result.row.lastSeenAt,
+    },
+  };
 }
