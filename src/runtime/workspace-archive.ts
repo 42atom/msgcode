@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { readdir, readFile, stat } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, stat } from "node:fs/promises";
 import path from "node:path";
 import type { Diagnostic } from "../memory/types.js";
 
@@ -26,12 +26,27 @@ export interface WorkspaceArchiveSurfaceData {
   archivedThreads: WorkspaceArchiveThreadEntry[];
 }
 
+export interface WorkspaceArchiveMutationResult {
+  workspaceName: string;
+  workspacePath: string;
+  workspaceArchiveRoot: string;
+  archivedPath: string;
+}
+
 export function getWorkspaceArchiveRoot(workspacePath: string): string {
   return path.join(path.dirname(workspacePath), ".archive");
 }
 
 export function getWorkspaceArchivedThreadsPath(workspacePath: string): string {
   return path.join(workspacePath, ".msgcode", "archived-threads");
+}
+
+export function getArchivedWorkspacePath(workspacePath: string): string {
+  return path.join(getWorkspaceArchiveRoot(workspacePath), path.basename(workspacePath));
+}
+
+export function getRestoredWorkspacePath(archivedWorkspacePath: string): string {
+  return path.join(path.dirname(path.dirname(archivedWorkspacePath)), path.basename(archivedWorkspacePath));
 }
 
 export async function readWorkspaceArchiveSurface(workspacePath: string): Promise<{ data: WorkspaceArchiveSurfaceData; warnings: Diagnostic[] }> {
@@ -51,6 +66,35 @@ export async function readWorkspaceArchiveSurface(workspacePath: string): Promis
       archivedThreads,
     },
     warnings,
+  };
+}
+
+export async function archiveWorkspace(workspacePath: string): Promise<WorkspaceArchiveMutationResult> {
+  const workspaceArchiveRoot = getWorkspaceArchiveRoot(workspacePath);
+  const archivedPath = getArchivedWorkspacePath(workspacePath);
+
+  await mkdir(workspaceArchiveRoot, { recursive: true });
+  await rename(workspacePath, archivedPath);
+
+  return {
+    workspaceName: path.basename(workspacePath),
+    workspacePath,
+    workspaceArchiveRoot,
+    archivedPath,
+  };
+}
+
+export async function restoreWorkspace(archivedWorkspacePath: string): Promise<WorkspaceArchiveMutationResult> {
+  const workspacePath = getRestoredWorkspacePath(archivedWorkspacePath);
+  const workspaceArchiveRoot = path.dirname(archivedWorkspacePath);
+
+  await rename(archivedWorkspacePath, workspacePath);
+
+  return {
+    workspaceName: path.basename(workspacePath),
+    workspacePath,
+    workspaceArchiveRoot,
+    archivedPath: archivedWorkspacePath,
   };
 }
 

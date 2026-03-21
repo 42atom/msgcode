@@ -23,7 +23,11 @@ import {
   type WorkspaceThreadSurfaceData,
 } from "../runtime/workspace-thread-surface.js";
 import {
+  archiveWorkspace,
+  getArchivedWorkspacePath,
+  getRestoredWorkspacePath,
   readWorkspaceArchiveSurface,
+  restoreWorkspace,
   type WorkspaceArchiveSurfaceData,
 } from "../runtime/workspace-archive.js";
 import { installWorkspaceWpkg } from "../runtime/workspace-wpkg-install.js";
@@ -139,6 +143,14 @@ interface ApplianceDoctorData {
 }
 
 interface ApplianceArchiveData extends WorkspaceArchiveSurfaceData {}
+
+interface ApplianceWorkspaceArchiveMutationData {
+  workspaceName: string;
+  workspacePath: string;
+  workspaceArchiveRoot: string;
+  archivedPath: string;
+  action: "archive" | "restore";
+}
 
 interface AppliancePackInstallData {
   workspacePath: string;
@@ -1475,6 +1487,117 @@ export function createApplianceCommand(): Command {
       const status: CommandStatus = errors.length > 0 ? "error" : warnings.length > 0 ? "warning" : "pass";
       const envelope: Envelope<ApplianceArchiveData> = createEnvelope(
         `msgcode appliance archive --workspace ${options.workspace}`,
+        startTime,
+        status,
+        data,
+        warnings,
+        errors
+      );
+      envelope.exitCode = errors.length > 0 ? 1 : 0;
+
+      console.log(JSON.stringify(envelope, null, 2));
+      process.exit(errors.length > 0 ? 1 : 0);
+    });
+
+  cmd
+    .command("archive-workspace")
+    .description("归档整个工作区")
+    .requiredOption("--workspace <labelOrPath>", "Workspace 相对路径或绝对路径")
+    .option("--json", "JSON 格式输出")
+    .action(async (options: { workspace: string; json?: boolean }) => {
+      const startTime = Date.now();
+      const workspacePath = getWorkspacePath(options.workspace);
+      const archivedPath = getArchivedWorkspacePath(workspacePath);
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      if (!existsSync(workspacePath)) {
+        errors.push(buildMissingWorkspaceError(workspacePath, options.workspace));
+      }
+      if (existsSync(archivedPath)) {
+        errors.push({
+          code: "WORKSPACE_ARCHIVE_CONFLICT",
+          message: "archive 目录已存在同名工作区",
+          hint: "先处理 .archive 下的同名工作区",
+          details: { workspacePath, archivedPath },
+        });
+      }
+
+      const data: ApplianceWorkspaceArchiveMutationData = errors.length === 0
+        ? {
+            ...(await archiveWorkspace(workspacePath)),
+            action: "archive",
+          }
+        : {
+            workspaceName: path.basename(workspacePath),
+            workspacePath,
+            workspaceArchiveRoot: path.dirname(archivedPath),
+            archivedPath,
+            action: "archive",
+          };
+
+      const status: CommandStatus = errors.length > 0 ? "error" : warnings.length > 0 ? "warning" : "pass";
+      const envelope: Envelope<ApplianceWorkspaceArchiveMutationData> = createEnvelope(
+        `msgcode appliance archive-workspace --workspace ${options.workspace}`,
+        startTime,
+        status,
+        data,
+        warnings,
+        errors
+      );
+      envelope.exitCode = errors.length > 0 ? 1 : 0;
+
+      console.log(JSON.stringify(envelope, null, 2));
+      process.exit(errors.length > 0 ? 1 : 0);
+    });
+
+  cmd
+    .command("restore-workspace")
+    .description("恢复整个归档工作区")
+    .requiredOption("--workspace <labelOrPath>", "归档中的 workspace 名称或绝对路径")
+    .option("--json", "JSON 格式输出")
+    .action(async (options: { workspace: string; json?: boolean }) => {
+      const startTime = Date.now();
+      const archivedWorkspacePath = path.isAbsolute(options.workspace)
+        ? path.resolve(options.workspace)
+        : path.join(process.env.WORKSPACE_ROOT || path.join(process.env.HOME || "", "msgcode-workspaces"), ".archive", String(options.workspace).trim());
+      const restoredPath = getRestoredWorkspacePath(archivedWorkspacePath);
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      if (!existsSync(archivedWorkspacePath)) {
+        errors.push({
+          code: "WORKSPACE_ARCHIVE_MISSING",
+          message: "归档工作区不存在",
+          hint: "检查 .archive 下是否存在该工作区",
+          details: { archivedWorkspacePath, input: options.workspace },
+        });
+      }
+      if (existsSync(restoredPath)) {
+        errors.push({
+          code: "WORKSPACE_RESTORE_CONFLICT",
+          message: "活跃工作区已存在同名目录",
+          hint: "先处理根目录下的同名工作区",
+          details: { archivedWorkspacePath, restoredPath },
+        });
+      }
+
+      const data: ApplianceWorkspaceArchiveMutationData = errors.length === 0
+        ? {
+            ...(await restoreWorkspace(archivedWorkspacePath)),
+            action: "restore",
+          }
+        : {
+            workspaceName: path.basename(restoredPath),
+            workspacePath: restoredPath,
+            workspaceArchiveRoot: path.dirname(archivedWorkspacePath),
+            archivedPath: archivedWorkspacePath,
+            action: "restore",
+          };
+
+      const status: CommandStatus = errors.length > 0 ? "error" : warnings.length > 0 ? "warning" : "pass";
+      const envelope: Envelope<ApplianceWorkspaceArchiveMutationData> = createEnvelope(
+        `msgcode appliance restore-workspace --workspace ${options.workspace}`,
         startTime,
         status,
         data,

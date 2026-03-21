@@ -98,7 +98,7 @@ describe("appliance archive contract", () => {
     expect(payload.data.workspacePath).toBe(workspacePath);
     expect(payload.data.workspaceArchiveRoot).toBe(archiveRoot);
     expect(payload.data.archivedThreadsPath).toBe(archivedThreadsDir);
-    expect(payload.data.archivedWorkspaces.map((entry: { name: string }) => entry.name)).toEqual(["smoke", "test-r9-smoke"]);
+    expect(payload.data.archivedWorkspaces.map((entry: { name: string }) => entry.name).sort()).toEqual(["smoke", "test-r9-smoke"]);
     expect(payload.data.archivedThreads).toHaveLength(2);
     expect(payload.data.archivedThreads[0].threadId).toBe("thread-reminder");
     expect(payload.data.archivedThreads[0].title).toBe("今天为什么没有提醒我");
