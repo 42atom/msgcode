@@ -1234,6 +1234,7 @@ export function createApplianceCommand(): Command {
               currentThreadId: "",
               threads: [],
               currentThread: null,
+              people: { count: 0 },
               workStatus: { updatedAt: "", currentThreadEntries: [], recentEntries: [] },
               schedules: [],
             },

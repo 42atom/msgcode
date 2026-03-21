@@ -3,6 +3,7 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Diagnostic } from "../memory/types.js";
 import { readWorkspaceStatusTail, type WorkspaceStatusRecord } from "./status-log.js";
+import { readWorkspacePeopleState } from "./workspace-people.js";
 
 export interface WorkspaceThreadListItem {
   threadId: string;
@@ -39,6 +40,9 @@ export interface WorkspaceThreadSurfaceData {
   currentThreadId: string;
   threads: WorkspaceThreadListItem[];
   currentThread: WorkspaceCurrentThread | null;
+  people: {
+    count: number;
+  };
   workStatus: {
     updatedAt: string;
     currentThreadEntries: WorkspaceStatusRecord[];
@@ -60,6 +64,8 @@ export async function readWorkspaceThreadSurface(workspacePath: string): Promise
   const warnings: Diagnostic[] = [];
   const currentChat = await readCurrentChatSelector(path.join(workspacePath, ".msgcode", "config.json"), warnings);
   const threads = await readThreadSummaries(workspacePath, warnings);
+  const { data: peopleState, warnings: peopleWarnings } = await readWorkspacePeopleState(workspacePath);
+  warnings.push(...peopleWarnings);
   const currentThreadSummary = pickCurrentThread(threads, currentChat);
   const currentThread = currentThreadSummary
     ? await readCurrentThread(currentThreadSummary.filePath, warnings)
@@ -84,6 +90,9 @@ export async function readWorkspaceThreadSurface(workspacePath: string): Promise
         lastTurnAt: thread.lastTurnAt,
       })),
       currentThread,
+      people: {
+        count: peopleState.people.length,
+      },
       workStatus: {
         updatedAt: recentStatusEntries[0]?.timestamp ?? "",
         currentThreadEntries,

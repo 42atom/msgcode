@@ -29,11 +29,13 @@ describe("appliance threads contract", () => {
     const threadsDir = path.join(msgcodeDir, "threads");
     const schedulesDir = path.join(msgcodeDir, "schedules");
     const sessionsDir = path.join(msgcodeDir, "sessions");
+    const identityDir = path.join(msgcodeDir, "character-identity");
 
     await fs.mkdir(path.join(homeRoot, ".config", "msgcode"), { recursive: true });
     await fs.mkdir(threadsDir, { recursive: true });
     await fs.mkdir(schedulesDir, { recursive: true });
     await fs.mkdir(sessionsDir, { recursive: true });
+    await fs.mkdir(identityDir, { recursive: true });
 
     await fs.writeFile(
       path.join(msgcodeDir, "config.json"),
@@ -108,6 +110,16 @@ describe("appliance threads contract", () => {
       "utf8"
     );
 
+    await fs.writeFile(
+      path.join(identityDir, "feishu-oc_family.csv"),
+      [
+        "channel,chat_id,sender_id,alias,role,notes,first_seen_at,last_seen_at",
+        "feishu,feishu:oc_family,ou_sam,sam,主用户,默认主要服务对象,2026-03-21T10:00:00Z,2026-03-21T11:00:00Z",
+        "feishu,feishu:oc_family,ou_mom,妈妈,家人,负责接娃,2026-03-21T10:10:00Z,2026-03-21T11:10:00Z",
+      ].join("\n"),
+      "utf8"
+    );
+
     const refPath = path.join(sessionsDir, "feishu.jsonl");
     await fs.writeFile(refPath, "{\"id\":1}\n", "utf8");
     appendWorkspaceStatus({
@@ -148,6 +160,7 @@ describe("appliance threads contract", () => {
     expect(payload.data.threads[0].source).toBe("feishu");
     expect(payload.data.currentThread.threadId).toBe("thread-feishu");
     expect(payload.data.currentThread.messages[0].user).toContain("我在门口准备好了");
+    expect(payload.data.people.count).toBe(2);
     expect(payload.data.workStatus.updatedAt).toBe("2026-03-21T08:00:00.000Z");
     expect(payload.data.workStatus.currentThreadEntries[0].summary).toBe("先出门接娃");
     expect(payload.data.workStatus.recentEntries[0].summary).toBe("先出门接娃");
@@ -188,6 +201,7 @@ describe("appliance threads contract", () => {
     expect(payload.data.currentThreadId).toBe("");
     expect(payload.data.threads).toEqual([]);
     expect(payload.data.currentThread).toBeNull();
+    expect(payload.data.people.count).toBe(0);
     expect(payload.data.workStatus.currentThreadEntries).toEqual([]);
     expect(payload.data.workStatus.recentEntries).toEqual([]);
     expect(payload.data.schedules).toEqual([]);
