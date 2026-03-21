@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import type { Envelope, Diagnostic } from "../memory/types.js";
 import { getMemoryAddContract, getMemoryIndexContract, getMemorySearchContract, getMemoryGetContract, getMemoryStatsContract } from "./memory.js";
 import { getThreadListContract, getThreadMessagesContract, getThreadActiveContract, getThreadSwitchContract } from "./thread.js";
+import { getInboxAddContract } from "./inbox.js";
 import { getStatusLogAddContract, getStatusLogTailContract } from "./status-log.js";
 import { getTodoAddContract, getTodoListContract, getTodoDoneContract } from "./todo.js";
 import { getScheduleAddContract, getScheduleListContract, getScheduleRemoveContract, getScheduleEnableContract, getScheduleDisableContract, getScheduleMigrateV1ToV2Contract } from "./schedule.js";
@@ -203,6 +204,7 @@ function getAllHelpCommandContracts(): Record<string, unknown>[] {
     getThreadMessagesContract() as Record<string, unknown>,
     getThreadActiveContract() as Record<string, unknown>,
     getThreadSwitchContract() as Record<string, unknown>,
+    getInboxAddContract() as Record<string, unknown>,
     getStatusLogAddContract() as Record<string, unknown>,
     getStatusLogTailContract() as Record<string, unknown>,
     // Todo 命令组（P5.7-R5-1）

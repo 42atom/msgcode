@@ -285,6 +285,11 @@ async function loadGhostCommands() {
   program.addCommand(createGhostCommand());
 }
 
+async function loadInboxCommands() {
+  const { createInboxCommand } = await import("./cli/inbox.js");
+  program.addCommand(createInboxCommand());
+}
+
 async function loadApplianceCommands() {
   const { createApplianceCommand } = await import("./cli/appliance.js");
   program.addCommand(createApplianceCommand());
@@ -388,6 +393,9 @@ async function main() {
   if (top === "ghost") {
     await loadGhostCommands();
   }
+  if (top === "inbox") {
+    await loadInboxCommands();
+  }
   if (top === "appliance") {
     await loadApplianceCommands();
   }
@@ -408,6 +416,7 @@ async function main() {
     await loadSubagentCommands();
     await loadHelpDocsCommand();
     await loadGhostCommands();
+    await loadInboxCommands();
     await loadApplianceCommands();
   }
   program.parse([process.argv[0], process.argv[1], ...argv]);
