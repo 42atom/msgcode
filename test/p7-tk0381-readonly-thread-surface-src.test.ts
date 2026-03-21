@@ -1,0 +1,57 @@
+import { describe, expect, it } from "bun:test";
+import {
+  buildReadonlyThreadSurfaceChrome,
+  renderReadonlyThreadSurfaceMarkup,
+} from "../src/ui/main-window/readonly-thread-surface.js";
+
+describe("readonly thread surface src implementation", () => {
+  it("keeps the first cut to three columns, settings affordance, and a bridge slot", () => {
+    const chrome = buildReadonlyThreadSurfaceChrome({
+      selectedWorkspace: "family",
+      selectedThreadId: "thread-feishu",
+      loadingError: null,
+    });
+
+    expect(chrome.kind).toBe("readonly-thread-surface");
+    expect(chrome.transientStateKeys).toEqual([
+      "selectedWorkspace",
+      "selectedThreadId",
+      "loadingError",
+    ]);
+    expect(chrome.dataFeeds).toEqual(["workspace-tree", "thread"]);
+    expect(chrome.columns.map((column) => column.id)).toEqual([
+      "workspace-tree",
+      "thread",
+      "thread-rail",
+    ]);
+    expect(chrome.settingsAffordance).toEqual({
+      id: "settings",
+      label: "Settings",
+      href: "#settings",
+    });
+    expect(chrome.bridgeSlot).toEqual({
+      id: "host-bridge",
+      entryPoint: "window.msgcodeReadonlySurface.runCommand",
+      purpose: "future-host-bridge",
+    });
+    expect(chrome.blockedActions).toEqual(["archive", "new chat", "composer", "send"]);
+    expect(Object.keys(chrome.state).sort()).toEqual([
+      "loadingError",
+      "selectedThreadId",
+      "selectedWorkspace",
+    ]);
+
+    const markup = renderReadonlyThreadSurfaceMarkup(chrome);
+    expect(markup).toContain('data-surface-slot="workspace-tree"');
+    expect(markup).toContain('data-surface-slot="thread"');
+    expect(markup).toContain('data-surface-slot="thread-rail"');
+    expect(markup).toContain('data-bridge-slot="host-bridge"');
+    expect(markup).toContain('data-bridge-entry="window.msgcodeReadonlySurface.runCommand"');
+    expect(markup).toContain('href="#settings"');
+    expect(markup).not.toContain("archive");
+    expect(markup).not.toContain("new chat");
+    expect(markup).not.toContain("composer");
+    expect(markup).not.toContain("send");
+  });
+});
+

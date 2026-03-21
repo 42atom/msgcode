@@ -13,6 +13,7 @@ src/
 ├── runners/         # 执行器与多媒体/系统 runner
 ├── routing/         # 路由分类器与策略函数
 ├── config/          # workspace/config 读取与写回
+├── ui/              # 正式 UI 结构与薄渲染骨架
 ├── logger/          # 结构化日志与传输
 ├── output/          # 输出协议与清洗
 ├── probe/           # preflight/健康检查探针
@@ -29,6 +30,7 @@ src/
 2. 中性主语优先：新代码入口统一走 `agent-backend`，`lmstudio` 仅保留兼容语义。
 3. Tool 单一真相源：工具调用统一经 `tools/bus.ts`，避免多入口漂移。
 4. 会话可持续：window + summary + memory 三层并行，支持预算感知与 compact。
+5. UI 结构优先落 `src/ui/`，`ui-protype/` 只保留原型研究面。
 
 补充硬约束：
 - `tools/bus.ts` 是工具执行主链唯一入口；不要绕过 Bus 直接从别处偷偷接 runner。
