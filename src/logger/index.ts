@@ -4,15 +4,10 @@
  * 轻量级日志实现，支持多传输器、日志级别、文件轮转
  */
 
-import type { ConsoleTransport } from "./console-transport.js";
-import type { FileTransport } from "./file-transport.js";
 import { ConsoleTransport as ConsoleTransportClass } from "./console-transport.js";
 import { FileTransport as FileTransportClass } from "./file-transport.js";
-
-/**
- * 日志级别
- */
-export type LogLevel = "debug" | "info" | "warn" | "error";
+import type { LogEntry, LogLevel, Transport, TransportOptions } from "./types.js";
+export type { LogEntry, LogLevel, Transport, TransportOptions } from "./types.js";
 
 /**
  * 日志级别优先级（数字越大优先级越高）
@@ -23,35 +18,6 @@ const LevelPriority: Record<LogLevel, number> = {
     warn: 2,
     error: 3,
 };
-
-/**
- * 日志条目
- */
-export interface LogEntry {
-    timestamp: string;
-    level: LogLevel;
-    message: string;
-    module?: string;
-    traceId?: string;  // 链路追踪 ID，用于关联完整请求流程
-    meta?: Record<string, any>;
-}
-
-/**
- * 传输器接口
- */
-export interface Transport {
-    write(entry: LogEntry): void;
-}
-
-/**
- * 传输器选项（基类）
- */
-export interface TransportOptions {
-    /**
-     * 最低日志级别
-     */
-    level?: LogLevel;
-}
 
 /**
  * Logger 配置选项

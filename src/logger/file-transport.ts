@@ -7,7 +7,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import type { LogEntry, Transport, TransportOptions } from "./index.js";
+import type { LogEntry, Transport, TransportOptions } from "./types.js";
 import { formatLogTextField } from "./format-text.js";
 
 /**

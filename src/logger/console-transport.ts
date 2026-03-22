@@ -4,7 +4,7 @@
  * 负责将日志输出到控制台，支持彩色格式
  */
 
-import type { LogEntry, Transport, TransportOptions } from "./index.js";
+import type { LogEntry, Transport, TransportOptions } from "./types.js";
 
 /**
  * 控制台传输器选项
