@@ -8,29 +8,10 @@
 
 import type { WakeRecord } from "./wake-types.js";
 import { getWakeRecord } from "./wake-store.js";
-import { buildWorkRecoverySnapshot, type WorkCapsule } from "./work-continuity.js";
+import type { WakeWorkCapsule } from "./work-capsule-types.js";
+import { buildWorkRecoverySnapshot } from "./work-continuity.js";
 import type { TaskRecord } from "./task-types.js";
-
-/**
- * Wake 专用的 Work Capsule
- * 在通用 WorkCapsule 基础上增加 wake 字段和 sourceStamp
- */
-export interface WakeWorkCapsule extends WorkCapsule {
-  /** Wake 相关信息 */
-  wake: {
-    id: string;
-    hint?: string;
-    scheduledAt: number;
-    jobId?: string;
-  };
-  /** 真相源时间戳，用于检测 drift */
-  sourceStamp: {
-    taskCheckpointUpdatedAt?: number;
-    dispatchUpdatedAt: number[];
-    wakeRecordUpdatedAt: number;
-    issueStateNames: string[];
-  };
-}
+export type { WakeWorkCapsule } from "./work-capsule-types.js";
 
 /**
  * 从 wake record 构建 work capsule

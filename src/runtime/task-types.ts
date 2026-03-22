@@ -13,8 +13,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { RunSource } from "./run-types.js";
-import type { WakeWorkCapsule } from "./wake-consume.js";
-import type { WorkCapsule } from "./work-continuity.js";
+import type { WakeWorkCapsule, WorkCapsule } from "./work-capsule-types.js";
 
 // ============================================
 // 任务状态枚举
