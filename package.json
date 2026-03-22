@@ -10,6 +10,7 @@
     "dev": "tsx src/cli.ts start debug",
     "start": "tsx src/cli.ts start debug",
     "build:runtime": "rm -rf dist && ./node_modules/.bin/tsc -p tsconfig.json",
+    "electron:dev": "npm run build:runtime && electron dist/electron/main.js",
     "build:artifact": "NODE_OPTIONS=\"--import tsx\" node scripts/build-artifact.ts",
     "build:app": "NODE_OPTIONS=\"--import tsx\" node scripts/build-app-bundle.ts",
     "build:dmg": "NODE_OPTIONS=\"--import tsx\" node scripts/build-dmg.ts",
@@ -48,6 +49,7 @@
     "@types/node": "^20.11.0",
     "bun": "^1.3.9",
     "bun-types": "^1.3.5",
+    "electron": "^41.0.3",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3"
   }
