@@ -1,26 +1,14 @@
-export interface ReadonlySurfaceRunCommandRequest {
-  command: string;
-  args?: string[];
-}
-
-export interface ReadonlySurfaceBridge {
-  mode: "placeholder";
-  runCommand(request: ReadonlySurfaceRunCommandRequest): Promise<never>;
-}
-
-export function createReadonlySurfaceBridge(): ReadonlySurfaceBridge {
-  return {
-    mode: "placeholder",
-    async runCommand(request: ReadonlySurfaceRunCommandRequest): Promise<never> {
-      const command = request.command.trim() || "<empty>";
-      throw new Error(`Readonly host bridge not implemented yet: ${command}`);
-    },
-  };
-}
+import {
+  createReadonlySurfaceBridge as createBridgeCore,
+  getReadonlySurfaceChannel,
+} from "./readonly-surface-bridge.js";
 
 export async function installReadonlySurfaceBridge(): Promise<void> {
-  const { contextBridge } = await import("electron");
-  contextBridge.exposeInMainWorld("msgcodeReadonlySurface", createReadonlySurfaceBridge());
+  const { contextBridge, ipcRenderer } = await import("electron");
+  contextBridge.exposeInMainWorld(
+    "msgcodeReadonlySurface",
+    createBridgeCore(ipcRenderer, getReadonlySurfaceChannel()),
+  );
 }
 
 if (typeof process.versions.electron === "string") {

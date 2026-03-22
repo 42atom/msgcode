@@ -1,6 +1,5 @@
 import { describe, expect, it } from "bun:test";
 import { buildRendererHtml, resolveElectronRuntimePaths } from "../src/electron/main.js";
-import { createReadonlySurfaceBridge } from "../src/electron/preload.js";
 import { bootstrapReadonlyThreadSurface } from "../src/electron/renderer.js";
 
 describe("electron runtime bootstrap slice", () => {
@@ -16,12 +15,10 @@ describe("electron runtime bootstrap slice", () => {
     expect(html).toContain('<script type="module" src="file:///tmp/msgcode/dist/electron/renderer.js"></script>');
   });
 
-  it("exposes a placeholder bridge that fails closed", async () => {
-    const bridge = createReadonlySurfaceBridge();
-    expect(bridge.mode).toBe("placeholder");
-    await expect(bridge.runCommand({ command: "workspace-tree", args: ["--json"] })).rejects.toThrow(
-      "Readonly host bridge not implemented yet: workspace-tree",
-    );
+  it("keeps the runtime shell free of business bridge assertions", () => {
+    const html = buildRendererHtml("file:///tmp/msgcode/dist/electron/renderer.js");
+    expect(html).not.toContain("workspace-tree");
+    expect(html).not.toContain("thread-rail");
   });
 
   it("boots the readonly thread surface into a renderer document", () => {
