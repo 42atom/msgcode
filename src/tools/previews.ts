@@ -1,40 +1,11 @@
 import type { ToolName } from "./types.js";
 
 const TOOL_PREVIEW_MAX_CHARS = 4000;
-const READ_FILE_PREVIEW_MAX_CHARS = 512;
 
 function clipPreviewText(text: string, maxChars = TOOL_PREVIEW_MAX_CHARS): string {
   if (text.length <= maxChars) return text;
   if (maxChars <= 3) return text.slice(0, maxChars);
   return `${text.slice(0, maxChars - 3)}...`;
-}
-
-function clipPreviewTailText(text: string, maxChars: number): string {
-  if (text.length <= maxChars) return text;
-  if (maxChars <= 3) return text.slice(text.length - maxChars);
-  return `...${text.slice(text.length - (maxChars - 3))}`;
-}
-
-function extractTaggedBlock(content: string, tag: "head" | "tail"): string {
-  const marker = `[${tag}]`;
-  const nextMarker = tag === "head" ? "[tail]" : "";
-  const start = content.indexOf(marker);
-  if (start < 0) return "";
-  const after = content.slice(start + marker.length).trimStart();
-  if (!nextMarker) return after.trim();
-  const nextIndex = after.indexOf(nextMarker);
-  return (nextIndex >= 0 ? after.slice(0, nextIndex) : after).trim();
-}
-
-function extractLastNonEmptyLine(text: string): string {
-  const lines = text.split("\n");
-  for (let index = lines.length - 1; index >= 0; index -= 1) {
-    const line = lines[index]?.trim();
-    if (line) {
-      return line;
-    }
-  }
-  return "";
 }
 
 export function buildToolErrorPreviewText(tool: ToolName, message: string): string {
@@ -46,55 +17,66 @@ export function buildToolErrorPreviewText(tool: ToolName, message: string): stri
 
 export function buildReadFilePreviewText(params: {
   filePath: string;
-  content: string;
+  kind: "text" | "binary";
+  content?: string;
   byteLength: number;
+  totalBytes: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+  nextOffset: number | null;
+  totalLines?: number;
+  binaryKind?: string;
+  handle?: string;
+  blob?: {
+    type: "file";
+    path: string;
+    byteLength: number;
+    mediaKind?: string;
+  };
   truncated: boolean;
-}): string {
-  if (params.truncated) {
-    const head = extractTaggedBlock(params.content, "head");
-    const tail = extractTaggedBlock(params.content, "tail");
-    const lastNonEmptyLine = tail ? extractLastNonEmptyLine(tail) : "";
-    const baseLines = [
-      `[read_file] path=${params.filePath}`,
-      `[bytes] ${params.byteLength}`,
-      "[status] truncated-preview",
-    ];
-    const sectionCount = Number(Boolean(head)) + Number(Boolean(tail));
-    const fixedOverhead = baseLines.join("\n").length
-      + (lastNonEmptyLine ? "\n[lastNonEmptyLine]\n".length : 0)
-      + (head ? "\n[head]\n".length : 0)
-      + (tail ? "\n[tail]\n".length : 0);
-    const contentBudget = Math.max(0, READ_FILE_PREVIEW_MAX_CHARS - fixedOverhead);
-    const lastLineBudget = lastNonEmptyLine
-      ? Math.min(160, Math.max(64, Math.floor(contentBudget * 0.35)))
-      : 0;
-    const remainingBudget = Math.max(0, contentBudget - lastLineBudget);
-    const headBudget = sectionCount > 1 ? Math.floor(remainingBudget / 2) : remainingBudget;
-    const tailBudget = sectionCount > 1 ? remainingBudget - headBudget : remainingBudget;
-    const lines = [...baseLines];
-    if (lastNonEmptyLine) {
-      lines.push("[lastNonEmptyLine]");
-      lines.push(clipPreviewTailText(lastNonEmptyLine, lastLineBudget));
-    }
-    if (head) {
-      lines.push("[head]");
-      lines.push(clipPreviewText(head, Math.max(headBudget, 0)));
-    }
-    if (tail) {
-      lines.push("[tail]");
-      lines.push(clipPreviewTailText(tail, Math.max(tailBudget, 0)));
-    }
-    return lines.join("\n");
-  }
-
+}, options?: { maxChars?: number | null }): string {
   const lines = [
     `[read_file] path=${params.filePath}`,
-    `[bytes] ${params.byteLength}`,
-    params.truncated ? "[status] truncated-preview" : "[status] inline-full",
-    "[content]",
-    params.content,
+    `[kind] ${params.kind}`,
+    `[totalBytes] ${params.totalBytes}`,
+    `[offset] ${params.offset}`,
+    `[limit] ${params.limit}`,
+    `[hasMore] ${params.hasMore ? "true" : "false"}`,
+    `[nextOffset] ${params.nextOffset === null ? "null" : String(params.nextOffset)}`,
+    params.kind === "binary"
+      ? "[status] blob-handle"
+      : (params.truncated ? "[status] paginated" : "[status] inline-full"),
   ];
-  return clipPreviewText(lines.join("\n"));
+
+  if (typeof params.totalLines === "number") {
+    lines.push(`[totalLines] ${params.totalLines}`);
+  }
+
+  if (params.kind === "binary") {
+    if (params.binaryKind) {
+      lines.push(`[binaryKind] ${params.binaryKind}`);
+    }
+    if (params.handle) {
+      lines.push(`[handle] ${params.handle}`);
+    }
+    if (params.blob) {
+      lines.push(`[blobPath] ${params.blob.path}`);
+      lines.push(`[blobBytes] ${params.blob.byteLength}`);
+      if (params.blob.mediaKind) {
+        lines.push(`[blobKind] ${params.blob.mediaKind}`);
+      }
+    }
+  } else {
+    lines.push("[content]");
+    lines.push(params.content ?? "");
+  }
+
+  const text = lines.join("\n");
+  if (options?.maxChars === null) {
+    return text;
+  }
+  return clipPreviewText(text, options?.maxChars ?? TOOL_PREVIEW_MAX_CHARS);
 }
 
 export function buildHelpDocsPreviewText(params: {

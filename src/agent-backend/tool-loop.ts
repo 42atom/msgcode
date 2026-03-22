@@ -45,6 +45,7 @@ import {
     toOpenAiToolSchemasForWorkspace,
 } from "../tools/manifest.js";
 import type { ToolName } from "../tools/types.js";
+import { buildReadFilePreviewText } from "../tools/previews.js";
 import { getChromeRootInfo } from "../browser/chrome-root.js";
 import { readWorkspacePackSkillHints } from "../runtime/workspace-pack-skills.js";
 import {
@@ -94,6 +95,11 @@ type ToolRunResult = {
     stderrTail?: string;
     stdoutTail?: string;
     fullOutputPath?: string;
+    artifacts?: Array<{
+        kind: string;
+        path: string;
+        digest?: string;
+    }>;
     previewText?: string;
     durationMs: number;
 };
@@ -476,7 +482,7 @@ function buildCompletedToolLoopResult(params: CompletedToolLoopParams): AgentToo
 function serializeExecutedToolResults(roundExecutedToolCalls: ExecutedToolCall[]): SerializedExecutedToolResult[] {
     return roundExecutedToolCalls.map(({ tc, result }) => ({
         toolCallId: tc.id,
-        content: serializeToolResultForConversation(result),
+        content: serializeToolResultForConversation(tc.function.name, result),
     }));
 }
 
@@ -974,43 +980,129 @@ function clipText(text: string, maxChars: number): string {
 
 const TOOL_RESULT_PREVIEW_MAX_CHARS = 512;
 
+function collectPinnedToolResultLines(asObj: Record<string, unknown>): string[] {
+    const lines: string[] = [];
+
+    const errorCode = typeof asObj.errorCode === "string" ? asObj.errorCode.trim() : "";
+    const exitCode = typeof asObj.exitCode === "number" || asObj.exitCode === null
+        ? String(asObj.exitCode)
+        : "";
+    const fullOutputPath = typeof asObj.fullOutputPath === "string" ? asObj.fullOutputPath.trim() : "";
+    const textPath = typeof asObj.textPath === "string" ? asObj.textPath.trim() : "";
+    const textBytes = typeof asObj.textBytes === "number" ? String(asObj.textBytes) : "";
+    const statusSummary = typeof asObj.statusSummary === "string" ? asObj.statusSummary.trim() : "";
+    const artifactPaths = Array.isArray(asObj.artifacts)
+        ? asObj.artifacts
+            .map((item) => {
+                if (!item || typeof item !== "object") return "";
+                const path = (item as { path?: unknown }).path;
+                return typeof path === "string" ? path.trim() : "";
+            })
+            .filter((path) => path.length > 0)
+        : [];
+
+    if (errorCode) {
+        lines.push(`[errorCode] ${errorCode}`);
+    }
+    if (exitCode) {
+        lines.push(`[exitCode] ${exitCode}`);
+    }
+    if (fullOutputPath) {
+        lines.push(`[fullOutputPath] ${fullOutputPath}`);
+    }
+    if (textPath) {
+        lines.push(`[textPath] ${textPath}`);
+    }
+    if (textBytes) {
+        lines.push(`[textBytes] ${textBytes}`);
+    }
+    if (statusSummary) {
+        lines.push(`[statusSummary] ${statusSummary}`);
+    }
+    if (artifactPaths.length > 0) {
+        lines.push("[artifacts]");
+        for (const path of artifactPaths.slice(0, 3)) {
+            lines.push(`- ${path}`);
+        }
+        if (artifactPaths.length > 3) {
+            lines.push(`... +${artifactPaths.length - 3} more`);
+        }
+    }
+
+    return lines;
+}
+
+function clipTextPreservingPinnedLines(text: string, pinnedLines: string[], maxChars: number): string {
+    const body = text.trim();
+    if (!body) {
+        return clipText(pinnedLines.join("\n"), maxChars);
+    }
+    if (body.length <= maxChars || pinnedLines.length === 0) {
+        return clipText(body, maxChars);
+    }
+
+    const pinnedBlock = pinnedLines.join("\n");
+    const reservedChars = pinnedBlock.length + 1;
+    if (reservedChars >= maxChars) {
+        return clipText(pinnedBlock, maxChars);
+    }
+
+    const bodyBudget = maxChars - reservedChars;
+    return `${clipText(body, bodyBudget)}\n${pinnedBlock}`;
+}
+
 /**
  * 回灌给模型的 tool_result 只保留可用预览，避免单次 read_file/big JSON 直接顶爆上下文。
  */
-function serializeToolResultForConversation(result: unknown): string {
+function serializeToolResultForConversation(toolName: string, result: unknown): string {
+    if (toolName === "read_file" && result && typeof result === "object") {
+        const record = result as Record<string, unknown>;
+        const path = typeof record.path === "string" ? record.path : undefined;
+        const kind = record.kind === "binary" ? "binary" : (record.kind === "text" ? "text" : undefined);
+
+        if (path && kind) {
+            return buildReadFilePreviewText({
+                filePath: path,
+                kind,
+                content: typeof record.content === "string" ? record.content : undefined,
+                byteLength: typeof record.byteLength === "number" ? record.byteLength : (
+                    typeof record.totalBytes === "number" ? record.totalBytes : 0
+                ),
+                totalBytes: typeof record.totalBytes === "number" ? record.totalBytes : 0,
+                offset: typeof record.offset === "number" ? record.offset : 0,
+                limit: typeof record.limit === "number" ? record.limit : 0,
+                hasMore: record.hasMore === true,
+                nextOffset: typeof record.nextOffset === "number" ? record.nextOffset : null,
+                totalLines: typeof record.totalLines === "number" ? record.totalLines : undefined,
+                binaryKind: typeof record.binaryKind === "string" ? record.binaryKind : undefined,
+                handle: typeof record.handle === "string" ? record.handle : undefined,
+                blob: record.blob && typeof record.blob === "object"
+                    ? {
+                        type: "file",
+                        path: typeof (record.blob as { path?: unknown }).path === "string"
+                            ? (record.blob as { path: string }).path
+                            : path,
+                        byteLength: typeof (record.blob as { byteLength?: unknown }).byteLength === "number"
+                            ? (record.blob as { byteLength: number }).byteLength
+                            : (typeof record.totalBytes === "number" ? record.totalBytes : 0),
+                        mediaKind: typeof (record.blob as { mediaKind?: unknown }).mediaKind === "string"
+                            ? (record.blob as { mediaKind: string }).mediaKind
+                            : undefined,
+                    }
+                    : undefined,
+                truncated: record.truncated === true,
+            }, { maxChars: null });
+        }
+    }
+
     if (result && typeof result === "object") {
+        const asObj = result as Record<string, unknown>;
+        const pinnedLines = collectPinnedToolResultLines(asObj);
         const previewText = (result as { previewText?: unknown }).previewText;
         if (typeof previewText === "string" && previewText.trim()) {
-            const asObj = result as Record<string, unknown>;
-            const lines = [previewText.trim()];
-            const errorCode = typeof asObj.errorCode === "string" ? asObj.errorCode.trim() : "";
-            const exitCode = typeof asObj.exitCode === "number" || asObj.exitCode === null
-                ? String(asObj.exitCode)
-                : "";
-            const fullOutputPath = typeof asObj.fullOutputPath === "string" ? asObj.fullOutputPath.trim() : "";
-
-            if (errorCode && !lines.some((line) => line.includes("[errorCode]"))) {
-                lines.push(`[errorCode] ${errorCode}`);
-            }
-            if (exitCode && !lines.some((line) => line.includes("[exitCode]"))) {
-                lines.push(`[exitCode] ${exitCode}`);
-            }
-            if (fullOutputPath && !lines.some((line) => line.includes("[fullOutputPath]"))) {
-                lines.push(`[fullOutputPath] ${fullOutputPath}`);
-            }
-            return clipText(lines.join("\n"), TOOL_RESULT_PREVIEW_MAX_CHARS);
+            return clipTextPreservingPinnedLines(previewText, pinnedLines, TOOL_RESULT_PREVIEW_MAX_CHARS);
         }
-        const asObj = result as Record<string, unknown>;
-        const lines = ["[tool_result] preview unavailable"];
-        if (typeof asObj.errorCode === "string" && asObj.errorCode.trim()) {
-            lines.push(`[errorCode] ${asObj.errorCode.trim()}`);
-        }
-        if (typeof asObj.exitCode === "number" || asObj.exitCode === null) {
-            lines.push(`[exitCode] ${String(asObj.exitCode)}`);
-        }
-        if (typeof asObj.fullOutputPath === "string" && asObj.fullOutputPath.trim()) {
-            lines.push(`[fullOutputPath] ${asObj.fullOutputPath.trim()}`);
-        }
+        const lines = ["[tool_result] preview unavailable", ...pinnedLines];
         const error = asObj.error;
         if (typeof error === "string" && error.trim()) {
             lines.push("[error]");
@@ -1067,6 +1159,7 @@ function buildConversationToolResult(toolResult: ToolRunResult): unknown {
             ...(toolResult.data && typeof toolResult.data === "object"
                 ? toolResult.data as Record<string, unknown>
                 : { success: true }),
+            artifacts: toolResult.artifacts,
             previewText: toolResult.previewText,
         };
     }
@@ -1239,6 +1332,7 @@ async function runTool(
 
     return {
         data: result.data || { success: true },
+        artifacts: result.artifacts,
         previewText: result.previewText,
         durationMs: result.durationMs,
     };

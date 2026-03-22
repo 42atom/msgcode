@@ -669,7 +669,7 @@ describe("Tool Bus", () => {
       );
 
       expect(result.ok).toBe(false);
-      expect(result.error?.code).toBe("TOOL_EXEC_FAILED");
+      expect(result.error?.code).toBe("ENOENT");
       expect(result.error?.message).toContain(`文件不存在：${join(tempWorkspace, "soul")}`);
       expect(result.previewText).toContain(`文件不存在：${join(tempWorkspace, "soul")}`);
     });
@@ -698,7 +698,7 @@ describe("Tool Bus", () => {
 
     test("read_file 读取大文本时应返回预览与边界事实", async () => {
       const targetPath = join(tempWorkspace, "large.txt");
-      writeFileSync(targetPath, "A".repeat(80 * 1024), "utf-8");
+      writeFileSync(targetPath, `PAGE-ONE\n${"A".repeat(80 * 1024)}\nTAIL`, "utf-8");
 
       const result = await executeTool(
         "read_file",
@@ -712,21 +712,35 @@ describe("Tool Bus", () => {
 
       expect(result.ok).toBe(true);
       const data = result.data as {
-        content: string;
         path: string;
+        kind: "text" | "binary";
+        content?: string;
         truncated?: boolean;
         byteLength?: number;
+        totalBytes: number;
+        offset: number;
+        limit: number;
+        hasMore: boolean;
+        nextOffset: number | null;
       };
       expect(data.path).toBe(targetPath);
+      expect(data.kind).toBe("text");
       expect(data.truncated).toBe(true);
       expect(data.byteLength).toBeGreaterThan(64 * 1024);
-      expect(data.content.length).toBeLessThan(80 * 1024);
-      expect(result.previewText).toContain("[status] truncated-preview");
+      expect(data.totalBytes).toBeGreaterThan(64 * 1024);
+      expect(data.offset).toBe(0);
+      expect(data.limit).toBeGreaterThan(0);
+      expect(data.hasMore).toBe(true);
+      expect(data.nextOffset).toBeGreaterThan(0);
+      expect(data.content).toContain("PAGE-ONE");
+      expect(data.content).not.toContain("TAIL");
+      expect(result.previewText).toContain("[status] paginated");
+      expect(result.previewText).toContain("[nextOffset]");
       expect(result.previewText).toContain("[durationMs]");
       expect(result.previewText).not.toContain("[guidance]");
     });
 
-    test("read_file 遇到二进制文件时应返回结构化失败事实", async () => {
+    test("read_file 遇到二进制文件时应返回结构化 blob handle", async () => {
       const targetPath = join(tempWorkspace, "binary.png");
       writeFileSync(targetPath, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]));
 
@@ -740,11 +754,19 @@ describe("Tool Bus", () => {
         }
       );
 
-      expect(result.ok).toBe(false);
-      expect(result.error?.code).toBe("TOOL_EXEC_FAILED");
-      expect(result.error?.message).toContain("PNG 图片");
-      expect(result.error?.message).toContain(`path: ${targetPath}`);
-      expect(result.previewText).toContain("无法直接按 UTF-8 读取");
+      expect(result.ok).toBe(true);
+      const data = result.data as {
+        kind: "text" | "binary";
+        binaryKind?: string;
+        handle?: string;
+        blob?: { path: string; byteLength: number; mediaKind?: string };
+      };
+      expect(data.kind).toBe("binary");
+      expect(data.binaryKind).toBe("PNG 图片");
+      expect(data.handle).toBe(`blob:${targetPath}`);
+      expect(data.blob?.path).toBe(targetPath);
+      expect(result.previewText).toContain("[status] blob-handle");
+      expect(result.previewText).toContain("PNG 图片");
       expect(result.previewText).not.toContain("下一步建议");
     });
   });

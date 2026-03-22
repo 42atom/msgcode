@@ -43,10 +43,25 @@ export type ToolDataMap = {
   };
   // P5.6.8-R3: PI 四基础工具 data
   read_file: {
-    content: string;
     path: string;
+    kind: "text" | "binary";
+    content?: string;
     truncated?: boolean;
     byteLength?: number;
+    totalBytes: number;
+    offset: number;
+    limit: number;
+    hasMore: boolean;
+    nextOffset: number | null;
+    totalLines?: number;
+    binaryKind?: string;
+    handle?: string;
+    blob?: {
+      type: "file";
+      path: string;
+      byteLength: number;
+      mediaKind?: string;
+    };
   };
   help_docs: {
     version: string;

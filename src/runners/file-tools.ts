@@ -15,8 +15,8 @@ import { logger } from "../logger/index.js";
 
 const READ_FILE_BINARY_SNIFF_BYTES = 4096;
 const READ_FILE_INLINE_BYTE_LIMIT = 64 * 1024;
-const READ_FILE_PREVIEW_BYTES = 16 * 1024;
-const READ_FILE_TAIL_PREVIEW_BYTES = 4096;
+const READ_FILE_PAGE_BYTE_LIMIT = 16 * 1024;
+const READ_FILE_UTF8_SLACK_BYTES = 3;
 
 type FileRunnerErrorCode = "TOOL_NOT_ALLOWED" | "TOOL_EXEC_FAILED" | (string & {});
 
@@ -40,8 +40,23 @@ interface FileRunnerContext {
 export interface ReadFileRunnerSuccess {
   ok: true;
   filePath: string;
-  content: string;
+  kind: "text" | "binary";
+  content?: string;
   byteLength: number;
+  totalBytes: number;
+  offset: number;
+  limit: number;
+  hasMore: boolean;
+  nextOffset: number | null;
+  totalLines?: number;
+  binaryKind?: string;
+  handle?: string;
+  blob?: {
+    type: "file";
+    path: string;
+    byteLength: number;
+    mediaKind?: string;
+  };
   truncated?: boolean;
 }
 
@@ -174,35 +189,55 @@ function detectBinaryKind(sample: Buffer): string | undefined {
   return undefined;
 }
 
-function buildReadFileBinaryMessage(filePath: string, kind: string): string {
-  return [
-    `read_file 无法直接按 UTF-8 读取该文件：${kind}`,
-    `path: ${filePath}`,
-  ].join("\n");
-}
-
-function buildTruncatedReadFileContent(params: {
-  head: string;
-  tail: string;
-  byteLength: number;
-}): string {
-  const parts = [
-    "[head]",
-    params.head,
-    `[... truncated ${(params.byteLength - Buffer.byteLength(params.head, "utf-8") - Buffer.byteLength(params.tail, "utf-8"))} bytes ...]`,
-  ];
-
-  const trimmedTail = params.tail.trim();
-  if (trimmedTail) {
-    parts.push("[tail]");
-    parts.push(trimmedTail);
+function parseOptionalNonNegativeInteger(
+  value: unknown,
+  field: "offset" | "limit"
+): number | FileRunnerError {
+  if (value === undefined || value === null || value === "") {
+    return 0;
   }
 
-  return parts.join("\n");
+  const parsed = typeof value === "number"
+    ? value
+    : (typeof value === "string" ? Number(value) : Number.NaN);
+
+  if (!Number.isFinite(parsed) || parsed < 0 || !Number.isInteger(parsed)) {
+    return {
+      ok: false,
+      code: "TOOL_BAD_ARGS",
+      message: `read_file: '${field}' must be a non-negative integer when provided`,
+    };
+  }
+
+  return parsed;
+}
+
+function finalizeUtf8Page(buffer: Buffer, maxBytes: number): { text: string; bytesUsed: number } {
+  const hardLimit = Math.min(buffer.length, Math.max(0, maxBytes + READ_FILE_UTF8_SLACK_BYTES));
+
+  for (let trim = 0; trim <= READ_FILE_UTF8_SLACK_BYTES; trim += 1) {
+    const candidateLength = hardLimit - trim;
+    if (candidateLength <= 0) {
+      continue;
+    }
+    const candidate = buffer.subarray(0, candidateLength);
+    if (isUtf8(candidate)) {
+      return {
+        text: candidate.toString("utf-8"),
+        bytesUsed: candidateLength,
+      };
+    }
+  }
+
+  const fallback = buffer.subarray(0, Math.min(buffer.length, maxBytes));
+  return {
+    text: fallback.toString("utf-8"),
+    bytesUsed: fallback.length,
+  };
 }
 
 export async function runReadFileTool(
-  args: { path: string },
+  args: { path: string; offset?: unknown; limit?: unknown },
   ctx: FileRunnerContext
 ): Promise<ReadFileRunnerResult> {
   const pathResult = await resolveFilePath("read_file", args.path, ctx);
@@ -211,6 +246,14 @@ export async function runReadFileTool(
   }
 
   const filePath = pathResult.filePath;
+  const offset = parseOptionalNonNegativeInteger(args.offset, "offset");
+  if (typeof offset !== "number") {
+    return offset;
+  }
+  const rawLimit = parseOptionalNonNegativeInteger(args.limit, "limit");
+  if (typeof rawLimit !== "number") {
+    return rawLimit;
+  }
 
   try {
     const fileStat = await withTimeout(stat(filePath), ctx.timeoutMs ?? 30000);
@@ -223,7 +266,6 @@ export async function runReadFileTool(
       };
     }
 
-    let largeFilePreview = "";
     const handle = await withTimeout(open(filePath, "r"), ctx.timeoutMs ?? 30000);
     try {
       const sampleBuffer = Buffer.alloc(Math.min(READ_FILE_BINARY_SNIFF_BYTES, Math.max(fileStat.size, 1)));
@@ -234,64 +276,95 @@ export async function runReadFileTool(
       const sample = sampleBuffer.subarray(0, bytesRead);
       const binaryKind = detectBinaryKind(sample);
       if (binaryKind) {
-        const message = buildReadFileBinaryMessage(filePath, binaryKind);
         return {
-          ok: false,
-          code: "TOOL_EXEC_FAILED",
-          message,
-          previewText: message,
+          ok: true,
+          kind: "binary",
+          filePath,
+          byteLength: fileStat.size,
+          totalBytes: fileStat.size,
+          offset: 0,
+          limit: 0,
+          hasMore: false,
+          nextOffset: null,
+          binaryKind,
+          handle: `blob:${filePath}`,
+          blob: {
+            type: "file",
+            path: filePath,
+            byteLength: fileStat.size,
+            mediaKind: binaryKind,
+          },
         };
       }
 
-      if (fileStat.size > READ_FILE_INLINE_BYTE_LIMIT) {
-        const headBytes = Math.min(READ_FILE_PREVIEW_BYTES, fileStat.size);
-        const headBuffer = Buffer.alloc(headBytes);
-        const headRead = await withTimeout(
-          handle.read(headBuffer, 0, headBuffer.length, 0),
-          ctx.timeoutMs ?? 30000
-        );
-        const headText = headBuffer.subarray(0, headRead.bytesRead).toString("utf-8");
-
-        const tailBytes = Math.min(READ_FILE_TAIL_PREVIEW_BYTES, fileStat.size);
-        const tailBuffer = Buffer.alloc(tailBytes);
-        const tailStart = Math.max(fileStat.size - tailBytes, 0);
-        const tailRead = await withTimeout(
-          handle.read(tailBuffer, 0, tailBuffer.length, tailStart),
-          ctx.timeoutMs ?? 30000
-        );
-        const tailText = tailBuffer.subarray(0, tailRead.bytesRead).toString("utf-8");
-
-        largeFilePreview = buildTruncatedReadFileContent({
-          head: headText,
-          tail: tailText,
-          byteLength: fileStat.size,
-        });
+      if (offset > fileStat.size) {
+        return {
+          ok: false,
+          code: "TOOL_BAD_ARGS",
+          message: `read_file: offset ${offset} 超出文件大小 ${fileStat.size}`,
+          previewText: `read_file 无法读取：${filePath}\n原因：offset ${offset} 超出文件大小 ${fileStat.size}。`,
+        };
       }
+
+      const wantsInlineFull = fileStat.size <= READ_FILE_INLINE_BYTE_LIMIT
+        && offset === 0
+        && rawLimit === 0;
+
+      if (wantsInlineFull) {
+        const buffer = await withTimeout(readFile(filePath), ctx.timeoutMs ?? 30000);
+        const content = buffer.toString("utf-8");
+        return {
+          ok: true,
+          kind: "text",
+          filePath,
+          content,
+          byteLength: fileStat.size,
+          totalBytes: fileStat.size,
+          offset: 0,
+          limit: fileStat.size,
+          hasMore: false,
+          nextOffset: null,
+          totalLines: content.split("\n").length,
+          truncated: false,
+        };
+      }
+
+      const defaultLimit = fileStat.size <= READ_FILE_INLINE_BYTE_LIMIT
+        ? Math.max(fileStat.size - offset, 0)
+        : READ_FILE_PAGE_BYTE_LIMIT;
+      const requestedLimit = rawLimit > 0 ? rawLimit : defaultLimit;
+      const remainingBytes = Math.max(fileStat.size - offset, 0);
+      const readWindow = Math.min(
+        remainingBytes,
+        requestedLimit + READ_FILE_UTF8_SLACK_BYTES
+      );
+
+      const pageBuffer = Buffer.alloc(readWindow);
+      const pageRead = await withTimeout(
+        handle.read(pageBuffer, 0, pageBuffer.length, offset),
+        ctx.timeoutMs ?? 30000
+      );
+      const pageSlice = pageBuffer.subarray(0, pageRead.bytesRead);
+      const page = finalizeUtf8Page(pageSlice, requestedLimit);
+      const pageLimit = page.bytesUsed;
+      const nextOffset = offset + pageLimit;
+
+      return {
+        ok: true,
+        kind: "text",
+        filePath,
+        content: page.text,
+        byteLength: fileStat.size,
+        totalBytes: fileStat.size,
+        offset,
+        limit: pageLimit,
+        hasMore: nextOffset < fileStat.size,
+        nextOffset: nextOffset < fileStat.size ? nextOffset : null,
+        truncated: offset > 0 || nextOffset < fileStat.size,
+      };
     } finally {
       await handle.close();
     }
-
-    if (fileStat.size > READ_FILE_INLINE_BYTE_LIMIT) {
-      return {
-        ok: true,
-        filePath,
-        content: largeFilePreview,
-        byteLength: fileStat.size,
-        truncated: true,
-      };
-    }
-
-    const content = await withTimeout(
-      readFile(filePath, "utf-8"),
-      ctx.timeoutMs ?? 30000
-    );
-
-    return {
-      ok: true,
-      filePath,
-      content,
-      byteLength: fileStat.size,
-    };
   } catch (error) {
     if (error instanceof Error && error.message === "TOOL_TIMEOUT") {
       throw error;

@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -31,11 +31,15 @@ afterEach(async () => {
   tempWorkspaces.length = 0;
 });
 
+beforeEach(() => {
+  mock.restore();
+});
+
 describe("P5.7-R25: tool_result 上下文截断", () => {
-  it("openai 兼容路径应截断大 read_file 结果后再回灌给模型", async () => {
+  it("openai 兼容路径应保留小文本 read_file 全文，不再二次压扁", async () => {
     const workspacePath = await createTempWorkspace();
     const targetPath = join(workspacePath, "large.txt");
-    await writeFile(targetPath, "A".repeat(12_000), "utf-8");
+    await writeFile(targetPath, `HEAD\n${"A".repeat(12_000)}\nTAIL-MARKER`, "utf-8");
 
     const originalFetch = globalThis.fetch;
     let callCount = 0;
@@ -100,9 +104,9 @@ describe("P5.7-R25: tool_result 上下文截断", () => {
       });
 
       expect(result.answer).toContain("ok");
-      expect(observedToolContent.length).toBeLessThanOrEqual(4000);
-      expect(observedToolContent).toContain("[durationMs]");
+      expect(observedToolContent.length).toBeGreaterThan(10_000);
       expect(observedToolContent).toContain("[status] inline-full");
+      expect(observedToolContent).toContain("TAIL-MARKER");
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -115,7 +119,7 @@ describe("P5.7-R25: tool_result 上下文截断", () => {
     );
 
     expect(code).toContain("function serializeToolResultForConversation");
-    expect(code).toContain("content: serializeToolResultForConversation(result)");
+    expect(code).toContain("content: serializeToolResultForConversation(tc.function.name, result)");
     expect(code).not.toContain("clipToolPreviewText");
     expect(code).not.toContain("TOOL_RESULT_CONTEXT_MAX_CHARS");
   });
