@@ -97,6 +97,41 @@ export interface ResponseResult {
     incomplete?: boolean;  // 超时但有部分内容
 }
 
+interface ReadSetup {
+    readMode: ReadMode;
+    coderReader: CodexOutputReader | null;
+    claudeReader: OutputReader | null;
+    coderJsonlPath: string | null;
+    claudeJsonlPath: string | null;
+    claudeJsonlSelectionInfo: import("../output/reader.js").ReadResult["selectionInfo"] | null;
+}
+
+interface BaselineState {
+    startOffset: number;
+    startPaneTail: string;
+    baselineTailSha: string;
+}
+
+interface PollState {
+    pollInterval: number;
+    hasResponse: boolean;
+    currentText: string;
+    stableCount: number;
+    startTime: number;
+    promptButNoOutputSince: number | null;
+    hasRepath: boolean;
+    lastTextChangeTime: number;
+    lastOffset: number;
+    seenStopHookSummary: boolean;
+    startPaneTail: string;
+}
+
+interface ReadChunkResult {
+    newText: string;
+    isComplete: boolean;
+    earlyResult?: ResponseResult;
+}
+
 /**
  * 延时函数
  */
@@ -132,6 +167,355 @@ async function waitForCodexJsonlPath(
     }
 
     return null;
+}
+
+function createSuccessResponse(text: string, promptForEchoRemoval: string): ResponseResult {
+    const cleanedText = removeUserEcho(text, promptForEchoRemoval);
+    return {
+        success: true,
+        response: formatResponse(cleanedText),
+    };
+}
+
+function createIncompleteResponse(text: string, promptForEchoRemoval: string): ResponseResult {
+    const cleanedText = removeUserEcho(text, promptForEchoRemoval);
+    return {
+        success: true,
+        incomplete: true,
+        response: formatResponse(cleanedText) + "\n\n... (超时，可能未完成)",
+    };
+}
+
+async function resolveReadSetup(
+    groupName: string,
+    runnerOld: RunnerTypeOld,
+    options: ResponseOptions,
+    timeout: number,
+    signal?: AbortSignal,
+): Promise<ReadSetup> {
+    let readMode: ReadMode = "pane";
+    let coderReader: CodexOutputReader | null = null;
+    let claudeReader: OutputReader | null = null;
+    let coderJsonlPath: string | null = null;
+    let claudeJsonlPath: string | null = null;
+    let claudeJsonlSelectionInfo: import("../output/reader.js").ReadResult["selectionInfo"] | null = null;
+
+    if (runnerOld === "codex") {
+        coderReader = responderRuntimeDeps.createCodexReader();
+        if (options.projectDir) {
+            coderJsonlPath = await waitForCodexJsonlPath(coderReader, options.projectDir, timeout, signal);
+        }
+        if (coderJsonlPath) {
+            readMode = "codex_jsonl";
+        } else {
+            logger.warn(`[Responder ${groupName}] 未找到 Codex JSONL，fallback 到 pane 读屏`, {
+                module: "responder",
+                groupName,
+                runnerOld,
+                readMode,
+                projectDir: options.projectDir,
+            });
+        }
+    } else if (runnerOld === "claude-code") {
+        claudeReader = responderRuntimeDeps.createOutputReader();
+        if (options.projectDir) {
+            const initResult = await claudeReader.readProject(options.projectDir);
+            if (initResult.selectionInfo) {
+                claudeJsonlPath = initResult.selectionInfo.path;
+                claudeJsonlSelectionInfo = initResult.selectionInfo;
+            }
+        }
+        if (claudeJsonlPath) {
+            readMode = "claude_jsonl";
+        } else {
+            logger.warn(`[Responder ${groupName}] 未找到 Claude Code JSONL，fallback 到 pane 读屏`, {
+                module: "responder",
+                groupName,
+                runnerOld,
+                readMode,
+                projectDir: options.projectDir,
+            });
+        }
+    }
+
+    logger.info(`[Responder ${groupName}] 读取模式: ${readMode}`, {
+        module: "responder",
+        groupName,
+        runnerOld,
+        readMode,
+        codexJsonlPath: coderJsonlPath ?? "(none)",
+        claudeJsonlPath: claudeJsonlPath ?? "(none)",
+    });
+
+    return {
+        readMode,
+        coderReader,
+        claudeReader,
+        coderJsonlPath,
+        claudeJsonlPath,
+        claudeJsonlSelectionInfo,
+    };
+}
+
+async function captureReadBaseline(
+    tmuxSession: typeof TmuxSession,
+    sessionName: string,
+    readSetup: ReadSetup,
+): Promise<BaselineState> {
+    const BASELINE_TAIL_SIZE = 8192;
+    let startOffset = 0;
+    let startPaneTail = "";
+
+    if (readSetup.readMode === "codex_jsonl") {
+        startOffset = await readSetup.coderReader!.seekToEnd(readSetup.coderJsonlPath!);
+    } else if (readSetup.readMode === "claude_jsonl") {
+        const stats = await fs.stat(readSetup.claudeJsonlPath!);
+        startOffset = stats.size;
+        readSetup.claudeReader!.setPosition(readSetup.claudeJsonlPath!, startOffset);
+    } else {
+        const fullPane = await tmuxSession.capturePane(sessionName, 1200);
+        startPaneTail = fullPane.slice(-BASELINE_TAIL_SIZE);
+    }
+
+    const crypto = await import("node:crypto");
+    const baselineTailSha = startPaneTail
+        ? crypto.createHash("sha256").update(startPaneTail).digest("hex").slice(0, 8)
+        : "";
+
+    return { startOffset, startPaneTail, baselineTailSha };
+}
+
+async function sendPromptToSession(params: {
+    tmuxSession: typeof TmuxSession;
+    sessionName: string;
+    groupName: string;
+    runnerOld: RunnerTypeOld;
+    readMode: ReadMode;
+    promptForEchoRemoval: string;
+    signal?: AbortSignal;
+}): Promise<string> {
+    const { tmuxSession, sessionName, groupName, runnerOld, readMode, promptForEchoRemoval, signal } = params;
+
+    if (signal?.aborted) {
+        throw new Error("__CANCELLED__");
+    }
+
+    let preparedMessage = prepareMessageForTmux(promptForEchoRemoval);
+    if (readMode === "codex_jsonl") {
+        preparedMessage = preparedMessage.replace(/\n+/g, " ").trim();
+    }
+
+    logger.debug(`[Responder ${groupName}] 发送消息`, { module: "responder", groupName, runnerOld, messageLen: preparedMessage.length });
+    await tmuxSession.sendTextLiteral(sessionName, preparedMessage);
+    await sleepMs(50, signal);
+    await tmuxSession.sendEnter(sessionName);
+
+    logger.debug(`[Responder ${groupName}] 消息已发送，开始轮询`, { module: "responder", groupName, runnerOld });
+    await sleepMs(100, signal);
+    if (await tmuxSession.isTextStillInInput(sessionName, preparedMessage)) {
+        logger.warn(`检测到 Enter 被吞，补发一次`, { module: "responder", groupName, runnerOld });
+        await tmuxSession.sendEnter(sessionName);
+    }
+
+    return preparedMessage;
+}
+
+async function readNextResponseChunk(params: {
+    tmuxSession: typeof TmuxSession;
+    sessionName: string;
+    groupName: string;
+    runnerOld: RunnerTypeOld;
+    readSetup: ReadSetup;
+    pollState: PollState;
+    baseline: BaselineState;
+    options: ResponseOptions;
+    promptForEchoRemoval: string;
+    delegationMarkers: { doneMarker?: string; failedMarker?: string };
+    userMarkerLine: string;
+}): Promise<ReadChunkResult> {
+    const {
+        tmuxSession,
+        sessionName,
+        groupName,
+        runnerOld,
+        readSetup,
+        pollState,
+        baseline,
+        options,
+        promptForEchoRemoval,
+        delegationMarkers,
+        userMarkerLine,
+    } = params;
+
+    if (readSetup.readMode === "codex_jsonl") {
+        const result = await readSetup.coderReader!.read(readSetup.coderJsonlPath!);
+        if (result.entries.length === 0) {
+            return { newText: "", isComplete: false };
+        }
+        const codexEntries = result.entries as import("../output/codex-reader.js").CodexJSONLEntry[];
+        const codexParseResult = CodexParser.parse(codexEntries);
+        return {
+            newText: CodexParser.toPlainText(codexParseResult),
+            isComplete: codexParseResult.isComplete,
+        };
+    }
+
+    if (readSetup.readMode === "claude_jsonl") {
+        const result = await readSetup.claudeReader!.read(readSetup.claudeJsonlPath!);
+        const currentOffset = readSetup.claudeReader!.getPosition(readSetup.claudeJsonlPath!);
+        const hasIncrement = result.newOffset > pollState.lastOffset;
+        if (hasIncrement) {
+            pollState.lastOffset = result.newOffset;
+            pollState.lastTextChangeTime = Date.now();
+        }
+
+        logger.info(`[Responder ${groupName}] JSONL 轮询`, {
+            module: "responder",
+            groupName,
+            runnerOld,
+            jsonlPath: readSetup.claudeJsonlPath,
+            startOffset: currentOffset,
+            newOffset: result.newOffset,
+            entriesCount: result.entries.length,
+            bytesRead: result.bytesRead,
+            ...(readSetup.claudeJsonlSelectionInfo ? {
+                selection: {
+                    isDeliverable: readSetup.claudeJsonlSelectionInfo.isDeliverable,
+                    score: readSetup.claudeJsonlSelectionInfo.score,
+                    candidatesCount: readSetup.claudeJsonlSelectionInfo.candidatesCount,
+                },
+            } : {}),
+        });
+
+        const elapsedSinceChange = Date.now() - pollState.lastTextChangeTime;
+        if (!pollState.hasRepath && elapsedSinceChange > 30000 && pollState.currentText === "" && result.entries.length === 0) {
+            logger.warn(`[Responder ${groupName}] 连续 30 秒无增量且当前为空，尝试重选路`, {
+                module: "responder",
+                groupName,
+                runnerOld,
+                elapsedSinceChange,
+            });
+            const newPath = await readSetup.claudeReader!.findLatestJsonl(options.projectDir);
+            if (newPath && newPath !== readSetup.claudeJsonlPath) {
+                logger.info(`[Responder ${groupName}] 重选路成功`, {
+                    module: "responder",
+                    groupName,
+                    oldPath: readSetup.claudeJsonlPath,
+                    newPath,
+                });
+                const stats = await fs.stat(newPath);
+                readSetup.claudeReader!.setPosition(newPath, stats.size);
+                readSetup.claudeJsonlPath = newPath;
+                pollState.lastOffset = stats.size;
+                pollState.lastTextChangeTime = Date.now();
+                pollState.hasRepath = true;
+                return { newText: "", isComplete: false };
+            }
+            logger.warn(`[Responder ${groupName}] 重选路失败，无新文件`, {
+                module: "responder",
+                groupName,
+            });
+            pollState.hasRepath = true;
+        }
+
+        if (result.entries.length === 0) {
+            return { newText: "", isComplete: false };
+        }
+
+        const parseResult = AssistantParser.parse(result.entries);
+        if (parseResult.seenStopHookSummary) {
+            pollState.seenStopHookSummary = true;
+        }
+
+        logger.info(`[Responder ${groupName}] JSONL 解析`, {
+            module: "responder",
+            groupName,
+            runnerOld,
+            textLen: AssistantParser.toPlainText(parseResult).length,
+            isComplete: parseResult.isComplete,
+            finishReason: parseResult.finishReason,
+            seenStopHookSummary: parseResult.seenStopHookSummary,
+        });
+
+        return {
+            newText: AssistantParser.toPlainText(parseResult),
+            isComplete: parseResult.isComplete,
+        };
+    }
+
+    const currentPaneOutput = await tmuxSession.capturePane(sessionName, 2000);
+    if (
+        (delegationMarkers.doneMarker && currentPaneOutput.includes(delegationMarkers.doneMarker)) ||
+        (delegationMarkers.failedMarker && currentPaneOutput.includes(delegationMarkers.failedMarker))
+    ) {
+        return {
+            newText: "",
+            isComplete: true,
+            earlyResult: createSuccessResponse(cleanClaudeOutput(currentPaneOutput), promptForEchoRemoval),
+        };
+    }
+
+    const markerExtract = extractAfterLastMarkerLine(currentPaneOutput, userMarkerLine);
+    if (markerExtract) {
+        const newText = cleanClaudeOutput(markerExtract.rawAfterMarker);
+        let isComplete = false;
+        if (markerExtract.hasPromptAfter && markerExtract.hasAssistantOutput && (newText.length > 0 || pollState.currentText.length > 0)) {
+            isComplete = true;
+        }
+        if (markerExtract.hasPromptAfter && markerExtract.hasAssistantOutput && newText.length === 0 && pollState.currentText.length === 0) {
+            if (pollState.promptButNoOutputSince === null) {
+                pollState.promptButNoOutputSince = Date.now();
+            }
+        } else {
+            pollState.promptButNoOutputSince = null;
+        }
+        pollState.startPaneTail = currentPaneOutput.slice(-8192);
+        return { newText, isComplete };
+    }
+
+    let tailIndex = currentPaneOutput.indexOf(pollState.startPaneTail);
+    let matchedTailLen = pollState.startPaneTail.length;
+    if (tailIndex === -1 && pollState.startPaneTail) {
+        const shrinkResult = findTailIndexByShrinking(currentPaneOutput, pollState.startPaneTail);
+        if (shrinkResult) {
+            tailIndex = shrinkResult.index;
+            matchedTailLen = shrinkResult.matchedTailLen;
+        }
+    }
+
+    if (tailIndex === -1) {
+        const lastPromptLine = findLastPromptLine(currentPaneOutput);
+        logger.warn(`[Responder ${groupName}] marker/baseline 均未命中，继续等待`, {
+            module: "responder",
+            groupName,
+            runnerOld,
+            baselineTailSha: baseline.baselineTailSha,
+            baselineTailLen: pollState.startPaneTail.length,
+            currentPaneLen: currentPaneOutput.length,
+            lastPromptLine: lastPromptLine?.slice(0, 50),
+        });
+        return { newText: "", isComplete: false };
+    }
+
+    const rawNewContent = currentPaneOutput.slice(tailIndex + matchedTailLen);
+    const newText = cleanClaudeOutput(rawNewContent);
+    const hasAssistantOutput = rawNewContent.includes("⏺");
+    const currentPaneLines = currentPaneOutput.split("\n");
+    const tailLines = currentPaneLines.slice(-15).map(l => (l ?? "").trim());
+    const hasPrompt = tailLines.some(l => /^[›❯]\s*$/.test(l));
+    let isComplete = false;
+    if (hasPrompt && (newText.length > 0 || pollState.currentText.length > 0)) {
+        isComplete = true;
+    }
+    if (hasPrompt && hasAssistantOutput && newText.length === 0 && pollState.currentText.length === 0) {
+        if (pollState.promptButNoOutputSince === null) {
+            pollState.promptButNoOutputSince = Date.now();
+        }
+    } else {
+        pollState.promptButNoOutputSince = null;
+    }
+    pollState.startPaneTail = currentPaneOutput.slice(-8192);
+    return { newText, isComplete };
 }
 
 /**
@@ -209,148 +593,36 @@ export async function handleTmuxSend(
     const timeout = options.timeout ?? (runnerOld === "codex" ? MAX_WAIT_MS_CODEX : MAX_WAIT_MS_CLAUDE);
     const fastInterval = options.fastInterval ?? FAST_INTERVAL;
     const slowInterval = options.slowInterval ?? SLOW_INTERVAL;
-
-    // P0: 三态读取模式（codex_jsonl | claude_jsonl | pane）
-    // - codex: 使用 codex_jsonl（现有逻辑）
-    // - claude-code: 优先 claude_jsonl，fallback 到 pane
-    // - claude: 使用 pane（legacy）
     const signal = options.signal;
-    let readMode: ReadMode = "pane";
-    let coderReader: CodexOutputReader | null = null;
-    let claudeReader: OutputReader | null = null;
-    let coderJsonlPath: string | null = null;
-    let claudeJsonlPath: string | null = null;
-    // P0 Batch-1: 存储 JSONL 选路信息
-    let claudeJsonlSelectionInfo: import("../output/reader.js").ReadResult["selectionInfo"] | null = null;
-    // P0 Batch-3: 追踪 stop_hook_summary 状态（用于早退判断）
-    let seenStopHookSummary = false;
-
-    if (runnerOld === "codex") {
-        // codex_jsonl: Codex CLI JSONL 读取
-        coderReader = responderRuntimeDeps.createCodexReader();
-        if (options.projectDir) {
-            coderJsonlPath = await waitForCodexJsonlPath(coderReader, options.projectDir, timeout, signal);
-        }
-        if (coderJsonlPath) {
-            readMode = "codex_jsonl";
-        } else {
-            readMode = "pane";
-            logger.warn(`[Responder ${groupName}] 未找到 Codex JSONL，fallback 到 pane 读屏`, {
-                module: "responder",
-                groupName,
-                runnerOld,
-                readMode,
-                projectDir: options.projectDir,
-            });
-        }
-    } else if (runnerOld === "claude-code") {
-        // claude-code: 优先 claude_jsonl，fallback 到 pane
-        claudeReader = responderRuntimeDeps.createOutputReader();
-        if (options.projectDir) {
-            // P0 Batch-1: 使用 readProject 获取选路信息（包含 deliverable 评分）
-            const initResult = await claudeReader.readProject(options.projectDir);
-            if (initResult.selectionInfo) {
-                claudeJsonlPath = initResult.selectionInfo.path;
-                claudeJsonlSelectionInfo = initResult.selectionInfo;
-            }
-        }
-        if (claudeJsonlPath) {
-            readMode = "claude_jsonl";
-        } else {
-            readMode = "pane";
-            logger.warn(`[Responder ${groupName}] 未找到 Claude Code JSONL，fallback 到 pane 读屏`, {
-                module: "responder",
-                groupName,
-                runnerOld,
-                readMode,
-                projectDir: options.projectDir,
-            });
-        }
-    }
-    // runnerOld === "claude" 默认 readMode = "pane"
-
-    logger.info(`[Responder ${groupName}] 读取模式: ${readMode}`, {
-        module: "responder",
-        groupName,
-        runnerOld,
-        readMode,
-        codexJsonlPath: coderJsonlPath ?? "(none)",
-        claudeJsonlPath: claudeJsonlPath ?? "(none)",
-    });
-
-    // 2. 发送前记录当前状态
-    // - codex_jsonl/claude_jsonl: 记录 JSONL offset
-    // - pane: 记录 tmux pane baseline tail（用于后续 diff）
-    // P0 修复：使用末尾 8KB 作为锚点，而不是完整 pane，避免滚屏导致锚点丢失
-    const BASELINE_TAIL_SIZE = 8192; // 8KB
-    let startOffset = 0;
-    let startPaneTail = "";
-
-    if (readMode === "codex_jsonl") {
-        // Codex CLI: 记录 JSONL offset
-        startOffset = await coderReader!.seekToEnd(coderJsonlPath!);
-    } else if (readMode === "claude_jsonl") {
-        // Claude Code: 记录 JSONL offset（发送前 seek 到 EOF）
-        const stats = await fs.stat(claudeJsonlPath!);
-        startOffset = stats.size;
-        claudeReader!.setPosition(claudeJsonlPath!, startOffset);
-    } else {
-        // pane: 记录发送前的 pane 末尾作为 baseline tail
-        const fullPane = await tmuxSession.capturePane(sessionName, 1200);
-        startPaneTail = fullPane.slice(-BASELINE_TAIL_SIZE);
-    }
-
-    // 计算 baseline tail 的 SHA256（用于诊断，不泄露内容）
-    const crypto = await import("node:crypto");
-    const baselineTailSha = startPaneTail ? crypto.createHash("sha256").update(startPaneTail).digest("hex").slice(0, 8) : "";
-
+    const readSetup = await resolveReadSetup(groupName, runnerOld, options, timeout, signal);
+    const baseline = await captureReadBaseline(tmuxSession, sessionName, readSetup);
     logger.debug(`[Responder ${groupName}] 发送前状态`, {
         module: "responder",
         groupName,
         runnerOld,
-        readMode,
-        coderJsonlPath: coderJsonlPath ?? "(none)",
-        claudeJsonlPath: claudeJsonlPath ?? "(none)",
-        startOffset,
-        baselineTailLen: startPaneTail.length,
-        baselineTailSha,
+        readMode: readSetup.readMode,
+        coderJsonlPath: readSetup.coderJsonlPath ?? "(none)",
+        claudeJsonlPath: readSetup.claudeJsonlPath ?? "(none)",
+        startOffset: baseline.startOffset,
+        baselineTailLen: baseline.startPaneTail.length,
+        baselineTailSha: baseline.baselineTailSha,
     });
 
-    // 3. 发送附件（Codex CLI 暂不支持附件）
-    // P0: claude_jsonl 也需要发送附件（虽然读取走 JSONL，但附件仍需通过 tmux 发送）
-    if (readMode !== "codex_jsonl") {
+    if (readSetup.readMode !== "codex_jsonl") {
         await responderRuntimeDeps.sendAttachments(sessionName, options.attachments);
     }
 
     logger.debug(`[Responder ${groupName}] 准备发送消息`, { module: "responder", groupName, runnerOld });
-    // 4. 发送消息（P0: 使用 sendTextLiteral + sendEnter，避免 Enter 被吞）
     try {
-        if (signal?.aborted) {
-            return { success: false, error: "__CANCELLED__" };
-        }
-
-        // P0: Coder CLI 输入清洗 - 把 \n 折叠成空格（避免多行输入模式）
-        let preparedMessage = prepareMessageForTmux(promptForEchoRemoval);
-        if (readMode === "codex_jsonl") {
-            // Coder CLI: 折叠换行符为空格，避免进入多行输入模式
-            preparedMessage = preparedMessage.replace(/\n+/g, " ").trim();
-        }
-        sentTextForMarker = preparedMessage;
-
-        logger.debug(`[Responder ${groupName}] 发送消息`, { module: "responder", groupName, runnerOld, messageLen: preparedMessage.length });
-        // P0: 两步发送 - 先发送字面量文本，再发送 Enter
-        await tmuxSession.sendTextLiteral(sessionName, preparedMessage);
-        // 延迟 30-80ms 防止 UI 吞键
-        await sleepMs(50, signal);
-        await tmuxSession.sendEnter(sessionName);
-
-        logger.debug(`[Responder ${groupName}] 消息已发送，开始轮询`, { module: "responder", groupName, runnerOld });
-        // P0: 提交校验兜底 - 检查文本是否仍在输入栏，如果是则补发 Enter
-        await sleepMs(100, signal); // 等待一下让 UI 更新
-        if (await tmuxSession.isTextStillInInput(sessionName, preparedMessage)) {
-            logger.warn(`检测到 Enter 被吞，补发一次`, { module: "responder", groupName, runnerOld });
-            await tmuxSession.sendEnter(sessionName);
-        }
+        sentTextForMarker = await sendPromptToSession({
+            tmuxSession,
+            sessionName,
+            groupName,
+            runnerOld,
+            readMode: readSetup.readMode,
+            promptForEchoRemoval,
+            signal,
+        });
     } catch (error: any) {
         logger.error(`[Responder ${groupName}] 发送失败`, { module: "responder", groupName, runnerOld, error: error.message });
         if (signal?.aborted) {
@@ -360,27 +632,30 @@ export async function handleTmuxSend(
     }
 
     // 4. 轮询等待回复（快慢策略 + 稳定计数）
-    let pollInterval = fastInterval;
-    let hasResponse = false;
-    let currentText = "";
-    let stableCount = 0;  // 稳定计数：连续 N 次无新内容
-    const startTime = Date.now();
-    let promptButNoOutputSince: number | null = null; // 防卡死：看到 prompt 但抓不到输出
-    // P0 Batch-3: 重选路相关变量
-    let hasRepath = false;  // 是否已经重选路过
-    let lastTextChangeTime = startTime;  // 上次文本变化时间
-    let lastOffset = 0;  // 上次的 offset，用于检测增量
+    const pollState: PollState = {
+        pollInterval: fastInterval,
+        hasResponse: false,
+        currentText: "",
+        stableCount: 0,
+        startTime: Date.now(),
+        promptButNoOutputSince: null,
+        hasRepath: false,
+        lastTextChangeTime: Date.now(),
+        lastOffset: 0,
+        seenStopHookSummary: false,
+        startPaneTail: baseline.startPaneTail,
+    };
 
-    logger.debug(`[Responder ${groupName}] 开始轮询`, { module: "responder", groupName, runnerOld, timeout, pollInterval });
+    logger.debug(`[Responder ${groupName}] 开始轮询`, { module: "responder", groupName, runnerOld, timeout, pollInterval: pollState.pollInterval });
     let iteration = 0;
 
-    while (Date.now() - startTime < timeout) {
+    while (Date.now() - pollState.startTime < timeout) {
         iteration++;
         if (iteration % 10 === 0) {
             logger.debug(`[Responder ${groupName}] 轮询迭代 ${iteration}`, { module: "responder", groupName, runnerOld, iteration });
         }
         try {
-            await sleepMs(pollInterval, signal);
+            await sleepMs(pollState.pollInterval, signal);
         } catch {
             logger.error(`[Responder ${groupName}] sleep 失败`, { module: "responder", groupName, runnerOld });
             if (signal?.aborted) {
@@ -393,320 +668,70 @@ export async function handleTmuxSend(
             return { success: false, error: "__CANCELLED__" };
         }
 
-        // 读取新增内容
-        // - codex_jsonl: 从 Codex JSONL 读取
-        // - claude_jsonl: 从 Claude Code JSONL 读取
-        // - pane: 从 tmux pane 读取
-        let newText = "";
-        let isComplete = false;
-
-        if (readMode === "codex_jsonl") {
-            const result = await coderReader!.read(coderJsonlPath!);
-
-            // Coder CLI JSONL 有时会在输出完成后不再追加任何事件行
-            if (result.entries.length === 0) {
-                if (hasResponse && currentText.length > 0) {
-                    stableCount++;
-                    if (stableCount >= STABLE_COUNT) {
-                        logger.info(`[Responder ${groupName}] 无新日志行，稳定计数达标，返回`, {
-                            module: "responder",
-                            groupName,
-                            stableCount,
-                            runnerOld,
-                        });
-                        const cleanedText = removeUserEcho(currentText, promptForEchoRemoval);
-                        return {
-                            success: true,
-                            response: formatResponse(cleanedText),
-                        };
-                    }
-                }
-                continue;
-            }
-
-            // 解析 Coder CLI 输出
-            const codexEntries = result.entries as import("../output/codex-reader.js").CodexJSONLEntry[];
-            const codexParseResult = CodexParser.parse(codexEntries);
-            newText = CodexParser.toPlainText(codexParseResult);
-            isComplete = codexParseResult.isComplete;
-        } else if (readMode === "claude_jsonl") {
-            const result = await claudeReader!.read(claudeJsonlPath!);
-            const currentOffset = claudeReader!.getPosition(claudeJsonlPath!);
-
-            // P0 Batch-3: 检测是否有增量
-            const hasIncrement = result.newOffset > lastOffset;
-            if (hasIncrement) {
-                lastOffset = result.newOffset;
-                lastTextChangeTime = Date.now();
-            }
-
-            // P0 Batch-0: 每轮打印观测信息（不泄露正文）
-            logger.info(`[Responder ${groupName}] JSONL 轮询`, {
-                module: "responder",
-                groupName,
-                runnerOld,
-                jsonlPath: claudeJsonlPath,
-                startOffset: currentOffset,
-                newOffset: result.newOffset,
-                entriesCount: result.entries.length,
-                bytesRead: result.bytesRead,
-                // P0 Batch-1: 选路评分信息
-                ...(claudeJsonlSelectionInfo ? {
-                    selection: {
-                        isDeliverable: claudeJsonlSelectionInfo.isDeliverable,
-                        score: claudeJsonlSelectionInfo.score,
-                        candidatesCount: claudeJsonlSelectionInfo.candidatesCount,
-                    },
-                } : {}),
-            });
-
-            // P0 Batch-3: 检查是否需要重选路（连续 30 秒无增量且当前为空）
-            const elapsedSinceChange = Date.now() - lastTextChangeTime;
-            if (!hasRepath && elapsedSinceChange > 30000 && currentText === "" && result.entries.length === 0) {
-                logger.warn(`[Responder ${groupName}] 连续 30 秒无增量且当前为空，尝试重选路`, {
-                    module: "responder",
-                    groupName,
-                    runnerOld,
-                    elapsedSinceChange,
-                });
-                const newPath = await claudeReader!.findLatestJsonl(options.projectDir);
-                if (newPath && newPath !== claudeJsonlPath) {
-                    logger.info(`[Responder ${groupName}] 重选路成功`, {
-                        module: "responder",
-                        groupName,
-                        oldPath: claudeJsonlPath,
-                        newPath,
-                    });
-                    const stats = await fs.stat(newPath);
-                    claudeReader!.setPosition(newPath, stats.size);
-                    claudeJsonlPath = newPath;
-                    lastOffset = stats.size;
-                    lastTextChangeTime = Date.now();
-                    hasRepath = true;
-                    continue;  // 重新开始轮询
-                } else {
-                    logger.warn(`[Responder ${groupName}] 重选路失败，无新文件`, {
-                        module: "responder",
-                        groupName,
-                    });
-                    hasRepath = true;  // 标记已尝试，避免重复
-                }
-            }
-
-            // Claude Code JSONL 有时会在输出完成后不再追加任何事件行
-            if (result.entries.length === 0) {
-                // P0 Batch-3: 禁止空文本 success - 只有在有文本或明确完成信号时才返回
-                if (hasResponse && currentText.length > 0) {
-                    stableCount++;
-                    if (stableCount >= STABLE_COUNT) {
-                        logger.info(`[Responder ${groupName}] 无新日志行，稳定计数达标，返回`, {
-                            module: "responder",
-                            groupName,
-                            stableCount,
-                            runnerOld,
-                            currentTextLength: currentText.length,
-                        });
-                        const cleanedText = removeUserEcho(currentText, promptForEchoRemoval);
-                        return {
-                            success: true,
-                            response: formatResponse(cleanedText),
-                        };
-                    }
-                }
-                // P0 Batch-3: 即使 currentText 为空，如果已检测到 stop_hook_summary，也返回
-                if (seenStopHookSummary && stableCount >= STABLE_COUNT) {
-                    logger.info(`[Responder ${groupName}] 检测到 stop_hook_summary，返回`, {
-                        module: "responder",
-                        groupName,
-                        runnerOld,
-                    });
-                    const cleanedText = removeUserEcho(currentText, promptForEchoRemoval);
-                    return {
-                        success: true,
-                        response: formatResponse(cleanedText),
-                    };
-                }
-                continue;
-            }
-
-            // 解析 Claude Code 输出（使用 AssistantParser）
-            const parseResult = AssistantParser.parse(result.entries);
-            newText = AssistantParser.toPlainText(parseResult);
-            isComplete = parseResult.isComplete;
-
-            // P0 Batch-3: 更新 stop_hook_summary 状态
-            if (parseResult.seenStopHookSummary) {
-                seenStopHookSummary = true;
-            }
-
-            // P0 Batch-0: 打印解析结果（不泄露正文）
-            logger.info(`[Responder ${groupName}] JSONL 解析`, {
-                module: "responder",
-                groupName,
-                runnerOld,
-                textLen: newText.length,
-                isComplete: parseResult.isComplete,
-                finishReason: parseResult.finishReason,
-                seenStopHookSummary: parseResult.seenStopHookSummary,
-            });
-        } else {
-            // Claude: 从 tmux pane 读取输出
-            //
-            // P0 经验：Claude Code 的 pane 输出会因为 resize/换行重排/动态状态行而变化，
-            // baseline-tail diff 容易失效；因此优先用“发送文本的 marker”定位最后一次输入行。
-            const currentPaneOutput = await tmuxSession.capturePane(sessionName, 2000);
-
-            if (
-                (delegationMarkers.doneMarker && currentPaneOutput.includes(delegationMarkers.doneMarker)) ||
-                (delegationMarkers.failedMarker && currentPaneOutput.includes(delegationMarkers.failedMarker))
-            ) {
-                const cleanedText = removeUserEcho(cleanClaudeOutput(currentPaneOutput), promptForEchoRemoval);
-                return {
-                    success: true,
-                    response: formatResponse(cleanedText),
-                };
-            }
-
-            const markerExtract = extractAfterLastMarkerLine(currentPaneOutput, userMarkerLine);
-            if (markerExtract) {
-                // P0: marker 命中时，以 marker 边界为准（更稳定，避免 baseline-tail diff 覆盖结果）
-                newText = cleanClaudeOutput(markerExtract.rawAfterMarker);
-                // Claude Code UI 里 prompt 可能在“仍在思考”时出现（如 · Unravelling… + ❯），不能单靠 prompt 判定完成。
-                // 经验：真正的 assistant 输出通常以 "⏺" 开头；因此用 hasAssistantOutput 做完成闸门，避免把“状态行”当最终输出。
-                if (markerExtract.hasPromptAfter && markerExtract.hasAssistantOutput && (newText.length > 0 || currentText.length > 0)) {
-                    isComplete = true;
-                }
-                if (markerExtract.hasPromptAfter && markerExtract.hasAssistantOutput && newText.length === 0 && currentText.length === 0) {
-                    // 看到 assistant 输出（⏺）但提取结果为空：可能是输出被过滤/格式变化
-                    if (promptButNoOutputSince === null) {
-                        promptButNoOutputSince = Date.now();
-                    }
-                } else {
-                    // 没看到 assistant 输出（⏺）时：认为仍在进行中，不启用 fuse
-                    promptButNoOutputSince = null;
-                }
-                // rolling tail：用当前末尾更新锚点，下一轮更抗滚屏
-                startPaneTail = currentPaneOutput.slice(-BASELINE_TAIL_SIZE);
-            } else {
-                // marker 没找到时，再走 baseline-tail diff 兜底（极端情况：用户输入行不在 pane 内）
-                // 用 baseline tail 定位：在当前 pane 中找到 startPaneTail 的位置
-                // 注意：直接 indexOf 可能因为 pane resize/换行重排/滚屏而失败，所以需要兜底策略
-                let tailIndex = currentPaneOutput.indexOf(startPaneTail);
-                let matchedTailLen = startPaneTail.length;
-
-                if (tailIndex === -1 && startPaneTail) {
-                    // 兜底：缩短 tail（8KB → 4KB → ...），尽量找到一个稳定锚点
-                    const shrinkResult = findTailIndexByShrinking(currentPaneOutput, startPaneTail);
-                    if (shrinkResult) {
-                        tailIndex = shrinkResult.index;
-                        matchedTailLen = shrinkResult.matchedTailLen;
-                    }
-                }
-
-                if (tailIndex === -1) {
-                    // 诊断日志：记录关键信息而不泄露内容
-                    const lastPromptLine = findLastPromptLine(currentPaneOutput);
-                    logger.warn(`[Responder ${groupName}] marker/baseline 均未命中，继续等待`, {
-                        module: "responder",
-                        groupName,
-                        runnerOld,
-                        baselineTailSha,
-                        baselineTailLen: startPaneTail.length,
-                        currentPaneLen: currentPaneOutput.length,
-                        lastPromptLine: lastPromptLine?.slice(0, 50),
-                    });
-
-                    if (hasResponse && currentText.length > 0) {
-                        stableCount++;
-                        if (stableCount >= STABLE_COUNT) {
-                            logger.info(`[Responder ${groupName}] 稳定计数达标（fallback），返回`, {
-                                module: "responder",
-                                groupName,
-                                stableCount,
-                                runnerOld,
-                            });
-                            const cleanedText = removeUserEcho(currentText, promptForEchoRemoval);
-                            return {
-                                success: true,
-                                response: formatResponse(cleanedText)
-                            };
-                        }
-                    }
-                    continue;
-                }
-
-                // 提取 tail 之后的新增内容
-                const rawNewContent = currentPaneOutput.slice(tailIndex + matchedTailLen);
-                newText = cleanClaudeOutput(rawNewContent);
-                const hasAssistantOutput = rawNewContent.includes("⏺");
-
-                // 检测是否完成：当前 pane 的最后一行是提示符
-                const currentPaneLines = currentPaneOutput.split("\n");
-                // Claude Code 底部可能还有 UI 状态行（如 bypass permissions），不能只看最后一行
-                const tailLines = currentPaneLines.slice(-15).map(l => (l ?? "").trim());
-                const hasPrompt = tailLines.some(l => /^[›❯]\s*$/.test(l));
-                if (hasPrompt && (newText.length > 0 || currentText.length > 0)) {
-                    isComplete = true;
-                }
-                if (hasPrompt && hasAssistantOutput && newText.length === 0 && currentText.length === 0) {
-                    if (promptButNoOutputSince === null) {
-                        promptButNoOutputSince = Date.now();
-                    }
-                } else {
-                    promptButNoOutputSince = null;
-                }
-
-                // rolling tail：以当前 pane 的末尾作为下一轮锚点，避免输出较长时“初始锚点滚屏丢失”
-                startPaneTail = currentPaneOutput.slice(-BASELINE_TAIL_SIZE);
-            }
+        const chunk = await readNextResponseChunk({
+            tmuxSession,
+            sessionName,
+            groupName,
+            runnerOld,
+            readSetup,
+            pollState,
+            baseline,
+            options,
+            promptForEchoRemoval,
+            delegationMarkers,
+            userMarkerLine,
+        });
+        if (chunk.earlyResult) {
+            return chunk.earlyResult;
         }
+        const { newText, isComplete } = chunk;
 
         logger.debug(
-            `[Responder ${groupName}] 新增 ${newText.length} 字符, 完成: ${isComplete}, 稳定: ${stableCount}/${STABLE_COUNT}`,
-            { module: "responder", groupName, newChars: newText.length, isComplete, stableCount, runnerOld }
+            `[Responder ${groupName}] 新增 ${newText.length} 字符, 完成: ${isComplete}, 稳定: ${pollState.stableCount}/${STABLE_COUNT}`,
+            { module: "responder", groupName, newChars: newText.length, isComplete, stableCount: pollState.stableCount, runnerOld }
         );
 
         if (newText.length > 0) {
-            currentText += newText;
+            pollState.currentText += newText;
 
             // 首次检测到内容后，切换到慢速轮询
-            if (!hasResponse) {
-                hasResponse = true;
-                pollInterval = slowInterval;
+            if (!pollState.hasResponse) {
+                pollState.hasResponse = true;
+                pollState.pollInterval = slowInterval;
             }
 
             // 重置稳定计数
-            stableCount = 0;
+            pollState.stableCount = 0;
 
             // 检测完成标志 - 完成后立即返回
             if (isComplete) {
-                const cleanedText = removeUserEcho(currentText, promptForEchoRemoval);
-                return {
-                    success: true,
-                    response: formatResponse(cleanedText)
-                };
+                return createSuccessResponse(pollState.currentText, promptForEchoRemoval);
             }
         } else {
             // 无新内容，增加稳定计数
-            if (hasResponse && currentText.length > 0) {
-                stableCount++;
+            if (pollState.hasResponse && pollState.currentText.length > 0) {
+                pollState.stableCount++;
                 // 连续 N 次无新内容，视为完成
-                if (stableCount >= STABLE_COUNT) {
+                if (pollState.stableCount >= STABLE_COUNT) {
                     console.log(`[Responder ${groupName}] 稳定计数达标，返回`);
-                    logger.info(`[Responder ${groupName}] 稳定计数达标，返回`, { module: "responder", groupName, stableCount, runnerOld });
-                    const cleanedText = removeUserEcho(currentText, promptForEchoRemoval);
-                    return {
-                        success: true,
-                        response: formatResponse(cleanedText)
-                    };
+                    logger.info(`[Responder ${groupName}] 稳定计数达标，返回`, { module: "responder", groupName, stableCount: pollState.stableCount, runnerOld });
+                    return createSuccessResponse(pollState.currentText, promptForEchoRemoval);
                 }
+            }
+            if (readSetup.readMode === "claude_jsonl" && pollState.seenStopHookSummary && pollState.stableCount >= STABLE_COUNT) {
+                logger.info(`[Responder ${groupName}] 检测到 stop_hook_summary，返回`, {
+                    module: "responder",
+                    groupName,
+                    runnerOld,
+                });
+                return createSuccessResponse(pollState.currentText, promptForEchoRemoval);
             }
         }
 
         // P0 防卡死：如果连续看到 prompt 但始终抓不到任何输出，提前退出，避免 perChatQueue 被占满
         // 仅对 pane 模式生效（JSONL 模式不依赖 prompt 检测）
-        if (readMode === "pane" && promptButNoOutputSince !== null) {
-            const elapsed = Date.now() - promptButNoOutputSince;
+        if (readSetup.readMode === "pane" && pollState.promptButNoOutputSince !== null) {
+            const elapsed = Date.now() - pollState.promptButNoOutputSince;
             if (elapsed > 2000) {
                 logger.warn(`[Responder ${groupName}] prompt 已出现但无输出，提前退出`, {
                     module: "responder",
@@ -723,13 +748,8 @@ export async function handleTmuxSend(
     }
 
     // 5. 超时处理
-    if (hasResponse && currentText.length > 0) {
-        const cleanedText = removeUserEcho(currentText, promptForEchoRemoval);
-        return {
-            success: true,
-            incomplete: true,
-            response: formatResponse(cleanedText) + "\n\n... (超时，可能未完成)"
-        };
+    if (pollState.hasResponse && pollState.currentText.length > 0) {
+        return createIncompleteResponse(pollState.currentText, promptForEchoRemoval);
     }
 
     const runnerName = runnerOld === "codex" ? "Codex" : (runnerOld === "claude-code" ? "Claude Code" : "Claude");
