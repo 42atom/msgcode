@@ -15,36 +15,13 @@ import { promisify } from "node:util";
 import { logger } from "../logger/index.js";
 import { CodexOutputReader, readCodexSessionMeta } from "../output/codex-reader.js";
 import { upsertSession, updateSessionStopTime, getSession } from "./registry.js";
+import { normalizeRunnerType } from "./runner-types.js";
+export type { RunnerType, RunnerTypeOld } from "./runner-types.js";
+import type { RunnerType, RunnerTypeOld } from "./runner-types.js";
 
 const execAsync = promisify(exec);
 const READY_WAIT_TIMEOUT_MS = 15000; // /start 等待就绪的上限（Codex 首次启动可能较慢）
 const STARTUP_SLOW_THRESHOLD_MS = 10000; // 超过该阈值视为启动异常
-
-/**
- * 旧执行臂类型（存储层兼容）
- *
- * - 用于 SessionRecord.runner 字段存储（兼容历史数据）
- * - 逐步废弃，新代码应使用 RunnerType（运行时分类）+ runnerOld（具体 CLI）
- */
-export type RunnerTypeOld = "claude" | "codex" | "claude-code";
-
-/**
- * 运行时执行臂分类
- *
- * - tmux: 需要 tmux 会话管理（codex / claude CLI）
- * - direct: 直接调用 provider（mlx / lmstudio / llama / openai / ...）
- */
-export type RunnerType = "tmux" | "direct";
-
-/**
- * 归一化 runnerOld → runnerType（守卫：不信任外部传入）
- */
-export function normalizeRunnerType(runner: RunnerTypeOld): RunnerType {
-    // 本文件只管理 tmux 会话；历史 runnerOld 均归到 tmux。
-    // direct providers 不会写入 tmux registry。
-    void runner;
-    return "tmux";
-}
 
 function normalizeRunnerOldFamily(runnerOld: RunnerTypeOld): "claude" | "codex" {
     return runnerOld === "codex" ? "codex" : "claude";

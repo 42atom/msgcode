@@ -12,8 +12,8 @@ import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 import { logger } from "../logger/index.js";
-import type { RunnerTypeOld, RunnerType } from "./session.js";
-import { normalizeRunnerType } from "./session.js";
+import type { RunnerTypeOld, RunnerType } from "./runner-types.js";
+import { normalizeRunnerType } from "./runner-types.js";
 
 // ============================================
 // Schema
