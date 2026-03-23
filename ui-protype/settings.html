@@ -209,6 +209,41 @@
               </section>
 
               <section class="subpanel">
+                <div class="subpanel-head">
+                  <h4>会话音频</h4>
+                </div>
+                <form class="form-grid">
+                  <label>
+                    <span>语音接收设备</span>
+                    <select>
+                      <option selected>系统默认</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>语音外放设备</span>
+                    <select>
+                      <option selected>系统音响</option>
+                      <option>耳机</option>
+                      <option>HomePod</option>
+                      <option>静音</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>播放策略</span>
+                    <select>
+                      <option selected>replace（中断当前，立即播放新的）</option>
+                      <option>queue（排队等待）</option>
+                      <option>drop（当前播放时丢弃新的）</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>当前口径</span>
+                    <input type="text" value="TTS 默认 replace；HomePod 作为 bridge pack 后置" />
+                  </label>
+                </form>
+              </section>
+
+              <section class="subpanel">
                 <div class="subpanel-head subpanel-head--inline">
                   <h4>账号连接</h4>
                   <button class="ghost-mini">连接账号</button>
