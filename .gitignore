@@ -93,3 +93,12 @@ docs/archive/retired-desktop-bridge/scripts/desktop/test-t8.6.2-desktopctl
 # Local AIDOCS runtime/media artifacts
 AIDOCS/audio/
 AIDOCS/media/
+AIDOCS/ui-design-src/
+
+# Local codegraph workspace artifacts
+.codegraph/
+
+# Local MCP client config
+.mcp.json
+
+.claude/session-edits.log
