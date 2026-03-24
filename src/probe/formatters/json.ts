@@ -16,7 +16,7 @@ function reportToDiagnostics(report: StatusReport): Diagnostic[] {
 
     for (const [key, category] of Object.entries(report.categories)) {
         for (const probe of category.probes) {
-            if (probe.status !== "pass") {
+            if (probe.status !== "pass" && probe.status !== "skip") {
                 diagnostics.push({
                     code: `PROBE_${key.toUpperCase()}_${probe.status.toUpperCase()}`,
                     message: probe.message || `${category.name}: ${probe.status}`,

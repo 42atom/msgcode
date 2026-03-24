@@ -30,6 +30,7 @@ import {
   handleTtsModelCommand as handleTtsModelCommandImpl,
   handleEmbeddingModelCommand as handleEmbeddingModelCommandImpl,
   handlePolicyCommand as handlePolicyCommandImpl,
+  handleConflictModeCommand as handleConflictModeCommandImpl,
 } from "./cmd-model.js";
 import {
   handleOwnerCommand as handleOwnerCommandImpl,
@@ -87,6 +88,7 @@ export const handleResetCursorCommand = handleResetCursorCommandImpl;
 export const handleHelpCommand = handleHelpCommandImpl;
 export const handleMemCommand = handleMemCommandImpl;
 export const handlePolicyCommand = handlePolicyCommandImpl;
+export const handleConflictModeCommand = handleConflictModeCommandImpl;
 export const handleOwnerCommand = handleOwnerCommandImpl;
 export const handleOwnerOnlyCommand = handleOwnerOnlyCommandImpl;
 export const handleSoulListCommand = handleSoulListCommandImpl;
@@ -154,6 +156,8 @@ export async function handleRouteCommand(
       return handleMemCommand(options);
     case "policy":
       return handlePolicyCommand(options);
+    case "conflictMode":
+      return handleConflictModeCommand(options);
     case "owner":
       return handleOwnerCommand(options);
     case "ownerOnly":
@@ -239,6 +243,8 @@ export function isRouteCommand(text: string): boolean {
     trimmed === "/mem" ||
     trimmed.startsWith("/policy ") ||
     trimmed === "/policy" ||
+    trimmed.startsWith("/conflict-mode ") ||
+    trimmed === "/conflict-mode" ||
     trimmed.startsWith("/owner ") ||
     trimmed === "/owner" ||
     trimmed.startsWith("/owner-only ") ||
@@ -370,6 +376,13 @@ export function parseRouteCommand(text: string): { command: string; args: string
   }
   if (trimmed === "/policy") {
     return { command: "policy", args: [] };
+  }
+  if (trimmed.startsWith("/conflict-mode ")) {
+    const parts = trimmed.split(/\s+/);
+    return { command: "conflictMode", args: parts.slice(1) };
+  }
+  if (trimmed === "/conflict-mode") {
+    return { command: "conflictMode", args: [] };
   }
   if (trimmed === "/owner") {
     return { command: "owner", args: [] };

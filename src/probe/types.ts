@@ -69,6 +69,20 @@ export interface StatusReport {
 export interface ProbeOptions {
     /** 超时时间（毫秒），默认 2000 */
     timeout?: number;
+    /** 线程上下文探针：workspace 绝对路径 */
+    workspacePath?: string;
+    /** 线程上下文探针：chatId */
+    chatId?: string;
+    /** 线程上下文探针：当前输入 */
+    prompt?: string;
+    /** 线程上下文探针：taskId */
+    taskId?: string;
+    /** 线程上下文探针：agent provider */
+    agentProvider?: string;
+    /** 线程上下文探针：model */
+    model?: string;
+    /** 线程上下文探针：system override */
+    systemOverride?: string;
 }
 
 /**

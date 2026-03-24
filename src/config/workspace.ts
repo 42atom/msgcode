@@ -120,6 +120,13 @@ export interface WorkspaceConfig {
   "agent.provider"?: StoredAgentProvider;
 
   /**
+   * 冲突处置模式（workspace 级）
+   * - full: AI 默认自行处理可自解的本机冲突
+   * - assisted: AI 优先提示并确认潜在用户影响
+   */
+  "agent.conflict_mode"?: ConflictMode;
+
+  /**
    * Tmux Client（仅 runtime.kind=tmux 时有效）
    * - codex: Codex CLI
    * - claude-code: Claude Code CLI
@@ -205,6 +212,11 @@ export type FsScope = "workspace" | "unrestricted";
 export type AgentProvider = "agent-backend" | "minimax" | "deepseek" | "openai";
 
 /**
+ * P7-TK0382: 冲突处置模式
+ */
+export type ConflictMode = "full" | "assisted";
+
+/**
  * P5.7-R24: 执行基座 lane
  * - local: agent + 本地后端入口
  * - api: agent + 远端 API provider
@@ -255,6 +267,7 @@ export const DEFAULT_WORKSPACE_CONFIG: Required<WorkspaceConfig> = {
   "runtime.current_chat_id": "",
   "runtime.current_chat_guid": "",
   "agent.provider": "agent-backend", // P5.7-R9-T6: 默认 agent-backend（中性语义）
+  "agent.conflict_mode": "full",
   "tmux.client": "codex", // P5.6.14-R1: 默认 codex client
   "runner.default": "agent-backend", // P5.7-R9-T6: 兼容字段，默认 agent-backend
   "tooling.mode": "autonomous", // P5.5: 测试期统一 autonomous（LLM 自主决策 tool_calls）
@@ -547,6 +560,26 @@ export async function setAgentProvider(
   provider: AgentProvider
 ): Promise<void> {
   await saveWorkspaceConfig(projectDir, { "agent.provider": provider });
+}
+
+/**
+ * 获取冲突处置模式
+ */
+export async function getConflictMode(
+  projectDir: string
+): Promise<ConflictMode> {
+  const workspaceConfig = await loadWorkspaceConfig(projectDir);
+  return workspaceConfig["agent.conflict_mode"] ?? DEFAULT_WORKSPACE_CONFIG["agent.conflict_mode"];
+}
+
+/**
+ * 设置冲突处置模式
+ */
+export async function setConflictMode(
+  projectDir: string,
+  mode: ConflictMode
+): Promise<void> {
+  await saveWorkspaceConfig(projectDir, { "agent.conflict_mode": mode });
 }
 
 /**

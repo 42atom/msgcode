@@ -14,6 +14,7 @@ import { logger } from "../logger/index.js";
 import { sendAttachmentsToSession } from "./sender.js";
 import { withRemoteHintIfNeeded } from "./remote_hint.js";
 import type { Attachment } from "../channels/types.js";
+import { resolveTmuxModelOutputContract, type ModelOutputContract } from "../agent-backend/config.js";
 import { setTimeout as sleep } from "node:timers/promises";
 import { promises as fs } from "node:fs";
 
@@ -99,6 +100,7 @@ export interface ResponseResult {
 
 interface ReadSetup {
     readMode: ReadMode;
+    parseContract: ModelOutputContract["parse"];
     coderReader: CodexOutputReader | null;
     claudeReader: OutputReader | null;
     coderJsonlPath: string | null;
@@ -193,6 +195,7 @@ async function resolveReadSetup(
     timeout: number,
     signal?: AbortSignal,
 ): Promise<ReadSetup> {
+    const tmuxContract = resolveTmuxModelOutputContract(runnerOld);
     let readMode: ReadMode = "pane";
     let coderReader: CodexOutputReader | null = null;
     let claudeReader: OutputReader | null = null;
@@ -200,7 +203,7 @@ async function resolveReadSetup(
     let claudeJsonlPath: string | null = null;
     let claudeJsonlSelectionInfo: import("../output/reader.js").ReadResult["selectionInfo"] | null = null;
 
-    if (runnerOld === "codex") {
+    if (tmuxContract.parse.parserKind === "codex-jsonl") {
         coderReader = responderRuntimeDeps.createCodexReader();
         if (options.projectDir) {
             coderJsonlPath = await waitForCodexJsonlPath(coderReader, options.projectDir, timeout, signal);
@@ -214,9 +217,11 @@ async function resolveReadSetup(
                 runnerOld,
                 readMode,
                 projectDir: options.projectDir,
+                modelSelector: tmuxContract.modelSelector,
+                parserKind: tmuxContract.parse.parserKind,
             });
         }
-    } else if (runnerOld === "claude-code") {
+    } else if (tmuxContract.parse.parserKind === "assistant-jsonl") {
         claudeReader = responderRuntimeDeps.createOutputReader();
         if (options.projectDir) {
             const initResult = await claudeReader.readProject(options.projectDir);
@@ -234,6 +239,8 @@ async function resolveReadSetup(
                 runnerOld,
                 readMode,
                 projectDir: options.projectDir,
+                modelSelector: tmuxContract.modelSelector,
+                parserKind: tmuxContract.parse.parserKind,
             });
         }
     }
@@ -242,13 +249,17 @@ async function resolveReadSetup(
         module: "responder",
         groupName,
         runnerOld,
+        modelSelector: tmuxContract.modelSelector,
         readMode,
+        parserKind: tmuxContract.parse.parserKind,
+        completionSignal: tmuxContract.parse.completionSignal,
         codexJsonlPath: coderJsonlPath ?? "(none)",
         claudeJsonlPath: claudeJsonlPath ?? "(none)",
     });
 
     return {
         readMode,
+        parseContract: tmuxContract.parse,
         coderReader,
         claudeReader,
         coderJsonlPath,
@@ -431,6 +442,8 @@ async function readNextResponseChunk(params: {
             module: "responder",
             groupName,
             runnerOld,
+            parserKind: readSetup.parseContract.parserKind,
+            completionSignal: readSetup.parseContract.completionSignal,
             textLen: AssistantParser.toPlainText(parseResult).length,
             isComplete: parseResult.isComplete,
             finishReason: parseResult.finishReason,
@@ -577,6 +590,7 @@ export async function handleTmuxSend(
     // 默认参数（P0: 收敛新旧类型）
     const runnerType: RunnerType = options.runnerType ?? "tmux";
     const runnerOld: RunnerTypeOld = options.runnerOld ?? "claude";
+    const tmuxContract = resolveTmuxModelOutputContract(runnerOld);
 
     // fail-fast：会话存在但尚未就绪时，不要把消息直接塞进输入流（会导致长时间无输出）
     // 远程手机端体验：必须快速给到"还在启动"的反馈，而不是等待 5-10 分钟超时。
@@ -590,7 +604,7 @@ export async function handleTmuxSend(
         // best-effort：status 探测失败时继续走原逻辑（避免误伤）
     }
 
-    const timeout = options.timeout ?? (runnerOld === "codex" ? MAX_WAIT_MS_CODEX : MAX_WAIT_MS_CLAUDE);
+    const timeout = options.timeout ?? (tmuxContract.modelSelector === "tmux:codex" ? MAX_WAIT_MS_CODEX : MAX_WAIT_MS_CLAUDE);
     const fastInterval = options.fastInterval ?? FAST_INTERVAL;
     const slowInterval = options.slowInterval ?? SLOW_INTERVAL;
     const signal = options.signal;
@@ -600,7 +614,10 @@ export async function handleTmuxSend(
         module: "responder",
         groupName,
         runnerOld,
+        modelSelector: tmuxContract.modelSelector,
         readMode: readSetup.readMode,
+        parserKind: readSetup.parseContract.parserKind,
+        completionSignal: readSetup.parseContract.completionSignal,
         coderJsonlPath: readSetup.coderJsonlPath ?? "(none)",
         claudeJsonlPath: readSetup.claudeJsonlPath ?? "(none)",
         startOffset: baseline.startOffset,

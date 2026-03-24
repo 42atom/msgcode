@@ -15,15 +15,18 @@ import type { CommandHandlerOptions, CommandResult } from "./cmd-types.js";
 import {
   getBackendLane,
   getBranchModel,
+  getConflictMode,
   getPolicyMode,
   getTmuxClient,
   loadWorkspaceConfig,
   saveWorkspaceConfig,
   setBranchModel,
+  setConflictMode,
   setPolicyMode,
   setRuntimeKind,
   setTmuxClient,
   type BackendLane,
+  type ConflictMode,
   type ModelLane,
   type ModelSlot,
   type TmuxClient,
@@ -196,6 +199,7 @@ function renderModelStatusMessage(params: {
   localApp: LocalAgentBackendId;
   apiProvider: ApiProviderId;
   tmuxClient: TmuxClient;
+  conflictMode: ConflictMode;
   textModel?: string;
   visionModel?: string;
   ttsModel?: string;
@@ -208,6 +212,7 @@ function renderModelStatusMessage(params: {
     `local-app: ${params.localApp}`,
     `api-provider: ${params.apiProvider}`,
     `tmux-client: ${params.tmuxClient}`,
+    `conflict-mode: ${params.conflictMode}`,
     "",
     `text-model: ${formatBranchModelValue(params.backend, params.textModel)}`,
     `vision-model: ${formatVisionModelValue(params.backend, params.visionModel)}`,
@@ -256,6 +261,7 @@ async function buildModelStatus(projectDir: string): Promise<string> {
   const localApp = getConfiguredLocalApp();
   const apiProvider = getConfiguredApiProvider();
   const tmuxClient = getTmuxClientLabel(await getTmuxClient(projectDir));
+  const conflictMode = await getConflictMode(projectDir);
 
   const lane = backend === "tmux" ? null : backend;
   const textModel = lane ? await getBranchModel(projectDir, lane, "text") : undefined;
@@ -270,6 +276,7 @@ async function buildModelStatus(projectDir: string): Promise<string> {
     localApp,
     apiProvider,
     tmuxClient,
+    conflictMode,
     textModel,
     visionModel,
     ttsModel,
@@ -729,4 +736,78 @@ export async function handlePolicyCommand(options: CommandHandlerOptions): Promi
       message: `切换失败：${error instanceof Error ? error.message : String(error)}`,
     };
   }
+}
+
+export async function handleConflictModeCommand(options: CommandHandlerOptions): Promise<CommandResult> {
+  const { chatId, args } = options;
+  const bound = resolveBoundWorkspace(chatId);
+  if (!bound) {
+    return {
+      success: false,
+      message: `本群未绑定工作目录\n\n请先使用 /bind <dir> 绑定工作空间`,
+    };
+  }
+
+  function describeConflictMode(mode: ConflictMode): { short: ConflictMode; label: string } {
+    if (mode === "assisted") {
+      return { short: "assisted", label: "先告知并确认高影响冲突" };
+    }
+    return { short: "full", label: "默认自行收口可自解冲突" };
+  }
+
+  function normalizeConflictMode(input: string): ConflictMode | null {
+    const value = input.trim().toLowerCase();
+    if (["full", "auto", "direct"].includes(value)) {
+      return "full";
+    }
+    if (["assisted", "confirm", "safe"].includes(value)) {
+      return "assisted";
+    }
+    return null;
+  }
+
+  if (args.length === 0) {
+    const currentMode = await getConflictMode(bound.projectDir);
+    const current = describeConflictMode(currentMode);
+    return {
+      success: true,
+      message: `冲突处置模式\n\n` +
+        `当前：${current.short}（${current.label}）\n` +
+        `工作目录：${bound.label || bound.projectDir}\n\n` +
+        `可用模式:\n` +
+        `  full      默认自行处理可自解冲突\n` +
+        `  assisted  可能影响用户时先告知并确认\n\n` +
+        `用法:\n` +
+        `  /conflict-mode full\n` +
+        `  /conflict-mode assisted`,
+    };
+  }
+
+  const requestedMode = normalizeConflictMode(args[0] ?? "");
+  if (!requestedMode) {
+    return {
+      success: false,
+      message: `无效的 conflict-mode：${args[0]}\n\n可用模式：full | assisted`,
+    };
+  }
+
+  const previousMode = await getConflictMode(bound.projectDir);
+  await setConflictMode(bound.projectDir, requestedMode);
+  const previous = describeConflictMode(previousMode);
+  const next = describeConflictMode(requestedMode);
+
+  if (previousMode === requestedMode) {
+    return {
+      success: true,
+      message: `冲突处置模式未变更\n\n当前：${next.short}（${next.label}）`,
+    };
+  }
+
+  return {
+    success: true,
+    message: `已切换冲突处置模式\n\n` +
+      `旧模式：${previous.short}（${previous.label}）\n` +
+      `新模式：${next.short}（${next.label}）\n\n` +
+      `下一轮 prompt 注入立即生效`,
+  };
 }

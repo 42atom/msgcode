@@ -58,6 +58,11 @@ function formatProbe(lines: string[], probe: ProbeResult, indent: string): void 
 
     // 输出详情
     if (probe.details && Object.keys(probe.details).length > 0) {
+        if (probe.name === "thread-context") {
+            formatThreadContextDetails(lines, probe.details, indent);
+            return;
+        }
+
         // E15 补丁：路由探针特殊处理（隐藏敏感路径）
         const displayDetails = probe.name === "routes"
             ? formatRouteDetails(probe.details)
@@ -66,6 +71,29 @@ function formatProbe(lines: string[], probe: ProbeResult, indent: string): void 
         for (const [key, value] of Object.entries(displayDetails)) {
             lines.push(`${indent}  ${key}: ${formatValue(value, key, displayDetails)}`);
         }
+    }
+}
+
+function formatThreadContextDetails(lines: string[], details: Record<string, unknown>, indent: string): void {
+    const segments = Array.isArray(details.segments) ? details.segments as Array<Record<string, unknown>> : [];
+    for (const segment of segments) {
+        const key = typeof segment.key === "string" ? segment.key : "unknown";
+        const status = typeof segment.status === "string" ? segment.status : "unavailable";
+        if (status !== "ok") {
+            lines.push(`${indent}  [${key} unavailable]`);
+            continue;
+        }
+        const tokens = typeof segment.tokens === "number" ? segment.tokens : 0;
+        const ratio = typeof segment.ratio === "number" ? segment.ratio : 0;
+        const ratioPct = ratio > 0 && ratio < 0.01
+            ? "<1%"
+            : `${Math.round(ratio * 100)}%`;
+        lines.push(`${indent}  [${key} ${tokens} tokens | ${ratioPct}]`);
+    }
+
+    const totalTokens = details.totalTokens;
+    if (typeof totalTokens === "number") {
+        lines.push(`${indent}  totalTokens: ${totalTokens}`);
     }
 }
 

@@ -43,6 +43,8 @@ export type {
 export {
     // 配置常量
     MODEL_ALIAS_SET,
+    resolveAgentModelOutputContract,
+    resolveTmuxModelOutputContract,
     // 配置函数
     parseBackendTimeoutMs,
     normalizeAgentBackendId,
@@ -50,6 +52,20 @@ export {
     resolveAgentBackendRuntime,
     // 兼容函数
     resolveLmStudioBackendRuntime,
+} from "./config.js";
+
+export type {
+    ModelContractSelector,
+    ModelToolProtocol,
+    ModelRequestMaxOutputPolicy,
+    ModelRequestStopPolicy,
+    ModelReasoningEffortPolicy,
+    ModelParserKind,
+    ModelCompletionSignal,
+    ModelToolCallShape,
+    ModelRequestContract,
+    ModelParseContract,
+    ModelOutputContract,
 } from "./config.js";
 
 export type {

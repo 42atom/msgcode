@@ -16,6 +16,7 @@ import type {
 import {
     resolveAgentBackendRuntime,
     normalizeModelOverride,
+    resolveAgentModelOutputContract,
 } from "./config.js";
 import {
     resolveBaseSystemPrompt,
@@ -23,7 +24,12 @@ import {
     buildDialogPromptWithContext,
     LMSTUDIO_DEFAULT_CHAT_MODEL,
 } from "./prompt.js";
-import { normalizeBaseUrl as normalizeBaseUrlAdapter, fetchWithTimeout } from "../providers/openai-compat-adapter.js";
+import {
+    normalizeBaseUrl as normalizeBaseUrlAdapter,
+    fetchWithTimeout,
+    buildChatCompletionRequest,
+    parseChatCompletionResponse,
+} from "../providers/openai-compat-adapter.js";
 import { sanitizeLmStudioOutput as sanitizeCore, dropBeforeLastClosingTag } from "../providers/output-normalizer.js";
 import {
     type MiniMaxAnthropicMessage,
@@ -36,6 +42,7 @@ import {
     LOCAL_MODEL_LOAD_MAX_RETRIES,
     maybeReloadLocalModelAndRetry,
 } from "../runtime/model-service-lease.js";
+import { getConflictMode } from "../config/workspace.js";
 
 // ============================================
 // 类型定义
@@ -81,6 +88,7 @@ type LmStudioOpenAIChatParams = {
     prompt: string;
     system?: string;
     maxTokens: number;
+    stopSequences?: string[];
     timeoutMs: number;
     apiKey?: string;
     temperature?: number;
@@ -601,30 +609,26 @@ async function runLmStudioChatOpenAICompat(params: LmStudioOpenAIChatParams): Pr
     let lastError: Error | undefined;
     for (let attempt = 0; attempt <= LOCAL_MODEL_LOAD_MAX_RETRIES; attempt++) {
         try {
+            const requestBody = buildChatCompletionRequest({
+                model: params.model,
+                messages,
+                maxTokens: params.maxTokens,
+                temperature: params.temperature ?? 0.7,
+                stop: params.stopSequences,
+            });
             const rawText = await fetchTextWithTimeout({
                 url,
                 method: "POST",
                 timeoutMs: params.timeoutMs,
                 headers: { "content-type": "application/json" },
-                body: JSON.stringify({
-                    model: params.model,
-                    messages,
-                    stream: false,
-                    max_tokens: params.maxTokens,
-                    temperature: params.temperature ?? 0.7,
-                }),
+                body: requestBody,
                 apiKey: params.apiKey,
             });
-
-            let json: unknown;
-            try {
-                json = JSON.parse(rawText);
-            } catch {
-                throw new Error(`LM Studio API 返回非 JSON：${sanitizeLmStudioOutput(rawText).slice(0, 400)}`);
+            const parsed = parseChatCompletionResponse(rawText);
+            if (parsed.error) {
+                throw new Error(`Agent backend API 错误：${parsed.error}`);
             }
-
-            const content = isChatCompletion(json) ? json.choices[0]?.message?.content : undefined;
-            const text = typeof content === "string" ? content : (content ? String(content) : "");
+            const text = typeof parsed.content === "string" ? parsed.content : "";
             if (!text || !text.trim()) {
                 throw new Error(`LM Studio(${params.model}) 未返回可展示的内容`);
             }
@@ -686,6 +690,7 @@ async function runMiniMaxChatAnthropic(params: LmStudioOpenAIChatParams): Promis
 
 export async function runAgentChat(options: AgentChatOptions): Promise<string> {
     const backendRuntime = options.backendRuntime || resolveAgentBackendRuntime();
+    const modelContract = resolveAgentModelOutputContract(backendRuntime);
     const baseUrl = normalizeBaseUrl(backendRuntime.baseUrl);
     const modelOverride = normalizeModelOverride(options.model);
     const backendDefaultModel = normalizeModelOverride(backendRuntime.model);
@@ -711,17 +716,34 @@ export async function runAgentChat(options: AgentChatOptions): Promise<string> {
     const temperature = options.temperature ?? 0.7;
 
     const baseSystem = await resolveBaseSystemPrompt(options.system);
+    const conflictMode = options.workspace ? await getConflictMode(options.workspace) : "full";
 
     const timeoutMs = backendRuntime.timeoutMs;
 
     const maxTokens = typeof config.lmstudioMaxTokens === "number" && Number.isFinite(config.lmstudioMaxTokens) && config.lmstudioMaxTokens > 0
         ? Math.floor(config.lmstudioMaxTokens)
         : 4000;
+    const requestMaxTokens = modelContract.request.requestMaxOutputTokens === "explicit"
+        ? maxTokens
+        : maxTokens;
+    const requestStopSequences = modelContract.request.requestStopSequences === "explicit"
+        ? modelContract.request.stopSequences
+        : [];
 
     const useMcp = backendRuntime.nativeApiEnabled && process.env.LMSTUDIO_ENABLE_MCP === "1" && !!options.workspace;
     const allowLocalModelReload = backendRuntime.supportsModelLifecycle !== false;
 
     const mcpMaxTokens = Math.max(maxTokens, 1024);
+
+    logger.info("agent model output contract selected", {
+        module: "agent-backend/chat",
+        backendId: backendRuntime.id,
+        modelSelector: modelContract.modelSelector,
+        requestToolProtocol: modelContract.request.toolProtocol,
+        parserKind: modelContract.parse.parserKind,
+        completionSignal: modelContract.parse.completionSignal,
+        toolCallShape: modelContract.parse.toolCallShape,
+    });
 
     const promptWithContext = buildDialogPromptWithContext({
         prompt: options.prompt,
@@ -735,14 +757,16 @@ export async function runAgentChat(options: AgentChatOptions): Promise<string> {
         useMcp,
         options.soulContext
             ? { content: options.soulContext.content, source: options.soulContext.source }
-            : undefined
+            : undefined,
+        conflictMode
     );
     const compatSystemPrompt = buildDialogSystemPrompt(
         baseSystem,
         false,
         options.soulContext
             ? { content: options.soulContext.content, source: options.soulContext.source }
-            : undefined
+            : undefined,
+        conflictMode
     );
 
     async function runNativeMcpOnce(maxOutputTokens: number): Promise<string> {
@@ -783,6 +807,7 @@ export async function runAgentChat(options: AgentChatOptions): Promise<string> {
             prompt: promptWithContext,
             system: compatSystemPrompt && compatSystemPrompt.trim() ? compatSystemPrompt.trim() : undefined,
             maxTokens: maxOutputTokens,
+            stopSequences: requestStopSequences,
             timeoutMs,
             apiKey: backendRuntime.apiKey,
             temperature,
@@ -806,19 +831,19 @@ export async function runAgentChat(options: AgentChatOptions): Promise<string> {
     }
 
     if (backendRuntime.id === "minimax") {
-        return await runMiniMaxOnce(maxTokens);
+        return await runMiniMaxOnce(requestMaxTokens);
     }
 
     if (backendRuntime.nativeApiEnabled) {
         try {
             if (useMcp) {
-                return await runNativeMcpOnce(maxTokens);
+                return await runNativeMcpOnce(requestMaxTokens);
             }
-            return await runNativeOnce(maxTokens);
+            return await runNativeOnce(requestMaxTokens);
         } catch (error: unknown) {
             const msg = error instanceof Error ? error.message : "";
 
-            if (isModelCrashedMessage(msg) && maxTokens > 1600) {
+            if (isModelCrashedMessage(msg) && requestMaxTokens > 1600) {
                 try {
                     return await runNativeOnce(1600);
                 } catch {
@@ -834,10 +859,10 @@ export async function runAgentChat(options: AgentChatOptions): Promise<string> {
     }
 
     try {
-        return await runCompatOnce(maxTokens);
+        return await runCompatOnce(requestMaxTokens);
     } catch (error: unknown) {
         const msg = error instanceof Error ? error.message : "";
-        if (isModelCrashedMessage(msg) && maxTokens > 1600) {
+        if (isModelCrashedMessage(msg) && requestMaxTokens > 1600) {
             return await runCompatOnce(1600);
         }
         throw error instanceof Error ? error : new Error("LM Studio 调用失败");

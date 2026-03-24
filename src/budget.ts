@@ -155,6 +155,18 @@ export function estimateMessageTokens(
 }
 
 /**
+ * Estimate tokens from plain text
+ */
+export function estimateTextTokens(
+    text: string,
+    charsPerToken: number = DEFAULT_CHARS_PER_TOKEN
+): number {
+    const normalized = text || "";
+    if (!normalized) return 0;
+    return Math.ceil(normalized.length / charsPerToken);
+}
+
+/**
  * Estimate total tokens for message array
  *
  * @param messages - Array of messages

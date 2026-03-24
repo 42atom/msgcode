@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 import { config } from "../config.js";
 import { logger } from "../logger/index.js";
 import { MODEL_ALIAS_SET } from "./config.js";
+import type { ConflictMode } from "../config/workspace.js";
 
 // ============================================
 // 提示词常量
@@ -37,6 +38,14 @@ export const QUICK_ANSWER_CONSTRAINT_FILE = path.resolve(
 export const EXEC_TOOL_PROTOCOL_CONSTRAINT_FILE = path.resolve(
     DEFAULT_PROMPT_FRAGMENT_DIR,
     "exec-tool-protocol-constraint.md"
+);
+export const CONFLICT_MODE_FULL_FILE = path.resolve(
+    DEFAULT_PROMPT_FRAGMENT_DIR,
+    "conflict-mode-full.md"
+);
+export const CONFLICT_MODE_ASSISTED_FILE = path.resolve(
+    DEFAULT_PROMPT_FRAGMENT_DIR,
+    "conflict-mode-assisted.md"
 );
 
 /**
@@ -103,6 +112,8 @@ export const QUICK_ANSWER_CONSTRAINT = loadPromptFragmentSync(QUICK_ANSWER_CONST
 export const EXEC_TOOL_PROTOCOL_CONSTRAINT = loadPromptFragmentSync(
     EXEC_TOOL_PROTOCOL_CONSTRAINT_FILE
 );
+export const CONFLICT_MODE_FULL_CONSTRAINT = loadPromptFragmentSync(CONFLICT_MODE_FULL_FILE);
+export const CONFLICT_MODE_ASSISTED_CONSTRAINT = loadPromptFragmentSync(CONFLICT_MODE_ASSISTED_FILE);
 
 export const READ_FILE_PREVIEW_CONSTRAINT =
     "若 read_file 的 tool_result 预览里出现 [lastNonEmptyLine]，它就是该文件尾部最后一条非空行；回答尾行/最后一行类问题时优先直接使用这条事实，不要把 [EOF] 当成正文内容。";
@@ -212,7 +223,8 @@ export async function resolveBaseSystemPrompt(systemOverride?: string): Promise<
 export function buildDialogSystemPrompt(
     base: string,
     useMcp: boolean,
-    soulContext?: { content: string; source: string }
+    soulContext?: { content: string; source: string },
+    conflictMode: ConflictMode = "full"
 ): string {
     const parts: string[] = [];
 
@@ -229,7 +241,13 @@ export function buildDialogSystemPrompt(
         parts.push(MCP_ANTI_LOOP_RULES);
     }
 
-    // 4. SOUL 上下文（仅 dialog 链路允许注入）
+    // 4. 冲突处置姿态
+    const conflictModeConstraint = resolveConflictModeConstraint(conflictMode);
+    if (conflictModeConstraint) {
+        parts.push(conflictModeConstraint);
+    }
+
+    // 5. SOUL 上下文（仅 dialog 链路允许注入）
     if (soulContext && soulContext.source !== "none") {
         parts.push(`\n\n[灵魂身份]\n${soulContext.content}\n[/灵魂身份]`);
         parts.push(`（SOUL 已内置到系统提示中，你不需要也不应该尝试读取"灵魂文件"或"灵魂脚本"）`);
@@ -247,7 +265,11 @@ export function buildDialogSystemPrompt(
  * @param useMcp 是否启用 MCP
  * @returns 完整的 system prompt（不含 SOUL）
  */
-export function buildExecSystemPrompt(base: string, useMcp: boolean): string {
+export function buildExecSystemPrompt(
+    base: string,
+    useMcp: boolean,
+    conflictMode: ConflictMode = "full"
+): string {
     const parts: string[] = [];
 
     // 1. 基础 prompt
@@ -267,9 +289,21 @@ export function buildExecSystemPrompt(base: string, useMcp: boolean): string {
         parts.push(MCP_ANTI_LOOP_RULES);
     }
 
+    const conflictModeConstraint = resolveConflictModeConstraint(conflictMode);
+    if (conflictModeConstraint) {
+        parts.push(conflictModeConstraint);
+    }
+
     // 注意：exec 链路禁止注入 SOUL，保持提示词最小且协议化
 
     return parts.join("\n\n");
+}
+
+function resolveConflictModeConstraint(mode: ConflictMode): string {
+    if (mode === "assisted") {
+        return CONFLICT_MODE_ASSISTED_CONSTRAINT;
+    }
+    return CONFLICT_MODE_FULL_CONSTRAINT;
 }
 
 export type { ConversationContextBudget } from "../runtime/context-policy.js";

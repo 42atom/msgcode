@@ -12,6 +12,7 @@ import {
     probeRoutes,
     probeConnections,
     probeResources,
+    probeContext,
 } from "./probes/index.js";
 import { probeJobs } from "./probes/jobs.js";
 import { probeDeps } from "./probes/deps.js";
@@ -40,6 +41,7 @@ const PROBE_CATEGORIES = [
     { name: "语音", key: "tts", probe: probeTts },
     { name: "执行臂", key: "runner", probe: probeCodex },
     { name: "入站", key: "inbound", probe: probeInbound },
+    { name: "上下文", key: "context", probe: probeContext },
 ] as const;
 
 /**
@@ -58,7 +60,7 @@ export async function runAllProbes(options?: ProbeOptions): Promise<StatusReport
             const timeout = options?.timeout ?? (
                 categoryDef.key === "connections" ? 2000 : 5000
             );
-            return await categoryDef.probe({ timeout });
+            return await categoryDef.probe({ ...(options || {}), timeout });
         });
 
         // 构建类别结果
@@ -116,7 +118,7 @@ export async function runSingleProbe(
         const timeout = options?.timeout ?? (
             category === "connections" ? 2000 : 5000
         );
-        return await categoryDef.probe({ timeout });
+        return await categoryDef.probe({ ...(options || {}), timeout });
     });
 
     categories[category] = {

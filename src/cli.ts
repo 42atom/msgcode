@@ -173,13 +173,29 @@ program
   .command("probe [category]")
   .description("运行诊断探针（environment|permissions|config|routes|connections|resources）")
   .option("-j, --json", "JSON 格式输出（短选项）")
+  .option("--workspace <path>", "thread/context probe: workspace 绝对路径")
+  .option("--chat-id <id>", "thread/context probe: chatId")
+  .option("--prompt <text>", "thread/context probe: 当前输入")
+  .option("--task-id <id>", "thread/context probe: taskId")
+  .option("--agent-provider <id>", "thread/context probe: agent provider")
+  .option("--model <id>", "thread/context probe: model")
+  .option("--system <text>", "thread/context probe: system override")
   .action(async (category: string | undefined, options) => {
     const startTime = Date.now();
     const { runAllProbes, runSingleProbe, formatReport } = await import("./probe/index.js");
+    const probeOptions = {
+      workspacePath: options.workspace,
+      chatId: options.chatId,
+      prompt: options.prompt,
+      taskId: options.taskId,
+      agentProvider: options.agentProvider,
+      model: options.model,
+      systemOverride: options.system,
+    };
 
     if (category) {
       // 运行单个类别探针
-      const report = await runSingleProbe(category);
+      const report = await runSingleProbe(category, probeOptions);
       const command = `msgcode probe ${category}`;
       const output = formatReport(report, {
         format: options.json ? "json" : "text",
@@ -191,7 +207,7 @@ program
       process.exit(exitCode);
     } else {
       // 运行所有探针
-      const report = await runAllProbes();
+      const report = await runAllProbes(probeOptions);
       const output = formatReport(report, {
         format: options.json ? "json" : "text",
         colorize: true,

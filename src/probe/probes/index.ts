@@ -14,3 +14,4 @@ export { probeDeps } from "./deps.js";
 export { probeCodex } from "./runner.js";
 export { probeTts } from "./tts.js";
 export { probeInbound } from "./inbound.js";
+export { probeContext } from "./context.js";

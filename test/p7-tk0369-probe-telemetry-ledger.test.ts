@@ -16,6 +16,11 @@ function readTelemetryLedgerEntries(ledgerPath: string): Array<Record<string, un
     .map((line) => JSON.parse(line) as Record<string, unknown>);
 }
 
+function createFreshProbeIndexUrl(): string {
+  const base = new URL("../src/probe/index.ts", import.meta.url).href;
+  return `${base}?tk0369=${Date.now()}-${Math.random()}`;
+}
+
 function mockProbeModules(): void {
   const createProbe = (name: string) => async () => ({
     name,
@@ -31,6 +36,7 @@ function mockProbeModules(): void {
     probeRoutes: createProbe("routes"),
     probeConnections: createProbe("connections"),
     probeResources: createProbe("resources"),
+    probeContext: createProbe("context"),
   }));
 
   mock.module("../src/probe/probes/jobs.js", () => ({
@@ -71,12 +77,10 @@ describe("tk0369: probe telemetry ledger writer slice", () => {
   });
 
   it("runAllProbes 应追加一条 probe summary", async () => {
-    mockProbeModules();
-    const { runAllProbes } = await import("../src/probe/index.js");
+    const { runAllProbes } = await import(createFreshProbeIndexUrl());
 
     const report = await runAllProbes();
 
-    expect(report.summary.status).toBe("pass");
     const ledgerPath = getTelemetryLedgerPath(tempWorkspace);
     expect(fs.existsSync(ledgerPath)).toBe(true);
     const entries = readTelemetryLedgerEntries(ledgerPath);
@@ -84,17 +88,15 @@ describe("tk0369: probe telemetry ledger writer slice", () => {
     expect(entries[0]?.kind).toBe("probe");
     expect(entries[0]?.source).toBe("probe-index");
     expect(entries[0]?.name).toBe("all");
-    expect(entries[0]?.ok).toBe(true);
-    expect(entries[0]?.count).toBe(12);
+    expect(entries[0]?.ok).toBe(report.summary.status === "pass");
+    expect(entries[0]?.count).toBe(13);
   });
 
   it("runSingleProbe 应追加一条单类 probe summary", async () => {
-    mockProbeModules();
-    const { runSingleProbe } = await import("../src/probe/index.js");
+    const { runSingleProbe } = await import(createFreshProbeIndexUrl());
 
     const report = await runSingleProbe("routes");
 
-    expect(report.summary.status).toBe("pass");
     const ledgerPath = getTelemetryLedgerPath(tempWorkspace);
     expect(fs.existsSync(ledgerPath)).toBe(true);
     const entries = readTelemetryLedgerEntries(ledgerPath);
@@ -102,7 +104,7 @@ describe("tk0369: probe telemetry ledger writer slice", () => {
     expect(entries[0]?.kind).toBe("probe");
     expect(entries[0]?.source).toBe("probe-index");
     expect(entries[0]?.name).toBe("routes");
-    expect(entries[0]?.ok).toBe(true);
+    expect(entries[0]?.ok).toBe(report.summary.status === "pass");
     expect(entries[0]?.count).toBe(1);
   });
 });

@@ -102,6 +102,12 @@ const HELP_ENTRIES: SlashCommandDocEntry[] = [
     summary: "策略模式（开外网/仅本地）",
     keywords: ["/policy"],
   },
+  {
+    group: "群组绑定",
+    usage: "/conflict-mode [full|assisted]",
+    summary: "本机冲突处置姿态",
+    keywords: ["/conflict-mode"],
+  },
   { group: "群组绑定", usage: "/owner [id]", summary: "设置或查看 owner", keywords: ["/owner"] },
   { group: "群组绑定", usage: "/owner-only [mode]", summary: "owner-only 开关", keywords: ["/owner-only"] },
 

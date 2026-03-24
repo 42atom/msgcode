@@ -15,6 +15,139 @@ import { config } from "../config.js";
 import { resolveLocalBackendRuntime } from "../local-backend/registry.js";
 import type { AgentBackendId, AgentBackendRuntime } from "./types.js";
 
+////// Per-model contract baseline
+
+export type ModelContractSelector =
+    | "tmux:codex"
+    | "tmux:claude-code"
+    | "agent:openai-compat"
+    | "agent:minimax";
+
+export type ModelToolProtocol =
+    | "cli-owned"
+    | "native-tool-call"
+    | "anthropic-content";
+
+export type ModelRequestMaxOutputPolicy = "cli-owned" | "explicit";
+export type ModelRequestStopPolicy = "cli-owned" | "explicit" | "unsupported";
+export type ModelReasoningEffortPolicy = "cli-owned" | "provider-default";
+export type ModelParserKind =
+    | "codex-jsonl"
+    | "assistant-jsonl"
+    | "openai-compat-tool-call"
+    | "minimax-anthropic-content";
+export type ModelCompletionSignal = "stable-text" | "stop-hook-summary" | "finish-reason";
+export type ModelToolCallShape = "none" | "anthropic-content-block" | "openai-tool-call";
+
+export interface ModelRequestContract {
+    modelSelector: ModelContractSelector;
+    toolProtocol: ModelToolProtocol;
+    requestMaxOutputTokens: ModelRequestMaxOutputPolicy;
+    requestStopSequences: ModelRequestStopPolicy;
+    reasoningEffortPolicy: ModelReasoningEffortPolicy;
+    stopSequences: string[];
+}
+
+export interface ModelParseContract {
+    modelSelector: ModelContractSelector;
+    parserKind: ModelParserKind;
+    completionSignal: ModelCompletionSignal;
+    toolCallShape: ModelToolCallShape;
+}
+
+export interface ModelOutputContract {
+    modelSelector: ModelContractSelector;
+    request: ModelRequestContract;
+    parse: ModelParseContract;
+}
+
+type TmuxContractRunner = "codex" | "claude-code" | "claude";
+
+const MODEL_OUTPUT_CONTRACTS: Record<ModelContractSelector, ModelOutputContract> = {
+    "tmux:codex": {
+        modelSelector: "tmux:codex",
+        request: {
+            modelSelector: "tmux:codex",
+            toolProtocol: "cli-owned",
+            requestMaxOutputTokens: "cli-owned",
+            requestStopSequences: "cli-owned",
+            reasoningEffortPolicy: "cli-owned",
+            stopSequences: [],
+        },
+        parse: {
+            modelSelector: "tmux:codex",
+            parserKind: "codex-jsonl",
+            completionSignal: "stable-text",
+            toolCallShape: "none",
+        },
+    },
+    "tmux:claude-code": {
+        modelSelector: "tmux:claude-code",
+        request: {
+            modelSelector: "tmux:claude-code",
+            toolProtocol: "cli-owned",
+            requestMaxOutputTokens: "cli-owned",
+            requestStopSequences: "cli-owned",
+            reasoningEffortPolicy: "cli-owned",
+            stopSequences: [],
+        },
+        parse: {
+            modelSelector: "tmux:claude-code",
+            parserKind: "assistant-jsonl",
+            completionSignal: "stop-hook-summary",
+            toolCallShape: "anthropic-content-block",
+        },
+    },
+    "agent:openai-compat": {
+        modelSelector: "agent:openai-compat",
+        request: {
+            modelSelector: "agent:openai-compat",
+            toolProtocol: "native-tool-call",
+            requestMaxOutputTokens: "explicit",
+            requestStopSequences: "explicit",
+            reasoningEffortPolicy: "provider-default",
+            stopSequences: [],
+        },
+        parse: {
+            modelSelector: "agent:openai-compat",
+            parserKind: "openai-compat-tool-call",
+            completionSignal: "finish-reason",
+            toolCallShape: "openai-tool-call",
+        },
+    },
+    "agent:minimax": {
+        modelSelector: "agent:minimax",
+        request: {
+            modelSelector: "agent:minimax",
+            toolProtocol: "anthropic-content",
+            requestMaxOutputTokens: "explicit",
+            requestStopSequences: "unsupported",
+            reasoningEffortPolicy: "provider-default",
+            stopSequences: [],
+        },
+        parse: {
+            modelSelector: "agent:minimax",
+            parserKind: "minimax-anthropic-content",
+            completionSignal: "finish-reason",
+            toolCallShape: "anthropic-content-block",
+        },
+    },
+};
+
+export function resolveAgentModelOutputContract(runtime: Pick<AgentBackendRuntime, "id">): ModelOutputContract {
+    if (runtime.id === "minimax") {
+        return MODEL_OUTPUT_CONTRACTS["agent:minimax"];
+    }
+    return MODEL_OUTPUT_CONTRACTS["agent:openai-compat"];
+}
+
+export function resolveTmuxModelOutputContract(runnerOld: TmuxContractRunner): ModelOutputContract {
+    if (runnerOld === "codex") {
+        return MODEL_OUTPUT_CONTRACTS["tmux:codex"];
+    }
+    return MODEL_OUTPUT_CONTRACTS["tmux:claude-code"];
+}
+
 // ============================================
 // Provider 别名集合
 // ============================================

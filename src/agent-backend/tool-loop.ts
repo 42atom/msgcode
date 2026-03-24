@@ -37,6 +37,7 @@ import {
     normalizeModelOverride,
 } from "./config.js";
 import { runAgentChat } from "./chat.js";
+import { getConflictMode } from "../config/workspace.js";
 import {
     filterDefaultLlmTools,
     renderLlmToolIndexForWorkspace,
@@ -545,9 +546,10 @@ async function buildOpenAiExecSystemPrompt(params: {
     workspacePath: string;
     workspaceRootForTools: string;
     toolNames: ToolName[];
+    conflictMode: "full" | "assisted";
 }): Promise<string> {
     const useMcp = params.backendRuntime.nativeApiEnabled && process.env.LMSTUDIO_ENABLE_MCP === "1" && !!params.workspacePath;
-    let system = buildExecSystemPrompt(params.baseSystem, useMcp);
+    let system = buildExecSystemPrompt(params.baseSystem, useMcp, params.conflictMode);
 
     system += `\n\n${await renderLlmToolIndexForWorkspace(params.toolNames, params.workspaceRootForTools)}`;
     const workspacePathHint = buildWorkspacePathHint(params.workspacePath);
@@ -1688,12 +1690,14 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     const baseSystem = await resolveBaseSystemPrompt(options.system);
     const workspacePath = options.workspacePath || root;
     const toolNames = options.tools ? (options.tools as ToolName[]) : await getToolsForLlm(workspaceRootForTools);
+    const conflictMode = await getConflictMode(workspacePath);
     const system = await buildOpenAiExecSystemPrompt({
         baseSystem,
         backendRuntime,
         workspacePath,
         workspaceRootForTools,
         toolNames,
+        conflictMode,
     });
     const messages = buildOpenAiConversationMessages({
         system,
