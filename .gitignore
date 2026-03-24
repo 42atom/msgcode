@@ -95,9 +95,8 @@ AIDOCS/audio/
 AIDOCS/media/
 AIDOCS/ui-design-src/
 
-# Local codegraph workspace artifacts
-.codegraph/
-.codegraphrc.json
+# Local codegraph workspace artifacts/config
+.codegraph*
 
 # Local MCP client config
 .mcp.json
