@@ -60,7 +60,7 @@ export function buildThreadSurfaceCliArgs(request: ThreadSurfaceRunCommandReques
 
   const workspace = request.workspace.trim();
   if (!workspace) {
-    throw new Error(`Readonly host bridge requires workspace for ${request.command} command`);
+    throw new Error(`Thread surface bridge requires workspace for ${request.command} command`);
   }
 
   if (request.command === "profile" || request.command === "capabilities") {
@@ -76,7 +76,7 @@ export function buildThreadSurfaceCliArgs(request: ThreadSurfaceRunCommandReques
   const threadRequest = request as ThreadSurfaceThreadRequest;
   const threadId = threadRequest.threadId.trim();
   if (!threadId) {
-    throw new Error("Readonly host bridge requires threadId for thread command");
+    throw new Error("Thread surface bridge requires threadId for thread command");
   }
 
   return [
@@ -90,8 +90,8 @@ export function buildThreadSurfaceCliArgs(request: ThreadSurfaceRunCommandReques
   ];
 }
 
-export function getReadonlySurfaceChannel(): "msgcode:readonly-run-command" {
-  return "msgcode:readonly-run-command";
+export function getThreadSurfaceReadChannel(): "msgcode:thread-surface-run-command" {
+  return "msgcode:thread-surface-run-command";
 }
 
 export function getSendThreadInputChannel(): "msgcode:thread-send-input" {
@@ -104,7 +104,7 @@ export function getThreadUpdateChannel(): "msgcode:thread-updated" {
 
 export function createThreadSurfaceBridge(
   ipcInvoker: IpcInvokeLike & Partial<IpcSubscribeLike>,
-  readChannel = getReadonlySurfaceChannel(),
+  readChannel = getThreadSurfaceReadChannel(),
   writeChannel = getSendThreadInputChannel(),
   updateChannel = getThreadUpdateChannel(),
 ): ThreadSurfaceBridge {

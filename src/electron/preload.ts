@@ -1,6 +1,6 @@
 import {
   createThreadSurfaceBridge as createBridgeCore,
-  getReadonlySurfaceChannel,
+  getThreadSurfaceReadChannel,
   getSendThreadInputChannel,
   getThreadUpdateChannel,
   type IpcInvokeLike,
@@ -8,7 +8,7 @@ import {
 } from "./readonly-surface-bridge.js";
 
 type ThreadSurfaceIpcChannel =
-  | ReturnType<typeof getReadonlySurfaceChannel>
+  | ReturnType<typeof getThreadSurfaceReadChannel>
   | ReturnType<typeof getSendThreadInputChannel>;
 
 type ThreadSurfaceSubscribeChannel =
@@ -20,7 +20,7 @@ export function createThreadSurfaceIpcWhitelist(
   ipcRenderer: IpcRendererLike,
 ): IpcInvokeLike & IpcSubscribeLike {
   const allowedInvoke = new Set<ThreadSurfaceIpcChannel>([
-    getReadonlySurfaceChannel(),
+    getThreadSurfaceReadChannel(),
     getSendThreadInputChannel(),
   ]);
   const allowedSubscribe = new Set<ThreadSurfaceSubscribeChannel>([
@@ -30,19 +30,19 @@ export function createThreadSurfaceIpcWhitelist(
   return {
     async invoke(channel: string, request: unknown): Promise<unknown> {
       if (!allowedInvoke.has(channel as ThreadSurfaceIpcChannel)) {
-        throw new Error(`Readonly preload bridge rejected invoke channel: ${channel}`);
+        throw new Error(`Thread surface preload rejected invoke channel: ${channel}`);
       }
       return await ipcRenderer.invoke(channel, request);
     },
     on(channel: string, listener: (_event: unknown, payload: unknown) => void): void {
       if (!allowedSubscribe.has(channel as ThreadSurfaceSubscribeChannel)) {
-        throw new Error(`Readonly preload bridge rejected subscribe channel: ${channel}`);
+        throw new Error(`Thread surface preload rejected subscribe channel: ${channel}`);
       }
       ipcRenderer.on(channel, listener);
     },
     off(channel: string, listener: (_event: unknown, payload: unknown) => void): void {
       if (!allowedSubscribe.has(channel as ThreadSurfaceSubscribeChannel)) {
-        throw new Error(`Readonly preload bridge rejected unsubscribe channel: ${channel}`);
+        throw new Error(`Thread surface preload rejected unsubscribe channel: ${channel}`);
       }
       ipcRenderer.off(channel, listener);
     },

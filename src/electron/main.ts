@@ -6,7 +6,7 @@ import { resolveRuntimeEntry } from "../runtime/runtime-entry.js";
 import {
   buildThreadSurfaceCliArgs,
   getSendThreadInputChannel,
-  getReadonlySurfaceChannel,
+  getThreadSurfaceReadChannel,
   getThreadUpdateChannel,
   type ThreadSurfaceRunCommandRequest,
   type SendThreadInputRequest,
@@ -47,7 +47,7 @@ export function buildRendererHtml(rendererEntryUrl: string): string {
   ].join("\n");
 }
 
-export function buildReadonlySurfaceCliCommand(
+export function buildThreadSurfaceCliCommand(
   request: ThreadSurfaceRunCommandRequest,
   options?: { env?: NodeJS.ProcessEnv; nodePath?: string },
 ): { command: string; args: string[]; cwd: string } {
@@ -208,11 +208,11 @@ function bindThreadUpdateNotifications(
   child.once?.("error", fallbackNotify);
 }
 
-export async function runReadonlySurfaceCommand(
+export async function runThreadSurfaceCommand(
   request: ThreadSurfaceRunCommandRequest,
   options?: { env?: NodeJS.ProcessEnv; nodePath?: string },
 ): Promise<unknown> {
-  const command = buildReadonlySurfaceCliCommand(request, options);
+  const command = buildThreadSurfaceCliCommand(request, options);
 
   return await new Promise((resolve, reject) => {
     const child = spawn(command.command, command.args, {
@@ -232,7 +232,7 @@ export async function runReadonlySurfaceCommand(
     child.on("error", reject);
     child.on("close", (code) => {
       if (code !== 0) {
-        reject(new Error(stderr.trim() || stdout.trim() || `Readonly host bridge command failed: ${code}`));
+        reject(new Error(stderr.trim() || stdout.trim() || `Thread surface bridge command failed: ${code}`));
         return;
       }
       try {
@@ -304,8 +304,8 @@ export async function startElectronRuntime(entryModuleUrl = import.meta.url): Pr
   };
 
   await app.whenReady();
-  ipcMain.handle(getReadonlySurfaceChannel(), async (_event, request: ThreadSurfaceRunCommandRequest) => {
-    return await runReadonlySurfaceCommand(request);
+  ipcMain.handle(getThreadSurfaceReadChannel(), async (_event, request: ThreadSurfaceRunCommandRequest) => {
+    return await runThreadSurfaceCommand(request);
   });
   ipcMain.handle(getSendThreadInputChannel(), async (_event, request: SendThreadInputRequest) => {
     const notify = (payload: ThreadUpdateEventPayload): void => {

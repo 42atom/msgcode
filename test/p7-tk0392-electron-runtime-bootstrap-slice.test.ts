@@ -7,7 +7,7 @@ import {
 } from "../src/electron/main.js";
 import { createThreadSurfaceIpcWhitelist } from "../src/electron/preload.js";
 import {
-  getReadonlySurfaceChannel,
+  getThreadSurfaceReadChannel,
   getSendThreadInputChannel,
   getThreadUpdateChannel,
 } from "../src/electron/readonly-surface-bridge.js";
@@ -203,22 +203,22 @@ describe("electron runtime bootstrap slice", () => {
       },
     });
 
-    await whitelist.invoke(getReadonlySurfaceChannel(), {});
+    await whitelist.invoke(getThreadSurfaceReadChannel(), {});
     await whitelist.invoke(getSendThreadInputChannel(), {});
     whitelist.on(getThreadUpdateChannel(), () => {});
     whitelist.off(getThreadUpdateChannel(), () => {});
 
     await expect(whitelist.invoke("msgcode:anything-else", {})).rejects.toThrow(
-      "Readonly preload bridge rejected invoke channel",
+      "Thread surface preload rejected invoke channel",
     );
     expect(() => whitelist.on("msgcode:anything-else", () => {})).toThrow(
-      "Readonly preload bridge rejected subscribe channel",
+      "Thread surface preload rejected subscribe channel",
     );
     expect(() => whitelist.off("msgcode:anything-else", () => {})).toThrow(
-      "Readonly preload bridge rejected unsubscribe channel",
+      "Thread surface preload rejected unsubscribe channel",
     );
     expect(calls).toEqual([
-      `invoke:${getReadonlySurfaceChannel()}`,
+      `invoke:${getThreadSurfaceReadChannel()}`,
       `invoke:${getSendThreadInputChannel()}`,
       `on:${getThreadUpdateChannel()}`,
       `off:${getThreadUpdateChannel()}`,

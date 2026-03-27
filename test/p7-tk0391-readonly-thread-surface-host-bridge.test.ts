@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test";
-import { buildReadonlySurfaceCliCommand, buildSendThreadInputCliCommand } from "../src/electron/main.js";
+import { buildThreadSurfaceCliCommand, buildSendThreadInputCliCommand } from "../src/electron/main.js";
 import {
   createThreadSurfaceBridge,
-  getReadonlySurfaceChannel,
+  getThreadSurfaceReadChannel,
   getSendThreadInputChannel,
   getThreadUpdateChannel,
 } from "../src/electron/readonly-surface-bridge.js";
@@ -21,12 +21,12 @@ describe("readonly thread surface host bridge slice", () => {
     };
     const bridge = createThreadSurfaceBridge(
       ipcRenderer as never,
-      getReadonlySurfaceChannel(),
+      getThreadSurfaceReadChannel(),
       getSendThreadInputChannel(),
     );
     expect(bridge.mode).toBe("live");
     await expect(bridge.runCommand({ command: "workspace-tree" })).resolves.toEqual({
-      channel: "msgcode:readonly-run-command",
+      channel: "msgcode:thread-surface-run-command",
       request: { command: "workspace-tree" },
     });
     await expect(
@@ -53,7 +53,7 @@ describe("readonly thread surface host bridge slice", () => {
           removed.push(channel);
         },
       },
-      getReadonlySurfaceChannel(),
+      getThreadSurfaceReadChannel(),
       getSendThreadInputChannel(),
       getThreadUpdateChannel(),
     );
@@ -74,7 +74,7 @@ describe("readonly thread surface host bridge slice", () => {
   });
 
   it("builds readonly surface cli invocations from the shared runtime entry", () => {
-    const workspaceTree = buildReadonlySurfaceCliCommand(
+    const workspaceTree = buildThreadSurfaceCliCommand(
       { command: "workspace-tree" },
       {
         env: { MSGCODE_CLI_ENTRY: "/tmp/msgcode/dist/cli.js" },
@@ -85,7 +85,7 @@ describe("readonly thread surface host bridge slice", () => {
     expect(workspaceTree.args.slice(-3)).toEqual(["appliance", "workspace-tree", "--json"]);
     expect(workspaceTree.cwd).toBe("/Users/admin/GitProjects/msgcode");
 
-    const thread = buildReadonlySurfaceCliCommand(
+    const thread = buildThreadSurfaceCliCommand(
       { command: "thread", workspace: "family", threadId: "thread-1" },
       {
         env: { MSGCODE_CLI_ENTRY: "/tmp/msgcode/dist/cli.js" },
@@ -103,7 +103,7 @@ describe("readonly thread surface host bridge slice", () => {
       "--json",
     ]);
 
-    const profile = buildReadonlySurfaceCliCommand(
+    const profile = buildThreadSurfaceCliCommand(
       { command: "profile", workspace: "/tmp/family" },
       {
         env: { MSGCODE_CLI_ENTRY: "/tmp/msgcode/dist/cli.js" },
@@ -118,7 +118,7 @@ describe("readonly thread surface host bridge slice", () => {
       "--json",
     ]);
 
-    const capabilities = buildReadonlySurfaceCliCommand(
+    const capabilities = buildThreadSurfaceCliCommand(
       { command: "capabilities", workspace: "/tmp/family" },
       {
         env: { MSGCODE_CLI_ENTRY: "/tmp/msgcode/dist/cli.js" },
