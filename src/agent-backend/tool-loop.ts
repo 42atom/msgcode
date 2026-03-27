@@ -225,6 +225,73 @@ const HARD_CAP_TOOL_CALLS = 999;
 const HARD_CAP_TOOL_STEPS = 4096;
 let cachedLocalModel: { baseUrl: string; id: string } | undefined;
 
+function resolvePositiveIntEnv(raw: string | undefined, fallback: number, min: number, max: number): number {
+    const parsed = Number(raw);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.max(min, Math.min(max, Math.floor(parsed)));
+}
+
+function resolveMessageToolCallLimit(): number {
+    return resolvePositiveIntEnv(process.env.MSGCODE_MESSAGE_TOOL_CALL_LIMIT, 12, 1, HARD_CAP_TOOL_CALLS);
+}
+
+function resolveMessageToolStepLimit(): number {
+    return resolvePositiveIntEnv(process.env.MSGCODE_MESSAGE_TOOL_STEP_LIMIT, 24, 1, HARD_CAP_TOOL_STEPS);
+}
+
+function resolveMessageToolLoopMaxMs(): number {
+    return resolvePositiveIntEnv(process.env.MSGCODE_MESSAGE_TOOL_LOOP_MAX_MS, 180_000, 100, 900_000);
+}
+
+function buildMessageToolLoopTimeoutAnswer(params: {
+    actionJournal: ActionJournalEntry[];
+}): string {
+    const lastAct = [...params.actionJournal]
+        .reverse()
+        .find((entry) => entry.phase === "act");
+    const lastToolText = lastAct?.tool ? `最后停在 ${lastAct.tool}。` : "";
+    return `这轮工具执行耗时过长，我先停在这里，避免继续卡住会话。${lastToolText}请直接再发一次，我会基于已拿到的结果继续。`;
+}
+
+function maybeBuildMessageWallClockStopResult(params: {
+    runSource?: AgentToolLoopOptions["runSource"];
+    startedAtMs: number;
+    maxWallClockMs?: number;
+    traceId: string;
+    provider: string;
+    route: "tool" | "complex-tool";
+    model: string;
+    actionJournal: ActionJournalEntry[];
+    executedToolCalls: ExecutedToolCall[];
+    quotaProfile: "conservative" | "balanced" | "aggressive";
+    perTurnToolCallLimit: number;
+    perTurnToolStepLimit: number;
+}): AgentToolLoopResult | undefined {
+    if (params.runSource !== "message" || !params.maxWallClockMs) return undefined;
+    if (Date.now() - params.startedAtMs < params.maxWallClockMs) return undefined;
+
+    const lastExecutedCall = params.executedToolCalls[params.executedToolCalls.length - 1];
+
+    return {
+        answer: buildMessageToolLoopTimeoutAnswer({
+            actionJournal: params.actionJournal,
+        }),
+        actionJournal: params.actionJournal,
+        continuable: true,
+        quotaProfile: params.quotaProfile,
+        perTurnToolCallLimit: params.perTurnToolCallLimit,
+        perTurnToolStepLimit: params.perTurnToolStepLimit,
+        remainingToolCalls: Math.max(0, params.perTurnToolCallLimit - params.executedToolCalls.length),
+        remainingSteps: Math.max(0, params.perTurnToolStepLimit - params.executedToolCalls.length),
+        continuationReason: "message_tool_loop_wall_clock_exceeded",
+        toolCall: lastExecutedCall ? {
+            name: lastExecutedCall.tc.function.name,
+            args: lastExecutedCall.args,
+            result: lastExecutedCall.result,
+        } : undefined,
+    };
+}
+
 function buildQuotaSignal(params: {
     kind: ToolLoopQuotaSignal["kind"];
     scope: ToolLoopQuotaSignal["scope"];
@@ -1508,6 +1575,10 @@ async function runMiniMaxAnthropicToolLoop(params: {
 }): Promise<AgentToolLoopResult> {
     const actionJournal: ActionJournalEntry[] = [];
     let stepId = 0;
+    const startedAtMs = Date.now();
+    const maxWallClockMs = params.options.runSource === "message"
+        ? resolveMessageToolLoopMaxMs()
+        : undefined;
 
     const anthropicContext = splitSystemFromMessages(params.baseMessages);
     let conversationMessages = anthropicContext.messages;
@@ -1563,6 +1634,24 @@ async function runMiniMaxAnthropicToolLoop(params: {
             }
 
             if (roundExecutedToolCalls.length > 0) {
+                const timeBudgetStopResult = maybeBuildMessageWallClockStopResult({
+                    runSource: params.options.runSource,
+                    startedAtMs,
+                    maxWallClockMs,
+                    traceId: params.traceId,
+                    provider: "minimax",
+                    route: params.route,
+                    model: params.model,
+                    actionJournal,
+                    executedToolCalls,
+                    quotaProfile: params.quotaProfile,
+                    perTurnToolCallLimit: params.perTurnToolCallLimit,
+                    perTurnToolStepLimit: params.perTurnToolStepLimit,
+                });
+                if (timeBudgetStopResult) {
+                    return timeBudgetStopResult;
+                }
+
                 const serializedToolResults = serializeExecutedToolResults(roundExecutedToolCalls);
                 conversationMessages = [
                     ...conversationMessages,
@@ -1625,6 +1714,15 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     perTurnToolCallLimit = Math.min(perTurnToolCallLimit, HARD_CAP_TOOL_CALLS);
     perTurnToolStepLimit = Math.min(perTurnToolStepLimit, HARD_CAP_TOOL_STEPS);
 
+    if (options.runSource === "message") {
+        if (options.perTurnToolCallLimit === undefined) {
+            perTurnToolCallLimit = Math.min(perTurnToolCallLimit, resolveMessageToolCallLimit());
+        }
+        if (options.perTurnToolStepLimit === undefined) {
+            perTurnToolStepLimit = Math.min(perTurnToolStepLimit, resolveMessageToolStepLimit());
+        }
+    }
+
     const backendRuntime = options.backendRuntime || resolveAgentBackendRuntime();
     const baseUrl = normalizeBaseUrl(options.baseUrl || backendRuntime.baseUrl);
     const modelOverride = normalizeModelOverride(options.model);
@@ -1686,6 +1784,10 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
     let stepId = 0;
     const traceId = options.traceId || crypto.randomUUID().slice(0, 8);
     const route = options.route || "tool";
+    const startedAtMs = Date.now();
+    const maxWallClockMs = options.runSource === "message"
+        ? resolveMessageToolLoopMaxMs()
+        : undefined;
 
     const baseSystem = await resolveBaseSystemPrompt(options.system);
     const workspacePath = options.workspacePath || root;
@@ -1791,6 +1893,24 @@ export async function runAgentToolLoop(options: AgentToolLoopOptions): Promise<A
             }
 
             if (roundExecutedToolCalls.length > 0) {
+                const timeBudgetStopResult = maybeBuildMessageWallClockStopResult({
+                    runSource: options.runSource,
+                    startedAtMs,
+                    maxWallClockMs,
+                    traceId,
+                    provider: backendRuntime.id,
+                    route,
+                    model: usedModel,
+                    actionJournal,
+                    executedToolCalls,
+                    quotaProfile,
+                    perTurnToolCallLimit,
+                    perTurnToolStepLimit,
+                });
+                if (timeBudgetStopResult) {
+                    return timeBudgetStopResult;
+                }
+
                 const serializedToolResults = serializeExecutedToolResults(roundExecutedToolCalls);
                 conversationMessages = [
                     ...conversationMessages,

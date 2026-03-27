@@ -16,6 +16,7 @@
 import type { RouteEntry } from "./store.js";
 import type { TaskSupervisor } from "../runtime/task-supervisor.js";
 import type { TaskDiagnostics } from "../runtime/task-types.js";
+import { normalizeTaskRef } from "../runtime/task-types.js";
 import { logger } from "../logger/index.js";
 import { beginRun } from "../runtime/run-store.js";
 
@@ -30,6 +31,36 @@ export interface TaskCommandResult {
     message: string;
     /** 任务诊断信息（如果有） */
     task?: TaskDiagnostics;
+}
+
+function renderTaskRef(task?: Pick<TaskDiagnostics, "taskRef"> | null): string {
+    return task?.taskRef ?? "未分配";
+}
+
+async function resolveTaskForRead(
+    route: RouteEntry,
+    supervisor: TaskSupervisor,
+    taskRef?: string
+): Promise<TaskDiagnostics | null> {
+    const normalized = normalizeTaskRef(taskRef);
+    if (normalized) {
+        return supervisor.getTaskByRef(route.chatGuid, normalized);
+    }
+
+    return (await supervisor.getActiveTask(route.chatGuid)) ?? supervisor.getLatestTask(route.chatGuid);
+}
+
+async function resolveTaskForControl(
+    route: RouteEntry,
+    supervisor: TaskSupervisor,
+    taskRef?: string
+): Promise<TaskDiagnostics | null> {
+    const normalized = normalizeTaskRef(taskRef);
+    if (normalized) {
+        return supervisor.getTaskByRef(route.chatGuid, normalized);
+    }
+
+    return supervisor.getActiveTask(route.chatGuid);
 }
 
 // ============================================
@@ -86,7 +117,7 @@ export async function handleTaskRun(
         });
         return {
             ok: true,
-            message: `任务已创建\n- 任务 ID: ${task.taskId}\n- 目标: ${task.goal}\n- 状态: ${task.status}`,
+            message: `任务已创建\n- 任务号: ${renderTaskRef(task)}\n- 目标: ${task.goal}\n- 状态: ${task.status}`,
             task,
         };
     } catch (error) {
@@ -120,22 +151,23 @@ export async function handleTaskRun(
  */
 export async function handleTaskStatus(
     route: RouteEntry,
-    supervisor: TaskSupervisor
+    supervisor: TaskSupervisor,
+    taskRef?: string
 ): Promise<TaskCommandResult> {
     try {
-        const task = await supervisor.getActiveTask(route.chatGuid);
+        const task = await resolveTaskForRead(route, supervisor, taskRef);
 
         if (!task) {
             return {
                 ok: true,
-                message: "当前没有活跃任务",
+                message: normalizeTaskRef(taskRef) ? `未找到任务号 ${normalizeTaskRef(taskRef)}` : "当前没有任务记录",
             };
         }
 
         // 构建状态诊断信息
         const diagnostics = [
             `任务状态`,
-            `- 任务 ID: ${task.taskId}`,
+            `- 任务号: ${renderTaskRef(task)}`,
             `- 目标: ${task.goal}`,
             `- 状态: ${task.status}`,
             `- 重试次数: ${task.attemptCount}/${task.maxAttempts}`,
@@ -204,15 +236,23 @@ export async function handleTaskStatus(
  */
 export async function handleTaskCancel(
     route: RouteEntry,
-    supervisor: TaskSupervisor
+    supervisor: TaskSupervisor,
+    taskRef?: string
 ): Promise<TaskCommandResult> {
     try {
-        const task = await supervisor.getActiveTask(route.chatGuid);
+        const task = await resolveTaskForControl(route, supervisor, taskRef);
 
         if (!task) {
             return {
                 ok: false,
-                message: "当前没有活跃任务",
+                message: normalizeTaskRef(taskRef) ? `未找到任务号 ${normalizeTaskRef(taskRef)}` : "当前没有活跃任务",
+            };
+        }
+
+        if (task.status !== "pending" && task.status !== "running" && task.status !== "blocked") {
+            return {
+                ok: false,
+                message: `任务号 ${renderTaskRef(task)} 当前不是活跃任务\n当前状态: ${task.status}`,
             };
         }
 
@@ -227,7 +267,7 @@ export async function handleTaskCancel(
 
         return {
             ok: true,
-            message: `任务已取消\n- 任务 ID: ${task.taskId}\n- 原状态: ${task.status}\n- 新状态: cancelled`,
+            message: `任务已取消\n- 任务号: ${renderTaskRef(task)}\n- 原状态: ${task.status}\n- 新状态: cancelled`,
             task: result.task,
         };
     } catch (error) {
@@ -255,7 +295,8 @@ export async function handleTaskCancel(
  */
 export async function handleTaskResume(
     route: RouteEntry,
-    supervisor: TaskSupervisor
+    supervisor: TaskSupervisor,
+    taskRef?: string
 ): Promise<TaskCommandResult> {
     const run = beginRun({
         source: "task",
@@ -265,16 +306,16 @@ export async function handleTaskResume(
     });
 
     try {
-        const task = await supervisor.getActiveTask(route.chatGuid);
+        const task = await resolveTaskForControl(route, supervisor, taskRef);
 
         if (!task) {
             run.finish({
                 status: "failed",
-                error: "当前没有活跃任务",
+                error: normalizeTaskRef(taskRef) ? `未找到任务号 ${normalizeTaskRef(taskRef)}` : "当前没有活跃任务",
             });
             return {
                 ok: false,
-                message: "当前没有活跃任务",
+                message: normalizeTaskRef(taskRef) ? `未找到任务号 ${normalizeTaskRef(taskRef)}` : "当前没有活跃任务",
             };
         }
 
@@ -310,7 +351,7 @@ export async function handleTaskResume(
         });
         return {
             ok: true,
-            message: `任务已恢复\n- 任务 ID: ${task.taskId}\n- 原状态: blocked\n- 新状态: running\n- 重试次数: ${result.task.attemptCount}`,
+            message: `任务已恢复\n- 任务号: ${renderTaskRef(task)}\n- 原状态: blocked\n- 新状态: running\n- 重试次数: ${result.task.attemptCount}`,
             task: result.task,
         };
     } catch (error) {

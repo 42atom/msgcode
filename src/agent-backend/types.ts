@@ -105,6 +105,7 @@ export interface AgentToolLoopOptions {
     quotaProfile?: "conservative" | "balanced" | "aggressive"; // 档位（默认 balanced）
     perTurnToolCallLimit?: number; // 单轮工具调用上限（可选覆盖）
     perTurnToolStepLimit?: number; // 单轮工具步骤上限（可选覆盖）
+    runSource?: AgentRunContext["source"]; // 调用来源（message 走更短的用户面止损）
     // P5.7-R12-T10: agent-first 改造 - 允许模型自己决定是否调用工具
     allowNoTool?: boolean; // 如果为 true，模型可以自己决定不调用工具（默认 false，保持向后兼容）
 }

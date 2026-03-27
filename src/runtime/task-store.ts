@@ -15,7 +15,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { TaskRecord, TaskStatus } from "./task-types.js";
-import { isLegalTransition } from "./task-types.js";
+import { isLegalTransition, nextTaskRef, normalizeTaskRef } from "./task-types.js";
 import { logger } from "../logger/index.js";
 import { atomicWriteFile } from "./fs-atomic.js";
 
@@ -76,8 +76,14 @@ export class TaskStore {
             // 已有活跃任务，拒绝创建
             return {
                 ok: false,
-                error: `该会话已有活跃任务 (taskId=${existing.taskId}, status=${existing.status})，请先使用 /task status 查看或 /task cancel 取消`,
+                error: `该会话已有活跃任务 (任务号=${existing.taskRef ?? "未分配"}, status=${existing.status})，请先使用 /task status 查看或 /task cancel 取消`,
             };
+        }
+
+        //// 为新任务分配三位短任务号
+        if (!task.taskRef) {
+            const latest = await this.getLatestTask(task.chatId);
+            task.taskRef = nextTaskRef(latest?.taskRef);
         }
 
         // 持久化任务
@@ -160,6 +166,18 @@ export class TaskStore {
         }
 
         return null;
+    }
+
+    /**
+     * 根据 chat 内的短任务号获取任务
+     */
+    async getTaskByRef(chatId: string, taskRef: string): Promise<TaskRecord | null> {
+        const latest = await this.getLatestTask(chatId);
+        if (!latest) {
+            return null;
+        }
+
+        return latest.taskRef === normalizeTaskRef(taskRef) ? latest : null;
     }
 
     /**

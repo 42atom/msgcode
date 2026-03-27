@@ -92,6 +92,7 @@ describe("P5.7-R12: Agent Relentless Task Closure", () => {
 
             const result = await taskStore.createTask(task);
             expect(result.ok).toBe(true);
+            expect(result.task.taskRef).toBe("001");
             expect(result.task.checkpoint?.summary).toBe("测试任务");
             expect(result.task.checkpoint?.nextAction).toBe("开始执行当前任务");
 
@@ -140,6 +141,34 @@ describe("P5.7-R12: Agent Relentless Task Closure", () => {
             expect(recovered).not.toBeNull();
             expect(recovered?.taskId).toBe(task.taskId);
             expect(recovered?.status).toBe("running");
+        });
+
+        it("同一会话的新任务应拿到递增三位任务号", async () => {
+            const first = createTaskRecord({
+                chatId: "test-chat-seq",
+                workspacePath: "/tmp/workspace",
+                goal: "任务1",
+            });
+
+            const firstResult = await taskStore.createTask(first);
+            expect(firstResult.ok).toBe(true);
+            expect(firstResult.task.taskRef).toBe("001");
+
+            const running = await taskStore.updateTask(first.taskId, { status: "running" });
+            expect(running.ok).toBe(true);
+
+            const completed = await taskStore.updateTask(first.taskId, { status: "completed" });
+            expect(completed.ok).toBe(true);
+
+            const second = createTaskRecord({
+                chatId: "test-chat-seq",
+                workspacePath: "/tmp/workspace",
+                goal: "任务2",
+            });
+
+            const secondResult = await taskStore.createTask(second);
+            expect(secondResult.ok).toBe(true);
+            expect(secondResult.task.taskRef).toBe("002");
         });
     });
 
@@ -266,6 +295,54 @@ describe("P5.7-R12: Agent Relentless Task Closure", () => {
 
             expect(cancelResult.ok).toBe(true);
             expect(cancelResult.task?.status).toBe("cancelled");
+        });
+
+        it("任务完成后应触发终态通知回调", async () => {
+            const notifications: Array<{ status: string; text: string }> = [];
+            const notifyingSupervisor = new TaskSupervisor({
+                taskDir: path.join(tmpDir, "tasks-notify"),
+                eventQueueDir: path.join(tmpDir, "events-notify"),
+                heartbeatIntervalMs: 0,
+                executeTaskTurn: async () => ({
+                    answer: "后台任务已完成",
+                    actionJournal: [],
+                    verifyResult: {
+                        ok: true,
+                        evidence: "ok",
+                    },
+                }),
+                notifyTaskTerminal: async (notification) => {
+                    notifications.push({
+                        status: notification.status,
+                        text: notification.text,
+                    });
+                },
+            });
+
+            await notifyingSupervisor.start();
+            const created = await notifyingSupervisor.createTask(
+                "test-chat-notify",
+                "/tmp/workspace",
+                "后台完成后回帖"
+            );
+
+            expect(created.ok).toBe(true);
+            if (!created.ok) {
+                throw new Error(created.error);
+            }
+
+            await notifyingSupervisor.handleHeartbeatTick({
+                tickId: "tick-task-notify",
+                reason: "manual",
+                startTime: Date.now(),
+            });
+
+            expect(notifications).toHaveLength(1);
+            expect(notifications[0]?.status).toBe("completed");
+            expect(notifications[0]?.text).toContain("任务001已经做完了。");
+            expect(notifications[0]?.text).toContain("后台任务已完成");
+
+            await notifyingSupervisor.stop();
         });
 
         it("恢复 blocked 任务", async () => {
@@ -484,6 +561,44 @@ describe("P5.7-R12: Agent Relentless Task Closure", () => {
             expect(statusResult.message).toContain("当前阶段: blocked");
             expect(statusResult.message).toContain("下一步: 等用户确认后继续执行");
             expect(statusResult.message).toContain("检查点摘要: 当前停在人工确认阶段");
+            expect(statusResult.message).toContain("任务号: 001");
+        });
+
+        it("没有活跃任务时 /task status 应回最近任务", async () => {
+            const route = {
+                chatGuid: "test-chat-latest",
+                workspacePath: "/tmp/workspace",
+                status: "active" as const,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                botType: "agent-backend" as const,
+                label: "test",
+            };
+
+            const createResult = await supervisor.createTask(
+                route.chatGuid,
+                route.workspacePath,
+                "查看最近任务"
+            );
+            expect(createResult.ok).toBe(true);
+
+            const running = await supervisor.updateTaskResult(createResult.task!.taskId, {
+                ok: true,
+                status: "running",
+            });
+            expect(running.ok).toBe(true);
+
+            const completed = await supervisor.updateTaskResult(createResult.task!.taskId, {
+                ok: true,
+                status: "completed",
+                verifyEvidence: "ok",
+            });
+            expect(completed.ok).toBe(true);
+
+            const statusResult = await handleTaskStatus(route, supervisor);
+            expect(statusResult.ok).toBe(true);
+            expect(statusResult.message).toContain("任务号: 001");
+            expect(statusResult.message).toContain("状态: completed");
         });
     });
 

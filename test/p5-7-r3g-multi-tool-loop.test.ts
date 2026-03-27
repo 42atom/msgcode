@@ -247,6 +247,65 @@ describe("P5.7-R3g: Tool Loop Multi-Tool (Behavior Lock)", () => {
         }
     });
 
+    it("message 主链超过工具执行时长时应主动止损，不再继续下一轮", async () => {
+        const originalFetch = globalThis.fetch;
+        const originalMaxMs = process.env.MSGCODE_MESSAGE_TOOL_LOOP_MAX_MS;
+        const workspacePath = await createToolEnabledWorkspace();
+        let callCount = 0;
+
+        process.env.MSGCODE_MESSAGE_TOOL_LOOP_MAX_MS = "100";
+
+        globalThis.fetch = (async () => {
+            callCount += 1;
+
+            return asJsonResponse({
+                choices: [{
+                    message: {
+                        role: "assistant",
+                        content: "",
+                        tool_calls: [{
+                            id: `call_timeout_${callCount}`,
+                            type: "function",
+                            function: {
+                                name: "bash",
+                                arguments: JSON.stringify({ command: "sleep 0.05; printf timeout-guard" }),
+                            },
+                        }],
+                    },
+                    finish_reason: "tool_calls",
+                }],
+            });
+        }) as typeof fetch;
+
+        try {
+            const result = await runLmStudioToolLoop({
+                baseUrl: "http://127.0.0.1:1234",
+                model: "test-model",
+                prompt: "继续探测，别卡住会话",
+                workspacePath,
+                timeoutMs: 10_000,
+                backendRuntime: localOpenAiRuntime,
+                runSource: "message",
+            });
+
+            expect(callCount).toBeLessThan(4);
+            expect(result.answer).toContain("工具执行耗时过长");
+            expect(result.answer).toContain("避免继续卡住会话");
+            expect(result.continuable).toBe(true);
+            expect(result.continuationReason).toBe("message_tool_loop_wall_clock_exceeded");
+            expect(result.actionJournal.length).toBeGreaterThan(0);
+            expect(result.actionJournal[0].tool).toBe("bash");
+        } finally {
+            globalThis.fetch = originalFetch;
+            if (typeof originalMaxMs === "undefined") {
+                delete process.env.MSGCODE_MESSAGE_TOOL_LOOP_MAX_MS;
+            } else {
+                process.env.MSGCODE_MESSAGE_TOOL_LOOP_MAX_MS = originalMaxMs;
+            }
+            await rm(workspacePath, { recursive: true, force: true });
+        }
+    });
+
     it("单轮工具调用超过上限时应返回 TOOL_LOOP_LIMIT_EXCEEDED", async () => {
         const originalFetch = globalThis.fetch;
         const workspacePath = await createToolEnabledWorkspace();

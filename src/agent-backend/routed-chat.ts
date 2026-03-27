@@ -31,6 +31,16 @@ function buildToolSequence(actionJournal: AgentRoutedChatResult["actionJournal"]
         .join(" -> ");
 }
 
+function buildMessageToolLoopStopText(params: {
+    actionJournal: AgentRoutedChatResult["actionJournal"];
+}): string {
+    const lastAct = [...params.actionJournal]
+        .reverse()
+        .find((entry) => entry.phase === "act");
+    const lastToolText = lastAct?.tool ? `最后停在 ${lastAct.tool}。` : "";
+    return `这轮工具排查已经停下，避免继续卡住会话。${lastToolText}请直接再发一次，我会基于已拿到的结果继续。`;
+}
+
 // ============================================
 // 主函数：runAgentRoutedChat
 // ============================================
@@ -122,7 +132,15 @@ export async function runAgentRoutedChat(options: AgentRoutedChatOptions): Promi
         backendRuntime,
         traceId,
         route: "tool",
+        runSource: options.runContext?.source,
     });
+
+    const normalizedAnswer = options.runContext?.source === "message"
+        && toolLoopResult.answer === "TOOL_LOOP_LIMIT_EXCEEDED"
+        ? buildMessageToolLoopStopText({
+            actionJournal: toolLoopResult.actionJournal,
+        })
+        : toolLoopResult.answer;
 
     const finalRoute = toolLoopResult.toolCall !== undefined ? "tool" : "no-tool";
     const decisionSource = toolLoopResult.decisionSource ?? "model";
@@ -132,7 +150,7 @@ export async function runAgentRoutedChat(options: AgentRoutedChatOptions): Promi
             runId: options.runContext.runId,
             sessionKey: options.runContext.sessionKey,
             source: options.runContext.source,
-            answer: toolLoopResult.answer,
+            answer: normalizedAnswer,
             route: finalRoute,
             actionJournal: toolLoopResult.actionJournal,
             verifyResult: toolLoopResult.verifyResult,
@@ -152,11 +170,11 @@ export async function runAgentRoutedChat(options: AgentRoutedChatOptions): Promi
         toolCallCount: toolLoopResult.actionJournal.length,
         toolName: toolLoopResult.toolCall?.name,
         toolSequence: buildToolSequence(toolLoopResult.actionJournal),
-        responseLength: toolLoopResult.answer.length,
+        responseLength: normalizedAnswer.length,
     });
 
     return {
-        answer: toolLoopResult.answer,
+        answer: normalizedAnswer,
         route: finalRoute,
         decisionSource,
         temperature: usedTemperature,

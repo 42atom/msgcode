@@ -1062,6 +1062,46 @@ export async function handleMessage(
       });
     }
 
+    let backgroundTaskId: string | undefined;
+    let backgroundTaskRef: string | undefined;
+    let shouldKickBackgroundTask = false;
+    if (result.success && result.backgroundTask) {
+      if (!route.projectDir) {
+        result = {
+          success: false,
+          error: "当前会话未绑定工作目录，无法转后台任务",
+        };
+      } else {
+        const { getTaskSupervisor } = await import("./commands.js");
+        const supervisor = getTaskSupervisor();
+        if (!supervisor) {
+          result = {
+            success: false,
+            error: "后台任务系统未启动，无法转后台任务",
+          };
+        } else {
+          const created = await supervisor.createTask(
+            message.chatId,
+            route.projectDir,
+            result.backgroundTask.goal
+          );
+          if (!created.ok) {
+            result = {
+              success: false,
+              error: `转后台失败: ${created.error}`,
+            };
+          } else {
+            backgroundTaskId = created.task.taskId;
+            backgroundTaskRef = created.task.taskRef;
+            shouldKickBackgroundTask = true;
+            if (result.response) {
+              result.response = `${result.response}\n任务号: ${backgroundTaskRef ?? "未分配"}`;
+            }
+          }
+        }
+      }
+    }
+
     if (!result.success) {
       // P0: 允许被上游抢占（例如用户发 /status /stop 中断长任务）
       // 取消不应回错误消息，否则会刷屏。
@@ -1101,6 +1141,44 @@ export async function handleMessage(
       didSend = true;
     }
 
+    if (backgroundTaskId && route.projectDir && result.response) {
+      try {
+        const { appendWindow } = await import("./session-window.js");
+        const { ensureThread, appendTurn, getThreadInfo } = await import("./runtime/thread-store.js");
+
+        await appendWindow(route.projectDir, message.chatId, {
+          role: "user",
+          content: text,
+          messageId: message.id,
+          senderId: message.sender || message.handle,
+          senderName: message.senderName,
+          messageType: message.messageType,
+          isGroup: message.isGroup,
+        });
+        await appendWindow(route.projectDir, message.chatId, {
+          role: "assistant",
+          content: result.response,
+        });
+
+        let threadInfo = getThreadInfo(message.chatId);
+        if (!threadInfo) {
+          await ensureThread(message.chatId, route.projectDir, text, {
+            kind: "agent",
+            provider: "agent-backend",
+            tmuxClient: undefined,
+          });
+        }
+        await appendTurn(message.chatId, text, result.response);
+      } catch (error) {
+        logger.warn("后台任务回执写回失败", {
+          module: "listener",
+          chatId: message.chatId,
+          taskId: backgroundTaskId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
     // Info: 给运维一个“闭环完成”的稳定锚点（否则 info 日志会停在“附件检查”看起来像挂起）
     // 注意：不输出原文，只输出长度/摘要 hash。
     {
@@ -1114,10 +1192,22 @@ export async function handleMessage(
         chatId: message.chatId,
         botType: route.botType ?? "default",
         didSend,
+        backgroundTaskId: backgroundTaskId ?? null,
         elapsedMs,
         responseLength: responseLen,
         responseDigest,
         responseText: result.response ?? null,
+      });
+    }
+
+    if (shouldKickBackgroundTask) {
+      const { triggerTaskHeartbeatNow } = await import("./commands.js");
+      const triggered = triggerTaskHeartbeatNow();
+      logger.info("后台任务已触发立即续跑", {
+        module: "listener",
+        chatId: message.chatId,
+        taskId: backgroundTaskId,
+        triggered,
       });
     }
 

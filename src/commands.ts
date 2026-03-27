@@ -450,6 +450,40 @@ async function initTaskRuntime(): Promise<void> {
     taskDir,
     eventQueueDir,
     heartbeatIntervalMs: 60_000,
+    notifyTaskTerminal: async ({ task, text }) => {
+      const replyText = text.trim();
+      if (!replyText || !sendClient) {
+        return;
+      }
+
+      await sendClient.send({ chatId: task.chatId, text: replyText });
+
+      const { appendWindow } = await import("./session-window.js");
+      const { appendAssistantTurn, ensureThread, getThreadInfo } = await import("./runtime/thread-store.js");
+
+      try {
+        await appendWindow(task.workspacePath, task.chatId, {
+          role: "assistant",
+          content: replyText,
+        });
+      } catch {
+        // 后台回帖写窗失败不阻断主链
+      }
+
+      try {
+        let threadInfo = getThreadInfo(task.chatId);
+        if (!threadInfo) {
+          await ensureThread(task.chatId, task.workspacePath, task.goal, {
+            kind: "agent",
+            provider: "agent-backend",
+            tmuxClient: undefined,
+          });
+        }
+        await appendAssistantTurn(task.chatId, replyText);
+      } catch {
+        // 后台回帖写线程失败不阻断主链
+      }
+    },
     executeTaskTurn: async (task, runContext) => {
       const assembledContext = await assembleAgentContext({
         source: runContext.source,
@@ -876,4 +910,12 @@ export async function allStop(): Promise<void> {
  */
 export function getTaskSupervisor(): import("./runtime/task-supervisor.js").TaskSupervisor | null {
   return taskSupervisor;
+}
+
+export function triggerTaskHeartbeatNow(): boolean {
+  if (!heartbeatRunner || !taskSupervisor) {
+    return false;
+  }
+  heartbeatRunner.triggerNow("manual");
+  return true;
 }

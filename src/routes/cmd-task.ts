@@ -46,9 +46,9 @@ function getTaskSupervisor(): TaskSupervisor | null {
  *
  * 支持的子命令：
  * - /task run <goal>
- * - /task status
- * - /task cancel
- * - /task resume
+ * - /task status [任务号]
+ * - /task cancel [任务号]
+ * - /task resume [任务号]
  */
 export async function handleTaskCommand(options: CommandHandlerOptions): Promise<CommandResult> {
     const { chatId, args } = options;
@@ -82,8 +82,8 @@ export async function handleTaskCommand(options: CommandHandlerOptions): Promise
             message: `无效的子命令: ${subcommand}\n\n` +
             `可用子命令:\n` +
             `  run     创建新任务\n` +
-            `  status  查看当前任务状态\n` +
-            `  cancel  取消当前任务\n` +
+            `  status  查看当前或指定任务号状态\n` +
+            `  cancel  取消当前或指定任务号\n` +
             `  resume  恢复 blocked 任务`,
         };
     }
@@ -99,17 +99,17 @@ export async function handleTaskCommand(options: CommandHandlerOptions): Promise
 
         case "status":
             // /task status
-            result = await handleTaskStatus(entry, supervisor);
+            result = await handleTaskStatus(entry, supervisor, args[1]);
             break;
 
         case "cancel":
             // /task cancel
-            result = await handleTaskCancel(entry, supervisor);
+            result = await handleTaskCancel(entry, supervisor, args[1]);
             break;
 
         case "resume":
             // /task resume
-            result = await handleTaskResume(entry, supervisor);
+            result = await handleTaskResume(entry, supervisor, args[1]);
             break;
 
         default:

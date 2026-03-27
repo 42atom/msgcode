@@ -20,6 +20,7 @@ import type {
     TaskCheckpoint,
     TaskDiagnostics,
     TaskSupervisorConfig,
+    TaskTerminalNotification,
     TaskExecutionResult,
     TaskTurnExecutor,
     TaskTurnResult,
@@ -59,9 +60,32 @@ function mapCapsulePhaseToTaskStatus(phase: string): TaskStatus {
     return "pending";
 }
 
+function renderTerminalTaskLabel(task: Pick<TaskRecord, "taskRef">): string {
+    return task.taskRef ? `任务${task.taskRef}` : "后台任务";
+}
+
+function buildTerminalNotificationText(params: {
+    task: Pick<TaskRecord, "taskRef">;
+    status: Extract<TaskStatus, "completed" | "blocked" | "failed">;
+    text: string;
+}): string {
+    const label = renderTerminalTaskLabel(params.task);
+    const detail = params.text.trim();
+
+    if (params.status === "completed") {
+        return detail ? `${label}已经做完了。\n${detail}` : `${label}已经做完了。`;
+    }
+
+    if (params.status === "blocked") {
+        return detail ? `${label}已阻塞。\n${detail}` : `${label}已阻塞。`;
+    }
+
+    return detail ? `${label}失败了。\n${detail}` : `${label}失败了。`;
+}
+
 export class TaskSupervisor {
     private taskStore: TaskStore;
-    private config: Required<Omit<TaskSupervisorConfig, "executeTaskTurn" | "workspacePath" | "wakeConfig">>;
+    private config: Required<Omit<TaskSupervisorConfig, "executeTaskTurn" | "workspacePath" | "wakeConfig" | "notifyTaskTerminal">>;
     private executeTaskTurn: TaskTurnExecutor;
     private isRunning = false;
     // P5.7-R12-T8: 冻结的总预算限制
@@ -77,6 +101,7 @@ export class TaskSupervisor {
         hint?: string;
         capsule?: WakeWorkCapsule;
     }) => Promise<void>;
+    private readonly notifyTaskTerminal?: (notification: TaskTerminalNotification) => Promise<void>;
 
     constructor(config: TaskSupervisorConfig) {
         this.config = {
@@ -91,6 +116,7 @@ export class TaskSupervisor {
         this.workspacePath = config.workspacePath;
         this.wakeMaxConsume = config.wakeConfig?.maxConsumePerTick;
         this.wakeOnConsume = config.wakeConfig?.onConsume;
+        this.notifyTaskTerminal = config.notifyTaskTerminal;
 
         this.taskStore = new TaskStore({
             taskDir: this.config.taskDir,
@@ -269,6 +295,14 @@ export class TaskSupervisor {
     }
 
     /**
+     * 按会话内三位短任务号获取任务
+     */
+    async getTaskByRef(chatId: string, taskRef: string): Promise<TaskDiagnostics | null> {
+        const task = await this.taskStore.getTaskByRef(chatId, taskRef);
+        return task ? toDiagnostics(task) : null;
+    }
+
+    /**
      * 获取指定 chat 的活跃任务
      *
      * @param chatId 会话 ID
@@ -276,6 +310,14 @@ export class TaskSupervisor {
      */
     async getActiveTask(chatId: string): Promise<TaskDiagnostics | null> {
         const task = await this.taskStore.getActiveTask(chatId);
+        return task ? toDiagnostics(task) : null;
+    }
+
+    /**
+     * 获取指定 chat 的最近任务（含终态）
+     */
+    async getLatestTask(chatId: string): Promise<TaskDiagnostics | null> {
+        const task = await this.taskStore.getLatestTask(chatId);
         return task ? toDiagnostics(task) : null;
     }
 
@@ -677,6 +719,11 @@ export class TaskSupervisor {
                         taskId: task.taskId,
                         reason: budgetCheckResult.reason,
                     });
+                    await this.maybeNotifyTaskTerminal({
+                        task,
+                        status: "failed",
+                        text: `后台任务失败：${budgetCheckResult.reason}`,
+                    });
                     run.finish({
                         status: "failed",
                         error: budgetCheckResult.reason,
@@ -815,6 +862,21 @@ export class TaskSupervisor {
                 taskId: task.taskId,
                 status: executionResult.status,
             });
+            if (executionResult.status === "completed") {
+                await this.maybeNotifyTaskTerminal({
+                    task,
+                    status: "completed",
+                    text: (result.answer || "").trim(),
+                });
+            } else if (executionResult.status === "blocked") {
+                await this.maybeNotifyTaskTerminal({
+                    task,
+                    status: "blocked",
+                    text: executionResult.blockedReason
+                        ? `后台任务已阻塞：${executionResult.blockedReason}`
+                        : "后台任务已阻塞，等待人工接力。",
+                });
+            }
             run.finish({
                 status: executionResult.status === "blocked" ? "blocked" : "completed",
                 error: executionResult.errorMessage || executionResult.blockedReason,
@@ -867,6 +929,11 @@ export class TaskSupervisor {
                     }
                 );
             }
+            await this.maybeNotifyTaskTerminal({
+                task,
+                status: "failed",
+                text: `后台任务失败：${errorMessage}`,
+            });
             run.finish({
                 status: "failed",
                 error: errorMessage,
@@ -983,6 +1050,38 @@ export class TaskSupervisor {
         }
 
         return { exhausted: false };
+    }
+
+    private async maybeNotifyTaskTerminal(params: {
+        task: TaskRecord;
+        status: Extract<TaskStatus, "completed" | "blocked" | "failed">;
+        text: string;
+    }): Promise<void> {
+        if (!this.notifyTaskTerminal) {
+            return;
+        }
+        const text = buildTerminalNotificationText({
+            task: params.task,
+            status: params.status,
+            text: params.text,
+        });
+        if (!text) {
+            return;
+        }
+        try {
+            await this.notifyTaskTerminal({
+                task: params.task,
+                status: params.status,
+                text,
+            });
+        } catch (error) {
+            logger.warn("任务终态通知失败", {
+                module: "task-supervisor",
+                taskId: params.task.taskId,
+                status: params.status,
+                error: error instanceof Error ? error.message : String(error),
+            });
+        }
     }
 }
 

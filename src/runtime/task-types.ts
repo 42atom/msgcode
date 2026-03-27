@@ -85,6 +85,8 @@ export function isLegalTransition(from: TaskStatus, to: TaskStatus): boolean {
 export interface TaskRecord {
     /** 唯一任务 ID */
     taskId: string;
+    /** 面向用户的短任务号（001-999） */
+    taskRef?: string;
     /** 所属 chat ID */
     chatId: string;
     /** 工作区路径 */
@@ -136,10 +138,12 @@ export function createTaskRecord(params: {
     workspacePath: string;
     goal: string;
     maxAttempts?: number;
+    taskRef?: string;
 }): TaskRecord {
     const now = Date.now();
     return {
         taskId: randomUUID(),
+        taskRef: normalizeTaskRef(params.taskRef),
         chatId: params.chatId,
         workspacePath: params.workspacePath,
         goal: params.goal,
@@ -157,6 +161,21 @@ export function createTaskRecord(params: {
         createdAt: now,
         updatedAt: now,
     };
+}
+
+export function normalizeTaskRef(value?: string | number | null): string | undefined {
+    if (value === undefined || value === null) return undefined;
+    const digits = String(value).replace(/\D/g, "");
+    if (!digits) return undefined;
+    return digits.slice(-3).padStart(3, "0");
+}
+
+export function nextTaskRef(previous?: string | number | null): string {
+    const normalized = normalizeTaskRef(previous);
+    if (!normalized) return "001";
+
+    const next = (Number.parseInt(normalized, 10) % 999) + 1;
+    return String(next).padStart(3, "0");
 }
 
 export interface TaskCheckpoint {
@@ -295,6 +314,8 @@ export interface TaskSupervisorConfig {
     };
     /** 外部注入的任务执行器；supervisor 只负责调度，不负责 agent 实现细节 */
     executeTaskTurn?: TaskTurnExecutor;
+    /** 任务进入终态后的最小通知回调 */
+    notifyTaskTerminal?: (notification: TaskTerminalNotification) => Promise<void>;
 }
 
 /**
@@ -362,6 +383,12 @@ export interface TaskTurnContext {
 
 export type TaskTurnExecutor = (task: TaskRecord, context: TaskTurnContext) => Promise<TaskTurnResult>;
 
+export interface TaskTerminalNotification {
+    task: TaskRecord;
+    status: Extract<TaskStatus, "completed" | "blocked" | "failed">;
+    text: string;
+}
+
 // ============================================
 // 诊断输出类型
 // ============================================
@@ -375,6 +402,7 @@ export type TaskTurnExecutor = (task: TaskRecord, context: TaskTurnContext) => P
  */
 export interface TaskDiagnostics {
     taskId: string;
+    taskRef?: string;
     chatId: string;
     status: TaskStatus;
     goal: string;
@@ -400,6 +428,7 @@ export interface TaskDiagnostics {
 export function toDiagnostics(record: TaskRecord): TaskDiagnostics {
     return {
         taskId: record.taskId,
+        taskRef: record.taskRef,
         chatId: record.chatId,
         status: record.status,
         goal: record.goal,

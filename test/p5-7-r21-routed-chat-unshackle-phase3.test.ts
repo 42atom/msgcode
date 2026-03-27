@@ -108,4 +108,66 @@ describe("P5.7-R21: routed-chat 松绑 phase3", () => {
             await rm(workspacePath, { recursive: true, force: true });
         }
     });
+
+    it("message 主链命中工具调用止损时，不应把 TOOL_LOOP_LIMIT_EXCEEDED 原样回给用户", async () => {
+        const originalFetch = globalThis.fetch;
+        const originalLimit = process.env.MSGCODE_MESSAGE_TOOL_CALL_LIMIT;
+        const workspacePath = await createToolWorkspace();
+
+        process.env.MSGCODE_MESSAGE_TOOL_CALL_LIMIT = "1";
+
+        globalThis.fetch = (async () => {
+            return asJsonResponse({
+                choices: [{
+                    message: {
+                        role: "assistant",
+                        content: "",
+                        tool_calls: [
+                            {
+                                id: "call_limit_1",
+                                type: "function",
+                                function: {
+                                    name: "bash",
+                                    arguments: JSON.stringify({ command: "printf first" }),
+                                },
+                            },
+                            {
+                                id: "call_limit_2",
+                                type: "function",
+                                function: {
+                                    name: "bash",
+                                    arguments: JSON.stringify({ command: "printf second" }),
+                                },
+                            },
+                        ],
+                    },
+                    finish_reason: "tool_calls",
+                }],
+            });
+        }) as typeof fetch;
+
+        try {
+            const result = await runAgentRoutedChat({
+                prompt: "继续探测 HomePod",
+                workspacePath,
+                agentProvider: "agent-backend",
+                runContext: {
+                    runId: "run-limit-message",
+                    sessionKey: "session-limit-message",
+                    source: "message",
+                },
+            });
+
+            expect(result.answer).not.toBe("TOOL_LOOP_LIMIT_EXCEEDED");
+            expect(result.answer).toContain("避免继续卡住会话");
+        } finally {
+            globalThis.fetch = originalFetch;
+            if (typeof originalLimit === "undefined") {
+                delete process.env.MSGCODE_MESSAGE_TOOL_CALL_LIMIT;
+            } else {
+                process.env.MSGCODE_MESSAGE_TOOL_CALL_LIMIT = originalLimit;
+            }
+            await rm(workspacePath, { recursive: true, force: true });
+        }
+    });
 });
