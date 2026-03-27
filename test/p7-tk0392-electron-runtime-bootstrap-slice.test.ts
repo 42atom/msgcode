@@ -4,6 +4,12 @@ import {
   resolveElectronRuntimePaths,
   runSendThreadInput,
 } from "../src/electron/main.js";
+import { createReadonlySurfaceIpcWhitelist } from "../src/electron/preload.js";
+import {
+  getReadonlySurfaceChannel,
+  getSendThreadInputChannel,
+  getThreadUpdateChannel,
+} from "../src/electron/readonly-surface-bridge.js";
 import { bootstrapReadonlyThreadSurface } from "../src/electron/renderer.js";
 
 describe("electron runtime bootstrap slice", () => {
@@ -103,5 +109,42 @@ describe("electron runtime bootstrap slice", () => {
     ]);
     expect(spawned[0]?.options.detached).toBe(true);
     expect(spawned[0]?.options.stdio).toBe("ignore");
+  });
+
+  it("whitelists preload ipc channels for the readonly surface bridge", async () => {
+    const calls: string[] = [];
+    const whitelist = createReadonlySurfaceIpcWhitelist({
+      async invoke(channel: string) {
+        calls.push(`invoke:${channel}`);
+        return null;
+      },
+      on(channel: string) {
+        calls.push(`on:${channel}`);
+      },
+      off(channel: string) {
+        calls.push(`off:${channel}`);
+      },
+    });
+
+    await whitelist.invoke(getReadonlySurfaceChannel(), {});
+    await whitelist.invoke(getSendThreadInputChannel(), {});
+    whitelist.on(getThreadUpdateChannel(), () => {});
+    whitelist.off(getThreadUpdateChannel(), () => {});
+
+    await expect(whitelist.invoke("msgcode:anything-else", {})).rejects.toThrow(
+      "Readonly preload bridge rejected invoke channel",
+    );
+    expect(() => whitelist.on("msgcode:anything-else", () => {})).toThrow(
+      "Readonly preload bridge rejected subscribe channel",
+    );
+    expect(() => whitelist.off("msgcode:anything-else", () => {})).toThrow(
+      "Readonly preload bridge rejected unsubscribe channel",
+    );
+    expect(calls).toEqual([
+      `invoke:${getReadonlySurfaceChannel()}`,
+      `invoke:${getSendThreadInputChannel()}`,
+      `on:${getThreadUpdateChannel()}`,
+      `off:${getThreadUpdateChannel()}`,
+    ]);
   });
 });
