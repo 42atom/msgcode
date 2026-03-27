@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { resolveWritableThreadTarget, sendThreadInput } from "../src/runtime/thread-input.js";
+import {
+  resolveWritableThreadTarget,
+  sendThreadInput,
+  setThreadInputDispatcherForTest,
+} from "../src/runtime/thread-input.js";
+import { readWorkspaceThreadDetailSurface } from "../src/runtime/workspace-thread-surface.js";
 
 async function makeTempWorkspace(): Promise<string> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "msgcode-send-thread-input-"));
@@ -58,6 +63,7 @@ describe("sendThreadInput contract", () => {
   const workspaces: string[] = [];
 
   afterEach(async () => {
+    setThreadInputDispatcherForTest(null);
     await Promise.all(workspaces.splice(0).map((workspacePath) => fs.rm(path.dirname(workspacePath), { recursive: true, force: true })));
   });
 
@@ -98,5 +104,41 @@ describe("sendThreadInput contract", () => {
         text: "   ",
       }),
     ).rejects.toThrow("sendThreadInput requires non-empty text");
+  });
+
+  it("returns after persisting the user turn instead of waiting for background completion", async () => {
+    const workspacePath = await makeTempWorkspace();
+    workspaces.push(workspacePath);
+
+    let releaseDispatcher: (() => void) | undefined;
+    const dispatcherBlocked = new Promise<void>((resolve) => {
+      releaseDispatcher = resolve;
+    });
+    setThreadInputDispatcherForTest(async () => {
+      await dispatcherBlocked;
+      return {
+        success: true,
+        response: "后台已继续处理",
+      };
+    });
+
+    const result = await Promise.race([
+      sendThreadInput({
+        workspacePath,
+        threadId: "thread-web",
+        text: "桌面端先把我的输入落下来",
+      }).then(() => "done"),
+      new Promise((resolve) => setTimeout(() => resolve("timeout"), 50)),
+    ]);
+
+    expect(result).toBe("done");
+
+    const detail = await readWorkspaceThreadDetailSurface(workspacePath, "thread-web");
+    expect(detail.found).toBe(true);
+    expect(detail.readable).toBe(true);
+    expect(detail.data.thread?.messages[0]?.user).toBe("桌面端先把我的输入落下来");
+    expect(detail.data.thread?.messages[0]?.assistant).toBe("");
+
+    releaseDispatcher?.();
   });
 });

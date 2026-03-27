@@ -44,6 +44,7 @@ interface ThreadEnvelope {
     thread?: {
       title?: string;
       writable?: boolean;
+      lastTurnAt?: string;
       messages?: Array<{ user?: string; assistant?: string }>;
     } | null;
     workStatus?: {
@@ -60,6 +61,29 @@ interface ReadonlyThreadSurfaceViewData {
   workspaceTree: WorkspaceTreeEnvelope;
   thread: ThreadEnvelope | null;
   loadingError: string | null;
+}
+
+const pendingComposerThreads = new Set<string>();
+const pendingComposerBaselines = new Map<string, string>();
+const pendingComposerTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const pendingComposerErrors = new Map<string, string>();
+let activeSurfaceThreadKey = "";
+
+function buildSurfaceThreadKey(workspacePath: string, threadId: string): string {
+  return `${workspacePath.trim()}::${threadId.trim()}`;
+}
+
+function clearComposerPendingState(threadKey: string, preserveError = false): void {
+  pendingComposerThreads.delete(threadKey);
+  pendingComposerBaselines.delete(threadKey);
+  if (!preserveError) {
+    pendingComposerErrors.delete(threadKey);
+  }
+  const timer = pendingComposerTimers.get(threadKey);
+  if (timer) {
+    clearTimeout(timer);
+    pendingComposerTimers.delete(threadKey);
+  }
 }
 
 export function bootstrapReadonlyThreadSurface(documentLike: HtmlDocumentLike): void {
@@ -208,12 +232,15 @@ function renderWorkspaceGroup(
 
 function renderThreadPanel(data: {
   selectedWorkspace: string;
+  selectedWorkspacePath: string;
   selectedThreadId: string;
   thread: ThreadEnvelope | null;
   loadingError: string | null;
 }): string {
   const title = data.thread?.data?.thread?.title ?? "No thread selected";
   const writable = data.thread?.data?.thread?.writable === true;
+  const threadKey = buildSurfaceThreadKey(data.selectedWorkspacePath, data.selectedThreadId);
+  const waiting = pendingComposerThreads.has(threadKey);
   const messages = [...(data.thread?.data?.thread?.messages ?? [])].reverse();
 
   return [
@@ -257,9 +284,9 @@ function renderThreadPanel(data: {
     ...(writable
       ? [
           '<div class="thread-composer" data-thread-composer="true">',
-          '  <input type="text" class="thread-composer__input" data-thread-composer-input="true" placeholder="Ask msgcode" />',
-          '  <button type="button" class="thread-composer__send" data-thread-composer-send="true">Send</button>',
-          '  <p class="thread-composer__error" data-thread-composer-error="true"></p>',
+          `  <input type="text" class="thread-composer__input" data-thread-composer-input="true" placeholder="${waiting ? "Waiting for reply..." : "Ask msgcode"}" />`,
+          `  <button type="button" class="thread-composer__send" data-thread-composer-send="true">${waiting ? "Waiting" : "Send"}</button>`,
+          `  <p class="thread-composer__error" data-thread-composer-error="true">${escapeHtml(pendingComposerErrors.get(threadKey) ?? (waiting ? "处理中..." : ""))}</p>`,
           "</div>",
         ]
       : []),
@@ -327,9 +354,83 @@ function renderReadonlyThreadSurface(
   bridge: ReadonlySurfaceBridge,
   data: ReadonlyThreadSurfaceViewData,
 ): void {
+  activeSurfaceThreadKey = buildSurfaceThreadKey(data.selectedWorkspacePath, data.selectedThreadId);
   applyReadonlyThreadSurfaceData(documentLike, data);
   bindReadonlyThreadSurfaceSelection(documentLike, bridge, data);
   bindReadonlyThreadComposer(documentLike, bridge, data);
+}
+
+function scheduleComposerRefresh(params: {
+  documentLike: HtmlDocumentLike;
+  bridge: ReadonlySurfaceBridge;
+  data: ReadonlyThreadSurfaceViewData;
+  baselineLastTurnAt: string;
+  attempts?: number;
+}): void {
+  const threadKey = buildSurfaceThreadKey(params.data.selectedWorkspacePath, params.data.selectedThreadId);
+  if (!pendingComposerThreads.has(threadKey)) {
+    clearComposerPendingState(threadKey);
+    return;
+  }
+
+  const attempts = params.attempts ?? 0;
+  const timer = setTimeout(async () => {
+    try {
+      const refreshedThread = await loadThreadEnvelope(
+        params.bridge,
+        params.data.selectedWorkspace,
+        params.data.selectedThreadId,
+      );
+      const nextLastTurnAt = refreshedThread.data?.thread?.lastTurnAt ?? "";
+      const hasNewTurn =
+        !!nextLastTurnAt &&
+        (!!params.baselineLastTurnAt ? nextLastTurnAt > params.baselineLastTurnAt : true);
+
+      if (hasNewTurn) {
+        clearComposerPendingState(threadKey);
+        if (activeSurfaceThreadKey === threadKey) {
+          renderReadonlyThreadSurface(params.documentLike, params.bridge, {
+            ...params.data,
+            thread: refreshedThread,
+            loadingError: null,
+          });
+        }
+        return;
+      }
+
+      if (attempts >= 59) {
+        pendingComposerErrors.set(threadKey, "等待回复超时");
+        clearComposerPendingState(threadKey, true);
+        if (activeSurfaceThreadKey === threadKey) {
+          renderReadonlyThreadSurface(params.documentLike, params.bridge, {
+            ...params.data,
+            thread: refreshedThread,
+            loadingError: null,
+          });
+        }
+        return;
+      }
+
+      scheduleComposerRefresh({
+        ...params,
+        attempts: attempts + 1,
+      });
+    } catch (error) {
+      pendingComposerErrors.set(
+        threadKey,
+        error instanceof Error ? error.message : String(error),
+      );
+      clearComposerPendingState(threadKey, true);
+      if (activeSurfaceThreadKey === threadKey) {
+        renderReadonlyThreadSurface(params.documentLike, params.bridge, {
+          ...params.data,
+          loadingError: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+  }, 1000);
+
+  pendingComposerTimers.set(threadKey, timer);
 }
 
 export function bindReadonlyThreadSurfaceSelection(
@@ -469,9 +570,15 @@ export function bindReadonlyThreadComposer(
     return;
   }
 
+  const threadKey = buildSurfaceThreadKey(data.selectedWorkspacePath, data.selectedThreadId);
   let sending = false;
+  if (pendingComposerThreads.has(threadKey)) {
+    input.disabled = true;
+    button.disabled = true;
+  }
+
   const submit = async (): Promise<void> => {
-    if (sending) return;
+    if (sending || pendingComposerThreads.has(threadKey)) return;
     const text = String(input.value ?? "").trim();
     if (!text) return;
     sending = true;
@@ -488,20 +595,40 @@ export function bindReadonlyThreadComposer(
       });
       input.value = "";
       const refreshedThread = await loadThreadEnvelope(bridge, data.selectedWorkspace, data.selectedThreadId);
+      const baselineLastTurnAt = refreshedThread.data?.thread?.lastTurnAt ?? "";
+      const latestMessage = refreshedThread.data?.thread?.messages?.[0] ?? null;
+      const waitingForAssistant = !!latestMessage && !(latestMessage.assistant ?? "").trim();
+      pendingComposerThreads.add(threadKey);
+      pendingComposerBaselines.set(threadKey, baselineLastTurnAt);
+      pendingComposerErrors.delete(threadKey);
       const nextData = {
         ...data,
         thread: refreshedThread,
         loadingError: null,
       };
-      renderReadonlyThreadSurface(documentLike, bridge, nextData);
+      if (!waitingForAssistant) {
+        clearComposerPendingState(threadKey);
+        renderReadonlyThreadSurface(documentLike, bridge, nextData);
+      } else {
+        renderReadonlyThreadSurface(documentLike, bridge, nextData);
+        scheduleComposerRefresh({
+          documentLike,
+          bridge,
+          data: nextData,
+          baselineLastTurnAt,
+        });
+      }
     } catch (submitError) {
+      clearComposerPendingState(threadKey);
       if (error) {
         error.textContent = submitError instanceof Error ? submitError.message : String(submitError);
       }
     } finally {
       sending = false;
-      input.disabled = false;
-      button.disabled = false;
+      if (!pendingComposerThreads.has(threadKey)) {
+        input.disabled = false;
+        button.disabled = false;
+      }
     }
   };
 

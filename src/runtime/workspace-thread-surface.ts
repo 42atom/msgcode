@@ -280,8 +280,8 @@ async function readCurrentThread(filePath: string, warnings: Diagnostic[]): Prom
     if (messages.length === 0) {
       warnings.push({
         code: "APPLIANCE_THREAD_INVALID_FILE",
-        message: "当前线程缺少完整 turn",
-        hint: "补齐 ## Turn / ### User / ### Assistant",
+        message: "当前线程缺少有效 turn",
+        hint: "补齐 ## Turn 与至少一段 ### User / ### Assistant",
         details: { filePath },
       });
       return null;
@@ -319,11 +319,11 @@ function parseThreadMessages(body: string): WorkspaceThreadMessage[] {
     if (!headerMatch) continue;
     const turn = Number.parseInt(headerMatch[1] ?? "", 10);
     const at = normalizeCell(headerMatch[2]);
-    const userMatch = section.match(/### User\n([\s\S]*?)\n\n### Assistant\n/);
+    const userMatch = section.match(/### User\n([\s\S]*?)(?:\n\n### Assistant\n|$)/);
     const assistantMatch = section.match(/### Assistant\n([\s\S]*)$/);
     const user = normalizeCell((userMatch?.[1] ?? "").replace(/\n+/g, " "));
     const assistant = normalizeCell((assistantMatch?.[1] ?? "").replace(/\n+/g, " "));
-    if (!at || !user || !assistant) {
+    if (!at || (!user && !assistant)) {
       continue;
     }
     messages.push({ turn, at, user, assistant });

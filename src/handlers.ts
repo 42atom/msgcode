@@ -29,7 +29,7 @@ import * as session from "./runtime/session-orchestrator.js";
 // P5.6.2-R1: 导入会话窗口
 import { appendWindow } from "./session-window.js";
 // P5.6.13-R2: 导入线程存储
-import { ensureThread, appendTurn, getThreadInfo } from "./runtime/thread-store.js";
+import { ensureThread, appendAssistantTurn, appendTurn, getThreadInfo } from "./runtime/thread-store.js";
 import { renderUnknownCommandHint } from "./routes/cmd-info.js";
 import { looksLikeSlashCommand } from "./routes/commands.js";
 import { assembleAgentContext } from "./runtime/context-policy.js";
@@ -66,6 +66,35 @@ function normalizeWhitespace(input: string): string {
     return input.replace(/\s+/g, " ").trim();
 }
 
+function shouldPromoteMessageRunToBackgroundTask(params: {
+    continuable?: boolean;
+    continuationReason?: string;
+    workspacePath?: string;
+}): boolean {
+    if (!params.workspacePath) return false;
+    if (!params.continuable) return false;
+    return true;
+}
+
+function buildBackgroundTaskGoal(params: {
+    userText: string;
+    continuationReason?: string;
+}): string {
+    const reason = params.continuationReason?.trim() || "message_continuation_required";
+    return [
+        "继续处理同一会话里刚才那条用户请求。",
+        `上一轮前台消息主链未在预算内收尾，原因：${reason}。`,
+        "现在转入后台 task 继续执行，目标是直接做完，不要重复寒暄。",
+        "",
+        "[用户原始请求]",
+        params.userText.trim(),
+    ].join("\n");
+}
+
+function buildBackgroundTaskKickoffText(): string {
+    return "这轮排查已转后台继续，我做完后会直接回帖。";
+}
+
 async function buildTmuxStylePreamble(
     projectDir: string | undefined,
     userText: string
@@ -83,6 +112,7 @@ export interface HandleResult {
     error?: string;
     file?: { path: string } | null;
     defer?: { kind: "tts"; text: string; options?: { model?: string; voice?: string; instruct?: string; speed?: number; temperature?: number } } | null;
+    backgroundTask?: { goal: string } | null;
 }
 
 /**
@@ -105,6 +135,7 @@ export interface HandlerContext {
     projectDir?: string;
     originalMessage: InboundMessage;
     signal?: AbortSignal;
+    threadWriteMode?: "paired" | "assistant-only";
 }
 
 /**
@@ -329,6 +360,8 @@ export class FileHandler extends BaseHandler {
 export class RuntimeRouterHandler implements CommandHandler {
     async handle(message: string, context: HandlerContext): Promise<HandleResult> {
         const trimmed = message.trim();
+        const threadWriteMode = context.threadWriteMode ?? "paired";
+        const assistantOnlyWrite = threadWriteMode === "assistant-only";
 
         // P5.5: 关键词主触发已禁用，自然语言由 LLM tool_calls 自主决策
         // if (!trimmed.startsWith("/")) {
@@ -668,6 +701,28 @@ export class RuntimeRouterHandler implements CommandHandler {
                 };
             }
 
+            if (shouldPromoteMessageRunToBackgroundTask({
+                continuable: routedResult.continuable,
+                continuationReason: routedResult.continuationReason,
+                workspacePath: context.projectDir,
+            })) {
+                const kickoffText = buildBackgroundTaskKickoffText();
+                run.finish({
+                    status: "completed",
+                });
+                return {
+                    success: true,
+                    response: kickoffText,
+                    defer: null,
+                    backgroundTask: {
+                        goal: buildBackgroundTaskGoal({
+                            userText: trimmed,
+                            continuationReason: routedResult.continuationReason,
+                        }),
+                    },
+                };
+            }
+
             logger.info("agent request completed", {
                 module: "handlers",
                 runId: run.runId,
@@ -716,15 +771,17 @@ export class RuntimeRouterHandler implements CommandHandler {
                 // P5.7-R9-T3 Step 1: TTS 模式也必须写回会话窗口（禁止漏写回）
                 if (context.projectDir && clean) {
                     try {
-                        await appendWindow(context.projectDir, context.chatId, {
-                            role: "user",
-                            content: trimmed,
-                            messageId: context.originalMessage.id,
-                            senderId: context.originalMessage.sender || context.originalMessage.handle,
-                            senderName: context.originalMessage.senderName,
-                            messageType: context.originalMessage.messageType,
-                            isGroup: context.originalMessage.isGroup,
-                        });
+                        if (!assistantOnlyWrite) {
+                            await appendWindow(context.projectDir, context.chatId, {
+                                role: "user",
+                                content: trimmed,
+                                messageId: context.originalMessage.id,
+                                senderId: context.originalMessage.sender || context.originalMessage.handle,
+                                senderName: context.originalMessage.senderName,
+                                messageType: context.originalMessage.messageType,
+                                isGroup: context.originalMessage.isGroup,
+                            });
+                        }
                         await appendWindow(context.projectDir, context.chatId, { role: "assistant", content: clean });
                     } catch {
                         // 窗口写回失败不影响主流程
@@ -744,7 +801,11 @@ export class RuntimeRouterHandler implements CommandHandler {
                             };
                             await ensureThread(context.chatId, context.projectDir, trimmed, runtimeMeta);
                         }
-                        await appendTurn(context.chatId, trimmed, clean);
+                        if (assistantOnlyWrite) {
+                            await appendAssistantTurn(context.chatId, clean);
+                        } else {
+                            await appendTurn(context.chatId, trimmed, clean);
+                        }
                     } catch {
                         // 线程写回失败不影响主流程
                     }
@@ -771,15 +832,17 @@ export class RuntimeRouterHandler implements CommandHandler {
             // P5.6.2-R2: 写回短期会话窗口（user + assistant 双向写回）
             if (context.projectDir && clean) {
                 try {
-                    await appendWindow(context.projectDir, context.chatId, {
-                        role: "user",
-                        content: trimmed,
-                        messageId: context.originalMessage.id,
-                        senderId: context.originalMessage.sender || context.originalMessage.handle,
-                        senderName: context.originalMessage.senderName,
-                        messageType: context.originalMessage.messageType,
-                        isGroup: context.originalMessage.isGroup,
-                    });
+                    if (!assistantOnlyWrite) {
+                        await appendWindow(context.projectDir, context.chatId, {
+                            role: "user",
+                            content: trimmed,
+                            messageId: context.originalMessage.id,
+                            senderId: context.originalMessage.sender || context.originalMessage.handle,
+                            senderName: context.originalMessage.senderName,
+                            messageType: context.originalMessage.messageType,
+                            isGroup: context.originalMessage.isGroup,
+                        });
+                    }
                     await appendWindow(context.projectDir, context.chatId, { role: "assistant", content: clean });
                 } catch {
                     // 窗口写回失败不影响主流程
@@ -800,9 +863,13 @@ export class RuntimeRouterHandler implements CommandHandler {
                             tmuxClient: undefined,
                         };
                         await ensureThread(context.chatId, context.projectDir, trimmed, runtimeMeta);
+                        }
+                        // 追加 turn
+                    if (assistantOnlyWrite) {
+                        await appendAssistantTurn(context.chatId, clean);
+                    } else {
+                        await appendTurn(context.chatId, trimmed, clean);
                     }
-                    // 追加 turn
-                    await appendTurn(context.chatId, trimmed, clean);
                 } catch {
                     // 线程写回失败不影响主流程
                 }

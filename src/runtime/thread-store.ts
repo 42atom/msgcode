@@ -410,6 +410,104 @@ export async function appendTurn(
 }
 
 /**
+ * 追加一条仅 user 的待处理输入
+ *
+ * 用于桌面可写 thread：先落 user turn，再异步补 assistant。
+ */
+export async function appendUserTurn(
+    chatId: string,
+    userText: string,
+    timestamp?: Date
+): Promise<void> {
+    const state = threadCache.get(chatId);
+    if (!state) {
+        logger.warn("appendUserTurn called without ensureThread first", {
+            module: "thread-store",
+            chatId,
+        });
+        return;
+    }
+
+    const started = Date.now();
+    const turnTime = timestamp ?? new Date();
+    const turnNumber = ++state.info.turnCount;
+    state.lastTurnTime = turnTime.toISOString();
+
+    const turnHeader = formatTurnHeader(turnNumber, turnTime);
+    const turnContent = `${turnHeader}\n\n### User\n${userText}\n\n`;
+
+    try {
+        await fs.appendFile(state.info.filePath, turnContent, { encoding: "utf-8" });
+
+        logger.debug("User-only turn appended", {
+            module: "thread-store",
+            chatId,
+            threadId: state.info.threadId,
+            threadTurn: turnNumber,
+            threadPersistMs: Date.now() - started,
+        });
+    } catch (error) {
+        logger.error("Failed to append user-only turn", {
+            module: "thread-store",
+            chatId,
+            threadId: state.info.threadId,
+            threadTurn: turnNumber,
+            threadPersistError: error instanceof Error ? error.message : String(error),
+            durationMs: Date.now() - started,
+        });
+    }
+}
+
+/**
+ * 追加一条仅 assistant 的后台回帖
+ *
+ * 用于后台 task 完成后回写线程，不伪造 user turn。
+ */
+export async function appendAssistantTurn(
+    chatId: string,
+    assistantText: string,
+    timestamp?: Date
+): Promise<void> {
+    const state = threadCache.get(chatId);
+    if (!state) {
+        logger.warn("appendAssistantTurn called without ensureThread first", {
+            module: "thread-store",
+            chatId,
+        });
+        return;
+    }
+
+    const started = Date.now();
+    const turnTime = timestamp ?? new Date();
+    const turnNumber = ++state.info.turnCount;
+    state.lastTurnTime = turnTime.toISOString();
+
+    const turnHeader = formatTurnHeader(turnNumber, turnTime);
+    const turnContent = `${turnHeader}\n\n### Assistant\n${assistantText}\n\n`;
+
+    try {
+        await fs.appendFile(state.info.filePath, turnContent, { encoding: "utf-8" });
+
+        logger.debug("Assistant-only turn appended", {
+            module: "thread-store",
+            chatId,
+            threadId: state.info.threadId,
+            threadTurn: turnNumber,
+            threadPersistMs: Date.now() - started,
+        });
+    } catch (error) {
+        logger.error("Failed to append assistant-only turn", {
+            module: "thread-store",
+            chatId,
+            threadId: state.info.threadId,
+            threadTurn: turnNumber,
+            threadPersistError: error instanceof Error ? error.message : String(error),
+            durationMs: Date.now() - started,
+        });
+    }
+}
+
+/**
  * 重置线程（/clear 后调用，创建新线程）
  *
  * @param chatId - 会话 ID

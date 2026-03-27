@@ -171,7 +171,8 @@ describe("readonly thread surface host bridge slice", () => {
             thread: {
               writable: true,
               title: "hello",
-              messages: [{ user: "hello desktop", assistant: "done" }],
+              lastTurnAt: "2026-03-28T10:00:00.000Z",
+              messages: [{ user: "hello desktop", assistant: "" }],
             },
           },
         };
@@ -204,6 +205,8 @@ describe("readonly thread surface host bridge slice", () => {
 
     expect(sent).toEqual([{ workspacePath: "/tmp/family", threadId: "thread-web", text: "hello desktop" }]);
     expect(input.value).toBe("");
+    expect(input.disabled).toBe(true);
+    expect(button.disabled).toBe(true);
     expect(requests).toContainEqual({
       kind: "read",
       request: { command: "thread", workspace: "family", threadId: "thread-web" },
@@ -222,7 +225,7 @@ describe("readonly thread surface host bridge slice", () => {
     bindReadonlyThreadComposer(documentLike, failingBridge, {
       selectedWorkspace: "family",
       selectedWorkspacePath: "/tmp/family",
-      selectedThreadId: "thread-web",
+      selectedThreadId: "thread-web-2",
       workspaceTree: {},
       thread: {
         data: {
