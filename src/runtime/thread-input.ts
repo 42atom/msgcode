@@ -24,6 +24,12 @@ export interface SendThreadInputRequest {
   text: string;
 }
 
+export interface PersistedThreadInput {
+  workspacePath: string;
+  threadId: string;
+  threadFilePath: string;
+}
+
 type ThreadInputDispatcher = (params: {
   text: string;
   target: WorkspaceThreadSummary;
@@ -266,7 +272,7 @@ export async function runThreadInputProcess(request: SendThreadInputRequest): Pr
   });
 }
 
-export async function sendThreadInput(request: SendThreadInputRequest): Promise<void> {
+export async function sendThreadInput(request: SendThreadInputRequest): Promise<PersistedThreadInput> {
   const { workspacePath, text } = normalizeSendThreadInputRequest(request);
   const target = await resolveWritableThreadTarget(workspacePath, request.threadId);
   const originalMessage = buildDesktopOriginalMessage(target, text);
@@ -277,4 +283,10 @@ export async function sendThreadInput(request: SendThreadInputRequest): Promise<
     text,
     originalMessage,
   });
+
+  return {
+    workspacePath,
+    threadId: target.threadId,
+    threadFilePath: target.filePath,
+  };
 }

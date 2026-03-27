@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
+import { watch, type FSWatcher } from "node:fs";
 import { resolveRuntimeEntry } from "../runtime/runtime-entry.js";
 import {
   buildReadonlySurfaceCliArgs,
@@ -10,7 +11,10 @@ import {
   type ReadonlySurfaceRunCommandRequest,
   type SendThreadInputRequest,
 } from "./readonly-surface-bridge.js";
-import { sendThreadInput as sendThreadInputFromRuntime } from "../runtime/thread-input.js";
+import {
+  sendThreadInput as sendThreadInputFromRuntime,
+  type PersistedThreadInput,
+} from "../runtime/thread-input.js";
 
 export interface ElectronRuntimePaths {
   preloadPath: string;
@@ -92,7 +96,7 @@ interface DetachedThreadInputChildLike {
 }
 
 interface RunSendThreadInputDeps {
-  persistUserTurn?: (request: SendThreadInputRequest) => Promise<void>;
+  persistUserTurn?: (request: SendThreadInputRequest) => Promise<PersistedThreadInput | void>;
   spawnChild?: (
     command: string,
     args: string[],
@@ -106,9 +110,58 @@ interface RunSendThreadInputDeps {
   afterSpawn?: (
     child: DetachedThreadInputChildLike,
     request: SendThreadInputRequest,
+    persisted: PersistedThreadInput | null,
   ) => void;
   env?: NodeJS.ProcessEnv;
   nodePath?: string;
+}
+
+interface ThreadUpdatePushDeps {
+  notify?: (payload: ThreadUpdateEventPayload) => void;
+  watchFile?: (
+    filePath: string,
+    listener: (eventType: string) => void,
+  ) => { close(): void };
+}
+
+interface ThreadUpdateEventPayload {
+  workspacePath: string;
+  threadId: string;
+}
+
+export function bindThreadUpdatePush(
+  child: DetachedThreadInputChildLike,
+  persisted: PersistedThreadInput,
+  deps: ThreadUpdatePushDeps = {},
+): void {
+  const notify = deps.notify ?? (() => {});
+  const watchFile =
+    deps.watchFile ??
+    ((filePath: string, listener: (eventType: string) => void): FSWatcher =>
+      watch(filePath, (eventType) => {
+        listener(eventType);
+      }));
+
+  const watcher = watchFile(persisted.threadFilePath, (eventType) => {
+    if (eventType !== "change" && eventType !== "rename") {
+      return;
+    }
+    notify({
+      workspacePath: persisted.workspacePath,
+      threadId: persisted.threadId,
+    });
+  });
+
+  const closeWatcher = (): void => {
+    watcher.close();
+    notify({
+      workspacePath: persisted.workspacePath,
+      threadId: persisted.threadId,
+    });
+  };
+
+  child.once?.("close", closeWatcher);
+  child.once?.("error", closeWatcher);
 }
 
 export async function runReadonlySurfaceCommand(
@@ -156,7 +209,7 @@ export async function runSendThreadInput(
     deps.spawnChild ??
     ((command, args, options) => spawn(command, args, options));
 
-  await persistUserTurn(request);
+  const persisted = (await persistUserTurn(request)) ?? null;
   const command = buildSendThreadInputCliCommand(request, {
     env: deps.env,
     nodePath: deps.nodePath,
@@ -167,7 +220,7 @@ export async function runSendThreadInput(
     stdio: "ignore",
     detached: true,
   });
-  deps.afterSpawn?.(child, request);
+  deps.afterSpawn?.(child, request, persisted);
   child.unref();
 }
 
@@ -212,17 +265,27 @@ export async function startElectronRuntime(entryModuleUrl = import.meta.url): Pr
   });
   ipcMain.handle(getSendThreadInputChannel(), async (_event, request: SendThreadInputRequest) => {
     await runSendThreadInput(request, {
-      afterSpawn(child, nextRequest) {
-        const notify = (): void => {
+      afterSpawn(child, nextRequest, persisted) {
+        const notify = (payload: ThreadUpdateEventPayload): void => {
           for (const window of BrowserWindow.getAllWindows()) {
             window.webContents.send(getThreadUpdateChannel(), {
-              workspacePath: nextRequest.workspacePath,
-              threadId: nextRequest.threadId,
+              workspacePath: payload.workspacePath,
+              threadId: payload.threadId,
             });
           }
         };
-        child.once?.("close", notify);
-        child.once?.("error", notify);
+        if (persisted?.threadFilePath) {
+          bindThreadUpdatePush(child, persisted, { notify });
+          return;
+        }
+        const fallbackNotify = (): void => {
+          notify({
+            workspacePath: nextRequest.workspacePath,
+            threadId: nextRequest.threadId,
+          });
+        };
+        child.once?.("close", fallbackNotify);
+        child.once?.("error", fallbackNotify);
       },
     });
   });

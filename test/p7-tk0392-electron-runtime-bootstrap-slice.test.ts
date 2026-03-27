@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import {
+  bindThreadUpdatePush,
   buildRendererHtml,
   resolveElectronRuntimePaths,
   runSendThreadInput,
@@ -109,6 +110,50 @@ describe("electron runtime bootstrap slice", () => {
     ]);
     expect(spawned[0]?.options.detached).toBe(true);
     expect(spawned[0]?.options.stdio).toBe("ignore");
+  });
+
+  it("pushes thread updates from thread file changes before child close", () => {
+    const listeners = new Map<string, () => void>();
+    const events: Array<{ workspacePath: string; threadId: string }> = [];
+    let closed = false;
+    let watchListener: ((eventType: string) => void) | undefined;
+
+    bindThreadUpdatePush(
+      {
+        unref() {},
+        once(event, listener) {
+          listeners.set(event, listener as () => void);
+          return this;
+        },
+      },
+      {
+        workspacePath: "/tmp/family",
+        threadId: "thread-1",
+        threadFilePath: "/tmp/family/.msgcode/threads/2026-03-28_thread.md",
+      },
+      {
+        notify(payload) {
+          events.push(payload);
+        },
+        watchFile(_filePath, listener) {
+          watchListener = listener;
+          return {
+            close() {
+              closed = true;
+            },
+          };
+        },
+      },
+    );
+
+    watchListener?.("change");
+    listeners.get("close")?.();
+
+    expect(events).toEqual([
+      { workspacePath: "/tmp/family", threadId: "thread-1" },
+      { workspacePath: "/tmp/family", threadId: "thread-1" },
+    ]);
+    expect(closed).toBe(true);
   });
 
   it("whitelists preload ipc channels for the readonly surface bridge", async () => {
