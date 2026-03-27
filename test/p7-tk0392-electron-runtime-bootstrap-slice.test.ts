@@ -156,6 +156,38 @@ describe("electron runtime bootstrap slice", () => {
     expect(closed).toBe(true);
   });
 
+  it("falls back to close notify when thread file watching cannot start", () => {
+    const listeners = new Map<string, () => void>();
+    const events: Array<{ workspacePath: string; threadId: string }> = [];
+
+    bindThreadUpdatePush(
+      {
+        unref() {},
+        once(event, listener) {
+          listeners.set(event, listener as () => void);
+          return this;
+        },
+      },
+      {
+        workspacePath: "/tmp/family",
+        threadId: "thread-1",
+        threadFilePath: "/tmp/family/.msgcode/threads/2026-03-28_thread.md",
+      },
+      {
+        notify(payload) {
+          events.push(payload);
+        },
+        watchFile() {
+          throw new Error("watch failed");
+        },
+      },
+    );
+
+    listeners.get("close")?.();
+
+    expect(events).toEqual([{ workspacePath: "/tmp/family", threadId: "thread-1" }]);
+  });
+
   it("whitelists preload ipc channels for the readonly surface bridge", async () => {
     const calls: string[] = [];
     const whitelist = createReadonlySurfaceIpcWhitelist({

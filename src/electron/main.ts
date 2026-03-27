@@ -129,6 +129,12 @@ interface ThreadUpdateEventPayload {
   threadId: string;
 }
 
+interface ThreadUpdateWindowLike {
+  webContents: {
+    send(channel: string, payload: ThreadUpdateEventPayload): void;
+  };
+}
+
 export function bindThreadUpdatePush(
   child: DetachedThreadInputChildLike,
   persisted: PersistedThreadInput,
@@ -142,26 +148,64 @@ export function bindThreadUpdatePush(
         listener(eventType);
       }));
 
-  const watcher = watchFile(persisted.threadFilePath, (eventType) => {
-    if (eventType !== "change" && eventType !== "rename") {
-      return;
-    }
-    notify({
-      workspacePath: persisted.workspacePath,
-      threadId: persisted.threadId,
-    });
-  });
-
-  const closeWatcher = (): void => {
-    watcher.close();
+  const notifyThreadUpdated = (): void => {
     notify({
       workspacePath: persisted.workspacePath,
       threadId: persisted.threadId,
     });
   };
 
+  let watcher: { close(): void } | null = null;
+  try {
+    watcher = watchFile(persisted.threadFilePath, (eventType) => {
+      if (eventType !== "change" && eventType !== "rename") {
+        return;
+      }
+      notifyThreadUpdated();
+    });
+  } catch {
+    child.once?.("close", notifyThreadUpdated);
+    child.once?.("error", notifyThreadUpdated);
+    return;
+  }
+
+  const closeWatcher = (): void => {
+    watcher?.close();
+    notifyThreadUpdated();
+  };
+
   child.once?.("close", closeWatcher);
   child.once?.("error", closeWatcher);
+}
+
+function notifyThreadUpdatedWindows(
+  windows: readonly ThreadUpdateWindowLike[],
+  payload: ThreadUpdateEventPayload,
+): void {
+  for (const window of windows) {
+    window.webContents.send(getThreadUpdateChannel(), payload);
+  }
+}
+
+function bindThreadUpdateNotifications(
+  child: DetachedThreadInputChildLike,
+  request: SendThreadInputRequest,
+  persisted: PersistedThreadInput | null,
+  notify: (payload: ThreadUpdateEventPayload) => void,
+): void {
+  if (persisted?.threadFilePath) {
+    bindThreadUpdatePush(child, persisted, { notify });
+    return;
+  }
+
+  const fallbackNotify = (): void => {
+    notify({
+      workspacePath: request.workspacePath,
+      threadId: request.threadId,
+    });
+  };
+  child.once?.("close", fallbackNotify);
+  child.once?.("error", fallbackNotify);
 }
 
 export async function runReadonlySurfaceCommand(
@@ -264,28 +308,12 @@ export async function startElectronRuntime(entryModuleUrl = import.meta.url): Pr
     return await runReadonlySurfaceCommand(request);
   });
   ipcMain.handle(getSendThreadInputChannel(), async (_event, request: SendThreadInputRequest) => {
+    const notify = (payload: ThreadUpdateEventPayload): void => {
+      notifyThreadUpdatedWindows(BrowserWindow.getAllWindows(), payload);
+    };
     await runSendThreadInput(request, {
       afterSpawn(child, nextRequest, persisted) {
-        const notify = (payload: ThreadUpdateEventPayload): void => {
-          for (const window of BrowserWindow.getAllWindows()) {
-            window.webContents.send(getThreadUpdateChannel(), {
-              workspacePath: payload.workspacePath,
-              threadId: payload.threadId,
-            });
-          }
-        };
-        if (persisted?.threadFilePath) {
-          bindThreadUpdatePush(child, persisted, { notify });
-          return;
-        }
-        const fallbackNotify = (): void => {
-          notify({
-            workspacePath: nextRequest.workspacePath,
-            threadId: nextRequest.threadId,
-          });
-        };
-        child.once?.("close", fallbackNotify);
-        child.once?.("error", fallbackNotify);
+        bindThreadUpdateNotifications(child, nextRequest, persisted, notify);
       },
     });
   });

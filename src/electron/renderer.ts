@@ -1,5 +1,6 @@
 import {
   buildReadonlyThreadSurfaceChrome,
+  escapeHtml,
   renderReadonlyThreadSurfaceMarkup,
 } from "../ui/main-window/readonly-thread-surface.js";
 import type {
@@ -119,6 +120,19 @@ function clearComposerPendingState(threadKey: string, preserveError = false): vo
   }
 }
 
+function buildEmptySurfaceViewData(loadingError: string | null): ReadonlyThreadSurfaceViewData {
+  return {
+    selectedWorkspace: "",
+    selectedWorkspacePath: "",
+    selectedThreadId: "",
+    workspaceTree: {},
+    thread: null,
+    profile: null,
+    capabilities: null,
+    loadingError,
+  };
+}
+
 export function bootstrapReadonlyThreadSurface(documentLike: HtmlDocumentLike): void {
   const chrome = buildReadonlyThreadSurfaceChrome({
     selectedWorkspace: "",
@@ -186,27 +200,27 @@ export function applyReadonlyThreadSurfaceData(
   documentLike: HtmlDocumentLike,
   data: ReadonlyThreadSurfaceViewData,
 ): void {
-  const workspacePanel = documentLike.querySelector('[data-surface-slot="workspace-tree"]');
-  if (workspacePanel) {
+  const leftPanel = documentLike.querySelector('[data-surface-slot="workspace-tree"]');
+  if (leftPanel) {
     const workspaces = data.workspaceTree.data?.workspaces ?? [];
-    workspacePanel.innerHTML = renderWorkspacePanel({
+    leftPanel.innerHTML = renderLeftPanel({
       selectedWorkspace: data.selectedWorkspace,
       selectedThreadId: data.selectedThreadId,
       workspaces,
     });
   }
 
-  const threadPanel = documentLike.querySelector('[data-surface-slot="thread"]');
-  if (threadPanel) {
-    threadPanel.innerHTML = renderThreadPanel(data);
+  const middlePanel = documentLike.querySelector('[data-surface-slot="thread"]');
+  if (middlePanel) {
+    middlePanel.innerHTML = renderMiddlePanel(data);
   }
 
-  const railPanel = documentLike.querySelector('[data-surface-slot="thread-rail"]');
-  if (railPanel) {
+  const rightPanel = documentLike.querySelector('[data-surface-slot="thread-rail"]');
+  if (rightPanel) {
     const threadKey = buildSurfaceThreadKey(data.selectedWorkspacePath, data.selectedThreadId);
     const scheduleCount = data.thread?.data?.schedules?.length ?? 0;
     const recentStatusCount = data.thread?.data?.workStatus?.recentEntries?.length ?? 0;
-    railPanel.innerHTML = renderRailPanel({
+    rightPanel.innerHTML = renderRightPanel({
       selectedWorkspace: data.selectedWorkspace,
       selectedWorkspacePath: data.selectedWorkspacePath,
       selectedThreadId: data.selectedThreadId,
@@ -222,7 +236,7 @@ export function applyReadonlyThreadSurfaceData(
   }
 }
 
-function renderWorkspacePanel(params: {
+function renderLeftPanel(params: {
   selectedWorkspace: string;
   selectedThreadId: string;
   workspaces: WorkspaceTreeItem[];
@@ -278,7 +292,7 @@ function renderWorkspaceGroup(
   ].join("");
 }
 
-function renderThreadPanel(data: {
+function renderMiddlePanel(data: {
   selectedWorkspace: string;
   selectedWorkspacePath: string;
   selectedThreadId: string;
@@ -342,7 +356,7 @@ function renderThreadPanel(data: {
   ].join("");
 }
 
-function renderRailPanel(params: {
+function renderRightPanel(params: {
   selectedWorkspace: string;
   selectedWorkspacePath: string;
   selectedThreadId: string;
@@ -401,6 +415,52 @@ function renderObserverRow(label: string, value: string): string {
     `<span class="observer-row__value">${escapeHtml(value)}</span>`,
     "</div>",
   ].join("");
+}
+
+function loadSelectedThreadData(
+  bridge: ReadonlySurfaceBridge,
+  workspaceName: string,
+  threadId: string,
+): Promise<ThreadEnvelope | null> {
+  return threadId ? loadThreadEnvelope(bridge, workspaceName, threadId) : Promise.resolve(null);
+}
+
+async function loadWorkspaceSelectionState(params: {
+  bridge: ReadonlySurfaceBridge;
+  current: ReadonlyThreadSurfaceViewData;
+  workspaceName: string;
+  workspacePath: string;
+  threadId: string;
+  includeShared: boolean;
+}): Promise<ReadonlyThreadSurfaceViewData> {
+  const nextData: ReadonlyThreadSurfaceViewData = {
+    ...params.current,
+    selectedWorkspace: params.workspaceName,
+    selectedWorkspacePath: params.workspacePath,
+    selectedThreadId: params.threadId,
+    loadingError: null,
+    thread: null,
+    profile: params.includeShared ? null : params.current.profile,
+    capabilities: params.includeShared ? null : params.current.capabilities,
+  };
+
+  try {
+    const [thread, shared] = await Promise.all([
+      loadSelectedThreadData(params.bridge, params.workspaceName, params.threadId),
+      params.includeShared
+        ? loadWorkspaceSharedSurfaces(params.bridge, params.workspacePath)
+        : Promise.resolve(null),
+    ]);
+    nextData.thread = thread;
+    if (shared) {
+      nextData.profile = shared.profile;
+      nextData.capabilities = shared.capabilities;
+    }
+  } catch (error) {
+    nextData.loadingError = error instanceof Error ? error.message : String(error);
+  }
+
+  return nextData;
 }
 
 async function loadThreadEnvelope(
@@ -527,7 +587,7 @@ export function bindReadonlyThreadSurfaceSelection(
       event.preventDefault?.();
       const workspaceName = target.getAttribute?.("data-workspace-name") ?? "";
       const workspacePath = target.getAttribute?.("data-workspace-path") ?? "";
-      void handleWorkspaceSelection(documentLike, bridge, data, workspaceName, workspacePath);
+      return handleWorkspaceSelection(documentLike, bridge, data, workspaceName, workspacePath);
     });
   }
 
@@ -539,7 +599,7 @@ export function bindReadonlyThreadSurfaceSelection(
       const workspaceName = target.getAttribute?.("data-workspace-name") ?? "";
       const workspacePath = target.getAttribute?.("data-workspace-path") ?? "";
       const threadId = target.getAttribute?.("data-thread-id") ?? "";
-      void handleThreadSelection(documentLike, bridge, data, workspaceName, workspacePath, threadId);
+      return handleThreadSelection(documentLike, bridge, data, workspaceName, workspacePath, threadId);
     });
   }
 }
@@ -555,29 +615,14 @@ async function handleWorkspaceSelection(
     (item) => item.name === workspaceName && item.path === workspacePath,
   );
   const nextThreadId = workspace?.threads[0]?.threadId ?? "";
-  const nextData: ReadonlyThreadSurfaceViewData = {
-    ...data,
-    selectedWorkspace: workspaceName,
-    selectedWorkspacePath: workspacePath,
-    selectedThreadId: nextThreadId,
-    loadingError: null,
-    thread: null,
-    profile: null,
-    capabilities: null,
-  };
-  try {
-    const [thread, shared] = await Promise.all([
-      nextThreadId
-        ? loadThreadEnvelope(bridge, workspaceName, nextThreadId)
-        : Promise.resolve<ThreadEnvelope | null>(null),
-      loadWorkspaceSharedSurfaces(bridge, workspacePath),
-    ]);
-    nextData.thread = thread;
-    nextData.profile = shared.profile;
-    nextData.capabilities = shared.capabilities;
-  } catch (error) {
-    nextData.loadingError = error instanceof Error ? error.message : String(error);
-  }
+  const nextData = await loadWorkspaceSelectionState({
+    bridge,
+    current: data,
+    workspaceName,
+    workspacePath,
+    threadId: nextThreadId,
+    includeShared: true,
+  });
   renderReadonlyThreadSurface(documentLike, bridge, nextData);
 }
 
@@ -589,29 +634,15 @@ async function handleThreadSelection(
   workspacePath: string,
   threadId: string,
 ): Promise<void> {
-  const nextData: ReadonlyThreadSurfaceViewData = {
-    ...data,
-    selectedWorkspace: workspaceName,
-    selectedWorkspacePath: workspacePath,
-    selectedThreadId: threadId,
-    loadingError: null,
-    thread: null,
-  };
-  try {
-    nextData.thread = threadId ? await loadThreadEnvelope(bridge, workspaceName, threadId) : null;
-  } catch (error) {
-    nextData.loadingError = error instanceof Error ? error.message : String(error);
-  }
+  const nextData = await loadWorkspaceSelectionState({
+    bridge,
+    current: data,
+    workspaceName,
+    workspacePath,
+    threadId,
+    includeShared: false,
+  });
   renderReadonlyThreadSurface(documentLike, bridge, nextData);
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 }
 
 export async function startReadonlyThreadSurface(
@@ -630,16 +661,11 @@ export async function startReadonlyThreadSurface(
       loadingError: null,
     });
   } catch (error) {
-    renderReadonlyThreadSurface(documentLike, bridge, {
-      selectedWorkspace: "",
-      selectedWorkspacePath: "",
-      selectedThreadId: "",
-      workspaceTree: {},
-      thread: null,
-      profile: null,
-      capabilities: null,
-      loadingError: error instanceof Error ? error.message : String(error),
-    });
+    renderReadonlyThreadSurface(
+      documentLike,
+      bridge,
+      buildEmptySurfaceViewData(error instanceof Error ? error.message : String(error)),
+    );
   }
 }
 
