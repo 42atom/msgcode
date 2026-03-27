@@ -228,21 +228,31 @@ function renderThreadPanel(data: {
     "</header>",
     '<div class="surface-panel__body thread-stage">',
     '<div class="message-list-host">',
+    '<div class="message-list-stack">',
     ...(messages.length === 0
-      ? ['<p class="empty-state">No messages yet.</p>']
+      ? ['<div class="message-row message-row--empty"><p class="empty-state">No messages yet.</p></div>']
       : messages.flatMap((message) => {
           const rows: string[] = [];
           if ((message.user || "").trim()) {
-            rows.push(`<article class="bubble bubble--user">${escapeHtml(message.user || "")}</article>`);
+            rows.push(
+              '<div class="message-row message-row--user">' +
+                `<article class="bubble bubble--user">${escapeHtml(message.user || "")}</article>` +
+              "</div>",
+            );
           }
           if ((message.assistant || "").trim()) {
-            rows.push(`<article class="bubble bubble--agent">${escapeHtml(message.assistant || "")}</article>`);
+            rows.push(
+              '<div class="message-row message-row--agent">' +
+                `<article class="bubble bubble--agent">${escapeHtml(message.assistant || "")}</article>` +
+              "</div>",
+            );
           }
           return rows;
         })),
     ...(data.loadingError
-      ? [`<p class="thread-error">Loading error: ${escapeHtml(data.loadingError)}</p>`]
+      ? [`<div class="message-row message-row--error"><p class="thread-error">Loading error: ${escapeHtml(data.loadingError)}</p></div>`]
       : []),
+    "</div>",
     "</div>",
     ...(writable
       ? [

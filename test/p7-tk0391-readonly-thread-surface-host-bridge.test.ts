@@ -117,6 +117,8 @@ describe("readonly thread surface host bridge slice", () => {
 
     expect(panels.get('[data-surface-slot="workspace-tree"]')?.innerHTML).toContain("family");
     expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("<h2>hello</h2>");
+    expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("message-list-stack");
+    expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("message-row--user");
     expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("bubble--user");
     expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain('data-thread-composer="true"');
     expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("定时任务");
