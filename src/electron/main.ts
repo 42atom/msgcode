@@ -82,6 +82,26 @@ export function buildSendThreadInputCliCommand(
   };
 }
 
+interface DetachedThreadInputChildLike {
+  unref(): void;
+}
+
+interface RunSendThreadInputDeps {
+  persistUserTurn?: (request: SendThreadInputRequest) => Promise<void>;
+  spawnChild?: (
+    command: string,
+    args: string[],
+    options: {
+      cwd: string;
+      env: NodeJS.ProcessEnv;
+      stdio: "ignore";
+      detached: true;
+    },
+  ) => DetachedThreadInputChildLike;
+  env?: NodeJS.ProcessEnv;
+  nodePath?: string;
+}
+
 export async function runReadonlySurfaceCommand(
   request: ReadonlySurfaceRunCommandRequest,
   options?: { env?: NodeJS.ProcessEnv; nodePath?: string },
@@ -120,12 +140,21 @@ export async function runReadonlySurfaceCommand(
 
 export async function runSendThreadInput(
   request: SendThreadInputRequest,
+  deps: RunSendThreadInputDeps = {},
 ): Promise<void> {
-  await sendThreadInputFromRuntime(request);
-  const command = buildSendThreadInputCliCommand(request);
-  const child = spawn(command.command, command.args, {
+  const persistUserTurn = deps.persistUserTurn ?? sendThreadInputFromRuntime;
+  const spawnChild =
+    deps.spawnChild ??
+    ((command, args, options) => spawn(command, args, options));
+
+  await persistUserTurn(request);
+  const command = buildSendThreadInputCliCommand(request, {
+    env: deps.env,
+    nodePath: deps.nodePath,
+  });
+  const child = spawnChild(command.command, command.args, {
     cwd: command.cwd,
-    env: process.env,
+    env: deps.env ?? process.env,
     stdio: "ignore",
     detached: true,
   });

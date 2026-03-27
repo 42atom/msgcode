@@ -1,5 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { buildRendererHtml, resolveElectronRuntimePaths } from "../src/electron/main.js";
+import {
+  buildRendererHtml,
+  resolveElectronRuntimePaths,
+  runSendThreadInput,
+} from "../src/electron/main.js";
 import { bootstrapReadonlyThreadSurface } from "../src/electron/renderer.js";
 
 describe("electron runtime bootstrap slice", () => {
@@ -45,5 +49,59 @@ describe("electron runtime bootstrap slice", () => {
     expect(writes[1]).toContain('class="right-panel"');
     expect(writes[1]).toContain('data-bridge-entry="window.msgcodeReadonlySurface.runCommand"');
     expect(writes[1]).toContain('href="#settings"');
+  });
+
+  it("persists user turn before spawning a detached thread-input child", async () => {
+    const order: string[] = [];
+    const spawned: Array<{
+      command: string;
+      args: string[];
+      options: {
+        cwd: string;
+        env: NodeJS.ProcessEnv;
+        stdio: "ignore";
+        detached: true;
+      };
+    }> = [];
+
+    await runSendThreadInput(
+      {
+        workspacePath: "/tmp/family",
+        threadId: "thread-1",
+        text: "hello desktop",
+      },
+      {
+        persistUserTurn: async () => {
+          order.push("persist");
+        },
+        spawnChild: (command, args, options) => {
+          order.push("spawn");
+          spawned.push({ command, args, options });
+          return {
+            unref() {
+              order.push("unref");
+            },
+          };
+        },
+        env: { MSGCODE_CLI_ENTRY: "/tmp/msgcode/dist/cli.js" },
+        nodePath: "/usr/local/bin/node",
+      },
+    );
+
+    expect(order).toEqual(["persist", "spawn", "unref"]);
+    expect(spawned).toHaveLength(1);
+    expect(spawned[0]?.command).toBe("/usr/local/bin/node");
+    expect(spawned[0]?.args.slice(-8)).toEqual([
+      "appliance",
+      "thread-input-run",
+      "--workspace",
+      "/tmp/family",
+      "--thread-id",
+      "thread-1",
+      "--text",
+      "hello desktop",
+    ]);
+    expect(spawned[0]?.options.detached).toBe(true);
+    expect(spawned[0]?.options.stdio).toBe("ignore");
   });
 });
