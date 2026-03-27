@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { buildReadonlySurfaceCliCommand } from "../src/electron/main.js";
+import { buildReadonlySurfaceCliCommand, buildSendThreadInputCliCommand } from "../src/electron/main.js";
 import {
   createReadonlySurfaceBridge,
   getReadonlySurfaceChannel,
@@ -65,6 +65,32 @@ describe("readonly thread surface host bridge slice", () => {
       "--thread-id",
       "thread-1",
       "--json",
+    ]);
+  });
+
+  it("builds detached thread-input cli invocations from the shared runtime entry", () => {
+    const write = buildSendThreadInputCliCommand(
+      {
+        workspacePath: "/tmp/family",
+        threadId: "thread-1",
+        text: "hello desktop",
+      },
+      {
+        env: { MSGCODE_CLI_ENTRY: "/tmp/msgcode/dist/cli.js" },
+        nodePath: "/usr/local/bin/node",
+      },
+    );
+
+    expect(write.command).toBe("/usr/local/bin/node");
+    expect(write.args.slice(-8)).toEqual([
+      "appliance",
+      "thread-input-run",
+      "--workspace",
+      "/tmp/family",
+      "--thread-id",
+      "thread-1",
+      "--text",
+      "hello desktop",
     ]);
   });
 

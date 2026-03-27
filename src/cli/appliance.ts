@@ -4,6 +4,7 @@ import { registerApplianceCapabilityCommands } from "./appliance-capabilities.js
 import { registerAppliancePeopleCommands } from "./appliance-people.js";
 import { registerApplianceArchiveCommands } from "./appliance-archive.js";
 import { registerApplianceSurfaceCommands } from "./appliance-surfaces.js";
+import { registerApplianceThreadInputCommands } from "./appliance-thread-input.js";
 
 export function createApplianceCommand(): Command {
   const cmd = new Command("appliance");
@@ -14,6 +15,7 @@ export function createApplianceCommand(): Command {
   registerAppliancePeopleCommands(cmd);
   registerApplianceArchiveCommands(cmd);
   registerApplianceSurfaceCommands(cmd);
+  registerApplianceThreadInputCommands(cmd);
 
   return cmd;
 }

@@ -4,9 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import {
   resolveWritableThreadTarget,
+  runThreadInputProcess,
   sendThreadInput,
   setThreadInputDispatcherForTest,
 } from "../src/runtime/thread-input.js";
+import { appendAssistantTurn, resetThread } from "../src/runtime/thread-store.js";
 import { readWorkspaceThreadDetailSurface } from "../src/runtime/workspace-thread-surface.js";
 
 async function makeTempWorkspace(): Promise<string> {
@@ -64,6 +66,8 @@ describe("sendThreadInput contract", () => {
 
   afterEach(async () => {
     setThreadInputDispatcherForTest(null);
+    await resetThread("web:family-main");
+    await resetThread("feishu:oc_family");
     await Promise.all(workspaces.splice(0).map((workspacePath) => fs.rm(path.dirname(workspacePath), { recursive: true, force: true })));
   });
 
@@ -140,5 +144,38 @@ describe("sendThreadInput contract", () => {
     expect(detail.data.thread?.messages[0]?.assistant).toBe("");
 
     releaseDispatcher?.();
+  });
+
+  it("runs agent work in a follow-up process without appending duplicate user turns", async () => {
+    const workspacePath = await makeTempWorkspace();
+    workspaces.push(workspacePath);
+
+    setThreadInputDispatcherForTest(async (params) => {
+      await appendAssistantTurn(params.target.chatId, "桌面端后台回复");
+      return {
+        success: true,
+        response: "桌面端后台回复",
+      };
+    });
+
+    await sendThreadInput({
+      workspacePath,
+      threadId: "thread-web",
+      text: "桌面端先落 user",
+    });
+
+    await runThreadInputProcess({
+      workspacePath,
+      threadId: "thread-web",
+      text: "桌面端先落 user",
+    });
+
+    const detail = await readWorkspaceThreadDetailSurface(workspacePath, "thread-web");
+    const messages = detail.data.thread?.messages ?? [];
+    const matchingUsers = messages.filter((entry) => entry.user === "桌面端先落 user");
+    const matchingAssistants = messages.filter((entry) => entry.assistant === "桌面端后台回复");
+
+    expect(matchingUsers).toHaveLength(1);
+    expect(matchingAssistants).toHaveLength(1);
   });
 });

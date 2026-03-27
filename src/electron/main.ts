@@ -57,6 +57,31 @@ export function buildReadonlySurfaceCliCommand(
   };
 }
 
+export function buildSendThreadInputCliCommand(
+  request: SendThreadInputRequest,
+  options?: { env?: NodeJS.ProcessEnv; nodePath?: string },
+): { command: string; args: string[]; cwd: string } {
+  const runtimeEntry = resolveRuntimeEntry("cli", {
+    env: options?.env,
+    nodePath: options?.nodePath,
+  });
+  return {
+    command: runtimeEntry.command,
+    args: [
+      ...runtimeEntry.args,
+      "appliance",
+      "thread-input-run",
+      "--workspace",
+      request.workspacePath,
+      "--thread-id",
+      request.threadId,
+      "--text",
+      request.text,
+    ],
+    cwd: runtimeEntry.workingDirectory,
+  };
+}
+
 export async function runReadonlySurfaceCommand(
   request: ReadonlySurfaceRunCommandRequest,
   options?: { env?: NodeJS.ProcessEnv; nodePath?: string },
@@ -97,6 +122,14 @@ export async function runSendThreadInput(
   request: SendThreadInputRequest,
 ): Promise<void> {
   await sendThreadInputFromRuntime(request);
+  const command = buildSendThreadInputCliCommand(request);
+  const child = spawn(command.command, command.args, {
+    cwd: command.cwd,
+    env: process.env,
+    stdio: "ignore",
+    detached: true,
+  });
+  child.unref();
 }
 
 export async function createMainWindow(entryModuleUrl = import.meta.url) {

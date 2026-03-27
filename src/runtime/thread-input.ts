@@ -241,13 +241,33 @@ async function runThreadInputInBackground(params: {
   }
 }
 
-export async function sendThreadInput(request: SendThreadInputRequest): Promise<void> {
+function normalizeSendThreadInputRequest(
+  request: SendThreadInputRequest,
+): { workspacePath: string; text: string } {
   const text = request.text.trim();
   if (!text) {
     throw new Error("sendThreadInput requires non-empty text");
   }
 
   const workspacePath = request.workspacePath.trim();
+  return { workspacePath, text };
+}
+
+export async function runThreadInputProcess(request: SendThreadInputRequest): Promise<void> {
+  const { workspacePath, text } = normalizeSendThreadInputRequest(request);
+  const target = await resolveWritableThreadTarget(workspacePath, request.threadId);
+  const originalMessage = buildDesktopOriginalMessage(target, text);
+
+  await runThreadInputInBackground({
+    workspacePath,
+    text,
+    target,
+    originalMessage,
+  });
+}
+
+export async function sendThreadInput(request: SendThreadInputRequest): Promise<void> {
+  const { workspacePath, text } = normalizeSendThreadInputRequest(request);
   const target = await resolveWritableThreadTarget(workspacePath, request.threadId);
   const originalMessage = buildDesktopOriginalMessage(target, text);
 
@@ -255,13 +275,6 @@ export async function sendThreadInput(request: SendThreadInputRequest): Promise<
     workspacePath,
     chatId: target.chatId,
     text,
-    originalMessage,
-  });
-
-  void runThreadInputInBackground({
-    workspacePath,
-    text,
-    target,
     originalMessage,
   });
 }
