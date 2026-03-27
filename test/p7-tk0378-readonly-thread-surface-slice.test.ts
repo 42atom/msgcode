@@ -27,7 +27,7 @@ describe("readonly thread surface slice", () => {
     expect(mainJs).toContain("loadingError");
     expect(mainJs).toContain('runSurfaceCommand("workspace-tree"');
     expect(mainJs).toContain('runSurfaceCommand("thread"');
-    expect(mainJs).toContain("window.msgcodeReadonlySurface.runCommand");
+    expect(mainJs).toContain("window.msgcodeThreadSurface.runCommand");
 
     for (const retiredToken of [
       "pendingDraftContext",

@@ -27,7 +27,7 @@ declare const document: HtmlDocumentLike;
 
 declare global {
   interface Window {
-    msgcodeReadonlySurface?: ThreadSurfaceBridge;
+    msgcodeThreadSurface?: ThreadSurfaceBridge;
   }
 }
 
@@ -763,7 +763,7 @@ if (typeof globalThis === "object" && "document" in globalThis) {
     document?: HtmlDocumentLike;
     window?: Window;
   };
-  const bridge = browserGlobal.window?.msgcodeReadonlySurface;
+  const bridge = browserGlobal.window?.msgcodeThreadSurface;
   if (bridge) {
     void startThreadSurface(document, bridge);
   } else {

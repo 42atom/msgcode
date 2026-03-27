@@ -54,7 +54,7 @@ describe("electron runtime bootstrap slice", () => {
     expect(writes[1]).toContain('class="left-panel"');
     expect(writes[1]).toContain('class="middle-panel"');
     expect(writes[1]).toContain('class="right-panel"');
-    expect(writes[1]).toContain('data-bridge-entry="window.msgcodeReadonlySurface.runCommand"');
+    expect(writes[1]).toContain('data-bridge-entry="window.msgcodeThreadSurface.runCommand"');
     expect(writes[1]).toContain('href="#settings"');
   });
 

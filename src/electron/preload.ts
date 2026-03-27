@@ -52,7 +52,7 @@ export function createThreadSurfaceIpcWhitelist(
 export async function installThreadSurfaceBridge(): Promise<void> {
   const { contextBridge, ipcRenderer } = await import("electron");
   contextBridge.exposeInMainWorld(
-    "msgcodeReadonlySurface",
+    "msgcodeThreadSurface",
     createBridgeCore(createThreadSurfaceIpcWhitelist(ipcRenderer)),
   );
 }

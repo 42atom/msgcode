@@ -20,7 +20,7 @@ export interface ThreadSurfaceSettingsAffordance {
 
 export interface ThreadSurfaceBridgeSlot {
   id: "host-bridge";
-  entryPoint: "window.msgcodeReadonlySurface.runCommand";
+  entryPoint: "window.msgcodeThreadSurface.runCommand";
   purpose: "future-host-bridge";
 }
 
@@ -59,7 +59,7 @@ export function buildThreadSurfaceChrome(
     },
     bridgeSlot: {
       id: "host-bridge",
-      entryPoint: "window.msgcodeReadonlySurface.runCommand",
+      entryPoint: "window.msgcodeThreadSurface.runCommand",
       purpose: "future-host-bridge",
     },
     blockedActions: ["archive", "new chat"],
