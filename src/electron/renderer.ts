@@ -242,11 +242,14 @@ function renderLeftPanel(params: {
   workspaces: WorkspaceTreeItem[];
 }): string {
   return [
-    '<header class="surface-panel__header">',
+    '<div class="sidebar-shell">',
+    renderSidebarTopNav(),
+    '<section class="sidebar-list-shell">',
+    '<header class="surface-panel__header sidebar-list-shell__header">',
     '<p class="surface-panel__eyebrow">Workspaces</p>',
     "<h2>Workspace Tree</h2>",
     "</header>",
-    '<div class="surface-panel__body workspace-list">',
+    '<div class="surface-panel__body workspace-list sidebar-list-shell__body">',
     ...(params.workspaces.length === 0
       ? ['<p class="empty-state">No workspace yet.</p>']
       : params.workspaces.map((workspace) =>
@@ -257,6 +260,29 @@ function renderLeftPanel(params: {
           ),
         )),
     "</div>",
+    "</section>",
+    renderSidebarFooter(),
+    "</div>",
+  ].join("");
+}
+
+function renderSidebarTopNav(): string {
+  return [
+    '<nav class="sidebar-top-nav" aria-label="workspace sections">',
+    '<button type="button" class="sidebar-top-nav__item is-selected">工作区</button>',
+    '<button type="button" class="sidebar-top-nav__item">基座</button>',
+    '<button type="button" class="sidebar-top-nav__item">邻居</button>',
+    "</nav>",
+  ].join("");
+}
+
+function renderSidebarFooter(): string {
+  return [
+    '<footer class="sidebar-footer">',
+    '<button type="button" class="sidebar-footer__settings">Settings</button>',
+    '<span class="sidebar-footer__spacer"></span>',
+    '<button type="button" class="sidebar-footer__update">Update</button>',
+    "</footer>",
   ].join("");
 }
 
@@ -306,7 +332,8 @@ function renderMiddlePanel(data: {
   const messages = [...(data.thread?.data?.thread?.messages ?? [])].reverse();
 
   return [
-    '<header class="surface-panel__header">',
+    '<div class="thread-shell">',
+    '<header class="surface-panel__header thread-shell__header">',
     '<p class="surface-panel__eyebrow">Current Thread</p>',
     `<h2>${escapeHtml(title)}</h2>`,
     '<div class="thread-head-meta">',
@@ -315,7 +342,8 @@ function renderMiddlePanel(data: {
     `<span class="inline-chip inline-chip--muted">${escapeHtml(data.selectedThreadId || "-")}</span>`,
     "</div>",
     "</header>",
-    '<div class="surface-panel__body thread-stage">',
+    '<div class="surface-panel__body thread-shell__body">',
+    '<section class="chat-stage">',
     '<div class="message-list-host">',
     '<div class="message-list-stack">',
     ...(messages.length === 0
@@ -345,13 +373,15 @@ function renderMiddlePanel(data: {
     "</div>",
     ...(writable
       ? [
-          '<div class="thread-composer" data-thread-composer="true">',
+          '<div class="composer-dock" data-thread-composer="true">',
           `  <input type="text" class="thread-composer__input" data-thread-composer-input="true" placeholder="${waiting ? "Waiting for reply..." : "Ask msgcode"}" />`,
           `  <button type="button" class="thread-composer__send" data-thread-composer-send="true">${waiting ? "Waiting" : "Send"}</button>`,
           `  <p class="thread-composer__error" data-thread-composer-error="true">${escapeHtml(pendingComposerErrors.get(threadKey) ?? (waiting ? "处理中..." : ""))}</p>`,
           "</div>",
         ]
       : []),
+    "</section>",
+    "</div>",
     "</div>",
   ].join("");
 }
@@ -378,12 +408,13 @@ function renderRightPanel(params: {
   const threadStatus = params.waiting ? "等待回复" : params.writable ? "可写" : "只读";
 
   return [
-    '<header class="surface-panel__header">',
+    '<div class="observer-shell">',
+    '<header class="surface-panel__header observer-header">',
     '<p class="surface-panel__eyebrow">Observer</p>',
     "<h2>Thread Rail</h2>",
     "</header>",
-    '<div class="surface-panel__body observer-stack">',
-    '<section class="observer-section">',
+    '<div class="surface-panel__body observer-body observer-stack">',
+    '<section class="observer-section observer-section--thread">',
     '<div class="observer-section__header"><h3>This Thread</h3></div>',
     '<div class="observer-rows">',
     renderObserverRow("状态", threadStatus),
@@ -393,7 +424,7 @@ function renderRightPanel(params: {
     ...(params.loadingError ? [renderObserverRow("异常", params.loadingError)] : []),
     "</div>",
     "</section>",
-    '<section class="observer-section">',
+    '<section class="observer-section observer-section--shared">',
     '<div class="observer-section__header"><h3>Shared</h3></div>',
     '<div class="observer-rows">',
     renderObserverRow("工作区", params.selectedWorkspace || "-"),
@@ -404,6 +435,7 @@ function renderRightPanel(params: {
     renderObserverRow("定时任务", `${params.scheduleCount}`),
     "</div>",
     "</section>",
+    "</div>",
     "</div>",
   ].join("");
 }

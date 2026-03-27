@@ -226,12 +226,17 @@ describe("readonly thread surface host bridge slice", () => {
     await startThreadSurface(documentLike, bridge);
 
     expect(panels.get('[data-surface-slot="workspace-tree"]')?.innerHTML).toContain("family");
+    expect(panels.get('[data-surface-slot="workspace-tree"]')?.innerHTML).toContain("sidebar-top-nav");
+    expect(panels.get('[data-surface-slot="workspace-tree"]')?.innerHTML).toContain("sidebar-footer");
     expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("<h2>hello</h2>");
+    expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("chat-stage");
+    expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("composer-dock");
     expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("message-list-stack");
     expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("message-row--user");
     expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("bubble--user");
     expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain('data-thread-composer="true"');
     expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("大脑模型");
+    expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("observer-body");
     expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("gpt-5.4");
     expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("记忆");
     expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("已启用");

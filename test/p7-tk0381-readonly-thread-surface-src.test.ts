@@ -51,6 +51,11 @@ describe("readonly thread surface src implementation", () => {
     expect(markup).toContain('data-bridge-slot="host-bridge"');
     expect(markup).toContain('data-bridge-entry="window.msgcodeThreadSurface.runCommand"');
     expect(markup).toContain('href="#settings"');
+    expect(markup).toContain('.sidebar-top-nav {');
+    expect(markup).toContain('.sidebar-footer {');
+    expect(markup).toContain('.chat-stage {');
+    expect(markup).toContain('.composer-dock {');
+    expect(markup).toContain('.observer-body');
     expect(markup).toContain('--theme-brand: #3b82f6;');
     expect(markup).toContain('--theme-selected: #e5e5e5;');
     expect(markup).toContain('--font-family-ui: "Maple Mono NF CN", "Maple Mono", ui-monospace, monospace;');
