@@ -4,6 +4,7 @@ import {
   createReadonlySurfaceBridge,
   getReadonlySurfaceChannel,
   getSendThreadInputChannel,
+  getThreadUpdateChannel,
 } from "../src/electron/readonly-surface-bridge.js";
 import {
   bindReadonlyThreadComposer,
@@ -35,6 +36,41 @@ describe("readonly thread surface host bridge slice", () => {
         text: "hello",
       }),
     ).resolves.toBeUndefined();
+  });
+
+  it("subscribes thread updates through the preload bridge", () => {
+    const listeners = new Map<string, (_event: unknown, payload: unknown) => void>();
+    const removed: string[] = [];
+    const bridge = createReadonlySurfaceBridge(
+      {
+        async invoke() {
+          return null;
+        },
+        on(channel, listener) {
+          listeners.set(channel, listener);
+        },
+        off(channel) {
+          removed.push(channel);
+        },
+      },
+      getReadonlySurfaceChannel(),
+      getSendThreadInputChannel(),
+      getThreadUpdateChannel(),
+    );
+
+    const events: Array<{ workspacePath: string; threadId: string }> = [];
+    const dispose = bridge.onThreadUpdate((event) => {
+      events.push(event);
+    });
+
+    listeners.get(getThreadUpdateChannel())?.({}, {
+      workspacePath: "/tmp/family",
+      threadId: "thread-1",
+    });
+    dispose();
+
+    expect(events).toEqual([{ workspacePath: "/tmp/family", threadId: "thread-1" }]);
+    expect(removed).toEqual([getThreadUpdateChannel()]);
   });
 
   it("builds readonly surface cli invocations from the shared runtime entry", () => {
@@ -146,6 +182,9 @@ describe("readonly thread surface host bridge slice", () => {
     };
     const bridge = {
       mode: "live" as const,
+      onThreadUpdate() {
+        return () => {};
+      },
       async sendThreadInput() {},
       async runCommand(request: { command: string }) {
         if (request.command === "workspace-tree") {
@@ -200,6 +239,98 @@ describe("readonly thread surface host bridge slice", () => {
     expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain(">1<");
   });
 
+  it("refreshes the active thread when a pushed thread update arrives", async () => {
+    const panels = new Map<string, { textContent: string | null; innerHTML: string }>();
+    let updateListener: ((event: { workspacePath: string; threadId: string }) => void) | null = null;
+    let threadReads = 0;
+    const documentLike = {
+      open() {},
+      write() {
+        panels.set('[data-surface-slot="workspace-tree"]', { textContent: null, innerHTML: "" });
+        panels.set('[data-surface-slot="thread"]', { textContent: null, innerHTML: "" });
+        panels.set('[data-surface-slot="thread-rail"]', { textContent: null, innerHTML: "" });
+      },
+      close() {},
+      querySelector(selector: string) {
+        return panels.get(selector) ?? null;
+      },
+    };
+    const bridge = {
+      mode: "live" as const,
+      onThreadUpdate(listener: (event: { workspacePath: string; threadId: string }) => void) {
+        updateListener = listener;
+        return () => {
+          updateListener = null;
+        };
+      },
+      async sendThreadInput() {},
+      async runCommand(request: { command: string }) {
+        if (request.command === "workspace-tree") {
+          return {
+            data: {
+              workspaces: [{ name: "family", path: "/tmp/family", threads: [{ threadId: "thread-1", title: "hello" }] }],
+            },
+          };
+        }
+        if (request.command === "profile") {
+          return {
+            data: {
+              memory: { enabled: false, topK: 0, maxChars: 0 },
+              soul: { path: "", exists: false, content: "" },
+            },
+          };
+        }
+        if (request.command === "capabilities") {
+          return {
+            data: {
+              capabilities: [],
+            },
+          };
+        }
+        threadReads += 1;
+        if (threadReads === 1) {
+          return {
+            data: {
+              thread: {
+                title: "hello",
+                writable: true,
+                lastTurnAt: "2026-03-28T10:00:00.000Z",
+                messages: [{ user: "u1", assistant: "" }],
+              },
+              schedules: [],
+              workStatus: { recentEntries: [] },
+            },
+          };
+        }
+        return {
+          data: {
+            thread: {
+              title: "hello",
+              writable: true,
+              lastTurnAt: "2026-03-28T10:00:05.000Z",
+              messages: [{ user: "u1", assistant: "a1" }],
+            },
+            schedules: [],
+            workStatus: { recentEntries: [] },
+          },
+        };
+      },
+    };
+
+    await startReadonlyThreadSurface(documentLike, bridge);
+    expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).not.toContain("a1");
+
+    updateListener?.({
+      workspacePath: "/tmp/family",
+      threadId: "thread-1",
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(threadReads).toBe(2);
+    expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("a1");
+  });
+
   it("clears composer input on success and keeps it on failure", async () => {
     const listeners = new Map<string, (event: { key?: string; shiftKey?: boolean; preventDefault?: () => void }) => void>();
     const requests: Array<{ kind: "read" | "write"; request: unknown }> = [];
@@ -239,6 +370,9 @@ describe("readonly thread surface host bridge slice", () => {
     const sent: Array<{ workspacePath: string; threadId: string; text: string }> = [];
     bindReadonlyThreadComposer(documentLike, {
       mode: "live",
+      onThreadUpdate() {
+        return () => {};
+      },
       async runCommand(request: unknown) {
         requests.push({ kind: "read", request });
         return {
@@ -293,6 +427,9 @@ describe("readonly thread surface host bridge slice", () => {
     input.value = "keep me";
     const failingBridge = {
       mode: "live" as const,
+      onThreadUpdate() {
+        return () => {};
+      },
       async runCommand() {
         return {};
       },
@@ -374,6 +511,9 @@ describe("readonly thread surface host bridge slice", () => {
     const requests: Array<{ command: string; workspace?: string; threadId?: string }> = [];
     const bridge = {
       mode: "live" as const,
+      onThreadUpdate() {
+        return () => {};
+      },
       async sendThreadInput() {},
       async runCommand(request: { command: string; workspace?: string; threadId?: string }) {
         requests.push(request);

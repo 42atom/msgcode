@@ -6,6 +6,11 @@ export interface SendThreadInputRequest {
   text: string;
 }
 
+export interface ThreadUpdateEvent {
+  workspacePath: string;
+  threadId: string;
+}
+
 export interface ReadonlySurfaceWorkspaceTreeRequest {
   command: "workspace-tree";
 }
@@ -30,10 +35,22 @@ export interface ReadonlySurfaceBridge {
   mode: "live";
   runCommand(request: ReadonlySurfaceRunCommandRequest): Promise<unknown>;
   sendThreadInput(request: SendThreadInputRequest): Promise<void>;
+  onThreadUpdate(listener: (event: ThreadUpdateEvent) => void): () => void;
 }
 
 export interface IpcInvokeLike {
   invoke(channel: string, request: unknown): Promise<unknown>;
+}
+
+export interface IpcSubscribeLike {
+  on(
+    channel: string,
+    listener: (_event: unknown, payload: unknown) => void,
+  ): void;
+  off(
+    channel: string,
+    listener: (_event: unknown, payload: unknown) => void,
+  ): void;
 }
 
 export function buildReadonlySurfaceCliArgs(request: ReadonlySurfaceRunCommandRequest): string[] {
@@ -81,10 +98,15 @@ export function getSendThreadInputChannel(): "msgcode:thread-send-input" {
   return "msgcode:thread-send-input";
 }
 
+export function getThreadUpdateChannel(): "msgcode:thread-updated" {
+  return "msgcode:thread-updated";
+}
+
 export function createReadonlySurfaceBridge(
-  ipcInvoker: IpcInvokeLike,
+  ipcInvoker: IpcInvokeLike & Partial<IpcSubscribeLike>,
   readChannel = getReadonlySurfaceChannel(),
   writeChannel = getSendThreadInputChannel(),
+  updateChannel = getThreadUpdateChannel(),
 ): ReadonlySurfaceBridge {
   return {
     mode: "live",
@@ -93,6 +115,25 @@ export function createReadonlySurfaceBridge(
     },
     async sendThreadInput(request: SendThreadInputRequest): Promise<void> {
       await ipcInvoker.invoke(writeChannel, request);
+    },
+    onThreadUpdate(listener: (event: ThreadUpdateEvent) => void): () => void {
+      if (!ipcInvoker.on || !ipcInvoker.off) {
+        return () => {};
+      }
+      const handleUpdate = (_event: unknown, payload: unknown): void => {
+        if (!payload || typeof payload !== "object") {
+          return;
+        }
+        const next = payload as Partial<ThreadUpdateEvent>;
+        listener({
+          workspacePath: String(next.workspacePath ?? ""),
+          threadId: String(next.threadId ?? ""),
+        });
+      };
+      ipcInvoker.on(updateChannel, handleUpdate);
+      return () => {
+        ipcInvoker.off?.(updateChannel, handleUpdate);
+      };
     },
   };
 }

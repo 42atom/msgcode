@@ -6,6 +6,7 @@ import {
   buildReadonlySurfaceCliArgs,
   getSendThreadInputChannel,
   getReadonlySurfaceChannel,
+  getThreadUpdateChannel,
   type ReadonlySurfaceRunCommandRequest,
   type SendThreadInputRequest,
 } from "./readonly-surface-bridge.js";
@@ -84,6 +85,10 @@ export function buildSendThreadInputCliCommand(
 
 interface DetachedThreadInputChildLike {
   unref(): void;
+  once?(
+    event: "close" | "error",
+    listener: (...args: unknown[]) => void,
+  ): DetachedThreadInputChildLike;
 }
 
 interface RunSendThreadInputDeps {
@@ -98,6 +103,10 @@ interface RunSendThreadInputDeps {
       detached: true;
     },
   ) => DetachedThreadInputChildLike;
+  afterSpawn?: (
+    child: DetachedThreadInputChildLike,
+    request: SendThreadInputRequest,
+  ) => void;
   env?: NodeJS.ProcessEnv;
   nodePath?: string;
 }
@@ -158,6 +167,7 @@ export async function runSendThreadInput(
     stdio: "ignore",
     detached: true,
   });
+  deps.afterSpawn?.(child, request);
   child.unref();
 }
 
@@ -201,7 +211,20 @@ export async function startElectronRuntime(entryModuleUrl = import.meta.url): Pr
     return await runReadonlySurfaceCommand(request);
   });
   ipcMain.handle(getSendThreadInputChannel(), async (_event, request: SendThreadInputRequest) => {
-    await runSendThreadInput(request);
+    await runSendThreadInput(request, {
+      afterSpawn(child, nextRequest) {
+        const notify = (): void => {
+          for (const window of BrowserWindow.getAllWindows()) {
+            window.webContents.send(getThreadUpdateChannel(), {
+              workspacePath: nextRequest.workspacePath,
+              threadId: nextRequest.threadId,
+            });
+          }
+        };
+        child.once?.("close", notify);
+        child.once?.("error", notify);
+      },
+    });
   });
   await openWindow();
 

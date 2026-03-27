@@ -2,7 +2,11 @@ import {
   buildReadonlyThreadSurfaceChrome,
   renderReadonlyThreadSurfaceMarkup,
 } from "../ui/main-window/readonly-thread-surface.js";
-import type { ReadonlySurfaceBridge, ReadonlySurfaceRunCommandRequest } from "./readonly-surface-bridge.js";
+import type {
+  ReadonlySurfaceBridge,
+  ReadonlySurfaceRunCommandRequest,
+  ThreadUpdateEvent,
+} from "./readonly-surface-bridge.js";
 
 export interface HtmlDocumentLike {
   open(): void;
@@ -99,10 +103,10 @@ interface ReadonlyThreadSurfaceViewData {
 }
 
 const pendingComposerThreads = new Set<string>();
-const pendingComposerBaselines = new Map<string, string>();
-const pendingComposerTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const pendingComposerErrors = new Map<string, string>();
 let activeSurfaceThreadKey = "";
+let activeSurfaceData: ReadonlyThreadSurfaceViewData | null = null;
+let disposeThreadUpdateSubscription: (() => void) | null = null;
 
 function buildSurfaceThreadKey(workspacePath: string, threadId: string): string {
   return `${workspacePath.trim()}::${threadId.trim()}`;
@@ -110,14 +114,8 @@ function buildSurfaceThreadKey(workspacePath: string, threadId: string): string 
 
 function clearComposerPendingState(threadKey: string, preserveError = false): void {
   pendingComposerThreads.delete(threadKey);
-  pendingComposerBaselines.delete(threadKey);
   if (!preserveError) {
     pendingComposerErrors.delete(threadKey);
-  }
-  const timer = pendingComposerTimers.get(threadKey);
-  if (timer) {
-    clearTimeout(timer);
-    pendingComposerTimers.delete(threadKey);
   }
 }
 
@@ -470,82 +468,48 @@ function renderReadonlyThreadSurface(
   data: ReadonlyThreadSurfaceViewData,
 ): void {
   activeSurfaceThreadKey = buildSurfaceThreadKey(data.selectedWorkspacePath, data.selectedThreadId);
+  activeSurfaceData = data;
   applyReadonlyThreadSurfaceData(documentLike, data);
   bindReadonlyThreadSurfaceSelection(documentLike, bridge, data);
   bindReadonlyThreadComposer(documentLike, bridge, data);
 }
 
-function scheduleComposerRefresh(params: {
+async function handleThreadUpdateEvent(params: {
   documentLike: HtmlDocumentLike;
   bridge: ReadonlySurfaceBridge;
-  data: ReadonlyThreadSurfaceViewData;
-  baselineLastTurnAt: string;
-  attempts?: number;
-}): void {
-  const threadKey = buildSurfaceThreadKey(params.data.selectedWorkspacePath, params.data.selectedThreadId);
-  if (!pendingComposerThreads.has(threadKey)) {
-    clearComposerPendingState(threadKey);
+  event: ThreadUpdateEvent;
+}): Promise<void> {
+  const current = activeSurfaceData;
+  if (!current) {
     return;
   }
-
-  const attempts = params.attempts ?? 0;
-  const timer = setTimeout(async () => {
-    try {
-      const refreshedThread = await loadThreadEnvelope(
-        params.bridge,
-        params.data.selectedWorkspace,
-        params.data.selectedThreadId,
-      );
-      const nextLastTurnAt = refreshedThread.data?.thread?.lastTurnAt ?? "";
-      const hasNewTurn =
-        !!nextLastTurnAt &&
-        (!!params.baselineLastTurnAt ? nextLastTurnAt > params.baselineLastTurnAt : true);
-
-      if (hasNewTurn) {
-        clearComposerPendingState(threadKey);
-        if (activeSurfaceThreadKey === threadKey) {
-          renderReadonlyThreadSurface(params.documentLike, params.bridge, {
-            ...params.data,
-            thread: refreshedThread,
-            loadingError: null,
-          });
-        }
-        return;
-      }
-
-      if (attempts >= 59) {
-        pendingComposerErrors.set(threadKey, "等待回复超时");
-        clearComposerPendingState(threadKey, true);
-        if (activeSurfaceThreadKey === threadKey) {
-          renderReadonlyThreadSurface(params.documentLike, params.bridge, {
-            ...params.data,
-            thread: refreshedThread,
-            loadingError: null,
-          });
-        }
-        return;
-      }
-
-      scheduleComposerRefresh({
-        ...params,
-        attempts: attempts + 1,
-      });
-    } catch (error) {
-      pendingComposerErrors.set(
-        threadKey,
-        error instanceof Error ? error.message : String(error),
-      );
-      clearComposerPendingState(threadKey, true);
-      if (activeSurfaceThreadKey === threadKey) {
-        renderReadonlyThreadSurface(params.documentLike, params.bridge, {
-          ...params.data,
-          loadingError: error instanceof Error ? error.message : String(error),
-        });
-      }
-    }
-  }, 1000);
-
-  pendingComposerTimers.set(threadKey, timer);
+  const eventThreadKey = buildSurfaceThreadKey(params.event.workspacePath, params.event.threadId);
+  if (eventThreadKey !== activeSurfaceThreadKey) {
+    return;
+  }
+  try {
+    const refreshedThread = await loadThreadEnvelope(
+      params.bridge,
+      current.selectedWorkspace,
+      current.selectedThreadId,
+    );
+    clearComposerPendingState(eventThreadKey);
+    renderReadonlyThreadSurface(params.documentLike, params.bridge, {
+      ...current,
+      thread: refreshedThread,
+      loadingError: null,
+    });
+  } catch (error) {
+    pendingComposerErrors.set(
+      eventThreadKey,
+      error instanceof Error ? error.message : String(error),
+    );
+    clearComposerPendingState(eventThreadKey, true);
+    renderReadonlyThreadSurface(params.documentLike, params.bridge, {
+      ...current,
+      loadingError: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
 
 export function bindReadonlyThreadSurfaceSelection(
@@ -655,6 +619,10 @@ export async function startReadonlyThreadSurface(
   bridge: ReadonlySurfaceBridge,
 ): Promise<void> {
   bootstrapReadonlyThreadSurface(documentLike);
+  disposeThreadUpdateSubscription?.();
+  disposeThreadUpdateSubscription = bridge.onThreadUpdate((event) => {
+    void handleThreadUpdateEvent({ documentLike, bridge, event });
+  });
   try {
     const data = await loadReadonlyThreadSurface(bridge);
     renderReadonlyThreadSurface(documentLike, bridge, {
@@ -722,11 +690,9 @@ export function bindReadonlyThreadComposer(
       });
       input.value = "";
       const refreshedThread = await loadThreadEnvelope(bridge, data.selectedWorkspace, data.selectedThreadId);
-      const baselineLastTurnAt = refreshedThread.data?.thread?.lastTurnAt ?? "";
       const latestMessage = refreshedThread.data?.thread?.messages?.[0] ?? null;
       const waitingForAssistant = !!latestMessage && !(latestMessage.assistant ?? "").trim();
       pendingComposerThreads.add(threadKey);
-      pendingComposerBaselines.set(threadKey, baselineLastTurnAt);
       pendingComposerErrors.delete(threadKey);
       const nextData = {
         ...data,
@@ -738,12 +704,6 @@ export function bindReadonlyThreadComposer(
         renderReadonlyThreadSurface(documentLike, bridge, nextData);
       } else {
         renderReadonlyThreadSurface(documentLike, bridge, nextData);
-        scheduleComposerRefresh({
-          documentLike,
-          bridge,
-          data: nextData,
-          baselineLastTurnAt,
-        });
       }
     } catch (submitError) {
       clearComposerPendingState(threadKey);
