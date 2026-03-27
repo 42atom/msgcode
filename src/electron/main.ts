@@ -1,15 +1,17 @@
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
-import { watch, type FSWatcher } from "node:fs";
+import { existsSync, watch, type FSWatcher } from "node:fs";
 import { resolveRuntimeEntry } from "../runtime/runtime-entry.js";
 import {
   buildThreadSurfaceCliArgs,
   getSendThreadInputChannel,
+  getShowPathInFinderChannel,
   getThreadSurfaceReadChannel,
   getThreadUpdateChannel,
   type ThreadSurfaceRunCommandRequest,
   type SendThreadInputRequest,
+  type ShowPathInFinderRequest,
 } from "./thread-surface-bridge.js";
 import {
   sendThreadInput as sendThreadInputFromRuntime,
@@ -133,6 +135,10 @@ interface ThreadUpdateWindowLike {
   webContents: {
     send(channel: string, payload: ThreadUpdateEventPayload): void;
   };
+}
+
+interface ShowPathInFinderDeps {
+  reveal?: (targetPath: string) => void;
 }
 
 export function bindThreadUpdatePush(
@@ -268,6 +274,26 @@ export async function runSendThreadInput(
   child.unref();
 }
 
+export async function runShowPathInFinder(
+  request: ShowPathInFinderRequest,
+  deps: ShowPathInFinderDeps = {},
+): Promise<void> {
+  const rawPath = String(request.path ?? "").trim();
+  if (!rawPath) {
+    throw new Error("Thread surface show-in-finder requires a non-empty path");
+  }
+  const targetPath = path.resolve(rawPath);
+  if (!existsSync(targetPath)) {
+    throw new Error(`Thread surface path not found: ${targetPath}`);
+  }
+  if (deps.reveal) {
+    deps.reveal(targetPath);
+    return;
+  }
+  const { shell } = await import("electron");
+  shell.showItemInFolder(targetPath);
+}
+
 export async function createMainWindow(entryModuleUrl = import.meta.url) {
   const { BrowserWindow } = await import("electron");
   const { preloadPath, rendererEntryUrl } = resolveElectronRuntimePaths(entryModuleUrl);
@@ -316,6 +342,9 @@ export async function startElectronRuntime(entryModuleUrl = import.meta.url): Pr
         bindThreadUpdateNotifications(child, nextRequest, persisted, notify);
       },
     });
+  });
+  ipcMain.handle(getShowPathInFinderChannel(), async (_event, request: ShowPathInFinderRequest) => {
+    await runShowPathInFinder(request);
   });
   await openWindow();
 

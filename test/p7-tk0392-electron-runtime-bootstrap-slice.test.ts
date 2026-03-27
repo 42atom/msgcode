@@ -4,9 +4,11 @@ import {
   buildRendererHtml,
   resolveElectronRuntimePaths,
   runSendThreadInput,
+  runShowPathInFinder,
 } from "../src/electron/main.js";
 import { createThreadSurfaceIpcWhitelist } from "../src/electron/preload.js";
 import {
+  getShowPathInFinderChannel,
   getThreadSurfaceReadChannel,
   getSendThreadInputChannel,
   getThreadUpdateChannel,
@@ -205,6 +207,7 @@ describe("electron runtime bootstrap slice", () => {
 
     await whitelist.invoke(getThreadSurfaceReadChannel(), {});
     await whitelist.invoke(getSendThreadInputChannel(), {});
+    await whitelist.invoke(getShowPathInFinderChannel(), {});
     whitelist.on(getThreadUpdateChannel(), () => {});
     whitelist.off(getThreadUpdateChannel(), () => {});
 
@@ -220,8 +223,26 @@ describe("electron runtime bootstrap slice", () => {
     expect(calls).toEqual([
       `invoke:${getThreadSurfaceReadChannel()}`,
       `invoke:${getSendThreadInputChannel()}`,
+      `invoke:${getShowPathInFinderChannel()}`,
       `on:${getThreadUpdateChannel()}`,
       `off:${getThreadUpdateChannel()}`,
     ]);
+  });
+
+  it("reveals an existing path in Finder through injected deps", async () => {
+    const revealed: string[] = [];
+
+    await runShowPathInFinder(
+      {
+        path: "/Users/admin/GitProjects/msgcode",
+      },
+      {
+        reveal(targetPath) {
+          revealed.push(targetPath);
+        },
+      },
+    );
+
+    expect(revealed).toEqual(["/Users/admin/GitProjects/msgcode"]);
   });
 });

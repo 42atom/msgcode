@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { buildThreadSurfaceCliCommand, buildSendThreadInputCliCommand } from "../src/electron/main.js";
 import {
   createThreadSurfaceBridge,
+  getShowPathInFinderChannel,
   getThreadSurfaceReadChannel,
   getSendThreadInputChannel,
   getThreadUpdateChannel,
@@ -37,6 +38,39 @@ describe("readonly thread surface host bridge slice", () => {
         text: "hello",
       }),
     ).resolves.toBeUndefined();
+    await expect(
+      bridge.showPathInFinder({
+        path: "/tmp/family/.msgcode/SOUL.md",
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("invokes the finder channel through the preload bridge", async () => {
+    const calls: Array<{ channel: string; request: unknown }> = [];
+    const ipcRenderer = {
+      async invoke(channel: string, request: unknown) {
+        calls.push({ channel, request });
+        return null;
+      },
+    };
+    const bridge = createThreadSurfaceBridge(
+      ipcRenderer as never,
+      getThreadSurfaceReadChannel(),
+      getSendThreadInputChannel(),
+      getShowPathInFinderChannel(),
+      getThreadUpdateChannel(),
+    );
+    await expect(
+      bridge.showPathInFinder({
+        path: "/tmp/family/.msgcode/SOUL.md",
+      }),
+    ).resolves.toBeUndefined();
+    expect(calls).toEqual([
+      {
+        channel: "msgcode:thread-show-in-finder",
+        request: { path: "/tmp/family/.msgcode/SOUL.md" },
+      },
+    ]);
   });
 
   it("subscribes thread updates through the preload bridge", () => {
@@ -217,6 +251,7 @@ describe("readonly thread surface host bridge slice", () => {
         return () => {};
       },
       async sendThreadInput() {},
+      async showPathInFinder() {},
       async runCommand(request: { command: string }) {
         if (request.command === "workspace-tree") {
           return {
@@ -332,6 +367,7 @@ describe("readonly thread surface host bridge slice", () => {
         };
       },
       async sendThreadInput() {},
+      async showPathInFinder() {},
       async runCommand(request: { command: string }) {
         if (request.command === "workspace-tree") {
           return {
@@ -479,6 +515,7 @@ describe("readonly thread surface host bridge slice", () => {
         requests.push({ kind: "write", request });
         sent.push(request);
       },
+      async showPathInFinder() {},
     }, {
       selectedSection: "workspace",
       selectedWorkspace: "family",
@@ -528,6 +565,7 @@ describe("readonly thread surface host bridge slice", () => {
       async sendThreadInput() {
         throw new Error("write failed");
       },
+      async showPathInFinder() {},
     };
     bindThreadComposer(documentLike, failingBridge, {
       selectedSection: "workspace",
@@ -610,6 +648,7 @@ describe("readonly thread surface host bridge slice", () => {
         return () => {};
       },
       async sendThreadInput() {},
+      async showPathInFinder() {},
       async runCommand(request: { command: string; workspace?: string; threadId?: string }) {
         requests.push(request);
         if (request.command === "profile") {
@@ -783,6 +822,7 @@ describe("readonly thread surface host bridge slice", () => {
         return () => {};
       },
       async sendThreadInput() {},
+      async showPathInFinder() {},
       async runCommand() {
         return {};
       },

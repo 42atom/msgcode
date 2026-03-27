@@ -12,6 +12,10 @@ export interface SendThreadInputRequest {
   text: string;
 }
 
+export interface ShowPathInFinderRequest {
+  path: string;
+}
+
 export interface ThreadUpdateEvent {
   workspacePath: string;
   threadId: string;
@@ -41,6 +45,7 @@ export interface ThreadSurfaceBridge {
   mode: "live";
   runCommand(request: ThreadSurfaceRunCommandRequest): Promise<unknown>;
   sendThreadInput(request: SendThreadInputRequest): Promise<void>;
+  showPathInFinder(request: ShowPathInFinderRequest): Promise<void>;
   onThreadUpdate(listener: (event: ThreadUpdateEvent) => void): () => void;
 }
 
@@ -109,6 +114,10 @@ export function getSendThreadInputChannel(): "msgcode:thread-send-input" {
   return "msgcode:thread-send-input";
 }
 
+export function getShowPathInFinderChannel(): "msgcode:thread-show-in-finder" {
+  return "msgcode:thread-show-in-finder";
+}
+
 export function getThreadUpdateChannel(): "msgcode:thread-updated" {
   return "msgcode:thread-updated";
 }
@@ -117,6 +126,7 @@ export function createThreadSurfaceBridge(
   ipcInvoker: IpcInvokeLike & Partial<IpcSubscribeLike>,
   readChannel = getThreadSurfaceReadChannel(),
   writeChannel = getSendThreadInputChannel(),
+  pathChannel = getShowPathInFinderChannel(),
   updateChannel = getThreadUpdateChannel(),
 ): ThreadSurfaceBridge {
   return {
@@ -126,6 +136,9 @@ export function createThreadSurfaceBridge(
     },
     async sendThreadInput(request: SendThreadInputRequest): Promise<void> {
       await ipcInvoker.invoke(writeChannel, request);
+    },
+    async showPathInFinder(request: ShowPathInFinderRequest): Promise<void> {
+      await ipcInvoker.invoke(pathChannel, request);
     },
     onThreadUpdate(listener: (event: ThreadUpdateEvent) => void): () => void {
       if (!ipcInvoker.on || !ipcInvoker.off) {

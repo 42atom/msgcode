@@ -772,9 +772,9 @@ function renderWorkspaceRightPanel(params: {
     '<div class="observer-section__header"><h3>Shared</h3></div>',
     '<div class="observer-rows">',
     renderObserverRow("工作区", params.selectedWorkspace || "-", "text"),
-    renderObserverRow("路径", params.selectedWorkspacePath || "-", "path"),
+    renderObserverRow("路径", params.selectedWorkspacePath || "-", "path", params.selectedWorkspacePath),
     renderObserverRow("大脑模型", brainLabel, "text"),
-    renderObserverRow("Soul", soulLabel, soulPath.trim() ? "path" : "text"),
+    renderObserverRow("Soul", soulLabel, soulPath.trim() ? "path" : "text", soulPath),
     renderObserverToggleRow("记忆", memoryEnabled, memoryEnabled ? `已启用 · Top ${memoryTopK}` : "未启用"),
     renderObserverRow("定时任务", `${params.scheduleCount}`, "text"),
     "</div>",
@@ -804,11 +804,11 @@ function renderBaseRightPanel(params: {
     '<section class="observer-section observer-section--shared">',
     '<div class="observer-section__header"><h3>Shared</h3></div>',
     '<div class="observer-rows">',
-    renderObserverRow("路径", params.selectedWorkspacePath || "-", "path"),
+    renderObserverRow("路径", params.selectedWorkspacePath || "-", "path", params.selectedWorkspacePath),
     renderObserverRow("大脑模型", normalizeBrainLabel(brainCapability), "text"),
-    renderObserverRow("Soul", soulPath.trim() ? basenamePath(soulPath) : "未配置", soulPath.trim() ? "path" : "text"),
+    renderObserverRow("Soul", soulPath.trim() ? basenamePath(soulPath) : "未配置", soulPath.trim() ? "path" : "text", soulPath),
     renderObserverRow("Runtime", runtime?.summary?.status || "-", "status"),
-    renderObserverRow("日志", runtime?.logPath || "-", runtime?.logPath ? "path" : "text"),
+    renderObserverRow("日志", runtime?.logPath || "-", runtime?.logPath ? "path" : "text", runtime?.logPath || ""),
     "</div>",
     "</section>",
     "</div>",
@@ -840,7 +840,7 @@ function renderNeighborRightPanel(params: {
     '<section class="observer-section observer-section--shared">',
     '<div class="observer-section__header"><h3>Shared</h3></div>',
     '<div class="observer-rows">',
-    renderObserverRow("路径", params.selectedWorkspacePath || "-", "path"),
+    renderObserverRow("路径", params.selectedWorkspacePath || "-", "path", params.selectedWorkspacePath),
     renderObserverRow("未读", `${summary?.unreadCount ?? 0}`, "text"),
     renderObserverRow("最近消息", summary?.lastMessageAt || "-", "text"),
     renderObserverRow("最近探测", summary?.lastProbeAt || "-", "text"),
@@ -876,6 +876,7 @@ function renderObserverRow(
   label: string,
   value: string,
   kind: "text" | "path" | "status",
+  finderPath = "",
 ): string {
   const valueClasses = ["observer-row__value"];
   if (kind === "path") {
@@ -884,10 +885,14 @@ function renderObserverRow(
   if (kind === "status") {
     valueClasses.push("observer-row__value--status");
   }
+  const valueMarkup =
+    kind === "path" && finderPath.trim()
+      ? `<button type="button" class="${valueClasses.join(" ")} observer-row__value-button" data-finder-path="${escapeHtml(finderPath)}">${escapeHtml(value)}</button>`
+      : `<span class="${valueClasses.join(" ")}">${escapeHtml(value)}</span>`;
   return [
     '<div class="observer-row">',
     `<span class="observer-row__label">${escapeHtml(label)}</span>`,
-    `<span class="${valueClasses.join(" ")}">${escapeHtml(value)}</span>`,
+    valueMarkup,
     "</div>",
   ].join("");
 }
@@ -1038,6 +1043,7 @@ function renderThreadSurface(
   activeSurfaceThreadKey = buildSurfaceThreadKey(data.selectedWorkspacePath, data.selectedThreadId);
   activeSurfaceData = data;
   applyThreadSurfaceData(documentLike, data);
+  bindThreadSurfaceFinderActions(documentLike, bridge);
   bindThreadSurfaceNav(documentLike, bridge, data);
   bindThreadSurfaceSelection(documentLike, bridge, data);
   bindThreadComposer(documentLike, bridge, data);
@@ -1109,6 +1115,25 @@ export function bindThreadSurfaceSelection(
       const workspacePath = target.getAttribute?.("data-workspace-path") ?? "";
       const threadId = target.getAttribute?.("data-thread-id") ?? "";
       return handleThreadSelection(documentLike, bridge, data, workspaceName, workspacePath, threadId);
+    });
+  }
+}
+
+function bindThreadSurfaceFinderActions(
+  documentLike: HtmlDocumentLike,
+  bridge: ThreadSurfaceBridge,
+): void {
+  const finderButtons = Array.from(documentLike.querySelectorAll?.('[data-finder-path]') ?? []);
+  for (const button of finderButtons) {
+    const target = button as EventfulElementLike;
+    if (!target.addEventListener) continue;
+    target.addEventListener("click", (event) => {
+      event.preventDefault?.();
+      const nextPath = target.getAttribute?.("data-finder-path") ?? "";
+      if (!nextPath.trim()) {
+        return;
+      }
+      void bridge.showPathInFinder({ path: nextPath });
     });
   }
 }

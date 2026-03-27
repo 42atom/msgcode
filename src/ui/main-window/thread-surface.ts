@@ -275,6 +275,7 @@ function renderThreadSurfaceStyles(): string {
     ".observer-row__value { font-size: var(--font-ui-md-size); line-height: var(--font-ui-md-line); overflow-wrap: anywhere; }",
     ".observer-row__value--path { color: var(--theme-brand); }",
     ".observer-row__value--status { opacity: var(--opacity-subtle); }",
+    ".observer-row__value-button { padding: 0; border: 0; background: transparent; font: inherit; text-align: left; cursor: pointer; }",
     ".observer-row--toggle .observer-row__value { display: inline-flex; align-items: center; gap: 8px; }",
     ".switch-indicator { width: 28px; height: 16px; border-radius: 999px; background: rgba(0,0,0,0.16); position: relative; flex: 0 0 auto; }",
     ".switch-indicator::after { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 999px; background: var(--theme-bg); }",

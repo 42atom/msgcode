@@ -2,6 +2,7 @@ import {
   createThreadSurfaceBridge as createBridgeCore,
   getThreadSurfaceReadChannel,
   getSendThreadInputChannel,
+  getShowPathInFinderChannel,
   getThreadUpdateChannel,
   type IpcInvokeLike,
   type IpcSubscribeLike,
@@ -9,7 +10,8 @@ import {
 
 type ThreadSurfaceIpcChannel =
   | ReturnType<typeof getThreadSurfaceReadChannel>
-  | ReturnType<typeof getSendThreadInputChannel>;
+  | ReturnType<typeof getSendThreadInputChannel>
+  | ReturnType<typeof getShowPathInFinderChannel>;
 
 type ThreadSurfaceSubscribeChannel =
   ReturnType<typeof getThreadUpdateChannel>;
@@ -22,6 +24,7 @@ export function createThreadSurfaceIpcWhitelist(
   const allowedInvoke = new Set<ThreadSurfaceIpcChannel>([
     getThreadSurfaceReadChannel(),
     getSendThreadInputChannel(),
+    getShowPathInFinderChannel(),
   ]);
   const allowedSubscribe = new Set<ThreadSurfaceSubscribeChannel>([
     getThreadUpdateChannel(),
