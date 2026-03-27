@@ -3,15 +3,18 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawn } from "node:child_process";
 import { existsSync, watch, type FSWatcher } from "node:fs";
 import { resolveRuntimeEntry } from "../runtime/runtime-entry.js";
+import { saveWorkspaceConfig } from "../config/workspace.js";
 import {
   buildThreadSurfaceCliArgs,
   getSendThreadInputChannel,
   getShowPathInFinderChannel,
+  getSetWorkspaceMemoryEnabledChannel,
   getThreadSurfaceReadChannel,
   getThreadUpdateChannel,
   type ThreadSurfaceRunCommandRequest,
   type SendThreadInputRequest,
   type ShowPathInFinderRequest,
+  type SetWorkspaceMemoryEnabledRequest,
 } from "./thread-surface-bridge.js";
 import {
   sendThreadInput as sendThreadInputFromRuntime,
@@ -139,6 +142,13 @@ interface ThreadUpdateWindowLike {
 
 interface ShowPathInFinderDeps {
   reveal?: (targetPath: string) => void;
+}
+
+interface RunSetWorkspaceMemoryEnabledDeps {
+  saveConfig?: (
+    workspacePath: string,
+    config: { "memory.inject.enabled": boolean },
+  ) => Promise<void>;
 }
 
 export function bindThreadUpdatePush(
@@ -294,6 +304,23 @@ export async function runShowPathInFinder(
   shell.showItemInFolder(targetPath);
 }
 
+export async function runSetWorkspaceMemoryEnabled(
+  request: SetWorkspaceMemoryEnabledRequest,
+  deps: RunSetWorkspaceMemoryEnabledDeps = {},
+): Promise<void> {
+  const workspacePath = String(request.workspacePath ?? "").trim();
+  if (!workspacePath) {
+    throw new Error("Thread surface memory toggle requires a non-empty workspacePath");
+  }
+  if (typeof request.enabled !== "boolean") {
+    throw new Error("Thread surface memory toggle requires a boolean enabled flag");
+  }
+  const saveConfig = deps.saveConfig ?? saveWorkspaceConfig;
+  await saveConfig(workspacePath, {
+    "memory.inject.enabled": request.enabled,
+  });
+}
+
 export async function createMainWindow(entryModuleUrl = import.meta.url) {
   const { BrowserWindow } = await import("electron");
   const { preloadPath, rendererEntryUrl } = resolveElectronRuntimePaths(entryModuleUrl);
@@ -345,6 +372,9 @@ export async function startElectronRuntime(entryModuleUrl = import.meta.url): Pr
   });
   ipcMain.handle(getShowPathInFinderChannel(), async (_event, request: ShowPathInFinderRequest) => {
     await runShowPathInFinder(request);
+  });
+  ipcMain.handle(getSetWorkspaceMemoryEnabledChannel(), async (_event, request: SetWorkspaceMemoryEnabledRequest) => {
+    await runSetWorkspaceMemoryEnabled(request);
   });
   await openWindow();
 

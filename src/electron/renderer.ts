@@ -792,7 +792,12 @@ function renderWorkspaceRightPanel(params: {
       renderObserverRow("路径", params.selectedWorkspacePath || "-", "path", params.selectedWorkspacePath),
       renderObserverRow("大脑模型", brainLabel, "text"),
       renderObserverRow("Soul", soulLabel, soulPath.trim() ? "path" : "text", soulPath),
-      renderObserverToggleRow("记忆", memoryEnabled, memoryEnabled ? `已启用 · Top ${memoryTopK}` : "未启用"),
+      renderObserverToggleRow(
+        "记忆",
+        memoryEnabled,
+        memoryEnabled ? `已启用 · Top ${memoryTopK}` : "未启用",
+        params.selectedWorkspacePath,
+      ),
       renderObserverRow("定时任务", `${params.scheduleCount}`, "text"),
     ]),
     "</div>",
@@ -945,14 +950,26 @@ function renderObserverToggleRow(
   label: string,
   enabled: boolean,
   value: string,
+  workspacePath = "",
 ): string {
+  const isInteractive = workspacePath.trim().length > 0;
+  const valueMarkup = isInteractive
+    ? [
+        `<button type="button" class="observer-row__value observer-row__value--toggle observer-row__toggle-button" data-memory-toggle="true" data-workspace-path="${escapeHtml(workspacePath)}" data-memory-enabled="${enabled ? "true" : "false"}">`,
+        `<span class="switch-indicator${enabled ? " is-on" : ""}" aria-hidden="true"></span>`,
+        `<span>${escapeHtml(value)}</span>`,
+        "</button>",
+      ].join("")
+    : [
+        '<span class="observer-row__value observer-row__value--toggle">',
+        `<span class="switch-indicator${enabled ? " is-on" : ""}" aria-hidden="true"></span>`,
+        `<span>${escapeHtml(value)}</span>`,
+        "</span>",
+      ].join("");
   return [
     '<div class="observer-row observer-row--toggle">',
     `<span class="observer-row__label">${escapeHtml(label)}</span>`,
-    '<span class="observer-row__value observer-row__value--toggle">',
-    `<span class="switch-indicator${enabled ? " is-on" : ""}" aria-hidden="true"></span>`,
-    `<span>${escapeHtml(value)}</span>`,
-    "</span>",
+    valueMarkup,
     "</div>",
   ].join("");
 }
@@ -1088,6 +1105,7 @@ function renderThreadSurface(
   activeSurfaceData = data;
   applyThreadSurfaceData(documentLike, data);
   bindThreadSurfaceFinderActions(documentLike, bridge);
+  bindThreadSurfaceMemoryToggles(documentLike, bridge, data);
   bindThreadSurfaceObserverToggles(documentLike, bridge, data);
   bindThreadSurfaceNav(documentLike, bridge, data);
   bindThreadSurfaceSelection(documentLike, bridge, data);
@@ -1179,6 +1197,49 @@ function bindThreadSurfaceFinderActions(
         return;
       }
       void bridge.showPathInFinder({ path: nextPath });
+    });
+  }
+}
+
+export function bindThreadSurfaceMemoryToggles(
+  documentLike: HtmlDocumentLike,
+  bridge: ThreadSurfaceBridge,
+  data: ThreadSurfaceViewData,
+): void {
+  const toggleButtons = Array.from(documentLike.querySelectorAll?.('[data-memory-toggle="true"]') ?? []);
+  for (const button of toggleButtons) {
+    const target = button as EventfulElementLike;
+    if (!target.addEventListener) continue;
+    target.addEventListener("click", (event) => {
+      event.preventDefault?.();
+      const workspacePath = String(target.getAttribute?.("data-workspace-path") ?? "").trim();
+      const enabled = String(target.getAttribute?.("data-memory-enabled") ?? "").trim() === "true";
+      if (!workspacePath) {
+        return;
+      }
+      target.disabled = true;
+      return (async () => {
+        try {
+          await bridge.setWorkspaceMemoryEnabled({
+            workspacePath,
+            enabled: !enabled,
+          });
+          const shared = await loadWorkspaceSharedSurfaces(bridge, workspacePath);
+          renderThreadSurface(documentLike, bridge, {
+            ...data,
+            profile: shared.profile,
+            capabilities: shared.capabilities,
+            hall: shared.hall,
+            neighbor: shared.neighbor,
+            loadingError: null,
+          });
+        } catch (error) {
+          renderThreadSurface(documentLike, bridge, {
+            ...data,
+            loadingError: error instanceof Error ? error.message : String(error),
+          });
+        }
+      })();
     });
   }
 }

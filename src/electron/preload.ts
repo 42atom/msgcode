@@ -3,6 +3,7 @@ import {
   getThreadSurfaceReadChannel,
   getSendThreadInputChannel,
   getShowPathInFinderChannel,
+  getSetWorkspaceMemoryEnabledChannel,
   getThreadUpdateChannel,
   type IpcInvokeLike,
   type IpcSubscribeLike,
@@ -11,7 +12,8 @@ import {
 type ThreadSurfaceIpcChannel =
   | ReturnType<typeof getThreadSurfaceReadChannel>
   | ReturnType<typeof getSendThreadInputChannel>
-  | ReturnType<typeof getShowPathInFinderChannel>;
+  | ReturnType<typeof getShowPathInFinderChannel>
+  | ReturnType<typeof getSetWorkspaceMemoryEnabledChannel>;
 
 type ThreadSurfaceSubscribeChannel =
   ReturnType<typeof getThreadUpdateChannel>;
@@ -25,6 +27,7 @@ export function createThreadSurfaceIpcWhitelist(
     getThreadSurfaceReadChannel(),
     getSendThreadInputChannel(),
     getShowPathInFinderChannel(),
+    getSetWorkspaceMemoryEnabledChannel(),
   ]);
   const allowedSubscribe = new Set<ThreadSurfaceSubscribeChannel>([
     getThreadUpdateChannel(),

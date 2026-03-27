@@ -16,6 +16,11 @@ export interface ShowPathInFinderRequest {
   path: string;
 }
 
+export interface SetWorkspaceMemoryEnabledRequest {
+  workspacePath: string;
+  enabled: boolean;
+}
+
 export interface ThreadUpdateEvent {
   workspacePath: string;
   threadId: string;
@@ -46,6 +51,7 @@ export interface ThreadSurfaceBridge {
   runCommand(request: ThreadSurfaceRunCommandRequest): Promise<unknown>;
   sendThreadInput(request: SendThreadInputRequest): Promise<void>;
   showPathInFinder(request: ShowPathInFinderRequest): Promise<void>;
+  setWorkspaceMemoryEnabled(request: SetWorkspaceMemoryEnabledRequest): Promise<void>;
   onThreadUpdate(listener: (event: ThreadUpdateEvent) => void): () => void;
 }
 
@@ -118,6 +124,10 @@ export function getShowPathInFinderChannel(): "msgcode:thread-show-in-finder" {
   return "msgcode:thread-show-in-finder";
 }
 
+export function getSetWorkspaceMemoryEnabledChannel(): "msgcode:thread-set-workspace-memory-enabled" {
+  return "msgcode:thread-set-workspace-memory-enabled";
+}
+
 export function getThreadUpdateChannel(): "msgcode:thread-updated" {
   return "msgcode:thread-updated";
 }
@@ -127,6 +137,7 @@ export function createThreadSurfaceBridge(
   readChannel = getThreadSurfaceReadChannel(),
   writeChannel = getSendThreadInputChannel(),
   pathChannel = getShowPathInFinderChannel(),
+  memoryChannel = getSetWorkspaceMemoryEnabledChannel(),
   updateChannel = getThreadUpdateChannel(),
 ): ThreadSurfaceBridge {
   return {
@@ -139,6 +150,9 @@ export function createThreadSurfaceBridge(
     },
     async showPathInFinder(request: ShowPathInFinderRequest): Promise<void> {
       await ipcInvoker.invoke(pathChannel, request);
+    },
+    async setWorkspaceMemoryEnabled(request: SetWorkspaceMemoryEnabledRequest): Promise<void> {
+      await ipcInvoker.invoke(memoryChannel, request);
     },
     onThreadUpdate(listener: (event: ThreadUpdateEvent) => void): () => void {
       if (!ipcInvoker.on || !ipcInvoker.off) {

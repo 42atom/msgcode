@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { buildThreadSurfaceCliCommand, buildSendThreadInputCliCommand } from "../src/electron/main.js";
 import {
   createThreadSurfaceBridge,
+  getSetWorkspaceMemoryEnabledChannel,
   getShowPathInFinderChannel,
   getThreadSurfaceReadChannel,
   getSendThreadInputChannel,
@@ -10,6 +11,7 @@ import {
 import {
   bindThreadSurfaceNav,
   bindThreadComposer,
+  bindThreadSurfaceMemoryToggles,
   bindThreadSurfaceSelection,
   startThreadSurface,
 } from "../src/electron/renderer.js";
@@ -43,6 +45,12 @@ describe("readonly thread surface host bridge slice", () => {
         path: "/tmp/family/.msgcode/SOUL.md",
       }),
     ).resolves.toBeUndefined();
+    await expect(
+      bridge.setWorkspaceMemoryEnabled({
+        workspacePath: "/tmp/family",
+        enabled: true,
+      }),
+    ).resolves.toBeUndefined();
   });
 
   it("invokes the finder channel through the preload bridge", async () => {
@@ -58,6 +66,7 @@ describe("readonly thread surface host bridge slice", () => {
       getThreadSurfaceReadChannel(),
       getSendThreadInputChannel(),
       getShowPathInFinderChannel(),
+      getSetWorkspaceMemoryEnabledChannel(),
       getThreadUpdateChannel(),
     );
     await expect(
@@ -69,6 +78,36 @@ describe("readonly thread surface host bridge slice", () => {
       {
         channel: "msgcode:thread-show-in-finder",
         request: { path: "/tmp/family/.msgcode/SOUL.md" },
+      },
+    ]);
+  });
+
+  it("invokes the workspace memory channel through the preload bridge", async () => {
+    const calls: Array<{ channel: string; request: unknown }> = [];
+    const ipcRenderer = {
+      async invoke(channel: string, request: unknown) {
+        calls.push({ channel, request });
+        return null;
+      },
+    };
+    const bridge = createThreadSurfaceBridge(
+      ipcRenderer as never,
+      getThreadSurfaceReadChannel(),
+      getSendThreadInputChannel(),
+      getShowPathInFinderChannel(),
+      getSetWorkspaceMemoryEnabledChannel(),
+      getThreadUpdateChannel(),
+    );
+    await expect(
+      bridge.setWorkspaceMemoryEnabled({
+        workspacePath: "/tmp/family",
+        enabled: false,
+      }),
+    ).resolves.toBeUndefined();
+    expect(calls).toEqual([
+      {
+        channel: "msgcode:thread-set-workspace-memory-enabled",
+        request: { workspacePath: "/tmp/family", enabled: false },
       },
     ]);
   });
@@ -90,6 +129,8 @@ describe("readonly thread surface host bridge slice", () => {
       },
       getThreadSurfaceReadChannel(),
       getSendThreadInputChannel(),
+      getShowPathInFinderChannel(),
+      getSetWorkspaceMemoryEnabledChannel(),
       getThreadUpdateChannel(),
     );
 
@@ -252,6 +293,7 @@ describe("readonly thread surface host bridge slice", () => {
       },
       async sendThreadInput() {},
       async showPathInFinder() {},
+      async setWorkspaceMemoryEnabled() {},
       async runCommand(request: { command: string }) {
         if (request.command === "workspace-tree") {
           return {
@@ -368,6 +410,7 @@ describe("readonly thread surface host bridge slice", () => {
       },
       async sendThreadInput() {},
       async showPathInFinder() {},
+      async setWorkspaceMemoryEnabled() {},
       async runCommand(request: { command: string }) {
         if (request.command === "workspace-tree") {
           return {
@@ -516,6 +559,7 @@ describe("readonly thread surface host bridge slice", () => {
         sent.push(request);
       },
       async showPathInFinder() {},
+      async setWorkspaceMemoryEnabled() {},
     }, {
       selectedSection: "workspace",
       selectedWorkspace: "family",
@@ -566,6 +610,7 @@ describe("readonly thread surface host bridge slice", () => {
         throw new Error("write failed");
       },
       async showPathInFinder() {},
+      async setWorkspaceMemoryEnabled() {},
     };
     bindThreadComposer(documentLike, failingBridge, {
       selectedSection: "workspace",
@@ -649,6 +694,7 @@ describe("readonly thread surface host bridge slice", () => {
       },
       async sendThreadInput() {},
       async showPathInFinder() {},
+      async setWorkspaceMemoryEnabled() {},
       async runCommand(request: { command: string; workspace?: string; threadId?: string }) {
         requests.push(request);
         if (request.command === "profile") {
@@ -823,6 +869,7 @@ describe("readonly thread surface host bridge slice", () => {
       },
       async sendThreadInput() {},
       async showPathInFinder() {},
+      async setWorkspaceMemoryEnabled() {},
       async runCommand() {
         return {};
       },
@@ -913,6 +960,7 @@ describe("readonly thread surface host bridge slice", () => {
       },
       async sendThreadInput() {},
       async showPathInFinder() {},
+      async setWorkspaceMemoryEnabled() {},
       async runCommand(request: { command: string }) {
         if (request.command === "workspace-tree") {
           return {
@@ -982,5 +1030,138 @@ describe("readonly thread surface host bridge slice", () => {
 
     await sharedToggle.click();
     expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).not.toContain("工作区");
+  });
+
+  it("toggles workspace memory and refreshes shared surfaces", async () => {
+    const panels = new Map<string, { textContent: string | null; innerHTML: string }>([
+      ['[data-surface-slot="workspace-tree"]', { textContent: null, innerHTML: "" }],
+      ['[data-surface-slot="thread"]', { textContent: null, innerHTML: "" }],
+      ['[data-surface-slot="thread-rail"]', { textContent: null, innerHTML: "" }],
+    ]);
+    const listeners = new Map<string, (event: { preventDefault?: () => void }) => void>();
+    const toggleButton = {
+      textContent: null,
+      innerHTML: "",
+      disabled: false,
+      getAttribute(name: string) {
+        if (name === "data-memory-toggle") return "true";
+        if (name === "data-workspace-path") return "/tmp/family-memory";
+        if (name === "data-memory-enabled") return "true";
+        return null;
+      },
+      addEventListener(type: string, listener: (event: { preventDefault?: () => void }) => void) {
+        listeners.set(type, listener);
+      },
+    };
+    const documentLike = {
+      open() {},
+      write() {},
+      close() {},
+      querySelector(selector: string) {
+        return panels.get(selector) ?? null;
+      },
+      querySelectorAll(selector: string) {
+        if (selector === '[data-memory-toggle="true"]') return [toggleButton];
+        return [];
+      },
+    };
+    const calls: Array<{ workspacePath: string; enabled: boolean }> = [];
+    const bridge = {
+      mode: "live" as const,
+      onThreadUpdate() {
+        return () => {};
+      },
+      async sendThreadInput() {},
+      async showPathInFinder() {},
+      async setWorkspaceMemoryEnabled(request: { workspacePath: string; enabled: boolean }) {
+        calls.push(request);
+      },
+      async runCommand(request: { command: string }) {
+        if (request.command === "profile") {
+          return {
+            data: {
+              memory: { enabled: false, topK: 5, maxChars: 2000 },
+              soul: { path: "/tmp/family-memory/.msgcode/SOUL.md", exists: true, content: "" },
+            },
+          };
+        }
+        if (request.command === "capabilities") {
+          return { data: { capabilities: [] } };
+        }
+        if (request.command === "hall") {
+          return {
+            data: {
+              org: { name: "msgcode" },
+              runtime: { summary: { status: "pass", warnings: 0, errors: 0 } },
+              packs: { builtin: [], user: [] },
+              sites: [],
+            },
+          };
+        }
+        if (request.command === "neighbor") {
+          return {
+            data: {
+              enabled: false,
+              self: { nodeId: "self-node", publicIdentity: "self" },
+              summary: { unreadCount: 0, lastMessageAt: "", lastProbeAt: "", reachableCount: 0 },
+              neighbors: [],
+              mailbox: { updatedAt: "", entries: [] },
+            },
+          };
+        }
+        throw new Error(`unexpected command: ${request.command}`);
+      },
+    };
+
+    bindThreadSurfaceMemoryToggles(documentLike, bridge, {
+      selectedSection: "workspace",
+      selectedWorkspace: "family",
+      selectedWorkspacePath: "/tmp/family-memory",
+      selectedThreadId: "thread-1",
+      workspaceTree: { data: { workspaces: [] } },
+      thread: {
+        data: {
+          thread: {
+            writable: true,
+            title: "hello",
+            messages: [],
+          },
+          schedules: [],
+          workStatus: { recentEntries: [] },
+        },
+      },
+      profile: {
+        data: {
+          memory: { enabled: true, topK: 5, maxChars: 2000 },
+          soul: { path: "/tmp/family-memory/.msgcode/SOUL.md", exists: true, content: "" },
+        },
+      },
+      capabilities: { data: { capabilities: [] } },
+      hall: {
+        data: {
+          org: { name: "msgcode" },
+          runtime: { summary: { status: "pass", warnings: 0, errors: 0 } },
+          packs: { builtin: [], user: [] },
+          sites: [],
+        },
+      },
+      neighbor: {
+        data: {
+          enabled: false,
+          self: { nodeId: "self-node", publicIdentity: "self" },
+          summary: { unreadCount: 0, lastMessageAt: "", lastProbeAt: "", reachableCount: 0 },
+          neighbors: [],
+          mailbox: { updatedAt: "", entries: [] },
+        },
+      },
+      loadingError: null,
+    });
+
+    await listeners.get("click")?.({ preventDefault() {} });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(calls).toEqual([{ workspacePath: "/tmp/family-memory", enabled: false }]);
+    expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("未启用");
   });
 });

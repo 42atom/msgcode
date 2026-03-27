@@ -4,10 +4,12 @@ import {
   buildRendererHtml,
   resolveElectronRuntimePaths,
   runSendThreadInput,
+  runSetWorkspaceMemoryEnabled,
   runShowPathInFinder,
 } from "../src/electron/main.js";
 import { createThreadSurfaceIpcWhitelist } from "../src/electron/preload.js";
 import {
+  getSetWorkspaceMemoryEnabledChannel,
   getShowPathInFinderChannel,
   getThreadSurfaceReadChannel,
   getSendThreadInputChannel,
@@ -208,6 +210,7 @@ describe("electron runtime bootstrap slice", () => {
     await whitelist.invoke(getThreadSurfaceReadChannel(), {});
     await whitelist.invoke(getSendThreadInputChannel(), {});
     await whitelist.invoke(getShowPathInFinderChannel(), {});
+    await whitelist.invoke(getSetWorkspaceMemoryEnabledChannel(), {});
     whitelist.on(getThreadUpdateChannel(), () => {});
     whitelist.off(getThreadUpdateChannel(), () => {});
 
@@ -224,9 +227,32 @@ describe("electron runtime bootstrap slice", () => {
       `invoke:${getThreadSurfaceReadChannel()}`,
       `invoke:${getSendThreadInputChannel()}`,
       `invoke:${getShowPathInFinderChannel()}`,
+      `invoke:${getSetWorkspaceMemoryEnabledChannel()}`,
       `on:${getThreadUpdateChannel()}`,
       `off:${getThreadUpdateChannel()}`,
     ]);
+  });
+
+  it("updates workspace memory through injected config deps", async () => {
+    const writes: Array<{ workspacePath: string; enabled: boolean }> = [];
+
+    await runSetWorkspaceMemoryEnabled(
+      {
+        workspacePath: "/tmp/family",
+        enabled: false,
+      },
+      {
+        saveConfig(workspacePath, config) {
+          writes.push({
+            workspacePath,
+            enabled: config["memory.inject.enabled"],
+          });
+          return Promise.resolve();
+        },
+      },
+    );
+
+    expect(writes).toEqual([{ workspacePath: "/tmp/family", enabled: false }]);
   });
 
   it("reveals an existing path in Finder through injected deps", async () => {
