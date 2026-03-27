@@ -51,6 +51,12 @@ describe("readonly thread surface src implementation", () => {
     expect(markup).toContain('data-bridge-slot="host-bridge"');
     expect(markup).toContain('data-bridge-entry="window.msgcodeReadonlySurface.runCommand"');
     expect(markup).toContain('href="#settings"');
+    expect(markup).toContain('--theme-brand: #3b82f6;');
+    expect(markup).toContain('--theme-selected: #e5e5e5;');
+    expect(markup).toContain('--font-family-ui: "Maple Mono NF CN", "Maple Mono", ui-monospace, monospace;');
+    expect(markup).toContain('letter-spacing: var(--font-ui-dense-tracking);');
+    expect(markup).toContain('.thread-row.is-selected { background: var(--theme-selected); }');
+    expect(markup).toContain('.thread-composer__send { min-width: 72px; min-height: 34px; border: 0; border-radius: 10px; background: var(--theme-brand); color: var(--theme-bg); font: inherit; }');
     expect(markup).not.toContain("archive");
     expect(markup).not.toContain("new chat");
   });
