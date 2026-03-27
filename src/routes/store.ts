@@ -11,6 +11,7 @@ import os from "node:os";
 import { config } from "../config.js";
 import { normalizeChatId } from "../channels/chat-id.js";
 import type { BotType, ModelClient } from "../router.js";
+import { ensureWorkspaceIdentity, resolveWorkspacePathByUid } from "../runtime/workspace-locator.js";
 
 // ============================================
 // 类型定义
@@ -26,6 +27,8 @@ export interface RouteEntry {
   chatId?: string;
   /** 工作目录绝对路径 */
   workspacePath: string;
+  /** 工作目录稳定身份 */
+  workspaceUid?: string;
   /** 可选的友好名称（如 'acme/ops'） */
   label?: string;
   /** Bot 类型 */
@@ -80,6 +83,7 @@ function isRouteEntryShape(value: unknown): value is RouteEntry {
   return (
     typeof entry.chatGuid === "string" &&
     typeof entry.workspacePath === "string" &&
+    (entry.workspaceUid === undefined || typeof entry.workspaceUid === "string") &&
     typeof entry.botType === "string" &&
     isValidRouteStatus(entry.status) &&
     typeof entry.createdAt === "string" &&
@@ -158,10 +162,18 @@ export function loadRoutes(): RouteStoreData {
         continue;
       }
 
-      if (entry.status === "active" && !fs.existsSync(entry.workspacePath)) {
-        delete data.routes[chatGuid];
-        changed = true;
-        continue;
+      if (fs.existsSync(entry.workspacePath)) {
+        const identity = ensureWorkspaceIdentity(entry.workspacePath, entry.label);
+        if (entry.workspaceUid !== identity.workspaceUid) {
+          entry.workspaceUid = identity.workspaceUid;
+          changed = true;
+        }
+      } else if (entry.status === "active" && entry.workspaceUid) {
+        const relocatedPath = resolveWorkspacePathByUid(entry.workspaceUid);
+        if (relocatedPath && relocatedPath !== entry.workspacePath) {
+          entry.workspacePath = relocatedPath;
+          changed = true;
+        }
       }
 
       const createdOk = Number.isFinite(Date.parse(entry.createdAt));
@@ -325,10 +337,12 @@ export function createRoute(
   }
 
   const now = new Date().toISOString();
+  const identity = ensureWorkspaceIdentity(workspacePath, options?.label || relativePath);
   const entry: RouteEntry = {
     chatGuid,
     chatId: normalizeChatId(chatGuid),
     workspacePath,
+    workspaceUid: identity.workspaceUid,
     label: options?.label || relativePath,
     botType: options?.botType || "default",
     modelClient: options?.modelClient,

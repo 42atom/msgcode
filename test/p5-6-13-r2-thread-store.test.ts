@@ -69,6 +69,7 @@ describe("P5.6.13-R2: 线程存储回归锁", () => {
             expect(threadInfo.threadId).toMatch(/^[0-9a-f-]+$/);
             expect(threadInfo.chatId).toBe(chatId);
             expect(threadInfo.workspacePath).toBe(workspacePath);
+            expect(threadInfo.workspaceUid).toMatch(/^[0-9a-f-]+$/);
             expect(threadInfo.filePath).toContain(".msgcode/threads");
             expect(threadInfo.turnCount).toBe(0);
 
@@ -86,6 +87,7 @@ describe("P5.6.13-R2: 线程存储回归锁", () => {
             expect(content).toContain(`chatId: ${chatId}`);
             expect(content).toContain(`title: ${firstUserText}`);
             expect(content).toContain("transport: unknown");
+            expect(content).toContain(`workspaceUid: ${threadInfo.workspaceUid}`);
             expect(content).toContain("runtimeKind: agent");
             expect(content).toContain("agentProvider: lmstudio");
         });
@@ -294,6 +296,7 @@ describe("P5.6.13-R2: 线程存储回归锁", () => {
             expect(content).toMatch(/transport:\s*.+/);
             expect(content).toMatch(/workspace:\s*.+/);
             expect(content).toMatch(/workspacePath:\s*.+/);
+            expect(content).toMatch(/workspaceUid:\s*[0-9a-f-]+/);
             expect(content).toMatch(/createdAt:\s*\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
             expect(content).toMatch(/runtimeKind:\s*(agent|tmux)/);
             expect(content).toMatch(/agentProvider:\s*.+/);
@@ -373,6 +376,32 @@ describe("P5.6.13-R2: 线程存储回归锁", () => {
             expect(content).toContain("## Turn 2");
             expect(content).toContain("### User\n今晚还有什么安排？");
             expect(content).toContain("### User\n还有别的安排吗？");
+        });
+
+        it("旧线程缺少 workspaceUid 时仍可续线并回填缓存身份", async () => {
+            const runtimeMeta = {
+                kind: "agent" as const,
+                provider: "lmstudio",
+                tmuxClient: undefined,
+            };
+
+            const webChatId = "web:legacy-thread";
+            const threadsDir = path.join(workspacePath, ".msgcode", "threads");
+            await fs.mkdir(threadsDir, { recursive: true });
+            const filePath = path.join(threadsDir, "2026-03-27_legacy.md");
+            await fs.writeFile(
+                filePath,
+                `---\nthreadId: legacy-thread-id\nchatId: ${webChatId}\ntitle: legacy\ntransport: web\nworkspace: ${path.basename(workspacePath)}\nworkspacePath: ${workspacePath}\ncreatedAt: 2026-03-27T00:00:00.000Z\nruntimeKind: agent\nagentProvider: lmstudio\n---\n\n## Turn 1 - 2026-03-27T00:00:00.000Z\n\n### User\n旧消息\n\n### Assistant\n旧回复\n\n`,
+                "utf-8",
+            );
+
+            close();
+
+            const threadInfo = await ensureThread(webChatId, workspacePath, "继续", runtimeMeta);
+
+            expect(threadInfo.filePath).toBe(filePath);
+            expect(threadInfo.threadId).toBe("legacy-thread-id");
+            expect(threadInfo.workspaceUid).toMatch(/^[0-9a-f-]+$/);
         });
     });
 });

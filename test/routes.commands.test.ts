@@ -46,6 +46,20 @@ const TEST_ROUTES_FILE = path.join(os.tmpdir(), ".config/msgcode/routes.json");
 const TEST_STATE_FILE = path.join(os.tmpdir(), ".config/msgcode/state.json");
 const ORIGINAL_AGENT_BACKEND = process.env.AGENT_BACKEND;
 
+function readWorkspaceIdentity(workspacePath: string): {
+  workspaceUid: string;
+  createdAt: string;
+  label: string;
+} {
+  return JSON.parse(
+    fs.readFileSync(path.join(workspacePath, ".msgcode", "workspace.json"), "utf8"),
+  ) as {
+    workspaceUid: string;
+    createdAt: string;
+    label: string;
+  };
+}
+
 describe("路由命令处理器", () => {
   // 在每个测试前后清理测试文件和目录
   function cleanTestData() {
@@ -238,6 +252,13 @@ describe("路由命令处理器", () => {
       const workspaceRoot = path.join(os.tmpdir(), "msgcode-test-workspace");
       const expectedPath = path.join(workspaceRoot, "acme/ops");
       expect(fs.existsSync(expectedPath)).toBe(true);
+
+      const routes = loadRoutes();
+      const route = routes.routes[testChatId];
+      expect(route?.workspaceUid).toMatch(/^[0-9a-f-]+$/);
+
+      const identity = readWorkspaceIdentity(expectedPath);
+      expect(identity.workspaceUid).toBe(route?.workspaceUid);
     });
 
     it("绑定成功时显示真实 backend lane", async () => {
@@ -265,6 +286,25 @@ describe("路由命令处理器", () => {
 
       expect(result.success).toBe(false);
       expect(result.message).toContain("路径格式错误");
+    });
+
+    it("目录改名后按 workspaceUid 找回 route", async () => {
+      const options: CommandHandlerOptions = { chatId: testChatId, args: ["acme/ops"] };
+      const bindResult = await handleBindCommand(options);
+      expect(bindResult.success).toBe(true);
+
+      const workspaceRoot = path.join(os.tmpdir(), "msgcode-test-workspace");
+      const originalPath = path.join(workspaceRoot, "acme/ops");
+      const relocatedPath = path.join(workspaceRoot, "acme/ops-renamed");
+      const originalUid = loadRoutes().routes[testChatId]?.workspaceUid;
+
+      fs.renameSync(originalPath, relocatedPath);
+
+      const routes = loadRoutes();
+      const route = routes.routes[testChatId];
+      expect(route).toBeDefined();
+      expect(route?.workspaceUid).toBe(originalUid);
+      expect(route?.workspacePath).toBe(relocatedPath);
     });
   });
 
@@ -336,6 +376,25 @@ describe("路由命令处理器", () => {
       expect(result.message).toContain("backend: tmux");
       expect(result.message).toContain("tmux-client: codex");
       expect(result.message).not.toContain("Agent Backend:");
+    });
+
+    it("目录失联时保留 route 并明确提示", async () => {
+      const bindResult = await handleBindCommand({
+        chatId: testChatId,
+        args: ["lost/project"],
+      });
+      expect(bindResult.success).toBe(true);
+
+      const workspacePath = path.join(process.env.WORKSPACE_ROOT!, "lost/project");
+      fs.rmSync(workspacePath, { recursive: true, force: true });
+
+      const routes = loadRoutes();
+      expect(routes.routes[testChatId]).toBeDefined();
+
+      const result = await handleWhereCommand({ chatId: testChatId, args: [] });
+      expect(result.success).toBe(true);
+      expect(result.message).toContain("当前绑定已失联");
+      expect(result.message).toContain("请恢复目录位置或重新 /bind");
     });
   });
 

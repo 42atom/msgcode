@@ -12,6 +12,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { logger } from "../logger/index.js";
 import { parseSimpleFrontMatter } from "./simple-front-matter.js";
+import { ensureWorkspaceIdentity } from "./workspace-locator.js";
 
 // ============================================
 // 类型定义
@@ -23,6 +24,7 @@ export interface ThreadInfo {
     title: string;
     transport: string;
     workspacePath: string;
+    workspaceUid?: string;
     filePath: string;      // 绝对路径
     turnCount: number;
     createdAt: string;     // ISO 字符串
@@ -122,6 +124,7 @@ function parseStoredThread(filePath: string, content: string): StoredThreadState
             title: frontMatter.title?.trim() || deriveTitleFromFilename(filePath),
             transport: frontMatter.transport?.trim() || deriveTransport(chatId),
             workspacePath: frontMatter.workspacePath?.trim() || path.dirname(path.dirname(path.dirname(filePath))),
+            workspaceUid: frontMatter.workspaceUid?.trim() || undefined,
             filePath,
             turnCount: turnHeaders.length,
             createdAt: frontMatter.createdAt?.trim() || "",
@@ -228,6 +231,10 @@ function buildFrontMatter(
         `agentProvider: ${runtimeMeta.provider}`,
     ];
 
+    if (threadInfo.workspaceUid) {
+        lines.splice(7, 0, `workspaceUid: ${threadInfo.workspaceUid}`);
+    }
+
     if (runtimeMeta.tmuxClient) {
         lines.push(`tmuxClient: ${runtimeMeta.tmuxClient}`);
     } else if (runtimeMeta.kind === "agent") {
@@ -282,9 +289,13 @@ export async function ensureThread(
     // 创建 threads 目录
     const threadsDir = getThreadsDir(workspacePath);
     await fs.mkdir(threadsDir, { recursive: true });
+    const workspaceIdentity = ensureWorkspaceIdentity(workspacePath);
 
     const restored = await findExistingWebThread(workspacePath, chatId);
     if (restored) {
+        if (!restored.info.workspaceUid) {
+            restored.info.workspaceUid = workspaceIdentity.workspaceUid;
+        }
         threadCache.set(chatId, restored);
         logger.debug("Thread restored from disk", {
             module: "thread-store",
@@ -312,6 +323,7 @@ export async function ensureThread(
         title,
         transport,
         workspacePath,
+        workspaceUid: workspaceIdentity.workspaceUid,
         filePath,
         turnCount: 0,
         createdAt: new Date().toISOString(),

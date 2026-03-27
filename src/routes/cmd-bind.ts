@@ -231,6 +231,21 @@ export async function handleWhereCommand(options: CommandHandlerOptions): Promis
     return new Date(ts).toLocaleString("zh-CN");
   };
 
+  if (!fs.existsSync(entry.workspacePath)) {
+    return {
+      success: true,
+      message: `当前绑定已失联\n` +
+        `\n` +
+        `工作目录: ${entry.workspacePath}\n` +
+        `标签: ${entry.label}\n` +
+        `状态: active (lost)\n` +
+        `绑定时间: ${formatTime(entry.createdAt)}\n` +
+        `更新时间: ${formatTime(entry.updatedAt)}\n` +
+        `\n` +
+        `请恢复目录位置或重新 /bind`,
+    };
+  }
+
   const runtimeDisplay = await resolveRuntimeDisplay(entry.workspacePath);
 
   return {
