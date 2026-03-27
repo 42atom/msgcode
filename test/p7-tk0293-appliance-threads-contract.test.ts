@@ -162,12 +162,13 @@ describe("appliance threads contract", () => {
     expect(payload.data.threads).toHaveLength(2);
     expect(payload.data.threads[0].threadId).toBe("thread-feishu");
     expect(payload.data.threads[0].title).toBe("接娃主线");
-    expect(payload.data.threads[0].source).toBe("feishu");
+    expect("source" in payload.data.threads[0]).toBe(false);
     expect(payload.data.threads[0].writable).toBe(false);
     expect(payload.data.threads[1].threadId).toBe("thread-web");
     expect(payload.data.threads[1].writable).toBe(true);
     expect(payload.data.currentThread.threadId).toBe("thread-feishu");
     expect(payload.data.currentThread.title).toBe("接娃主线");
+    expect("source" in payload.data.currentThread).toBe(false);
     expect(payload.data.currentThread.writable).toBe(false);
     expect(payload.data.currentThread.messages[0].user).toContain("我在门口准备好了");
     expect(payload.data.people.count).toBe(2);
@@ -390,7 +391,7 @@ describe("appliance threads contract", () => {
     expect(payload.status).toBe("pass");
     expect(payload.data.threads).toHaveLength(1);
     expect(payload.data.threads[0].title).toBe("家庭总线");
-    expect(payload.data.threads[0].source).toBe("feishu");
+    expect("source" in payload.data.threads[0]).toBe(false);
   });
 
   it("配置里有 stale current chat 时不应偷退到最近线程", async () => {

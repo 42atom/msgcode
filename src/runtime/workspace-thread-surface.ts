@@ -9,7 +9,6 @@ import { parseSimpleFrontMatter } from "./simple-front-matter.js";
 export interface WorkspaceThreadListItem {
   threadId: string;
   title: string;
-  source: string;
   writable: boolean;
   lastTurnAt: string;
 }
@@ -34,7 +33,6 @@ export interface WorkspaceThreadMessage {
 export interface WorkspaceCurrentThread {
   threadId: string;
   title: string;
-  source: string;
   writable: boolean;
   lastTurnAt: string;
   messages: WorkspaceThreadMessage[];
@@ -90,7 +88,7 @@ export async function readWorkspaceThreadSurface(workspacePath: string): Promise
     ? await readCurrentThread(currentThreadSummary.filePath, warnings)
     : null;
   const recentStatusEntries = readWorkspaceStatusTail({ workspacePath });
-  const currentThreadEntries = filterThreadStatusEntries(recentStatusEntries, currentThread);
+  const currentThreadEntries = filterThreadStatusEntries(recentStatusEntries, currentThread, currentThreadSummary?.source ?? "");
   const schedules = await readSchedules(workspacePath, warnings);
 
   return {
@@ -100,7 +98,6 @@ export async function readWorkspaceThreadSurface(workspacePath: string): Promise
       threads: threads.map((thread) => ({
         threadId: thread.threadId,
         title: thread.title,
-        source: thread.source,
         writable: thread.writable,
         lastTurnAt: thread.lastTurnAt,
       })),
@@ -133,7 +130,7 @@ export async function readWorkspaceThreadDetailSurface(
     ? await readCurrentThread(threadSummary.filePath, warnings)
     : null;
   const recentStatusEntries = readWorkspaceStatusTail({ workspacePath });
-  const currentThreadEntries = filterThreadStatusEntries(recentStatusEntries, thread);
+  const currentThreadEntries = filterThreadStatusEntries(recentStatusEntries, thread, threadSummary?.source ?? "");
   const schedules = await readSchedules(workspacePath, warnings);
 
   return {
@@ -293,7 +290,6 @@ async function readCurrentThread(filePath: string, warnings: Diagnostic[]): Prom
     return {
       threadId,
       title: deriveThreadTitle(frontMatter, filePath),
-      source: deriveThreadSource(frontMatter, chatId),
       writable: isThreadSourceWritable(deriveThreadSource(frontMatter, chatId)),
       lastTurnAt: messages[0]?.at ?? "",
       messages,
@@ -374,12 +370,13 @@ function deriveThreadStatusLabel(source: string): string {
 function filterThreadStatusEntries(
   recentStatusEntries: WorkspaceStatusRecord[],
   thread: WorkspaceCurrentThread | null,
+  threadSource: string,
 ): WorkspaceStatusRecord[] {
   if (!thread) {
     return [];
   }
 
-  const sourceLabel = deriveThreadStatusLabel(thread.source);
+  const sourceLabel = deriveThreadStatusLabel(threadSource);
   return recentStatusEntries.filter((entry) => entry.thread === thread.title || (sourceLabel !== "" && entry.thread === sourceLabel));
 }
 

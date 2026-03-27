@@ -48,6 +48,8 @@ export async function sendThreadInput(request: SendThreadInputRequest): Promise<
   }
 
   const target = await resolveWritableThreadTarget(request.workspacePath, request.threadId);
+  // 桌面当前只是复用现有 web thread 的写回主链，不另起新 transport。
+  // isFromMe 必须保持 false，否则下游会把这条用户输入当自回路跳过。
   const originalMessage: InboundMessage = {
     id: `desktop-${randomUUID()}`,
     transport: "web",
