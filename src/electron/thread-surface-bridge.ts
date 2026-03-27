@@ -1,4 +1,10 @@
-export type ThreadSurfaceCommand = "workspace-tree" | "thread" | "profile" | "capabilities";
+export type ThreadSurfaceCommand =
+  | "workspace-tree"
+  | "thread"
+  | "profile"
+  | "capabilities"
+  | "hall"
+  | "neighbor";
 
 export interface SendThreadInputRequest {
   workspacePath: string;
@@ -22,7 +28,7 @@ export interface ThreadSurfaceThreadRequest {
 }
 
 export interface ThreadSurfaceWorkspaceRequest {
-  command: "profile" | "capabilities";
+  command: "profile" | "capabilities" | "hall" | "neighbor";
   workspace: string;
 }
 
@@ -63,7 +69,12 @@ export function buildThreadSurfaceCliArgs(request: ThreadSurfaceRunCommandReques
     throw new Error(`Thread surface bridge requires workspace for ${request.command} command`);
   }
 
-  if (request.command === "profile" || request.command === "capabilities") {
+  if (
+    request.command === "profile" ||
+    request.command === "capabilities" ||
+    request.command === "hall" ||
+    request.command === "neighbor"
+  ) {
     return [
       "appliance",
       request.command,

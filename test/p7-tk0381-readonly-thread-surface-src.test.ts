@@ -18,7 +18,14 @@ describe("readonly thread surface src implementation", () => {
       "selectedThreadId",
       "loadingError",
     ]);
-    expect(chrome.dataFeeds).toEqual(["workspace-tree", "thread"]);
+    expect(chrome.dataFeeds).toEqual([
+      "workspace-tree",
+      "thread",
+      "profile",
+      "capabilities",
+      "hall",
+      "neighbor",
+    ]);
     expect(chrome.columns.map((column) => column.id)).toEqual([
       "workspace-tree",
       "thread",

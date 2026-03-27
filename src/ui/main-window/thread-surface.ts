@@ -28,7 +28,7 @@ export interface ThreadSurfaceChrome {
   kind: "thread-surface";
   state: ThreadSurfaceState;
   transientStateKeys: readonly ["selectedWorkspace", "selectedThreadId", "loadingError"];
-  dataFeeds: readonly ["workspace-tree", "thread"];
+  dataFeeds: readonly ["workspace-tree", "thread", "profile", "capabilities", "hall", "neighbor"];
   columns: readonly ThreadSurfaceColumn[];
   settingsAffordance: ThreadSurfaceSettingsAffordance;
   bridgeSlot: ThreadSurfaceBridgeSlot;
@@ -46,7 +46,7 @@ export function buildThreadSurfaceChrome(
       loadingError: state.loadingError,
     },
     transientStateKeys: ["selectedWorkspace", "selectedThreadId", "loadingError"],
-    dataFeeds: ["workspace-tree", "thread"],
+      dataFeeds: ["workspace-tree", "thread", "profile", "capabilities", "hall", "neighbor"],
     columns: [
       { id: "workspace-tree", label: "Workspace Tree", slot: "workspace-tree" },
       { id: "thread", label: "Thread", slot: "thread" },
@@ -211,13 +211,15 @@ function renderThreadSurfaceStyles(): string {
     "}",
     ".sidebar-shell, .thread-shell, .observer-shell { display: flex; flex-direction: column; min-height: 100%; }",
     ".sidebar-top-nav { display: flex; flex-direction: column; gap: 4px; padding: 8px 8px 6px; border-bottom: 1px solid rgba(0,0,0,0.06); }",
-    ".sidebar-top-nav__item { min-height: 28px; padding: 0 10px; display: flex; align-items: center; border: 0; border-radius: 10px; background: transparent; color: inherit; font: inherit; text-align: left; }",
+    ".sidebar-top-nav__item { min-height: 28px; padding: 0 10px; display: flex; align-items: center; border: 0; border-radius: 10px; background: transparent; color: inherit; font: inherit; text-align: left; cursor: pointer; }",
     ".sidebar-top-nav__item.is-selected { background: var(--theme-selected); color: var(--theme-brand); }",
     ".sidebar-list-shell { display: flex; flex-direction: column; flex: 1; min-height: 0; }",
     ".sidebar-list-shell__header { padding-bottom: 6px; }",
     ".sidebar-list-shell__body { padding-top: 8px; }",
     ".workspace-list, .observer-stack { display: flex; flex-direction: column; gap: 10px; }",
     ".workspace-group { display: flex; flex-direction: column; gap: 4px; }",
+    ".workspace-group--static { gap: 6px; }",
+    ".workspace-group__label { margin: 0; }",
     ".workspace-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 24px; padding: 0; border: 0; background: transparent; text-align: left; color: inherit; font: inherit; }",
     ".workspace-row:hover { opacity: 0.88; }",
     ".workspace-row.is-selected { opacity: 1; }",
@@ -225,6 +227,7 @@ function renderThreadSurfaceStyles(): string {
     ".workspace-row__meta { font-size: var(--font-ui-sm-size); line-height: var(--font-ui-sm-line); opacity: var(--opacity-subtle); }",
     ".thread-list { display: flex; flex-direction: column; gap: 2px; }",
     ".thread-row { width: 100%; min-height: 24px; padding: 0 8px 0 16px; display: flex; align-items: center; border: 0; border-radius: 10px; background: transparent; text-align: left; color: inherit; font: inherit; }",
+    ".thread-row--static { justify-content: space-between; padding-right: 0; }",
     ".thread-row.is-selected { background: var(--theme-selected); }",
     ".thread-row.is-selected .thread-row__title { color: var(--theme-brand); }",
     ".thread-row__title { font-size: var(--font-ui-md-size); line-height: var(--font-ui-md-line); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: var(--font-ui-dense-tracking); }",
@@ -234,6 +237,20 @@ function renderThreadSurfaceStyles(): string {
     ".thread-stage { display: flex; flex-direction: column; gap: 10px; }",
     ".thread-shell__body { display: flex; flex-direction: column; gap: 10px; }",
     ".chat-stage { display: flex; flex-direction: column; gap: 10px; flex: 1; min-height: 0; }",
+    ".summary-stack { display: flex; flex-direction: column; gap: 10px; }",
+    ".summary-card { display: flex; flex-direction: column; gap: 8px; padding: 10px; border-radius: 12px; background: var(--theme-surface); }",
+    ".summary-card__title { margin: 0; font-size: var(--font-ui-sm-size); line-height: var(--font-ui-sm-line); opacity: var(--opacity-subtle); font-weight: 500; }",
+    ".summary-card__rows { display: flex; flex-direction: column; gap: 6px; }",
+    ".summary-row { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 8px; }",
+    ".summary-row__label { font-size: var(--font-ui-sm-size); line-height: var(--font-ui-sm-line); opacity: var(--opacity-subtle); }",
+    ".summary-row__value { font-size: var(--font-ui-md-size); line-height: var(--font-ui-md-line); overflow-wrap: anywhere; }",
+    ".mailbox-list { display: flex; flex-direction: column; gap: 8px; }",
+    ".mailbox-entry { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 12px; background: var(--theme-surface); }",
+    ".mailbox-entry--out { align-items: flex-end; text-align: right; }",
+    ".mailbox-entry--system { opacity: var(--opacity-subtle); }",
+    ".mailbox-entry--unread { border: 1px solid rgba(59,130,246,0.2); }",
+    ".mailbox-entry__meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; font-size: var(--font-ui-sm-size); line-height: var(--font-ui-sm-line); opacity: var(--opacity-subtle); }",
+    ".mailbox-entry__summary { margin: 0; font-size: var(--font-ui-md-size); line-height: var(--font-ui-md-line); white-space: pre-wrap; overflow-wrap: anywhere; }",
     ".thread-head-meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }",
     ".inline-chip { display: inline-flex; align-items: center; min-height: 22px; padding: 0 8px; border-radius: 10px; background: var(--theme-surface); font-size: var(--font-ui-sm-size); line-height: var(--font-ui-sm-line); }",
     ".inline-chip--muted { opacity: var(--opacity-subtle); }",

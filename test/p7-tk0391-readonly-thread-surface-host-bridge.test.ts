@@ -7,6 +7,7 @@ import {
   getThreadUpdateChannel,
 } from "../src/electron/thread-surface-bridge.js";
 import {
+  bindThreadSurfaceNav,
   bindThreadComposer,
   bindThreadSurfaceSelection,
   startThreadSurface,
@@ -132,6 +133,36 @@ describe("readonly thread surface host bridge slice", () => {
       "/tmp/family",
       "--json",
     ]);
+
+    const hall = buildThreadSurfaceCliCommand(
+      { command: "hall", workspace: "/tmp/family" },
+      {
+        env: { MSGCODE_CLI_ENTRY: "/tmp/msgcode/dist/cli.js" },
+        nodePath: "/usr/local/bin/node",
+      },
+    );
+    expect(hall.args.slice(-5)).toEqual([
+      "appliance",
+      "hall",
+      "--workspace",
+      "/tmp/family",
+      "--json",
+    ]);
+
+    const neighbor = buildThreadSurfaceCliCommand(
+      { command: "neighbor", workspace: "/tmp/family" },
+      {
+        env: { MSGCODE_CLI_ENTRY: "/tmp/msgcode/dist/cli.js" },
+        nodePath: "/usr/local/bin/node",
+      },
+    );
+    expect(neighbor.args.slice(-5)).toEqual([
+      "appliance",
+      "neighbor",
+      "--workspace",
+      "/tmp/family",
+      "--json",
+    ]);
   });
 
   it("builds detached thread-input cli invocations from the shared runtime entry", () => {
@@ -209,6 +240,34 @@ describe("readonly thread surface host bridge slice", () => {
             },
           };
         }
+        if (request.command === "hall") {
+          return {
+            data: {
+              org: { name: "msgcode", taxRegion: "SG", uscc: "UEN-1" },
+              runtime: {
+                appVersion: "1.0.0",
+                logPath: "/tmp/family/.msgcode/log",
+                summary: { status: "pass", warnings: 0, errors: 0 },
+              },
+              packs: {
+                builtin: [{ id: "core", name: "Core", version: "1.0.0", enabled: true }],
+                user: [],
+              },
+              sites: [{ id: "admin", title: "Admin", kind: "sidecar" }],
+            },
+          };
+        }
+        if (request.command === "neighbor") {
+          return {
+            data: {
+              enabled: true,
+              self: { nodeId: "self-node", publicIdentity: "self" },
+              summary: { unreadCount: 1, lastMessageAt: "2026-03-28T10:00:00.000Z", lastProbeAt: "", reachableCount: 1 },
+              neighbors: [{ nodeId: "neighbor-1", displayName: "邻居01", unreadCount: 1, state: "contact" }],
+              mailbox: { updatedAt: "", entries: [] },
+            },
+          };
+        }
         return {
           data: {
             thread: {
@@ -228,6 +287,8 @@ describe("readonly thread surface host bridge slice", () => {
     expect(panels.get('[data-surface-slot="workspace-tree"]')?.innerHTML).toContain("family");
     expect(panels.get('[data-surface-slot="workspace-tree"]')?.innerHTML).toContain("sidebar-top-nav");
     expect(panels.get('[data-surface-slot="workspace-tree"]')?.innerHTML).toContain("sidebar-footer");
+    expect(panels.get('[data-surface-slot="workspace-tree"]')?.innerHTML).toContain('data-surface-nav="base"');
+    expect(panels.get('[data-surface-slot="workspace-tree"]')?.innerHTML).toContain('data-surface-nav="neighbor"');
     expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("<h2>hello</h2>");
     expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("chat-stage");
     expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("composer-dock");
@@ -291,6 +352,27 @@ describe("readonly thread surface host bridge slice", () => {
           return {
             data: {
               capabilities: [],
+            },
+          };
+        }
+        if (request.command === "hall") {
+          return {
+            data: {
+              org: { name: "msgcode" },
+              runtime: { summary: { status: "pass", warnings: 0, errors: 0 } },
+              packs: { builtin: [], user: [] },
+              sites: [],
+            },
+          };
+        }
+        if (request.command === "neighbor") {
+          return {
+            data: {
+              enabled: false,
+              self: { nodeId: "self-node", publicIdentity: "self" },
+              summary: { unreadCount: 0, lastMessageAt: "", lastProbeAt: "", reachableCount: 0 },
+              neighbors: [],
+              mailbox: { updatedAt: "", entries: [] },
             },
           };
         }
@@ -398,6 +480,7 @@ describe("readonly thread surface host bridge slice", () => {
         sent.push(request);
       },
     }, {
+      selectedSection: "workspace",
       selectedWorkspace: "family",
       selectedWorkspacePath: "/tmp/family",
       selectedThreadId: "thread-web",
@@ -411,6 +494,8 @@ describe("readonly thread surface host bridge slice", () => {
       },
       profile: null,
       capabilities: null,
+      hall: null,
+      neighbor: null,
       loadingError: null,
     });
 
@@ -445,6 +530,7 @@ describe("readonly thread surface host bridge slice", () => {
       },
     };
     bindThreadComposer(documentLike, failingBridge, {
+      selectedSection: "workspace",
       selectedWorkspace: "family",
       selectedWorkspacePath: "/tmp/family",
       selectedThreadId: "thread-web-2",
@@ -458,6 +544,8 @@ describe("readonly thread surface host bridge slice", () => {
       },
       profile: null,
       capabilities: null,
+      hall: null,
+      neighbor: null,
       loadingError: null,
     });
 
@@ -539,6 +627,27 @@ describe("readonly thread surface host bridge slice", () => {
             },
           };
         }
+        if (request.command === "hall") {
+          return {
+            data: {
+              org: { name: "msgcode" },
+              runtime: { summary: { status: "pass", warnings: 0, errors: 0 }, logPath: "/tmp/other/log" },
+              packs: { builtin: [], user: [] },
+              sites: [],
+            },
+          };
+        }
+        if (request.command === "neighbor") {
+          return {
+            data: {
+              enabled: true,
+              self: { nodeId: "self-node", publicIdentity: "self" },
+              summary: { unreadCount: 0, lastMessageAt: "", lastProbeAt: "", reachableCount: 0 },
+              neighbors: [],
+              mailbox: { updatedAt: "", entries: [] },
+            },
+          };
+        }
         if (request.workspace === "other") {
           return {
             data: {
@@ -570,6 +679,7 @@ describe("readonly thread surface host bridge slice", () => {
       documentLike,
       bridge,
       {
+        selectedSection: "workspace",
         selectedWorkspace: "family",
         selectedWorkspacePath: "/tmp/family",
         selectedThreadId: "thread-1",
@@ -595,6 +705,8 @@ describe("readonly thread surface host bridge slice", () => {
         thread: null,
         profile: null,
         capabilities: null,
+        hall: null,
+        neighbor: null,
         loadingError: null,
       },
     );
@@ -626,5 +738,89 @@ describe("readonly thread surface host bridge slice", () => {
       threadId: "thread-2",
     });
     expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("<h2>family thread 2</h2>");
+  });
+
+  it("switches top nav sections without losing the active workspace", async () => {
+    const panels = new Map<string, { textContent: string | null; innerHTML: string }>([
+      ['[data-surface-slot="workspace-tree"]', { textContent: null, innerHTML: "" }],
+      ['[data-surface-slot="thread"]', { textContent: null, innerHTML: "" }],
+      ['[data-surface-slot="thread-rail"]', { textContent: null, innerHTML: "" }],
+    ]);
+    const makeButton = (attrs: Record<string, string>) => {
+      const listeners = new Map<string, (event: { preventDefault?: () => void }) => void>();
+      return {
+        textContent: null,
+        innerHTML: "",
+        getAttribute(name: string) {
+          return attrs[name] ?? null;
+        },
+        addEventListener(type: string, listener: (event: { preventDefault?: () => void }) => void) {
+          listeners.set(type, listener);
+        },
+        async click() {
+          await listeners.get("click")?.({ preventDefault() {} });
+        },
+      };
+    };
+    const baseButton = makeButton({ "data-surface-nav": "base" });
+    const neighborButton = makeButton({ "data-surface-nav": "neighbor" });
+    const documentLike = {
+      open() {},
+      write() {},
+      close() {},
+      querySelector(selector: string) {
+        return panels.get(selector) ?? null;
+      },
+      querySelectorAll(selector: string) {
+        if (selector === '[data-surface-nav-select="true"]') return [baseButton, neighborButton];
+        return [];
+      },
+    };
+
+    bindThreadSurfaceNav(documentLike, {
+      mode: "live",
+      onThreadUpdate() {
+        return () => {};
+      },
+      async sendThreadInput() {},
+      async runCommand() {
+        return {};
+      },
+    }, {
+      selectedSection: "workspace",
+      selectedWorkspace: "family",
+      selectedWorkspacePath: "/tmp/family",
+      selectedThreadId: "thread-1",
+      workspaceTree: { data: { workspaces: [] } },
+      thread: null,
+      profile: null,
+      capabilities: null,
+      hall: {
+        data: {
+          org: { name: "msgcode", taxRegion: "SG", uscc: "UEN-1" },
+          runtime: { summary: { status: "pass", warnings: 0, errors: 0 } },
+          packs: { builtin: [], user: [] },
+          sites: [],
+        },
+      },
+      neighbor: {
+        data: {
+          enabled: true,
+          self: { nodeId: "self-node", publicIdentity: "self" },
+          summary: { unreadCount: 0, lastMessageAt: "", lastProbeAt: "", reachableCount: 0 },
+          neighbors: [{ nodeId: "neighbor-1", displayName: "邻居01", unreadCount: 0, state: "contact" }],
+          mailbox: { updatedAt: "", entries: [] },
+        },
+      },
+      loadingError: null,
+    });
+
+    await baseButton.click();
+    expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("基座总览");
+    expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("Base Rail");
+
+    await neighborButton.click();
+    expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("邻居邮箱");
+    expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("Neighbor Rail");
   });
 });

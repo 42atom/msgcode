@@ -92,7 +92,100 @@ interface CapabilitiesEnvelope {
   };
 }
 
+interface HallEnvelope {
+  data?: {
+    workspacePath?: string;
+    org?: {
+      path?: string;
+      exists?: boolean;
+      name?: string;
+      taxRegion?: string;
+      uscc?: string;
+    };
+    runtime?: {
+      appVersion?: string;
+      configPath?: string;
+      logPath?: string;
+      summary?: {
+        status?: string;
+        warnings?: number;
+        errors?: number;
+      };
+      categories?: Array<{
+        key?: string;
+        name?: string;
+        status?: string;
+        message?: string;
+      }>;
+    };
+    packs?: {
+      builtin?: Array<{
+        id?: string;
+        name?: string;
+        version?: string;
+        enabled?: boolean;
+      }>;
+      user?: Array<{
+        id?: string;
+        name?: string;
+        version?: string;
+        enabled?: boolean;
+      }>;
+    };
+    sites?: Array<{
+      id?: string;
+      title?: string;
+      entry?: string;
+      kind?: string;
+      description?: string;
+      sourcePath?: string;
+    }>;
+  };
+}
+
+interface NeighborEnvelope {
+  data?: {
+    workspacePath?: string;
+    enabled?: boolean;
+    configPath?: string;
+    neighborsPath?: string;
+    mailboxPath?: string;
+    self?: {
+      nodeId?: string;
+      publicIdentity?: string;
+    };
+    summary?: {
+      unreadCount?: number;
+      lastMessageAt?: string;
+      lastProbeAt?: string;
+      reachableCount?: number;
+    };
+    neighbors?: Array<{
+      nodeId?: string;
+      displayName?: string;
+      state?: string;
+      unreadCount?: number;
+      latencyMs?: number | null;
+      lastProbeOk?: boolean | null;
+    }>;
+    mailbox?: {
+      updatedAt?: string;
+      entries?: Array<{
+        at?: string;
+        nodeId?: string;
+        direction?: string;
+        type?: string;
+        summary?: string;
+        unread?: boolean;
+      }>;
+    };
+  };
+}
+
+type ThreadSurfaceSection = "workspace" | "base" | "neighbor";
+
 interface ThreadSurfaceViewData {
+  selectedSection: ThreadSurfaceSection;
   selectedWorkspace: string;
   selectedWorkspacePath: string;
   selectedThreadId: string;
@@ -100,6 +193,8 @@ interface ThreadSurfaceViewData {
   thread: ThreadEnvelope | null;
   profile: ProfileEnvelope | null;
   capabilities: CapabilitiesEnvelope | null;
+  hall: HallEnvelope | null;
+  neighbor: NeighborEnvelope | null;
   loadingError: string | null;
 }
 
@@ -122,6 +217,7 @@ function clearComposerPendingState(threadKey: string, preserveError = false): vo
 
 function buildEmptySurfaceViewData(loadingError: string | null): ThreadSurfaceViewData {
   return {
+    selectedSection: "workspace",
     selectedWorkspace: "",
     selectedWorkspacePath: "",
     selectedThreadId: "",
@@ -129,6 +225,8 @@ function buildEmptySurfaceViewData(loadingError: string | null): ThreadSurfaceVi
     thread: null,
     profile: null,
     capabilities: null,
+    hall: null,
+    neighbor: null,
     loadingError,
   };
 }
@@ -148,6 +246,7 @@ export function bootstrapThreadSurface(documentLike: HtmlDocumentLike): void {
 export async function loadThreadSurface(
   bridge: ThreadSurfaceBridge,
 ): Promise<{
+  selectedSection: ThreadSurfaceSection;
   selectedWorkspace: string;
   selectedWorkspacePath: string;
   selectedThreadId: string;
@@ -155,6 +254,8 @@ export async function loadThreadSurface(
   thread: ThreadEnvelope | null;
   profile: ProfileEnvelope | null;
   capabilities: CapabilitiesEnvelope | null;
+  hall: HallEnvelope | null;
+  neighbor: NeighborEnvelope | null;
 }> {
   const workspaceTree = (await bridge.runCommand({
     command: "workspace-tree",
@@ -164,15 +265,34 @@ export async function loadThreadSurface(
   const selectedWorkspaceItem = workspaces.find((item) => item.threads.length > 0) ?? workspaces[0] ?? null;
   const selectedThreadId = selectedWorkspaceItem?.threads[0]?.threadId ?? "";
 
-  if (!selectedWorkspaceItem || !selectedThreadId) {
+  if (!selectedWorkspaceItem) {
     return {
-      selectedWorkspace: selectedWorkspaceItem?.name ?? "",
-      selectedWorkspacePath: selectedWorkspaceItem?.path ?? "",
+      selectedSection: "workspace",
+      selectedWorkspace: "",
+      selectedWorkspacePath: "",
       selectedThreadId,
       workspaceTree,
       thread: null,
       profile: null,
       capabilities: null,
+      hall: null,
+      neighbor: null,
+    };
+  }
+
+  if (!selectedThreadId) {
+    const shared = await loadWorkspaceSharedSurfaces(bridge, selectedWorkspaceItem.path);
+    return {
+      selectedSection: "workspace",
+      selectedWorkspace: selectedWorkspaceItem.name,
+      selectedWorkspacePath: selectedWorkspaceItem.path,
+      selectedThreadId,
+      workspaceTree,
+      thread: null,
+      profile: shared.profile,
+      capabilities: shared.capabilities,
+      hall: shared.hall,
+      neighbor: shared.neighbor,
     };
   }
 
@@ -186,6 +306,7 @@ export async function loadThreadSurface(
   ]);
 
   return {
+    selectedSection: "workspace",
     selectedWorkspace: selectedWorkspaceItem.name,
     selectedWorkspacePath: selectedWorkspaceItem.path,
     selectedThreadId,
@@ -193,6 +314,8 @@ export async function loadThreadSurface(
     thread: thread as ThreadEnvelope,
     profile: shared.profile,
     capabilities: shared.capabilities,
+    hall: shared.hall,
+    neighbor: shared.neighbor,
   };
 }
 
@@ -202,12 +325,7 @@ export function applyThreadSurfaceData(
 ): void {
   const leftPanel = documentLike.querySelector('[data-surface-slot="workspace-tree"]');
   if (leftPanel) {
-    const workspaces = data.workspaceTree.data?.workspaces ?? [];
-    leftPanel.innerHTML = renderLeftPanel({
-      selectedWorkspace: data.selectedWorkspace,
-      selectedThreadId: data.selectedThreadId,
-      workspaces,
-    });
+    leftPanel.innerHTML = renderLeftPanel(data);
   }
 
   const middlePanel = documentLike.querySelector('[data-surface-slot="thread"]');
@@ -221,6 +339,7 @@ export function applyThreadSurfaceData(
     const scheduleCount = data.thread?.data?.schedules?.length ?? 0;
     const recentStatusCount = data.thread?.data?.workStatus?.recentEntries?.length ?? 0;
     rightPanel.innerHTML = renderRightPanel({
+      selectedSection: data.selectedSection,
       selectedWorkspace: data.selectedWorkspace,
       selectedWorkspacePath: data.selectedWorkspacePath,
       selectedThreadId: data.selectedThreadId,
@@ -232,33 +351,23 @@ export function applyThreadSurfaceData(
       lastTurnAt: data.thread?.data?.thread?.lastTurnAt ?? "",
       profile: data.profile,
       capabilities: data.capabilities,
+      hall: data.hall,
+      neighbor: data.neighbor,
     });
   }
 }
 
-function renderLeftPanel(params: {
-  selectedWorkspace: string;
-  selectedThreadId: string;
-  workspaces: WorkspaceTreeItem[];
-}): string {
+function renderLeftPanel(data: ThreadSurfaceViewData): string {
   return [
     '<div class="sidebar-shell">',
-    renderSidebarTopNav(),
+    renderSidebarTopNav(data.selectedSection),
     '<section class="sidebar-list-shell">',
     '<header class="surface-panel__header sidebar-list-shell__header">',
-    '<p class="surface-panel__eyebrow">Workspaces</p>',
-    "<h2>Workspace Tree</h2>",
+    `<p class="surface-panel__eyebrow">${escapeHtml(renderSidebarEyebrow(data.selectedSection))}</p>`,
+    `<h2>${escapeHtml(renderSidebarTitle(data.selectedSection))}</h2>`,
     "</header>",
     '<div class="surface-panel__body workspace-list sidebar-list-shell__body">',
-    ...(params.workspaces.length === 0
-      ? ['<p class="empty-state">No workspace yet.</p>']
-      : params.workspaces.map((workspace) =>
-          renderWorkspaceGroup(
-            workspace,
-            workspace.name === params.selectedWorkspace,
-            params.selectedThreadId,
-          ),
-        )),
+    ...renderSidebarSectionContent(data),
     "</div>",
     "</section>",
     renderSidebarFooter(),
@@ -266,14 +375,22 @@ function renderLeftPanel(params: {
   ].join("");
 }
 
-function renderSidebarTopNav(): string {
+function renderSidebarTopNav(selectedSection: ThreadSurfaceSection): string {
   return [
     '<nav class="sidebar-top-nav" aria-label="workspace sections">',
-    '<button type="button" class="sidebar-top-nav__item is-selected">工作区</button>',
-    '<button type="button" class="sidebar-top-nav__item">基座</button>',
-    '<button type="button" class="sidebar-top-nav__item">邻居</button>',
+    renderSidebarTopNavItem("workspace", "工作区", selectedSection),
+    renderSidebarTopNavItem("base", "基座", selectedSection),
+    renderSidebarTopNavItem("neighbor", "邻居", selectedSection),
     "</nav>",
   ].join("");
+}
+
+function renderSidebarTopNavItem(
+  section: ThreadSurfaceSection,
+  label: string,
+  selectedSection: ThreadSurfaceSection,
+): string {
+  return `<button type="button" class="sidebar-top-nav__item${section === selectedSection ? " is-selected" : ""}" data-surface-nav-select="true" data-surface-nav="${section}">${escapeHtml(label)}</button>`;
 }
 
 function renderSidebarFooter(): string {
@@ -318,7 +435,114 @@ function renderWorkspaceGroup(
   ].join("");
 }
 
+function renderSidebarEyebrow(selectedSection: ThreadSurfaceSection): string {
+  if (selectedSection === "base") return "Capability Packs";
+  if (selectedSection === "neighbor") return "Neighbors";
+  return "Workspaces";
+}
+
+function renderSidebarTitle(selectedSection: ThreadSurfaceSection): string {
+  if (selectedSection === "base") return "Base";
+  if (selectedSection === "neighbor") return "Neighbor Nodes";
+  return "Workspace Tree";
+}
+
+function renderSidebarSectionContent(data: ThreadSurfaceViewData): string[] {
+  if (data.selectedSection === "base") {
+    return renderBaseSidebarContent(data.hall);
+  }
+  if (data.selectedSection === "neighbor") {
+    return renderNeighborSidebarContent(data.neighbor);
+  }
+  const workspaces = data.workspaceTree.data?.workspaces ?? [];
+  if (workspaces.length === 0) {
+    return ['<p class="empty-state">No workspace yet.</p>'];
+  }
+  return workspaces.map((workspace) =>
+    renderWorkspaceGroup(
+      workspace,
+      workspace.name === data.selectedWorkspace,
+      data.selectedThreadId,
+    ),
+  );
+}
+
+function renderBaseSidebarContent(hall: HallEnvelope | null): string[] {
+  const builtin = hall?.data?.packs?.builtin ?? [];
+  const user = hall?.data?.packs?.user ?? [];
+  const sites = hall?.data?.sites ?? [];
+  return [
+    renderStaticSidebarGroup(
+      "Builtin Packs",
+      builtin.map((entry) => renderStaticSidebarRow(entry.name || entry.id || "-", entry.version || "")),
+    ),
+    renderStaticSidebarGroup(
+      "User Packs",
+      user.map((entry) => renderStaticSidebarRow(entry.name || entry.id || "-", entry.version || "")),
+    ),
+    renderStaticSidebarGroup(
+      "Sites",
+      sites.map((entry) => renderStaticSidebarRow(entry.title || entry.id || "-", entry.kind || "")),
+    ),
+  ];
+}
+
+function renderNeighborSidebarContent(neighbor: NeighborEnvelope | null): string[] {
+  const entries = neighbor?.data?.neighbors ?? [];
+  if (entries.length === 0) {
+    return ['<p class="empty-state">No neighbor yet.</p>'];
+  }
+  return [
+    renderStaticSidebarGroup(
+      "Neighbor List",
+      entries.map((entry) =>
+        renderStaticSidebarRow(
+          entry.displayName || entry.nodeId || "-",
+          entry.unreadCount ? `${entry.unreadCount}` : entry.state || "",
+        ),
+      ),
+    ),
+  ];
+}
+
+function renderStaticSidebarGroup(label: string, rows: string[]): string {
+  return [
+    '<section class="workspace-group workspace-group--static">',
+    `<p class="workspace-row__meta workspace-group__label">${escapeHtml(label)}</p>`,
+    ...(rows.length > 0 ? rows : ['<p class="empty-state">Empty.</p>']),
+    "</section>",
+  ].join("");
+}
+
+function renderStaticSidebarRow(title: string, meta: string): string {
+  return [
+    '<div class="thread-row thread-row--static">',
+    `<span class="thread-row__title">${escapeHtml(title)}</span>`,
+    ...(meta.trim() ? [`<span class="workspace-row__meta">${escapeHtml(meta)}</span>`] : []),
+    "</div>",
+  ].join("");
+}
+
 function renderMiddlePanel(data: {
+  selectedSection: ThreadSurfaceSection;
+  selectedWorkspace: string;
+  selectedWorkspacePath: string;
+  selectedThreadId: string;
+  thread: ThreadEnvelope | null;
+  hall: HallEnvelope | null;
+  neighbor: NeighborEnvelope | null;
+  loadingError: string | null;
+}): string {
+  if (data.selectedSection === "base") {
+    return renderBaseMiddlePanel(data.hall, data.loadingError);
+  }
+  if (data.selectedSection === "neighbor") {
+    return renderNeighborMiddlePanel(data.neighbor, data.loadingError);
+  }
+  return renderWorkspaceMiddlePanel(data);
+}
+
+function renderWorkspaceMiddlePanel(data: {
   selectedWorkspace: string;
   selectedWorkspacePath: string;
   selectedThreadId: string;
@@ -386,7 +610,127 @@ function renderMiddlePanel(data: {
   ].join("");
 }
 
+function renderBaseMiddlePanel(hall: HallEnvelope | null, loadingError: string | null): string {
+  const org = hall?.data?.org;
+  const runtime = hall?.data?.runtime;
+  const sites = hall?.data?.sites ?? [];
+  const builtinCount = hall?.data?.packs?.builtin?.length ?? 0;
+  const userCount = hall?.data?.packs?.user?.length ?? 0;
+
+  return [
+    '<div class="thread-shell">',
+    '<header class="surface-panel__header thread-shell__header">',
+    '<p class="surface-panel__eyebrow">Base</p>',
+    '<h2>基座总览</h2>',
+    '<div class="thread-head-meta">',
+    `<span class="inline-chip">${escapeHtml(org?.name || "未配置组织")}</span>`,
+    `<span class="inline-chip inline-chip--muted">${escapeHtml(runtime?.summary?.status || "unknown")}</span>`,
+    "</div>",
+    "</header>",
+    '<div class="surface-panel__body thread-shell__body">',
+    '<section class="summary-stack">',
+    renderSummaryCard("组织", [
+      renderSummaryRow("名称", org?.name || "-"),
+      renderSummaryRow("城市", org?.taxRegion || "-"),
+      renderSummaryRow("统一社会信用代码", org?.uscc || "-"),
+    ]),
+    renderSummaryCard("运行时", [
+      renderSummaryRow("版本", runtime?.appVersion || "-"),
+      renderSummaryRow("状态", runtime?.summary?.status || "-"),
+      renderSummaryRow("告警", `${runtime?.summary?.warnings ?? 0}`),
+      renderSummaryRow("错误", `${runtime?.summary?.errors ?? 0}`),
+    ]),
+    renderSummaryCard("能力包", [
+      renderSummaryRow("Builtin", `${builtinCount}`),
+      renderSummaryRow("User", `${userCount}`),
+      renderSummaryRow("Sites", `${sites.length}`),
+    ]),
+    ...(loadingError ? [renderSummaryCard("异常", [renderSummaryRow("错误", loadingError)])] : []),
+    "</section>",
+    "</div>",
+    "</div>",
+  ].join("");
+}
+
+function renderNeighborMiddlePanel(neighbor: NeighborEnvelope | null, loadingError: string | null): string {
+  const entries = neighbor?.data?.mailbox?.entries ?? [];
+  return [
+    '<div class="thread-shell">',
+    '<header class="surface-panel__header thread-shell__header">',
+    '<p class="surface-panel__eyebrow">Neighbor</p>',
+    '<h2>邻居邮箱</h2>',
+    '<div class="thread-head-meta">',
+    `<span class="inline-chip">${neighbor?.data?.enabled ? "enabled" : "disabled"}</span>`,
+    `<span class="inline-chip inline-chip--muted">${escapeHtml(neighbor?.data?.self?.nodeId || "-")}</span>`,
+    "</div>",
+    "</header>",
+    '<div class="surface-panel__body thread-shell__body">',
+    '<section class="mailbox-list">',
+    ...(entries.length === 0
+      ? ['<p class="empty-state">No mailbox entries yet.</p>']
+      : entries.map((entry) => renderMailboxEntry(entry))),
+    ...(loadingError ? [`<p class="thread-error">${escapeHtml(loadingError)}</p>`] : []),
+    "</section>",
+    "</div>",
+    "</div>",
+  ].join("");
+}
+
+function renderMailboxEntry(entry: {
+  at?: string;
+  nodeId?: string;
+  direction?: string;
+  type?: string;
+  summary?: string;
+  unread?: boolean;
+}): string {
+  const classes = ["mailbox-entry"];
+  if ((entry.direction || "").trim() === "out") {
+    classes.push("mailbox-entry--out");
+  }
+  if ((entry.direction || "").trim() === "system") {
+    classes.push("mailbox-entry--system");
+  }
+  if (entry.unread) {
+    classes.push("mailbox-entry--unread");
+  }
+  return [
+    `<article class="${classes.join(" ")}">`,
+    '<div class="mailbox-entry__meta">',
+    `<span>${escapeHtml(entry.nodeId || "-")}</span>`,
+    `<span>${escapeHtml(entry.at || "-")}</span>`,
+    "</div>",
+    `<p class="mailbox-entry__summary">${escapeHtml(entry.summary || entry.type || "-")}</p>`,
+    "</article>",
+  ].join("");
+}
+
 function renderRightPanel(params: {
+  selectedSection: ThreadSurfaceSection;
+  selectedWorkspace: string;
+  selectedWorkspacePath: string;
+  selectedThreadId: string;
+  loadingError: string | null;
+  scheduleCount: number;
+  recentStatusCount: number;
+  writable: boolean;
+  waiting: boolean;
+  lastTurnAt: string;
+  profile: ProfileEnvelope | null;
+  capabilities: CapabilitiesEnvelope | null;
+  hall: HallEnvelope | null;
+  neighbor: NeighborEnvelope | null;
+}): string {
+  if (params.selectedSection === "base") {
+    return renderBaseRightPanel(params);
+  }
+  if (params.selectedSection === "neighbor") {
+    return renderNeighborRightPanel(params);
+  }
+  return renderWorkspaceRightPanel(params);
+}
+
+function renderWorkspaceRightPanel(params: {
   selectedWorkspace: string;
   selectedWorkspacePath: string;
   selectedThreadId: string;
@@ -436,6 +780,94 @@ function renderRightPanel(params: {
     "</div>",
     "</section>",
     "</div>",
+    "</div>",
+  ].join("");
+}
+
+function renderBaseRightPanel(params: {
+  selectedWorkspacePath: string;
+  profile: ProfileEnvelope | null;
+  capabilities: CapabilitiesEnvelope | null;
+  hall: HallEnvelope | null;
+}): string {
+  const runtime = params.hall?.data?.runtime;
+  const brainCapability = (params.capabilities?.data?.capabilities ?? []).find((entry) => entry.id === "brain");
+  const soulPath = params.profile?.data?.soul?.path ?? "";
+
+  return [
+    '<div class="observer-shell">',
+    '<header class="surface-panel__header observer-header">',
+    '<p class="surface-panel__eyebrow">Observer</p>',
+    "<h2>Base Rail</h2>",
+    "</header>",
+    '<div class="surface-panel__body observer-body observer-stack">',
+    '<section class="observer-section observer-section--shared">',
+    '<div class="observer-section__header"><h3>Shared</h3></div>',
+    '<div class="observer-rows">',
+    renderObserverRow("路径", params.selectedWorkspacePath || "-", "path"),
+    renderObserverRow("大脑模型", normalizeBrainLabel(brainCapability), "text"),
+    renderObserverRow("Soul", soulPath.trim() ? basenamePath(soulPath) : "未配置", soulPath.trim() ? "path" : "text"),
+    renderObserverRow("Runtime", runtime?.summary?.status || "-", "status"),
+    renderObserverRow("日志", runtime?.logPath || "-", runtime?.logPath ? "path" : "text"),
+    "</div>",
+    "</section>",
+    "</div>",
+    "</div>",
+  ].join("");
+}
+
+function renderNeighborRightPanel(params: {
+  selectedWorkspacePath: string;
+  neighbor: NeighborEnvelope | null;
+}): string {
+  const summary = params.neighbor?.data?.summary;
+  const self = params.neighbor?.data?.self;
+  return [
+    '<div class="observer-shell">',
+    '<header class="surface-panel__header observer-header">',
+    '<p class="surface-panel__eyebrow">Observer</p>',
+    "<h2>Neighbor Rail</h2>",
+    "</header>",
+    '<div class="surface-panel__body observer-body observer-stack">',
+    '<section class="observer-section observer-section--thread">',
+    '<div class="observer-section__header"><h3>This Thread</h3></div>',
+    '<div class="observer-rows">',
+    renderObserverRow("邻居功能", params.neighbor?.data?.enabled ? "启用中" : "未启用", "status"),
+    renderObserverRow("自身节点", self?.nodeId || "-", "text"),
+    renderObserverRow("公开身份", self?.publicIdentity || "-", "text"),
+    "</div>",
+    "</section>",
+    '<section class="observer-section observer-section--shared">',
+    '<div class="observer-section__header"><h3>Shared</h3></div>',
+    '<div class="observer-rows">',
+    renderObserverRow("路径", params.selectedWorkspacePath || "-", "path"),
+    renderObserverRow("未读", `${summary?.unreadCount ?? 0}`, "text"),
+    renderObserverRow("最近消息", summary?.lastMessageAt || "-", "text"),
+    renderObserverRow("最近探测", summary?.lastProbeAt || "-", "text"),
+    renderObserverRow("可达邻居", `${summary?.reachableCount ?? 0}`, "text"),
+    "</div>",
+    "</section>",
+    "</div>",
+    "</div>",
+  ].join("");
+}
+
+function renderSummaryCard(title: string, rows: string[]): string {
+  return [
+    '<section class="summary-card">',
+    `<h3 class="summary-card__title">${escapeHtml(title)}</h3>`,
+    '<div class="summary-card__rows">',
+    ...rows,
+    "</div>",
+    "</section>",
+  ].join("");
+}
+
+function renderSummaryRow(label: string, value: string): string {
+  return [
+    '<div class="summary-row">',
+    `<span class="summary-row__label">${escapeHtml(label)}</span>`,
+    `<span class="summary-row__value">${escapeHtml(value)}</span>`,
     "</div>",
   ].join("");
 }
@@ -501,6 +933,8 @@ async function loadWorkspaceSelectionState(params: {
     thread: null,
     profile: params.includeShared ? null : params.current.profile,
     capabilities: params.includeShared ? null : params.current.capabilities,
+    hall: params.includeShared ? null : params.current.hall,
+    neighbor: params.includeShared ? null : params.current.neighbor,
   };
 
   try {
@@ -514,6 +948,8 @@ async function loadWorkspaceSelectionState(params: {
     if (shared) {
       nextData.profile = shared.profile;
       nextData.capabilities = shared.capabilities;
+      nextData.hall = shared.hall;
+      nextData.neighbor = shared.neighbor;
     }
   } catch (error) {
     nextData.loadingError = error instanceof Error ? error.message : String(error);
@@ -537,8 +973,13 @@ async function loadThreadEnvelope(
 async function loadWorkspaceSharedSurfaces(
   bridge: ThreadSurfaceBridge,
   workspace: string,
-): Promise<{ profile: ProfileEnvelope; capabilities: CapabilitiesEnvelope }> {
-  const [profile, capabilities] = await Promise.all([
+): Promise<{
+  profile: ProfileEnvelope;
+  capabilities: CapabilitiesEnvelope;
+  hall: HallEnvelope;
+  neighbor: NeighborEnvelope;
+}> {
+  const [profile, capabilities, hall, neighbor] = await Promise.all([
     bridge.runCommand({
       command: "profile",
       workspace,
@@ -547,9 +988,17 @@ async function loadWorkspaceSharedSurfaces(
       command: "capabilities",
       workspace,
     } satisfies ThreadSurfaceRunCommandRequest) as Promise<CapabilitiesEnvelope>,
+    bridge.runCommand({
+      command: "hall",
+      workspace,
+    } satisfies ThreadSurfaceRunCommandRequest) as Promise<HallEnvelope>,
+    bridge.runCommand({
+      command: "neighbor",
+      workspace,
+    } satisfies ThreadSurfaceRunCommandRequest) as Promise<NeighborEnvelope>,
   ]);
 
-  return { profile, capabilities };
+  return { profile, capabilities, hall, neighbor };
 }
 
 function normalizeBrainLabel(
@@ -589,6 +1038,7 @@ function renderThreadSurface(
   activeSurfaceThreadKey = buildSurfaceThreadKey(data.selectedWorkspacePath, data.selectedThreadId);
   activeSurfaceData = data;
   applyThreadSurfaceData(documentLike, data);
+  bindThreadSurfaceNav(documentLike, bridge, data);
   bindThreadSurfaceSelection(documentLike, bridge, data);
   bindThreadComposer(documentLike, bridge, data);
 }
@@ -659,6 +1109,29 @@ export function bindThreadSurfaceSelection(
       const workspacePath = target.getAttribute?.("data-workspace-path") ?? "";
       const threadId = target.getAttribute?.("data-thread-id") ?? "";
       return handleThreadSelection(documentLike, bridge, data, workspaceName, workspacePath, threadId);
+    });
+  }
+}
+
+export function bindThreadSurfaceNav(
+  documentLike: HtmlDocumentLike,
+  bridge: ThreadSurfaceBridge,
+  data: ThreadSurfaceViewData,
+): void {
+  const navButtons = Array.from(documentLike.querySelectorAll?.('[data-surface-nav-select="true"]') ?? []);
+  for (const button of navButtons) {
+    const target = button as EventfulElementLike;
+    if (!target.addEventListener) continue;
+    target.addEventListener("click", (event) => {
+      event.preventDefault?.();
+      const nextSection = String(target.getAttribute?.("data-surface-nav") ?? "").trim() as ThreadSurfaceSection;
+      if (!nextSection || nextSection === data.selectedSection) {
+        return;
+      }
+      renderThreadSurface(documentLike, bridge, {
+        ...data,
+        selectedSection: nextSection,
+      });
     });
   }
 }
