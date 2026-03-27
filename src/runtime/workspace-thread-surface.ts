@@ -10,6 +10,7 @@ export interface WorkspaceThreadListItem {
   threadId: string;
   title: string;
   source: string;
+  writable: boolean;
   lastTurnAt: string;
 }
 
@@ -18,6 +19,7 @@ export interface WorkspaceThreadSummary {
   chatId: string;
   title: string;
   source: string;
+  writable: boolean;
   filePath: string;
   lastTurnAt: string;
 }
@@ -33,6 +35,7 @@ export interface WorkspaceCurrentThread {
   threadId: string;
   title: string;
   source: string;
+  writable: boolean;
   lastTurnAt: string;
   messages: WorkspaceThreadMessage[];
 }
@@ -98,6 +101,7 @@ export async function readWorkspaceThreadSurface(workspacePath: string): Promise
         threadId: thread.threadId,
         title: thread.title,
         source: thread.source,
+        writable: thread.writable,
         lastTurnAt: thread.lastTurnAt,
       })),
       currentThread,
@@ -242,6 +246,7 @@ function parseThreadSummary(filePath: string, content: string): WorkspaceThreadS
     chatId,
     title: deriveThreadTitle(frontMatter, filePath),
     source: deriveThreadSource(frontMatter, chatId),
+    writable: isThreadSourceWritable(deriveThreadSource(frontMatter, chatId)),
     filePath,
     lastTurnAt: turnHeaders.sort((a, b) => b.localeCompare(a))[0] ?? "",
   };
@@ -289,6 +294,7 @@ async function readCurrentThread(filePath: string, warnings: Diagnostic[]): Prom
       threadId,
       title: deriveThreadTitle(frontMatter, filePath),
       source: deriveThreadSource(frontMatter, chatId),
+      writable: isThreadSourceWritable(deriveThreadSource(frontMatter, chatId)),
       lastTurnAt: messages[0]?.at ?? "",
       messages,
     };
@@ -352,6 +358,10 @@ function deriveThreadSource(frontMatter: Record<string, string>, chatId: string)
   if (raw.startsWith("web:")) return "web";
   if (raw.startsWith("neighbor:")) return "neighbor";
   return "unknown";
+}
+
+export function isThreadSourceWritable(source: string): boolean {
+  return source === "web";
 }
 
 function deriveThreadStatusLabel(source: string): string {

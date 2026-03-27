@@ -1,7 +1,15 @@
 import { describe, expect, it } from "bun:test";
 import { buildReadonlySurfaceCliCommand } from "../src/electron/main.js";
-import { createReadonlySurfaceBridge, getReadonlySurfaceChannel } from "../src/electron/readonly-surface-bridge.js";
-import { startReadonlyThreadSurface } from "../src/electron/renderer.js";
+import {
+  createReadonlySurfaceBridge,
+  getReadonlySurfaceChannel,
+  getSendThreadInputChannel,
+} from "../src/electron/readonly-surface-bridge.js";
+import {
+  bindReadonlyThreadComposer,
+  bindReadonlyThreadSurfaceSelection,
+  startReadonlyThreadSurface,
+} from "../src/electron/renderer.js";
 
 describe("readonly thread surface host bridge slice", () => {
   it("invokes the shared readonly channel through the preload bridge", async () => {
@@ -10,12 +18,23 @@ describe("readonly thread surface host bridge slice", () => {
         return { channel, request };
       },
     };
-    const bridge = createReadonlySurfaceBridge(ipcRenderer as never, getReadonlySurfaceChannel());
+    const bridge = createReadonlySurfaceBridge(
+      ipcRenderer as never,
+      getReadonlySurfaceChannel(),
+      getSendThreadInputChannel(),
+    );
     expect(bridge.mode).toBe("live");
     await expect(bridge.runCommand({ command: "workspace-tree" })).resolves.toEqual({
       channel: "msgcode:readonly-run-command",
       request: { command: "workspace-tree" },
     });
+    await expect(
+      bridge.sendThreadInput({
+        workspacePath: "/tmp/family",
+        threadId: "thread-1",
+        text: "hello",
+      }),
+    ).resolves.toBeUndefined();
   });
 
   it("builds readonly surface cli invocations from the shared runtime entry", () => {
@@ -71,6 +90,7 @@ describe("readonly thread surface host bridge slice", () => {
     };
     const bridge = {
       mode: "live" as const,
+      async sendThreadInput() {},
       async runCommand(request: { command: string }) {
         if (request.command === "workspace-tree") {
           return {
@@ -83,6 +103,7 @@ describe("readonly thread surface host bridge slice", () => {
           data: {
             thread: {
               title: "hello",
+              writable: true,
               messages: [{ user: "u1", assistant: "a1" }],
             },
             schedules: [{ id: "s1" }],
@@ -95,7 +116,255 @@ describe("readonly thread surface host bridge slice", () => {
     await startReadonlyThreadSurface(documentLike, bridge);
 
     expect(panels.get('[data-surface-slot="workspace-tree"]')?.innerHTML).toContain("family");
-    expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("title: hello");
-    expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("schedules: 1");
+    expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("<h2>hello</h2>");
+    expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("bubble--user");
+    expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain('data-thread-composer="true"');
+    expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("定时任务");
+    expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain(">1<");
+  });
+
+  it("clears composer input on success and keeps it on failure", async () => {
+    const listeners = new Map<string, (event: { key?: string; shiftKey?: boolean; preventDefault?: () => void }) => void>();
+    const requests: Array<{ kind: "read" | "write"; request: unknown }> = [];
+    const input = {
+      textContent: null,
+      innerHTML: "",
+      value: "hello desktop",
+      disabled: false,
+      addEventListener(type: string, listener: (event: { key?: string; shiftKey?: boolean; preventDefault?: () => void }) => void) {
+        listeners.set(`input:${type}`, listener);
+      },
+    };
+    const button = {
+      textContent: null,
+      innerHTML: "",
+      disabled: false,
+      addEventListener(type: string, listener: (event: { key?: string; shiftKey?: boolean; preventDefault?: () => void }) => void) {
+        listeners.set(`button:${type}`, listener);
+      },
+    };
+    const error = {
+      textContent: "",
+      innerHTML: "",
+    };
+    const documentLike = {
+      open() {},
+      write() {},
+      close() {},
+      querySelector(selector: string) {
+        if (selector === '[data-thread-composer-input="true"]') return input;
+        if (selector === '[data-thread-composer-send="true"]') return button;
+        if (selector === '[data-thread-composer-error="true"]') return error;
+        return null;
+      },
+    };
+
+    const sent: Array<{ workspacePath: string; threadId: string; text: string }> = [];
+    bindReadonlyThreadComposer(documentLike, {
+      mode: "live",
+      async runCommand(request: unknown) {
+        requests.push({ kind: "read", request });
+        return {
+          data: {
+            thread: {
+              writable: true,
+              title: "hello",
+              messages: [{ user: "hello desktop", assistant: "done" }],
+            },
+          },
+        };
+      },
+      async sendThreadInput(request) {
+        requests.push({ kind: "write", request });
+        sent.push(request);
+      },
+    }, {
+      selectedWorkspace: "family",
+      selectedWorkspacePath: "/tmp/family",
+      selectedThreadId: "thread-web",
+      workspaceTree: {},
+      thread: {
+        data: {
+          thread: {
+            writable: true,
+          },
+        },
+      },
+    });
+
+    await listeners.get("input:keydown")?.({
+      key: "Enter",
+      shiftKey: false,
+      preventDefault() {},
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(sent).toEqual([{ workspacePath: "/tmp/family", threadId: "thread-web", text: "hello desktop" }]);
+    expect(input.value).toBe("");
+    expect(requests).toContainEqual({
+      kind: "read",
+      request: { command: "thread", workspace: "family", threadId: "thread-web" },
+    });
+
+    input.value = "keep me";
+    const failingBridge = {
+      mode: "live" as const,
+      async runCommand() {
+        return {};
+      },
+      async sendThreadInput() {
+        throw new Error("write failed");
+      },
+    };
+    bindReadonlyThreadComposer(documentLike, failingBridge, {
+      selectedWorkspace: "family",
+      selectedWorkspacePath: "/tmp/family",
+      selectedThreadId: "thread-web",
+      workspaceTree: {},
+      thread: {
+        data: {
+          thread: {
+            writable: true,
+          },
+        },
+      },
+    });
+
+    await listeners.get("button:click")?.({
+      preventDefault() {},
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(input.value).toBe("keep me");
+    expect(error.textContent).toBe("write failed");
+  });
+
+  it("reloads thread surface when workspace or thread selection changes", async () => {
+    const panels = new Map<string, { textContent: string | null; innerHTML: string }>([
+      ['[data-surface-slot="workspace-tree"]', { textContent: null, innerHTML: "" }],
+      ['[data-surface-slot="thread"]', { textContent: null, innerHTML: "" }],
+      ['[data-surface-slot="thread-rail"]', { textContent: null, innerHTML: "" }],
+    ]);
+    const makeButton = (attrs: Record<string, string>) => {
+      const listeners = new Map<string, (event: { preventDefault?: () => void }) => void>();
+      return {
+        textContent: null,
+        innerHTML: "",
+        getAttribute(name: string) {
+          return attrs[name] ?? null;
+        },
+        addEventListener(type: string, listener: (event: { preventDefault?: () => void }) => void) {
+          listeners.set(type, listener);
+        },
+        async click() {
+          await listeners.get("click")?.({ preventDefault() {} });
+        },
+      };
+    };
+    const workspaceButton = makeButton({
+      "data-workspace-name": "other",
+      "data-workspace-path": "/tmp/other",
+    });
+    const threadButton = makeButton({
+      "data-workspace-name": "family",
+      "data-workspace-path": "/tmp/family",
+      "data-thread-id": "thread-2",
+    });
+    const documentLike = {
+      open() {},
+      write() {},
+      close() {},
+      querySelector(selector: string) {
+        return panels.get(selector) ?? null;
+      },
+      querySelectorAll(selector: string) {
+        if (selector === '[data-workspace-select="true"]') return [workspaceButton];
+        if (selector === '[data-thread-select="true"]') return [threadButton];
+        return [];
+      },
+    };
+    const requests: Array<{ command: string; workspace?: string; threadId?: string }> = [];
+    const bridge = {
+      mode: "live" as const,
+      async sendThreadInput() {},
+      async runCommand(request: { command: string; workspace?: string; threadId?: string }) {
+        requests.push(request);
+        if (request.workspace === "other") {
+          return {
+            data: {
+              thread: {
+                title: "other thread",
+                writable: false,
+                messages: [{ assistant: "from other" }],
+              },
+              schedules: [],
+              workStatus: { recentEntries: [] },
+            },
+          };
+        }
+        return {
+          data: {
+            thread: {
+              title: "family thread 2",
+              writable: true,
+              messages: [{ user: "from family" }],
+            },
+            schedules: [],
+            workStatus: { recentEntries: [] },
+          },
+        };
+      },
+    };
+
+    bindReadonlyThreadSurfaceSelection(
+      documentLike,
+      bridge,
+      {
+        selectedWorkspace: "family",
+        selectedWorkspacePath: "/tmp/family",
+        selectedThreadId: "thread-1",
+        workspaceTree: {
+          data: {
+            workspaces: [
+              {
+                name: "family",
+                path: "/tmp/family",
+                threads: [
+                  { threadId: "thread-1", title: "family thread 1" },
+                  { threadId: "thread-2", title: "family thread 2" },
+                ],
+              },
+              {
+                name: "other",
+                path: "/tmp/other",
+                threads: [{ threadId: "other-thread-1", title: "other thread" }],
+              },
+            ],
+          },
+        },
+        thread: null,
+        loadingError: null,
+      },
+    );
+
+    await workspaceButton.click();
+    await Promise.resolve();
+    expect(requests).toContainEqual({
+      command: "thread",
+      workspace: "other",
+      threadId: "other-thread-1",
+    });
+    expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("<h2>other thread</h2>");
+
+    await threadButton.click();
+    await Promise.resolve();
+    expect(requests).toContainEqual({
+      command: "thread",
+      workspace: "family",
+      threadId: "thread-2",
+    });
+    expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("<h2>family thread 2</h2>");
   });
 });

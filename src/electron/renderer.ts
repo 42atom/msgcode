@@ -9,11 +9,13 @@ export interface HtmlDocumentLike {
   write(content: string): void;
   close(): void;
   querySelector(selector: string): ElementLike | null;
+  querySelectorAll?(selector: string): ArrayLike<ElementLike>;
 }
 
 export interface ElementLike {
   textContent: string | null;
   innerHTML: string;
+  getAttribute?(name: string): string | null;
 }
 
 declare const document: HtmlDocumentLike;
@@ -41,6 +43,7 @@ interface ThreadEnvelope {
     threadId?: string;
     thread?: {
       title?: string;
+      writable?: boolean;
       messages?: Array<{ user?: string; assistant?: string }>;
     } | null;
     workStatus?: {
@@ -48,6 +51,15 @@ interface ThreadEnvelope {
     };
     schedules?: unknown[];
   };
+}
+
+interface ReadonlyThreadSurfaceViewData {
+  selectedWorkspace: string;
+  selectedWorkspacePath: string;
+  selectedThreadId: string;
+  workspaceTree: WorkspaceTreeEnvelope;
+  thread: ThreadEnvelope | null;
+  loadingError: string | null;
 }
 
 export function bootstrapReadonlyThreadSurface(documentLike: HtmlDocumentLike): void {
@@ -66,6 +78,7 @@ export async function loadReadonlyThreadSurface(
   bridge: ReadonlySurfaceBridge,
 ): Promise<{
   selectedWorkspace: string;
+  selectedWorkspacePath: string;
   selectedThreadId: string;
   workspaceTree: WorkspaceTreeEnvelope;
   thread: ThreadEnvelope | null;
@@ -81,6 +94,7 @@ export async function loadReadonlyThreadSurface(
   if (!selectedWorkspaceItem || !selectedThreadId) {
     return {
       selectedWorkspace: selectedWorkspaceItem?.name ?? "",
+      selectedWorkspacePath: selectedWorkspaceItem?.path ?? "",
       selectedThreadId,
       workspaceTree,
       thread: null,
@@ -95,6 +109,7 @@ export async function loadReadonlyThreadSurface(
 
   return {
     selectedWorkspace: selectedWorkspaceItem.name,
+    selectedWorkspacePath: selectedWorkspaceItem.path,
     selectedThreadId,
     workspaceTree,
     thread,
@@ -103,53 +118,291 @@ export async function loadReadonlyThreadSurface(
 
 export function applyReadonlyThreadSurfaceData(
   documentLike: HtmlDocumentLike,
-  data: {
-    selectedWorkspace: string;
-    selectedThreadId: string;
-    workspaceTree: WorkspaceTreeEnvelope;
-    thread: ThreadEnvelope | null;
-    loadingError: string | null;
-  },
+  data: ReadonlyThreadSurfaceViewData,
 ): void {
   const workspacePanel = documentLike.querySelector('[data-surface-slot="workspace-tree"]');
   if (workspacePanel) {
     const workspaces = data.workspaceTree.data?.workspaces ?? [];
-    workspacePanel.innerHTML = [
-      "<h2>Workspace Tree</h2>",
-      ...workspaces.map(
-        (item) =>
-          `<p>${escapeHtml(item.name)}${item.threads.length > 0 ? ` (${item.threads.length})` : ""}</p>`,
-      ),
-    ].join("");
+    workspacePanel.innerHTML = renderWorkspacePanel({
+      selectedWorkspace: data.selectedWorkspace,
+      selectedThreadId: data.selectedThreadId,
+      workspaces,
+    });
   }
 
   const threadPanel = documentLike.querySelector('[data-surface-slot="thread"]');
   if (threadPanel) {
-    const title = data.thread?.data?.thread?.title ?? "No thread selected";
-    const messages = data.thread?.data?.thread?.messages ?? [];
-    const latest = messages[0];
-    threadPanel.innerHTML = [
-      "<h2>Thread</h2>",
-      `<p>selectedWorkspace: ${escapeHtml(data.selectedWorkspace || "-")}</p>`,
-      `<p>selectedThreadId: ${escapeHtml(data.selectedThreadId || "-")}</p>`,
-      `<p>title: ${escapeHtml(title)}</p>`,
-      `<p>latestUser: ${escapeHtml(latest?.user ?? "-")}</p>`,
-      `<p>latestAssistant: ${escapeHtml(latest?.assistant ?? "-")}</p>`,
-      `<p>loadingError: ${escapeHtml(data.loadingError ?? "No loading error")}</p>`,
-    ].join("");
+    threadPanel.innerHTML = renderThreadPanel(data);
   }
 
   const railPanel = documentLike.querySelector('[data-surface-slot="thread-rail"]');
   if (railPanel) {
     const scheduleCount = data.thread?.data?.schedules?.length ?? 0;
     const recentStatusCount = data.thread?.data?.workStatus?.recentEntries?.length ?? 0;
-    railPanel.innerHTML = [
-      "<h2>Thread Rail</h2>",
-      `<p>schedules: ${scheduleCount}</p>`,
-      `<p>recentStatus: ${recentStatusCount}</p>`,
-      '<p><a href="#settings">Settings</a></p>',
-    ].join("");
+    railPanel.innerHTML = renderRailPanel({
+      selectedWorkspace: data.selectedWorkspace,
+      selectedWorkspacePath: data.selectedWorkspacePath,
+      loadingError: data.loadingError,
+      scheduleCount,
+      recentStatusCount,
+      writable: data.thread?.data?.thread?.writable === true,
+    });
   }
+}
+
+function renderWorkspacePanel(params: {
+  selectedWorkspace: string;
+  selectedThreadId: string;
+  workspaces: WorkspaceTreeItem[];
+}): string {
+  return [
+    '<header class="surface-panel__header">',
+    '<p class="surface-panel__eyebrow">Workspaces</p>',
+    "<h2>Workspace Tree</h2>",
+    "</header>",
+    '<div class="surface-panel__body workspace-list">',
+    ...(params.workspaces.length === 0
+      ? ['<p class="empty-state">No workspace yet.</p>']
+      : params.workspaces.map((workspace) =>
+          renderWorkspaceGroup(
+            workspace,
+            workspace.name === params.selectedWorkspace,
+            params.selectedThreadId,
+          ),
+        )),
+    "</div>",
+  ].join("");
+}
+
+function renderWorkspaceGroup(
+  workspace: WorkspaceTreeItem,
+  selected: boolean,
+  selectedThreadId: string,
+): string {
+  return [
+    `<section class="workspace-group${selected ? " is-selected" : ""}">`,
+    `<button type="button" class="workspace-row${selected ? " is-selected" : ""}" data-workspace-select="true" data-workspace-name="${escapeHtml(workspace.name)}" data-workspace-path="${escapeHtml(workspace.path)}">`,
+    `<span class="workspace-row__title">${escapeHtml(workspace.name)}</span>`,
+    `<span class="workspace-row__meta">${workspace.threads.length} thread${workspace.threads.length === 1 ? "" : "s"}</span>`,
+    "</button>",
+    ...(workspace.threads.length > 0
+      ? [
+          '<div class="thread-list">',
+          ...workspace.threads.map((thread) => {
+            const classes = ["thread-row"];
+            if (selected && thread.threadId === selectedThreadId) {
+              classes.push("is-selected");
+            }
+            return [
+              `<button type="button" class="${classes.join(" ")}" data-thread-select="true" data-workspace-name="${escapeHtml(workspace.name)}" data-workspace-path="${escapeHtml(workspace.path)}" data-thread-id="${escapeHtml(thread.threadId)}">`,
+              `<span class="thread-row__title">${escapeHtml(thread.title)}</span>`,
+              "</button>",
+            ].join("");
+          }),
+          "</div>",
+        ]
+      : []),
+    "</section>",
+  ].join("");
+}
+
+function renderThreadPanel(data: {
+  selectedWorkspace: string;
+  selectedThreadId: string;
+  thread: ThreadEnvelope | null;
+  loadingError: string | null;
+}): string {
+  const title = data.thread?.data?.thread?.title ?? "No thread selected";
+  const writable = data.thread?.data?.thread?.writable === true;
+  const messages = [...(data.thread?.data?.thread?.messages ?? [])].reverse();
+
+  return [
+    '<header class="surface-panel__header">',
+    '<p class="surface-panel__eyebrow">Current Thread</p>',
+    `<h2>${escapeHtml(title)}</h2>`,
+    '<div class="thread-head-meta">',
+    `<span class="inline-chip">${escapeHtml(data.selectedWorkspace || "-")}</span>`,
+    `<span class="inline-chip${writable ? "" : " inline-chip--muted"}">${writable ? "writable" : "readonly"}</span>`,
+    `<span class="inline-chip inline-chip--muted">${escapeHtml(data.selectedThreadId || "-")}</span>`,
+    "</div>",
+    "</header>",
+    '<div class="surface-panel__body thread-stage">',
+    '<div class="message-list-host">',
+    ...(messages.length === 0
+      ? ['<p class="empty-state">No messages yet.</p>']
+      : messages.flatMap((message) => {
+          const rows: string[] = [];
+          if ((message.user || "").trim()) {
+            rows.push(`<article class="bubble bubble--user">${escapeHtml(message.user || "")}</article>`);
+          }
+          if ((message.assistant || "").trim()) {
+            rows.push(`<article class="bubble bubble--agent">${escapeHtml(message.assistant || "")}</article>`);
+          }
+          return rows;
+        })),
+    ...(data.loadingError
+      ? [`<p class="thread-error">Loading error: ${escapeHtml(data.loadingError)}</p>`]
+      : []),
+    "</div>",
+    ...(writable
+      ? [
+          '<div class="thread-composer" data-thread-composer="true">',
+          '  <input type="text" class="thread-composer__input" data-thread-composer-input="true" placeholder="Ask msgcode" />',
+          '  <button type="button" class="thread-composer__send" data-thread-composer-send="true">Send</button>',
+          '  <p class="thread-composer__error" data-thread-composer-error="true"></p>',
+          "</div>",
+        ]
+      : []),
+    "</div>",
+  ].join("");
+}
+
+function renderRailPanel(params: {
+  selectedWorkspace: string;
+  selectedWorkspacePath: string;
+  loadingError: string | null;
+  scheduleCount: number;
+  recentStatusCount: number;
+  writable: boolean;
+}): string {
+  return [
+    '<header class="surface-panel__header">',
+    '<p class="surface-panel__eyebrow">Observer</p>',
+    "<h2>Thread Rail</h2>",
+    "</header>",
+    '<div class="surface-panel__body observer-stack">',
+    '<section class="observer-section">',
+    '<div class="observer-section__header"><h3>This Thread</h3></div>',
+    '<div class="observer-rows">',
+    renderObserverRow("状态", params.writable ? "可写" : "只读"),
+    renderObserverRow("最近事件", `${params.recentStatusCount}`),
+    ...(params.loadingError ? [renderObserverRow("异常", params.loadingError)] : []),
+    "</div>",
+    "</section>",
+    '<section class="observer-section">',
+    '<div class="observer-section__header"><h3>Shared</h3></div>',
+    '<div class="observer-rows">',
+    renderObserverRow("工作区", params.selectedWorkspace || "-"),
+    renderObserverRow("路径", params.selectedWorkspacePath || "-"),
+    renderObserverRow("定时任务", `${params.scheduleCount}`),
+    "</div>",
+    "</section>",
+    "</div>",
+  ].join("");
+}
+
+function renderObserverRow(label: string, value: string): string {
+  return [
+    '<div class="observer-row">',
+    `<span class="observer-row__label">${escapeHtml(label)}</span>`,
+    `<span class="observer-row__value">${escapeHtml(value)}</span>`,
+    "</div>",
+  ].join("");
+}
+
+async function loadThreadEnvelope(
+  bridge: ReadonlySurfaceBridge,
+  workspace: string,
+  threadId: string,
+): Promise<ThreadEnvelope> {
+  return (await bridge.runCommand({
+    command: "thread",
+    workspace,
+    threadId,
+  } satisfies ReadonlySurfaceRunCommandRequest)) as ThreadEnvelope;
+}
+
+function renderReadonlyThreadSurface(
+  documentLike: HtmlDocumentLike,
+  bridge: ReadonlySurfaceBridge,
+  data: ReadonlyThreadSurfaceViewData,
+): void {
+  applyReadonlyThreadSurfaceData(documentLike, data);
+  bindReadonlyThreadSurfaceSelection(documentLike, bridge, data);
+  bindReadonlyThreadComposer(documentLike, bridge, data);
+}
+
+export function bindReadonlyThreadSurfaceSelection(
+  documentLike: HtmlDocumentLike,
+  bridge: ReadonlySurfaceBridge,
+  data: ReadonlyThreadSurfaceViewData,
+): void {
+  const workspaceButtons = Array.from(documentLike.querySelectorAll?.('[data-workspace-select="true"]') ?? []);
+  const threadButtons = Array.from(documentLike.querySelectorAll?.('[data-thread-select="true"]') ?? []);
+
+  for (const button of workspaceButtons) {
+    const target = button as EventfulElementLike;
+    if (!target.addEventListener) continue;
+    target.addEventListener("click", (event) => {
+      event.preventDefault?.();
+      const workspaceName = target.getAttribute?.("data-workspace-name") ?? "";
+      const workspacePath = target.getAttribute?.("data-workspace-path") ?? "";
+      void handleWorkspaceSelection(documentLike, bridge, data, workspaceName, workspacePath);
+    });
+  }
+
+  for (const button of threadButtons) {
+    const target = button as EventfulElementLike;
+    if (!target.addEventListener) continue;
+    target.addEventListener("click", (event) => {
+      event.preventDefault?.();
+      const workspaceName = target.getAttribute?.("data-workspace-name") ?? "";
+      const workspacePath = target.getAttribute?.("data-workspace-path") ?? "";
+      const threadId = target.getAttribute?.("data-thread-id") ?? "";
+      void handleThreadSelection(documentLike, bridge, data, workspaceName, workspacePath, threadId);
+    });
+  }
+}
+
+async function handleWorkspaceSelection(
+  documentLike: HtmlDocumentLike,
+  bridge: ReadonlySurfaceBridge,
+  data: ReadonlyThreadSurfaceViewData,
+  workspaceName: string,
+  workspacePath: string,
+): Promise<void> {
+  const workspace = (data.workspaceTree.data?.workspaces ?? []).find(
+    (item) => item.name === workspaceName && item.path === workspacePath,
+  );
+  const nextThreadId = workspace?.threads[0]?.threadId ?? "";
+  const nextData: ReadonlyThreadSurfaceViewData = {
+    ...data,
+    selectedWorkspace: workspaceName,
+    selectedWorkspacePath: workspacePath,
+    selectedThreadId: nextThreadId,
+    loadingError: null,
+    thread: null,
+  };
+  try {
+    nextData.thread = nextThreadId ? await loadThreadEnvelope(bridge, workspaceName, nextThreadId) : null;
+  } catch (error) {
+    nextData.loadingError = error instanceof Error ? error.message : String(error);
+  }
+  renderReadonlyThreadSurface(documentLike, bridge, nextData);
+}
+
+async function handleThreadSelection(
+  documentLike: HtmlDocumentLike,
+  bridge: ReadonlySurfaceBridge,
+  data: ReadonlyThreadSurfaceViewData,
+  workspaceName: string,
+  workspacePath: string,
+  threadId: string,
+): Promise<void> {
+  const nextData: ReadonlyThreadSurfaceViewData = {
+    ...data,
+    selectedWorkspace: workspaceName,
+    selectedWorkspacePath: workspacePath,
+    selectedThreadId: threadId,
+    loadingError: null,
+    thread: null,
+  };
+  try {
+    nextData.thread = threadId ? await loadThreadEnvelope(bridge, workspaceName, threadId) : null;
+  } catch (error) {
+    nextData.loadingError = error instanceof Error ? error.message : String(error);
+  }
+  renderReadonlyThreadSurface(documentLike, bridge, nextData);
 }
 
 function escapeHtml(value: string): string {
@@ -168,19 +421,91 @@ export async function startReadonlyThreadSurface(
   bootstrapReadonlyThreadSurface(documentLike);
   try {
     const data = await loadReadonlyThreadSurface(bridge);
-    applyReadonlyThreadSurfaceData(documentLike, {
+    renderReadonlyThreadSurface(documentLike, bridge, {
       ...data,
       loadingError: null,
     });
   } catch (error) {
-    applyReadonlyThreadSurfaceData(documentLike, {
+    renderReadonlyThreadSurface(documentLike, bridge, {
       selectedWorkspace: "",
+      selectedWorkspacePath: "",
       selectedThreadId: "",
       workspaceTree: {},
       thread: null,
       loadingError: error instanceof Error ? error.message : String(error),
     });
   }
+}
+
+interface EventfulElementLike extends ElementLike {
+  value?: string;
+  disabled?: boolean;
+  addEventListener?: (type: string, listener: (event: { key?: string; shiftKey?: boolean; preventDefault?: () => void }) => void) => void;
+}
+
+export function bindReadonlyThreadComposer(
+  documentLike: HtmlDocumentLike,
+  bridge: ReadonlySurfaceBridge,
+  data: ReadonlyThreadSurfaceViewData,
+): void {
+  if (data.thread?.data?.thread?.writable !== true) {
+    return;
+  }
+
+  const input = documentLike.querySelector('[data-thread-composer-input="true"]') as EventfulElementLike | null;
+  const button = documentLike.querySelector('[data-thread-composer-send="true"]') as EventfulElementLike | null;
+  const error = documentLike.querySelector('[data-thread-composer-error="true"]');
+  if (!input?.addEventListener || !button?.addEventListener) {
+    return;
+  }
+
+  let sending = false;
+  const submit = async (): Promise<void> => {
+    if (sending) return;
+    const text = String(input.value ?? "").trim();
+    if (!text) return;
+    sending = true;
+    input.disabled = true;
+    button.disabled = true;
+    if (error) {
+      error.textContent = "";
+    }
+    try {
+      await bridge.sendThreadInput({
+        workspacePath: data.selectedWorkspacePath,
+        threadId: data.selectedThreadId,
+        text,
+      });
+      input.value = "";
+      const refreshedThread = await loadThreadEnvelope(bridge, data.selectedWorkspace, data.selectedThreadId);
+      const nextData = {
+        ...data,
+        thread: refreshedThread,
+        loadingError: null,
+      };
+      renderReadonlyThreadSurface(documentLike, bridge, nextData);
+    } catch (submitError) {
+      if (error) {
+        error.textContent = submitError instanceof Error ? submitError.message : String(submitError);
+      }
+    } finally {
+      sending = false;
+      input.disabled = false;
+      button.disabled = false;
+    }
+  };
+
+  input.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" || event.shiftKey) {
+      return;
+    }
+    event.preventDefault?.();
+    void submit();
+  });
+  button.addEventListener("click", (event) => {
+    event.preventDefault?.();
+    void submit();
+  });
 }
 
 if (typeof globalThis === "object" && "document" in globalThis) {

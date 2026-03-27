@@ -149,6 +149,7 @@ describe("appliance thread contract", () => {
     expect(payload.data.threadId).toBe("thread-web");
     expect(payload.data.thread.threadId).toBe("thread-web");
     expect(payload.data.thread.title).toBe("家庭网页线程");
+    expect(payload.data.thread.writable).toBe(true);
     expect(payload.data.thread.messages[0].user).toContain("今天为什么没有提醒我");
     expect(payload.data.people.count).toBe(2);
     expect(payload.data.workStatus.updatedAt).toBe("2026-03-21T08:00:00.000Z");

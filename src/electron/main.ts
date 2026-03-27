@@ -4,9 +4,12 @@ import { spawn } from "node:child_process";
 import { resolveRuntimeEntry } from "../runtime/runtime-entry.js";
 import {
   buildReadonlySurfaceCliArgs,
+  getSendThreadInputChannel,
   getReadonlySurfaceChannel,
   type ReadonlySurfaceRunCommandRequest,
+  type SendThreadInputRequest,
 } from "./readonly-surface-bridge.js";
+import { sendThreadInput as sendThreadInputFromRuntime } from "../runtime/thread-input.js";
 
 export interface ElectronRuntimePaths {
   preloadPath: string;
@@ -90,6 +93,12 @@ export async function runReadonlySurfaceCommand(
   });
 }
 
+export async function runSendThreadInput(
+  request: SendThreadInputRequest,
+): Promise<void> {
+  await sendThreadInputFromRuntime(request);
+}
+
 export async function createMainWindow(entryModuleUrl = import.meta.url) {
   const { BrowserWindow } = await import("electron");
   const { preloadPath, rendererEntryUrl } = resolveElectronRuntimePaths(entryModuleUrl);
@@ -128,6 +137,9 @@ export async function startElectronRuntime(entryModuleUrl = import.meta.url): Pr
   await app.whenReady();
   ipcMain.handle(getReadonlySurfaceChannel(), async (_event, request: ReadonlySurfaceRunCommandRequest) => {
     return await runReadonlySurfaceCommand(request);
+  });
+  ipcMain.handle(getSendThreadInputChannel(), async (_event, request: SendThreadInputRequest) => {
+    await runSendThreadInput(request);
   });
   await openWindow();
 

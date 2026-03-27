@@ -163,8 +163,12 @@ describe("appliance threads contract", () => {
     expect(payload.data.threads[0].threadId).toBe("thread-feishu");
     expect(payload.data.threads[0].title).toBe("接娃主线");
     expect(payload.data.threads[0].source).toBe("feishu");
+    expect(payload.data.threads[0].writable).toBe(false);
+    expect(payload.data.threads[1].threadId).toBe("thread-web");
+    expect(payload.data.threads[1].writable).toBe(true);
     expect(payload.data.currentThread.threadId).toBe("thread-feishu");
     expect(payload.data.currentThread.title).toBe("接娃主线");
+    expect(payload.data.currentThread.writable).toBe(false);
     expect(payload.data.currentThread.messages[0].user).toContain("我在门口准备好了");
     expect(payload.data.people.count).toBe(2);
     expect(payload.data.workStatus.updatedAt).toBe("2026-03-21T08:00:00.000Z");

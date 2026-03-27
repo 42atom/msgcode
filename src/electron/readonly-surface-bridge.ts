@@ -1,5 +1,11 @@
 export type ReadonlySurfaceCommand = "workspace-tree" | "thread";
 
+export interface SendThreadInputRequest {
+  workspacePath: string;
+  threadId: string;
+  text: string;
+}
+
 export interface ReadonlySurfaceWorkspaceTreeRequest {
   command: "workspace-tree";
 }
@@ -17,10 +23,11 @@ export type ReadonlySurfaceRunCommandRequest =
 export interface ReadonlySurfaceBridge {
   mode: "live";
   runCommand(request: ReadonlySurfaceRunCommandRequest): Promise<unknown>;
+  sendThreadInput(request: SendThreadInputRequest): Promise<void>;
 }
 
 export interface IpcInvokeLike {
-  invoke(channel: string, request: ReadonlySurfaceRunCommandRequest): Promise<unknown>;
+  invoke(channel: string, request: unknown): Promise<unknown>;
 }
 
 export function buildReadonlySurfaceCliArgs(request: ReadonlySurfaceRunCommandRequest): string[] {
@@ -52,14 +59,22 @@ export function getReadonlySurfaceChannel(): "msgcode:readonly-run-command" {
   return "msgcode:readonly-run-command";
 }
 
+export function getSendThreadInputChannel(): "msgcode:thread-send-input" {
+  return "msgcode:thread-send-input";
+}
+
 export function createReadonlySurfaceBridge(
   ipcInvoker: IpcInvokeLike,
-  channel = getReadonlySurfaceChannel(),
+  readChannel = getReadonlySurfaceChannel(),
+  writeChannel = getSendThreadInputChannel(),
 ): ReadonlySurfaceBridge {
   return {
     mode: "live",
     async runCommand(request: ReadonlySurfaceRunCommandRequest): Promise<unknown> {
-      return await ipcInvoker.invoke(channel, request);
+      return await ipcInvoker.invoke(readChannel, request);
+    },
+    async sendThreadInput(request: SendThreadInputRequest): Promise<void> {
+      await ipcInvoker.invoke(writeChannel, request);
     },
   };
 }

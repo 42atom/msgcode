@@ -34,7 +34,7 @@ describe("readonly thread surface src implementation", () => {
       entryPoint: "window.msgcodeReadonlySurface.runCommand",
       purpose: "future-host-bridge",
     });
-    expect(chrome.blockedActions).toEqual(["archive", "new chat", "composer", "send"]);
+    expect(chrome.blockedActions).toEqual(["archive", "new chat"]);
     expect(Object.keys(chrome.state).sort()).toEqual([
       "loadingError",
       "selectedThreadId",
@@ -42,6 +42,9 @@ describe("readonly thread surface src implementation", () => {
     ]);
 
     const markup = renderReadonlyThreadSurfaceMarkup(chrome);
+    expect(markup).toContain('class="left-panel"');
+    expect(markup).toContain('class="middle-panel"');
+    expect(markup).toContain('class="right-panel"');
     expect(markup).toContain('data-surface-slot="workspace-tree"');
     expect(markup).toContain('data-surface-slot="thread"');
     expect(markup).toContain('data-surface-slot="thread-rail"');
@@ -50,8 +53,5 @@ describe("readonly thread surface src implementation", () => {
     expect(markup).toContain('href="#settings"');
     expect(markup).not.toContain("archive");
     expect(markup).not.toContain("new chat");
-    expect(markup).not.toContain("composer");
-    expect(markup).not.toContain("send");
   });
 });
-
