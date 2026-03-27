@@ -863,4 +863,124 @@ describe("readonly thread surface host bridge slice", () => {
     expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("邻居邮箱");
     expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("Neighbor Rail");
   });
+
+  it("toggles right rail sections without touching runtime state", async () => {
+    const panels = new Map<string, { textContent: string | null; innerHTML: string }>();
+    const makeButton = (attrs: Record<string, string>) => {
+      const listeners = new Map<string, (event: { preventDefault?: () => void }) => void>();
+      return {
+        textContent: null,
+        innerHTML: "",
+        getAttribute(name: string) {
+          return attrs[name] ?? null;
+        },
+        addEventListener(type: string, listener: (event: { preventDefault?: () => void }) => void) {
+          listeners.set(type, listener);
+        },
+        async click() {
+          await listeners.get("click")?.({ preventDefault() {} });
+        },
+      };
+    };
+    const threadToggle = makeButton({
+      "data-observer-toggle": "true",
+      "data-observer-scope": "thread",
+    });
+    const sharedToggle = makeButton({
+      "data-observer-toggle": "true",
+      "data-observer-scope": "shared",
+    });
+    const documentLike = {
+      open() {},
+      write() {
+        panels.set('[data-surface-slot="workspace-tree"]', { textContent: null, innerHTML: "" });
+        panels.set('[data-surface-slot="thread"]', { textContent: null, innerHTML: "" });
+        panels.set('[data-surface-slot="thread-rail"]', { textContent: null, innerHTML: "" });
+      },
+      close() {},
+      querySelector(selector: string) {
+        return panels.get(selector) ?? null;
+      },
+      querySelectorAll(selector: string) {
+        if (selector === '[data-observer-toggle="true"]') return [threadToggle, sharedToggle];
+        return [];
+      },
+    };
+    const bridge = {
+      mode: "live" as const,
+      onThreadUpdate() {
+        return () => {};
+      },
+      async sendThreadInput() {},
+      async showPathInFinder() {},
+      async runCommand(request: { command: string }) {
+        if (request.command === "workspace-tree") {
+          return {
+            data: {
+              workspaces: [{ name: "family", path: "/tmp/family", threads: [{ threadId: "thread-1", title: "hello" }] }],
+            },
+          };
+        }
+        if (request.command === "profile") {
+          return {
+            data: {
+              memory: { enabled: true, topK: 5, maxChars: 2000 },
+              soul: { path: "/tmp/family/.msgcode/SOUL.md", exists: true, content: "" },
+            },
+          };
+        }
+        if (request.command === "capabilities") {
+          return {
+            data: {
+              capabilities: [{ id: "brain", model: "gpt-5.4", note: "api:openai", configured: true }],
+            },
+          };
+        }
+        if (request.command === "hall") {
+          return {
+            data: {
+              org: { name: "msgcode" },
+              runtime: { summary: { status: "pass", warnings: 0, errors: 0 } },
+              packs: { builtin: [], user: [] },
+              sites: [],
+            },
+          };
+        }
+        if (request.command === "neighbor") {
+          return {
+            data: {
+              enabled: false,
+              self: { nodeId: "self-node", publicIdentity: "self" },
+              summary: { unreadCount: 0, lastMessageAt: "", lastProbeAt: "", reachableCount: 0 },
+              neighbors: [],
+              mailbox: { updatedAt: "", entries: [] },
+            },
+          };
+        }
+        return {
+          data: {
+            thread: {
+              title: "hello",
+              writable: true,
+              lastTurnAt: "2026-03-28T10:00:00.000Z",
+              messages: [{ user: "u1", assistant: "a1" }],
+            },
+            schedules: [{ id: "s1" }],
+            workStatus: { recentEntries: [{ id: "w1" }] },
+          },
+        };
+      },
+    };
+
+    await startThreadSurface(documentLike, bridge);
+    expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("最近回合");
+    expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("工作区");
+
+    await threadToggle.click();
+    expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).not.toContain("最近回合");
+    expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("工作区");
+
+    await sharedToggle.click();
+    expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).not.toContain("工作区");
+  });
 });

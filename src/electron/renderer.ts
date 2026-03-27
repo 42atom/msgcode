@@ -200,12 +200,22 @@ interface ThreadSurfaceViewData {
 
 const pendingComposerThreads = new Set<string>();
 const pendingComposerErrors = new Map<string, string>();
+const collapsedObserverSections = new Set<string>();
 let activeSurfaceThreadKey = "";
 let activeSurfaceData: ThreadSurfaceViewData | null = null;
 let disposeThreadUpdateSubscription: (() => void) | null = null;
 
 function buildSurfaceThreadKey(workspacePath: string, threadId: string): string {
   return `${workspacePath.trim()}::${threadId.trim()}`;
+}
+
+function buildObserverSectionKey(
+  selectedSection: ThreadSurfaceSection,
+  scope: "thread" | "shared",
+  workspacePath: string,
+  threadId: string,
+): string {
+  return `${selectedSection}:${scope}:${workspacePath.trim()}::${threadId.trim()}`;
 }
 
 function clearComposerPendingState(threadKey: string, preserveError = false): void {
@@ -750,6 +760,18 @@ function renderWorkspaceRightPanel(params: {
   const soulLabel = soulPath.trim() ? basenamePath(soulPath) : "未配置";
   const brainLabel = normalizeBrainLabel(brainCapability);
   const threadStatus = params.waiting ? "等待回复" : params.writable ? "可写" : "只读";
+  const threadSectionKey = buildObserverSectionKey(
+    "workspace",
+    "thread",
+    params.selectedWorkspacePath,
+    params.selectedThreadId,
+  );
+  const sharedSectionKey = buildObserverSectionKey(
+    "workspace",
+    "shared",
+    params.selectedWorkspacePath,
+    params.selectedThreadId,
+  );
 
   return [
     '<div class="observer-shell">',
@@ -758,27 +780,21 @@ function renderWorkspaceRightPanel(params: {
     "<h2>Thread Rail</h2>",
     "</header>",
     '<div class="surface-panel__body observer-body observer-stack">',
-    '<section class="observer-section observer-section--thread">',
-    '<div class="observer-section__header"><h3>This Thread</h3></div>',
-    '<div class="observer-rows">',
-    renderObserverRow("状态", threadStatus, "status"),
-    renderObserverRow("线程", params.selectedThreadId || "-", "text"),
-    renderObserverRow("最近回合", params.lastTurnAt || "-", "text"),
-    renderObserverRow("最近事件", `${params.recentStatusCount}`, "text"),
-    ...(params.loadingError ? [renderObserverRow("异常", params.loadingError, "status")] : []),
-    "</div>",
-    "</section>",
-    '<section class="observer-section observer-section--shared">',
-    '<div class="observer-section__header"><h3>Shared</h3></div>',
-    '<div class="observer-rows">',
-    renderObserverRow("工作区", params.selectedWorkspace || "-", "text"),
-    renderObserverRow("路径", params.selectedWorkspacePath || "-", "path", params.selectedWorkspacePath),
-    renderObserverRow("大脑模型", brainLabel, "text"),
-    renderObserverRow("Soul", soulLabel, soulPath.trim() ? "path" : "text", soulPath),
-    renderObserverToggleRow("记忆", memoryEnabled, memoryEnabled ? `已启用 · Top ${memoryTopK}` : "未启用"),
-    renderObserverRow("定时任务", `${params.scheduleCount}`, "text"),
-    "</div>",
-    "</section>",
+    renderObserverSection("This Thread", "thread", threadSectionKey, [
+      renderObserverRow("状态", threadStatus, "status"),
+      renderObserverRow("线程", params.selectedThreadId || "-", "text"),
+      renderObserverRow("最近回合", params.lastTurnAt || "-", "text"),
+      renderObserverRow("最近事件", `${params.recentStatusCount}`, "text"),
+      ...(params.loadingError ? [renderObserverRow("异常", params.loadingError, "status")] : []),
+    ]),
+    renderObserverSection("Shared", "shared", sharedSectionKey, [
+      renderObserverRow("工作区", params.selectedWorkspace || "-", "text"),
+      renderObserverRow("路径", params.selectedWorkspacePath || "-", "path", params.selectedWorkspacePath),
+      renderObserverRow("大脑模型", brainLabel, "text"),
+      renderObserverRow("Soul", soulLabel, soulPath.trim() ? "path" : "text", soulPath),
+      renderObserverToggleRow("记忆", memoryEnabled, memoryEnabled ? `已启用 · Top ${memoryTopK}` : "未启用"),
+      renderObserverRow("定时任务", `${params.scheduleCount}`, "text"),
+    ]),
     "</div>",
     "</div>",
   ].join("");
@@ -793,6 +809,12 @@ function renderBaseRightPanel(params: {
   const runtime = params.hall?.data?.runtime;
   const brainCapability = (params.capabilities?.data?.capabilities ?? []).find((entry) => entry.id === "brain");
   const soulPath = params.profile?.data?.soul?.path ?? "";
+  const sharedSectionKey = buildObserverSectionKey(
+    "base",
+    "shared",
+    params.selectedWorkspacePath,
+    "",
+  );
 
   return [
     '<div class="observer-shell">',
@@ -801,16 +823,13 @@ function renderBaseRightPanel(params: {
     "<h2>Base Rail</h2>",
     "</header>",
     '<div class="surface-panel__body observer-body observer-stack">',
-    '<section class="observer-section observer-section--shared">',
-    '<div class="observer-section__header"><h3>Shared</h3></div>',
-    '<div class="observer-rows">',
-    renderObserverRow("路径", params.selectedWorkspacePath || "-", "path", params.selectedWorkspacePath),
-    renderObserverRow("大脑模型", normalizeBrainLabel(brainCapability), "text"),
-    renderObserverRow("Soul", soulPath.trim() ? basenamePath(soulPath) : "未配置", soulPath.trim() ? "path" : "text", soulPath),
-    renderObserverRow("Runtime", runtime?.summary?.status || "-", "status"),
-    renderObserverRow("日志", runtime?.logPath || "-", runtime?.logPath ? "path" : "text", runtime?.logPath || ""),
-    "</div>",
-    "</section>",
+    renderObserverSection("Shared", "shared", sharedSectionKey, [
+      renderObserverRow("路径", params.selectedWorkspacePath || "-", "path", params.selectedWorkspacePath),
+      renderObserverRow("大脑模型", normalizeBrainLabel(brainCapability), "text"),
+      renderObserverRow("Soul", soulPath.trim() ? basenamePath(soulPath) : "未配置", soulPath.trim() ? "path" : "text", soulPath),
+      renderObserverRow("Runtime", runtime?.summary?.status || "-", "status"),
+      renderObserverRow("日志", runtime?.logPath || "-", runtime?.logPath ? "path" : "text", runtime?.logPath || ""),
+    ]),
     "</div>",
     "</div>",
   ].join("");
@@ -818,10 +837,23 @@ function renderBaseRightPanel(params: {
 
 function renderNeighborRightPanel(params: {
   selectedWorkspacePath: string;
+  selectedThreadId: string;
   neighbor: NeighborEnvelope | null;
 }): string {
   const summary = params.neighbor?.data?.summary;
   const self = params.neighbor?.data?.self;
+  const threadSectionKey = buildObserverSectionKey(
+    "neighbor",
+    "thread",
+    params.selectedWorkspacePath,
+    params.selectedThreadId,
+  );
+  const sharedSectionKey = buildObserverSectionKey(
+    "neighbor",
+    "shared",
+    params.selectedWorkspacePath,
+    params.selectedThreadId,
+  );
   return [
     '<div class="observer-shell">',
     '<header class="surface-panel__header observer-header">',
@@ -829,26 +861,38 @@ function renderNeighborRightPanel(params: {
     "<h2>Neighbor Rail</h2>",
     "</header>",
     '<div class="surface-panel__body observer-body observer-stack">',
-    '<section class="observer-section observer-section--thread">',
-    '<div class="observer-section__header"><h3>This Thread</h3></div>',
-    '<div class="observer-rows">',
-    renderObserverRow("邻居功能", params.neighbor?.data?.enabled ? "启用中" : "未启用", "status"),
-    renderObserverRow("自身节点", self?.nodeId || "-", "text"),
-    renderObserverRow("公开身份", self?.publicIdentity || "-", "text"),
+    renderObserverSection("This Thread", "thread", threadSectionKey, [
+      renderObserverRow("邻居功能", params.neighbor?.data?.enabled ? "启用中" : "未启用", "status"),
+      renderObserverRow("自身节点", self?.nodeId || "-", "text"),
+      renderObserverRow("公开身份", self?.publicIdentity || "-", "text"),
+    ]),
+    renderObserverSection("Shared", "shared", sharedSectionKey, [
+      renderObserverRow("路径", params.selectedWorkspacePath || "-", "path", params.selectedWorkspacePath),
+      renderObserverRow("未读", `${summary?.unreadCount ?? 0}`, "text"),
+      renderObserverRow("最近消息", summary?.lastMessageAt || "-", "text"),
+      renderObserverRow("最近探测", summary?.lastProbeAt || "-", "text"),
+      renderObserverRow("可达邻居", `${summary?.reachableCount ?? 0}`, "text"),
+    ]),
     "</div>",
+    "</div>",
+  ].join("");
+}
+
+function renderObserverSection(
+  title: string,
+  scope: "thread" | "shared",
+  sectionKey: string,
+  rows: string[],
+): string {
+  const collapsed = collapsedObserverSections.has(sectionKey);
+  return [
+    `<section class="observer-section${collapsed ? " is-collapsed" : ""}">`,
+    `<button type="button" class="observer-section__header" data-observer-toggle="true" data-observer-scope="${scope}" aria-expanded="${collapsed ? "false" : "true"}">`,
+    `<h3>${escapeHtml(title)}</h3>`,
+    `<span class="observer-section__chevron${collapsed ? " is-collapsed" : ""}" aria-hidden="true">⌄</span>`,
+    "</button>",
+    collapsed ? "" : `<div class="observer-rows">${rows.join("")}</div>`,
     "</section>",
-    '<section class="observer-section observer-section--shared">',
-    '<div class="observer-section__header"><h3>Shared</h3></div>',
-    '<div class="observer-rows">',
-    renderObserverRow("路径", params.selectedWorkspacePath || "-", "path", params.selectedWorkspacePath),
-    renderObserverRow("未读", `${summary?.unreadCount ?? 0}`, "text"),
-    renderObserverRow("最近消息", summary?.lastMessageAt || "-", "text"),
-    renderObserverRow("最近探测", summary?.lastProbeAt || "-", "text"),
-    renderObserverRow("可达邻居", `${summary?.reachableCount ?? 0}`, "text"),
-    "</div>",
-    "</section>",
-    "</div>",
-    "</div>",
   ].join("");
 }
 
@@ -1044,6 +1088,7 @@ function renderThreadSurface(
   activeSurfaceData = data;
   applyThreadSurfaceData(documentLike, data);
   bindThreadSurfaceFinderActions(documentLike, bridge);
+  bindThreadSurfaceObserverToggles(documentLike, bridge, data);
   bindThreadSurfaceNav(documentLike, bridge, data);
   bindThreadSurfaceSelection(documentLike, bridge, data);
   bindThreadComposer(documentLike, bridge, data);
@@ -1134,6 +1179,37 @@ function bindThreadSurfaceFinderActions(
         return;
       }
       void bridge.showPathInFinder({ path: nextPath });
+    });
+  }
+}
+
+export function bindThreadSurfaceObserverToggles(
+  documentLike: HtmlDocumentLike,
+  bridge: ThreadSurfaceBridge,
+  data: ThreadSurfaceViewData,
+): void {
+  const toggleButtons = Array.from(documentLike.querySelectorAll?.('[data-observer-toggle="true"]') ?? []);
+  for (const button of toggleButtons) {
+    const target = button as EventfulElementLike;
+    if (!target.addEventListener) continue;
+    target.addEventListener("click", (event) => {
+      event.preventDefault?.();
+      const scope = String(target.getAttribute?.("data-observer-scope") ?? "").trim();
+      if (scope !== "thread" && scope !== "shared") {
+        return;
+      }
+      const sectionKey = buildObserverSectionKey(
+        data.selectedSection,
+        scope,
+        data.selectedWorkspacePath,
+        data.selectedThreadId,
+      );
+      if (collapsedObserverSections.has(sectionKey)) {
+        collapsedObserverSections.delete(sectionKey);
+      } else {
+        collapsedObserverSections.add(sectionKey);
+      }
+      renderThreadSurface(documentLike, bridge, data);
     });
   }
 }
