@@ -256,6 +256,13 @@ function renderThreadSurfaceStyles(): string {
     ".observer-row { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 8px; align-items: start; }",
     ".observer-row__label { font-size: var(--font-ui-sm-size); line-height: var(--font-ui-sm-line); opacity: var(--opacity-subtle); }",
     ".observer-row__value { font-size: var(--font-ui-md-size); line-height: var(--font-ui-md-line); overflow-wrap: anywhere; }",
+    ".observer-row__value--path { color: var(--theme-brand); }",
+    ".observer-row__value--status { opacity: var(--opacity-subtle); }",
+    ".observer-row--toggle .observer-row__value { display: inline-flex; align-items: center; gap: 8px; }",
+    ".switch-indicator { width: 28px; height: 16px; border-radius: 999px; background: rgba(0,0,0,0.16); position: relative; flex: 0 0 auto; }",
+    ".switch-indicator::after { content: ''; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 999px; background: var(--theme-bg); }",
+    ".switch-indicator.is-on { background: var(--theme-brand); }",
+    ".switch-indicator.is-on::after { left: 14px; }",
     ".empty-state { margin: 0; font-size: var(--font-ui-sm-size); line-height: var(--font-ui-sm-line); opacity: var(--opacity-subtle); }",
     ".thread-error { margin: 0; font-size: var(--font-ui-sm-size); line-height: var(--font-ui-sm-line); color: #b42318; }",
   ].join("\n");

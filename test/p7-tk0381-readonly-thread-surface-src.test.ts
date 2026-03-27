@@ -56,6 +56,8 @@ describe("readonly thread surface src implementation", () => {
     expect(markup).toContain('.chat-stage {');
     expect(markup).toContain('.composer-dock {');
     expect(markup).toContain('.observer-body');
+    expect(markup).toContain('.observer-row__value--path');
+    expect(markup).toContain('.switch-indicator.is-on::after');
     expect(markup).toContain('--theme-brand: #3b82f6;');
     expect(markup).toContain('--theme-selected: #e5e5e5;');
     expect(markup).toContain('--font-family-ui: "Maple Mono NF CN", "Maple Mono", ui-monospace, monospace;');

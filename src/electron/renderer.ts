@@ -417,22 +417,22 @@ function renderRightPanel(params: {
     '<section class="observer-section observer-section--thread">',
     '<div class="observer-section__header"><h3>This Thread</h3></div>',
     '<div class="observer-rows">',
-    renderObserverRow("状态", threadStatus),
-    renderObserverRow("线程", params.selectedThreadId || "-"),
-    renderObserverRow("最近回合", params.lastTurnAt || "-"),
-    renderObserverRow("最近事件", `${params.recentStatusCount}`),
-    ...(params.loadingError ? [renderObserverRow("异常", params.loadingError)] : []),
+    renderObserverRow("状态", threadStatus, "status"),
+    renderObserverRow("线程", params.selectedThreadId || "-", "text"),
+    renderObserverRow("最近回合", params.lastTurnAt || "-", "text"),
+    renderObserverRow("最近事件", `${params.recentStatusCount}`, "text"),
+    ...(params.loadingError ? [renderObserverRow("异常", params.loadingError, "status")] : []),
     "</div>",
     "</section>",
     '<section class="observer-section observer-section--shared">',
     '<div class="observer-section__header"><h3>Shared</h3></div>',
     '<div class="observer-rows">',
-    renderObserverRow("工作区", params.selectedWorkspace || "-"),
-    renderObserverRow("路径", params.selectedWorkspacePath || "-"),
-    renderObserverRow("大脑模型", brainLabel),
-    renderObserverRow("Soul", soulLabel),
-    renderObserverRow("记忆", memoryEnabled ? `已启用 · Top ${memoryTopK}` : "未启用"),
-    renderObserverRow("定时任务", `${params.scheduleCount}`),
+    renderObserverRow("工作区", params.selectedWorkspace || "-", "text"),
+    renderObserverRow("路径", params.selectedWorkspacePath || "-", "path"),
+    renderObserverRow("大脑模型", brainLabel, "text"),
+    renderObserverRow("Soul", soulLabel, soulPath.trim() ? "path" : "text"),
+    renderObserverToggleRow("记忆", memoryEnabled, memoryEnabled ? `已启用 · Top ${memoryTopK}` : "未启用"),
+    renderObserverRow("定时任务", `${params.scheduleCount}`, "text"),
     "</div>",
     "</section>",
     "</div>",
@@ -440,11 +440,38 @@ function renderRightPanel(params: {
   ].join("");
 }
 
-function renderObserverRow(label: string, value: string): string {
+function renderObserverRow(
+  label: string,
+  value: string,
+  kind: "text" | "path" | "status",
+): string {
+  const valueClasses = ["observer-row__value"];
+  if (kind === "path") {
+    valueClasses.push("observer-row__value--path");
+  }
+  if (kind === "status") {
+    valueClasses.push("observer-row__value--status");
+  }
   return [
     '<div class="observer-row">',
     `<span class="observer-row__label">${escapeHtml(label)}</span>`,
-    `<span class="observer-row__value">${escapeHtml(value)}</span>`,
+    `<span class="${valueClasses.join(" ")}">${escapeHtml(value)}</span>`,
+    "</div>",
+  ].join("");
+}
+
+function renderObserverToggleRow(
+  label: string,
+  enabled: boolean,
+  value: string,
+): string {
+  return [
+    '<div class="observer-row observer-row--toggle">',
+    `<span class="observer-row__label">${escapeHtml(label)}</span>`,
+    '<span class="observer-row__value observer-row__value--toggle">',
+    `<span class="switch-indicator${enabled ? " is-on" : ""}" aria-hidden="true"></span>`,
+    `<span>${escapeHtml(value)}</span>`,
+    "</span>",
     "</div>",
   ].join("");
 }

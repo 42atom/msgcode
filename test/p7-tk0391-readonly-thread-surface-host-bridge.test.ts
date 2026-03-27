@@ -237,6 +237,8 @@ describe("readonly thread surface host bridge slice", () => {
     expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain('data-thread-composer="true"');
     expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("大脑模型");
     expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("observer-body");
+    expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("observer-row__value--path");
+    expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("switch-indicator is-on");
     expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("gpt-5.4");
     expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("记忆");
     expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("已启用");
