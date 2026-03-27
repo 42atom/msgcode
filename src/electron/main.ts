@@ -4,11 +4,11 @@ import { spawn } from "node:child_process";
 import { watch, type FSWatcher } from "node:fs";
 import { resolveRuntimeEntry } from "../runtime/runtime-entry.js";
 import {
-  buildReadonlySurfaceCliArgs,
+  buildThreadSurfaceCliArgs,
   getSendThreadInputChannel,
   getReadonlySurfaceChannel,
   getThreadUpdateChannel,
-  type ReadonlySurfaceRunCommandRequest,
+  type ThreadSurfaceRunCommandRequest,
   type SendThreadInputRequest,
 } from "./readonly-surface-bridge.js";
 import {
@@ -48,7 +48,7 @@ export function buildRendererHtml(rendererEntryUrl: string): string {
 }
 
 export function buildReadonlySurfaceCliCommand(
-  request: ReadonlySurfaceRunCommandRequest,
+  request: ThreadSurfaceRunCommandRequest,
   options?: { env?: NodeJS.ProcessEnv; nodePath?: string },
 ): { command: string; args: string[]; cwd: string } {
   const runtimeEntry = resolveRuntimeEntry("cli", {
@@ -57,7 +57,7 @@ export function buildReadonlySurfaceCliCommand(
   });
   return {
     command: runtimeEntry.command,
-    args: [...runtimeEntry.args, ...buildReadonlySurfaceCliArgs(request)],
+    args: [...runtimeEntry.args, ...buildThreadSurfaceCliArgs(request)],
     cwd: runtimeEntry.workingDirectory,
   };
 }
@@ -209,7 +209,7 @@ function bindThreadUpdateNotifications(
 }
 
 export async function runReadonlySurfaceCommand(
-  request: ReadonlySurfaceRunCommandRequest,
+  request: ThreadSurfaceRunCommandRequest,
   options?: { env?: NodeJS.ProcessEnv; nodePath?: string },
 ): Promise<unknown> {
   const command = buildReadonlySurfaceCliCommand(request, options);
@@ -304,7 +304,7 @@ export async function startElectronRuntime(entryModuleUrl = import.meta.url): Pr
   };
 
   await app.whenReady();
-  ipcMain.handle(getReadonlySurfaceChannel(), async (_event, request: ReadonlySurfaceRunCommandRequest) => {
+  ipcMain.handle(getReadonlySurfaceChannel(), async (_event, request: ThreadSurfaceRunCommandRequest) => {
     return await runReadonlySurfaceCommand(request);
   });
   ipcMain.handle(getSendThreadInputChannel(), async (_event, request: SendThreadInputRequest) => {

@@ -1,11 +1,11 @@
 import {
-  buildReadonlyThreadSurfaceChrome,
+  buildThreadSurfaceChrome,
   escapeHtml,
-  renderReadonlyThreadSurfaceMarkup,
+  renderThreadSurfaceMarkup,
 } from "../ui/main-window/readonly-thread-surface.js";
 import type {
-  ReadonlySurfaceBridge,
-  ReadonlySurfaceRunCommandRequest,
+  ThreadSurfaceBridge,
+  ThreadSurfaceRunCommandRequest,
   ThreadUpdateEvent,
 } from "./readonly-surface-bridge.js";
 
@@ -27,7 +27,7 @@ declare const document: HtmlDocumentLike;
 
 declare global {
   interface Window {
-    msgcodeReadonlySurface?: ReadonlySurfaceBridge;
+    msgcodeReadonlySurface?: ThreadSurfaceBridge;
   }
 }
 
@@ -92,7 +92,7 @@ interface CapabilitiesEnvelope {
   };
 }
 
-interface ReadonlyThreadSurfaceViewData {
+interface ThreadSurfaceViewData {
   selectedWorkspace: string;
   selectedWorkspacePath: string;
   selectedThreadId: string;
@@ -106,7 +106,7 @@ interface ReadonlyThreadSurfaceViewData {
 const pendingComposerThreads = new Set<string>();
 const pendingComposerErrors = new Map<string, string>();
 let activeSurfaceThreadKey = "";
-let activeSurfaceData: ReadonlyThreadSurfaceViewData | null = null;
+let activeSurfaceData: ThreadSurfaceViewData | null = null;
 let disposeThreadUpdateSubscription: (() => void) | null = null;
 
 function buildSurfaceThreadKey(workspacePath: string, threadId: string): string {
@@ -120,7 +120,7 @@ function clearComposerPendingState(threadKey: string, preserveError = false): vo
   }
 }
 
-function buildEmptySurfaceViewData(loadingError: string | null): ReadonlyThreadSurfaceViewData {
+function buildEmptySurfaceViewData(loadingError: string | null): ThreadSurfaceViewData {
   return {
     selectedWorkspace: "",
     selectedWorkspacePath: "",
@@ -133,20 +133,20 @@ function buildEmptySurfaceViewData(loadingError: string | null): ReadonlyThreadS
   };
 }
 
-export function bootstrapReadonlyThreadSurface(documentLike: HtmlDocumentLike): void {
-  const chrome = buildReadonlyThreadSurfaceChrome({
+export function bootstrapThreadSurface(documentLike: HtmlDocumentLike): void {
+  const chrome = buildThreadSurfaceChrome({
     selectedWorkspace: "",
     selectedThreadId: "",
     loadingError: null,
   });
-  const markup = renderReadonlyThreadSurfaceMarkup(chrome);
+  const markup = renderThreadSurfaceMarkup(chrome);
   documentLike.open();
   documentLike.write(markup);
   documentLike.close();
 }
 
-export async function loadReadonlyThreadSurface(
-  bridge: ReadonlySurfaceBridge,
+export async function loadThreadSurface(
+  bridge: ThreadSurfaceBridge,
 ): Promise<{
   selectedWorkspace: string;
   selectedWorkspacePath: string;
@@ -158,7 +158,7 @@ export async function loadReadonlyThreadSurface(
 }> {
   const workspaceTree = (await bridge.runCommand({
     command: "workspace-tree",
-  } satisfies ReadonlySurfaceRunCommandRequest)) as WorkspaceTreeEnvelope;
+  } satisfies ThreadSurfaceRunCommandRequest)) as WorkspaceTreeEnvelope;
 
   const workspaces = workspaceTree.data?.workspaces ?? [];
   const selectedWorkspaceItem = workspaces.find((item) => item.threads.length > 0) ?? workspaces[0] ?? null;
@@ -181,7 +181,7 @@ export async function loadReadonlyThreadSurface(
       command: "thread",
       workspace: selectedWorkspaceItem.name,
       threadId: selectedThreadId,
-    } satisfies ReadonlySurfaceRunCommandRequest) as Promise<ThreadEnvelope>,
+    } satisfies ThreadSurfaceRunCommandRequest) as Promise<ThreadEnvelope>,
     loadWorkspaceSharedSurfaces(bridge, selectedWorkspaceItem.path),
   ]);
 
@@ -196,9 +196,9 @@ export async function loadReadonlyThreadSurface(
   };
 }
 
-export function applyReadonlyThreadSurfaceData(
+export function applyThreadSurfaceData(
   documentLike: HtmlDocumentLike,
-  data: ReadonlyThreadSurfaceViewData,
+  data: ThreadSurfaceViewData,
 ): void {
   const leftPanel = documentLike.querySelector('[data-surface-slot="workspace-tree"]');
   if (leftPanel) {
@@ -418,7 +418,7 @@ function renderObserverRow(label: string, value: string): string {
 }
 
 function loadSelectedThreadData(
-  bridge: ReadonlySurfaceBridge,
+  bridge: ThreadSurfaceBridge,
   workspaceName: string,
   threadId: string,
 ): Promise<ThreadEnvelope | null> {
@@ -426,14 +426,14 @@ function loadSelectedThreadData(
 }
 
 async function loadWorkspaceSelectionState(params: {
-  bridge: ReadonlySurfaceBridge;
-  current: ReadonlyThreadSurfaceViewData;
+  bridge: ThreadSurfaceBridge;
+  current: ThreadSurfaceViewData;
   workspaceName: string;
   workspacePath: string;
   threadId: string;
   includeShared: boolean;
-}): Promise<ReadonlyThreadSurfaceViewData> {
-  const nextData: ReadonlyThreadSurfaceViewData = {
+}): Promise<ThreadSurfaceViewData> {
+  const nextData: ThreadSurfaceViewData = {
     ...params.current,
     selectedWorkspace: params.workspaceName,
     selectedWorkspacePath: params.workspacePath,
@@ -464,7 +464,7 @@ async function loadWorkspaceSelectionState(params: {
 }
 
 async function loadThreadEnvelope(
-  bridge: ReadonlySurfaceBridge,
+  bridge: ThreadSurfaceBridge,
   workspace: string,
   threadId: string,
 ): Promise<ThreadEnvelope> {
@@ -472,22 +472,22 @@ async function loadThreadEnvelope(
     command: "thread",
     workspace,
     threadId,
-  } satisfies ReadonlySurfaceRunCommandRequest)) as ThreadEnvelope;
+  } satisfies ThreadSurfaceRunCommandRequest)) as ThreadEnvelope;
 }
 
 async function loadWorkspaceSharedSurfaces(
-  bridge: ReadonlySurfaceBridge,
+  bridge: ThreadSurfaceBridge,
   workspace: string,
 ): Promise<{ profile: ProfileEnvelope; capabilities: CapabilitiesEnvelope }> {
   const [profile, capabilities] = await Promise.all([
     bridge.runCommand({
       command: "profile",
       workspace,
-    } satisfies ReadonlySurfaceRunCommandRequest) as Promise<ProfileEnvelope>,
+    } satisfies ThreadSurfaceRunCommandRequest) as Promise<ProfileEnvelope>,
     bridge.runCommand({
       command: "capabilities",
       workspace,
-    } satisfies ReadonlySurfaceRunCommandRequest) as Promise<CapabilitiesEnvelope>,
+    } satisfies ThreadSurfaceRunCommandRequest) as Promise<CapabilitiesEnvelope>,
   ]);
 
   return { profile, capabilities };
@@ -522,21 +522,21 @@ function basenamePath(value: string): string {
   return parts[parts.length - 1] ?? normalized;
 }
 
-function renderReadonlyThreadSurface(
+function renderThreadSurface(
   documentLike: HtmlDocumentLike,
-  bridge: ReadonlySurfaceBridge,
-  data: ReadonlyThreadSurfaceViewData,
+  bridge: ThreadSurfaceBridge,
+  data: ThreadSurfaceViewData,
 ): void {
   activeSurfaceThreadKey = buildSurfaceThreadKey(data.selectedWorkspacePath, data.selectedThreadId);
   activeSurfaceData = data;
-  applyReadonlyThreadSurfaceData(documentLike, data);
-  bindReadonlyThreadSurfaceSelection(documentLike, bridge, data);
-  bindReadonlyThreadComposer(documentLike, bridge, data);
+  applyThreadSurfaceData(documentLike, data);
+  bindThreadSurfaceSelection(documentLike, bridge, data);
+  bindThreadComposer(documentLike, bridge, data);
 }
 
 async function handleThreadUpdateEvent(params: {
   documentLike: HtmlDocumentLike;
-  bridge: ReadonlySurfaceBridge;
+  bridge: ThreadSurfaceBridge;
   event: ThreadUpdateEvent;
 }): Promise<void> {
   const current = activeSurfaceData;
@@ -554,7 +554,7 @@ async function handleThreadUpdateEvent(params: {
       current.selectedThreadId,
     );
     clearComposerPendingState(eventThreadKey);
-    renderReadonlyThreadSurface(params.documentLike, params.bridge, {
+    renderThreadSurface(params.documentLike, params.bridge, {
       ...current,
       thread: refreshedThread,
       loadingError: null,
@@ -565,17 +565,17 @@ async function handleThreadUpdateEvent(params: {
       error instanceof Error ? error.message : String(error),
     );
     clearComposerPendingState(eventThreadKey, true);
-    renderReadonlyThreadSurface(params.documentLike, params.bridge, {
+    renderThreadSurface(params.documentLike, params.bridge, {
       ...current,
       loadingError: error instanceof Error ? error.message : String(error),
     });
   }
 }
 
-export function bindReadonlyThreadSurfaceSelection(
+export function bindThreadSurfaceSelection(
   documentLike: HtmlDocumentLike,
-  bridge: ReadonlySurfaceBridge,
-  data: ReadonlyThreadSurfaceViewData,
+  bridge: ThreadSurfaceBridge,
+  data: ThreadSurfaceViewData,
 ): void {
   const workspaceButtons = Array.from(documentLike.querySelectorAll?.('[data-workspace-select="true"]') ?? []);
   const threadButtons = Array.from(documentLike.querySelectorAll?.('[data-thread-select="true"]') ?? []);
@@ -606,8 +606,8 @@ export function bindReadonlyThreadSurfaceSelection(
 
 async function handleWorkspaceSelection(
   documentLike: HtmlDocumentLike,
-  bridge: ReadonlySurfaceBridge,
-  data: ReadonlyThreadSurfaceViewData,
+  bridge: ThreadSurfaceBridge,
+  data: ThreadSurfaceViewData,
   workspaceName: string,
   workspacePath: string,
 ): Promise<void> {
@@ -623,13 +623,13 @@ async function handleWorkspaceSelection(
     threadId: nextThreadId,
     includeShared: true,
   });
-  renderReadonlyThreadSurface(documentLike, bridge, nextData);
+  renderThreadSurface(documentLike, bridge, nextData);
 }
 
 async function handleThreadSelection(
   documentLike: HtmlDocumentLike,
-  bridge: ReadonlySurfaceBridge,
-  data: ReadonlyThreadSurfaceViewData,
+  bridge: ThreadSurfaceBridge,
+  data: ThreadSurfaceViewData,
   workspaceName: string,
   workspacePath: string,
   threadId: string,
@@ -642,26 +642,26 @@ async function handleThreadSelection(
     threadId,
     includeShared: false,
   });
-  renderReadonlyThreadSurface(documentLike, bridge, nextData);
+  renderThreadSurface(documentLike, bridge, nextData);
 }
 
-export async function startReadonlyThreadSurface(
+export async function startThreadSurface(
   documentLike: HtmlDocumentLike,
-  bridge: ReadonlySurfaceBridge,
+  bridge: ThreadSurfaceBridge,
 ): Promise<void> {
-  bootstrapReadonlyThreadSurface(documentLike);
+  bootstrapThreadSurface(documentLike);
   disposeThreadUpdateSubscription?.();
   disposeThreadUpdateSubscription = bridge.onThreadUpdate((event) => {
     void handleThreadUpdateEvent({ documentLike, bridge, event });
   });
   try {
-    const data = await loadReadonlyThreadSurface(bridge);
-    renderReadonlyThreadSurface(documentLike, bridge, {
+    const data = await loadThreadSurface(bridge);
+    renderThreadSurface(documentLike, bridge, {
       ...data,
       loadingError: null,
     });
   } catch (error) {
-    renderReadonlyThreadSurface(
+    renderThreadSurface(
       documentLike,
       bridge,
       buildEmptySurfaceViewData(error instanceof Error ? error.message : String(error)),
@@ -675,10 +675,10 @@ interface EventfulElementLike extends ElementLike {
   addEventListener?: (type: string, listener: (event: { key?: string; shiftKey?: boolean; preventDefault?: () => void }) => void) => void;
 }
 
-export function bindReadonlyThreadComposer(
+export function bindThreadComposer(
   documentLike: HtmlDocumentLike,
-  bridge: ReadonlySurfaceBridge,
-  data: ReadonlyThreadSurfaceViewData,
+  bridge: ThreadSurfaceBridge,
+  data: ThreadSurfaceViewData,
 ): void {
   if (data.thread?.data?.thread?.writable !== true) {
     return;
@@ -727,9 +727,9 @@ export function bindReadonlyThreadComposer(
       };
       if (!waitingForAssistant) {
         clearComposerPendingState(threadKey);
-        renderReadonlyThreadSurface(documentLike, bridge, nextData);
+        renderThreadSurface(documentLike, bridge, nextData);
       } else {
-        renderReadonlyThreadSurface(documentLike, bridge, nextData);
+        renderThreadSurface(documentLike, bridge, nextData);
       }
     } catch (submitError) {
       clearComposerPendingState(threadKey);
@@ -765,8 +765,8 @@ if (typeof globalThis === "object" && "document" in globalThis) {
   };
   const bridge = browserGlobal.window?.msgcodeReadonlySurface;
   if (bridge) {
-    void startReadonlyThreadSurface(document, bridge);
+    void startThreadSurface(document, bridge);
   } else {
-    bootstrapReadonlyThreadSurface(document);
+    bootstrapThreadSurface(document);
   }
 }

@@ -1,15 +1,15 @@
 import { describe, expect, it } from "bun:test";
 import { buildReadonlySurfaceCliCommand, buildSendThreadInputCliCommand } from "../src/electron/main.js";
 import {
-  createReadonlySurfaceBridge,
+  createThreadSurfaceBridge,
   getReadonlySurfaceChannel,
   getSendThreadInputChannel,
   getThreadUpdateChannel,
 } from "../src/electron/readonly-surface-bridge.js";
 import {
-  bindReadonlyThreadComposer,
-  bindReadonlyThreadSurfaceSelection,
-  startReadonlyThreadSurface,
+  bindThreadComposer,
+  bindThreadSurfaceSelection,
+  startThreadSurface,
 } from "../src/electron/renderer.js";
 
 describe("readonly thread surface host bridge slice", () => {
@@ -19,7 +19,7 @@ describe("readonly thread surface host bridge slice", () => {
         return { channel, request };
       },
     };
-    const bridge = createReadonlySurfaceBridge(
+    const bridge = createThreadSurfaceBridge(
       ipcRenderer as never,
       getReadonlySurfaceChannel(),
       getSendThreadInputChannel(),
@@ -41,7 +41,7 @@ describe("readonly thread surface host bridge slice", () => {
   it("subscribes thread updates through the preload bridge", () => {
     const listeners = new Map<string, (_event: unknown, payload: unknown) => void>();
     const removed: string[] = [];
-    const bridge = createReadonlySurfaceBridge(
+    const bridge = createThreadSurfaceBridge(
       {
         async invoke() {
           return null;
@@ -223,7 +223,7 @@ describe("readonly thread surface host bridge slice", () => {
       },
     };
 
-    await startReadonlyThreadSurface(documentLike, bridge);
+    await startThreadSurface(documentLike, bridge);
 
     expect(panels.get('[data-surface-slot="workspace-tree"]')?.innerHTML).toContain("family");
     expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("<h2>hello</h2>");
@@ -317,7 +317,7 @@ describe("readonly thread surface host bridge slice", () => {
       },
     };
 
-    await startReadonlyThreadSurface(documentLike, bridge);
+    await startThreadSurface(documentLike, bridge);
     expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).not.toContain("a1");
 
     updateListener?.({
@@ -368,7 +368,7 @@ describe("readonly thread surface host bridge slice", () => {
     };
 
     const sent: Array<{ workspacePath: string; threadId: string; text: string }> = [];
-    bindReadonlyThreadComposer(documentLike, {
+    bindThreadComposer(documentLike, {
       mode: "live",
       onThreadUpdate() {
         return () => {};
@@ -437,7 +437,7 @@ describe("readonly thread surface host bridge slice", () => {
         throw new Error("write failed");
       },
     };
-    bindReadonlyThreadComposer(documentLike, failingBridge, {
+    bindThreadComposer(documentLike, failingBridge, {
       selectedWorkspace: "family",
       selectedWorkspacePath: "/tmp/family",
       selectedThreadId: "thread-web-2",
@@ -559,7 +559,7 @@ describe("readonly thread surface host bridge slice", () => {
       },
     };
 
-    bindReadonlyThreadSurfaceSelection(
+    bindThreadSurfaceSelection(
       documentLike,
       bridge,
       {

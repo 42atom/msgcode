@@ -1,45 +1,45 @@
-export interface ReadonlyThreadSurfaceState {
+export interface ThreadSurfaceState {
   selectedWorkspace: string;
   selectedThreadId: string;
   loadingError: string | null;
 }
 
-export type ReadonlyThreadSurfaceColumnId = "workspace-tree" | "thread" | "thread-rail";
+export type ThreadSurfaceColumnId = "workspace-tree" | "thread" | "thread-rail";
 
-export interface ReadonlyThreadSurfaceColumn {
-  id: ReadonlyThreadSurfaceColumnId;
+export interface ThreadSurfaceColumn {
+  id: ThreadSurfaceColumnId;
   label: string;
-  slot: ReadonlyThreadSurfaceColumnId;
+  slot: ThreadSurfaceColumnId;
 }
 
-export interface ReadonlyThreadSurfaceSettingsAffordance {
+export interface ThreadSurfaceSettingsAffordance {
   id: "settings";
   label: "Settings";
   href: "#settings";
 }
 
-export interface ReadonlyThreadSurfaceBridgeSlot {
+export interface ThreadSurfaceBridgeSlot {
   id: "host-bridge";
   entryPoint: "window.msgcodeReadonlySurface.runCommand";
   purpose: "future-host-bridge";
 }
 
-export interface ReadonlyThreadSurfaceChrome {
-  kind: "readonly-thread-surface";
-  state: ReadonlyThreadSurfaceState;
+export interface ThreadSurfaceChrome {
+  kind: "thread-surface";
+  state: ThreadSurfaceState;
   transientStateKeys: readonly ["selectedWorkspace", "selectedThreadId", "loadingError"];
   dataFeeds: readonly ["workspace-tree", "thread"];
-  columns: readonly ReadonlyThreadSurfaceColumn[];
-  settingsAffordance: ReadonlyThreadSurfaceSettingsAffordance;
-  bridgeSlot: ReadonlyThreadSurfaceBridgeSlot;
+  columns: readonly ThreadSurfaceColumn[];
+  settingsAffordance: ThreadSurfaceSettingsAffordance;
+  bridgeSlot: ThreadSurfaceBridgeSlot;
   blockedActions: readonly ["archive", "new chat"];
 }
 
-export function buildReadonlyThreadSurfaceChrome(
-  state: ReadonlyThreadSurfaceState,
-): ReadonlyThreadSurfaceChrome {
+export function buildThreadSurfaceChrome(
+  state: ThreadSurfaceState,
+): ThreadSurfaceChrome {
   return {
-    kind: "readonly-thread-surface",
+    kind: "thread-surface",
     state: {
       selectedWorkspace: state.selectedWorkspace,
       selectedThreadId: state.selectedThreadId,
@@ -66,7 +66,7 @@ export function buildReadonlyThreadSurfaceChrome(
   };
 }
 
-export function renderReadonlyThreadSurfaceMarkup(chrome: ReadonlyThreadSurfaceChrome): string {
+export function renderThreadSurfaceMarkup(chrome: ThreadSurfaceChrome): string {
   return [
     "<!doctype html>",
     '<html lang="zh-CN">',
@@ -75,7 +75,7 @@ export function renderReadonlyThreadSurfaceMarkup(chrome: ReadonlyThreadSurfaceC
     '    <meta name="viewport" content="width=device-width, initial-scale=1" />',
     "    <title>msgcode main window</title>",
     "    <style>",
-    renderReadonlyThreadSurfaceStyles(),
+    renderThreadSurfaceStyles(),
     "    </style>",
     "  </head>",
     `  <body data-surface="${escapeHtml(chrome.kind)}">`,
@@ -91,7 +91,7 @@ export function renderReadonlyThreadSurfaceMarkup(chrome: ReadonlyThreadSurfaceC
     `        <a class="settings-entry" href="${escapeHtml(chrome.settingsAffordance.href)}" aria-label="Open settings">${escapeHtml(chrome.settingsAffordance.label)}</a>`,
     "      </nav>",
     "    </header>",
-    '    <main class="app-main" aria-label="readonly thread surface">',
+    '    <main class="app-main" aria-label="thread surface">',
     '      <section class="left-panel">',
     renderPanelShell("workspace-tree", chrome.columns[0]?.label ?? "Workspace Tree", "Workspaces"),
     "      </section>",
@@ -110,7 +110,7 @@ export function renderReadonlyThreadSurfaceMarkup(chrome: ReadonlyThreadSurfaceC
 }
 
 function renderPanelShell(
-  slot: ReadonlyThreadSurfaceColumnId,
+  slot: ThreadSurfaceColumnId,
   title: string,
   eyebrow: string,
 ): string {
@@ -126,7 +126,7 @@ function renderPanelShell(
   ].join("\n");
 }
 
-function renderReadonlyThreadSurfaceStyles(): string {
+function renderThreadSurfaceStyles(): string {
   return [
     ":root {",
     "  color-scheme: light;",

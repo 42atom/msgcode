@@ -43,29 +43,23 @@ const DEFAULT_RUNTIME_META: RuntimeMeta = {
   tmuxClient: undefined,
 };
 
-let activeThreadInputDispatcher: ThreadInputDispatcher = async (params) => {
-  return getHandler("agent-backend").handle(params.text, {
-    botType: "agent-backend",
-    chatId: params.target.chatId,
-    groupName: stableGroupNameForChatId(params.target.chatId),
-    projectDir: params.workspacePath,
-    originalMessage: params.originalMessage,
-    threadWriteMode: "assistant-only",
-  });
-};
+function buildDefaultThreadInputDispatcher(): ThreadInputDispatcher {
+  return async (params) => {
+    return getHandler("agent-backend").handle(params.text, {
+      botType: "agent-backend",
+      chatId: params.target.chatId,
+      groupName: stableGroupNameForChatId(params.target.chatId),
+      projectDir: params.workspacePath,
+      originalMessage: params.originalMessage,
+      threadWriteMode: "assistant-only",
+    });
+  };
+}
+
+let activeThreadInputDispatcher: ThreadInputDispatcher = buildDefaultThreadInputDispatcher();
 
 export function setThreadInputDispatcherForTest(dispatcher: ThreadInputDispatcher | null): void {
-  activeThreadInputDispatcher =
-    dispatcher ??
-    (async (params) =>
-      getHandler("agent-backend").handle(params.text, {
-        botType: "agent-backend",
-        chatId: params.target.chatId,
-        groupName: stableGroupNameForChatId(params.target.chatId),
-        projectDir: params.workspacePath,
-        originalMessage: params.originalMessage,
-        threadWriteMode: "assistant-only",
-      }));
+  activeThreadInputDispatcher = dispatcher ?? buildDefaultThreadInputDispatcher();
 }
 
 export async function resolveWritableThreadTarget(
@@ -259,23 +253,28 @@ function normalizeSendThreadInputRequest(
   return { workspacePath, text };
 }
 
-export async function runThreadInputProcess(request: SendThreadInputRequest): Promise<void> {
+async function prepareThreadInputRequest(request: SendThreadInputRequest): Promise<{
+  workspacePath: string;
+  text: string;
+  target: WorkspaceThreadSummary;
+  originalMessage: InboundMessage;
+}> {
   const { workspacePath, text } = normalizeSendThreadInputRequest(request);
   const target = await resolveWritableThreadTarget(workspacePath, request.threadId);
-  const originalMessage = buildDesktopOriginalMessage(target, text);
-
-  await runThreadInputInBackground({
+  return {
     workspacePath,
     text,
     target,
-    originalMessage,
-  });
+    originalMessage: buildDesktopOriginalMessage(target, text),
+  };
+}
+
+export async function runThreadInputProcess(request: SendThreadInputRequest): Promise<void> {
+  await runThreadInputInBackground(await prepareThreadInputRequest(request));
 }
 
 export async function sendThreadInput(request: SendThreadInputRequest): Promise<PersistedThreadInput> {
-  const { workspacePath, text } = normalizeSendThreadInputRequest(request);
-  const target = await resolveWritableThreadTarget(workspacePath, request.threadId);
-  const originalMessage = buildDesktopOriginalMessage(target, text);
+  const { workspacePath, text, target, originalMessage } = await prepareThreadInputRequest(request);
 
   await appendDesktopUserTurn({
     workspacePath,

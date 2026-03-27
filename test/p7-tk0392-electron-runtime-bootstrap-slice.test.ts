@@ -5,13 +5,13 @@ import {
   resolveElectronRuntimePaths,
   runSendThreadInput,
 } from "../src/electron/main.js";
-import { createReadonlySurfaceIpcWhitelist } from "../src/electron/preload.js";
+import { createThreadSurfaceIpcWhitelist } from "../src/electron/preload.js";
 import {
   getReadonlySurfaceChannel,
   getSendThreadInputChannel,
   getThreadUpdateChannel,
 } from "../src/electron/readonly-surface-bridge.js";
-import { bootstrapReadonlyThreadSurface } from "../src/electron/renderer.js";
+import { bootstrapThreadSurface } from "../src/electron/renderer.js";
 
 describe("electron runtime bootstrap slice", () => {
   it("resolves preload and renderer entry from main module path", () => {
@@ -46,7 +46,7 @@ describe("electron runtime bootstrap slice", () => {
       },
     };
 
-    bootstrapReadonlyThreadSurface(documentLike);
+    bootstrapThreadSurface(documentLike);
 
     expect(writes[0]).toBe("<open>");
     expect(writes[2]).toBe("<close>");
@@ -188,9 +188,9 @@ describe("electron runtime bootstrap slice", () => {
     expect(events).toEqual([{ workspacePath: "/tmp/family", threadId: "thread-1" }]);
   });
 
-  it("whitelists preload ipc channels for the readonly surface bridge", async () => {
+  it("whitelists preload ipc channels for the thread surface bridge", async () => {
     const calls: string[] = [];
-    const whitelist = createReadonlySurfaceIpcWhitelist({
+    const whitelist = createThreadSurfaceIpcWhitelist({
       async invoke(channel: string) {
         calls.push(`invoke:${channel}`);
         return null;

@@ -1,18 +1,18 @@
 import { describe, expect, it } from "bun:test";
 import {
-  buildReadonlyThreadSurfaceChrome,
-  renderReadonlyThreadSurfaceMarkup,
+  buildThreadSurfaceChrome,
+  renderThreadSurfaceMarkup,
 } from "../src/ui/main-window/readonly-thread-surface.js";
 
 describe("readonly thread surface src implementation", () => {
   it("keeps the first cut to three columns, settings affordance, and a bridge slot", () => {
-    const chrome = buildReadonlyThreadSurfaceChrome({
+    const chrome = buildThreadSurfaceChrome({
       selectedWorkspace: "family",
       selectedThreadId: "thread-feishu",
       loadingError: null,
     });
 
-    expect(chrome.kind).toBe("readonly-thread-surface");
+    expect(chrome.kind).toBe("thread-surface");
     expect(chrome.transientStateKeys).toEqual([
       "selectedWorkspace",
       "selectedThreadId",
@@ -41,7 +41,7 @@ describe("readonly thread surface src implementation", () => {
       "selectedWorkspace",
     ]);
 
-    const markup = renderReadonlyThreadSurfaceMarkup(chrome);
+    const markup = renderThreadSurfaceMarkup(chrome);
     expect(markup).toContain('class="left-panel"');
     expect(markup).toContain('class="middle-panel"');
     expect(markup).toContain('class="right-panel"');

@@ -1,4 +1,4 @@
-export type ReadonlySurfaceCommand = "workspace-tree" | "thread" | "profile" | "capabilities";
+export type ThreadSurfaceCommand = "workspace-tree" | "thread" | "profile" | "capabilities";
 
 export interface SendThreadInputRequest {
   workspacePath: string;
@@ -11,29 +11,29 @@ export interface ThreadUpdateEvent {
   threadId: string;
 }
 
-export interface ReadonlySurfaceWorkspaceTreeRequest {
+export interface ThreadSurfaceWorkspaceTreeRequest {
   command: "workspace-tree";
 }
 
-export interface ReadonlySurfaceThreadRequest {
+export interface ThreadSurfaceThreadRequest {
   command: "thread";
   workspace: string;
   threadId: string;
 }
 
-export interface ReadonlySurfaceWorkspaceRequest {
+export interface ThreadSurfaceWorkspaceRequest {
   command: "profile" | "capabilities";
   workspace: string;
 }
 
-export type ReadonlySurfaceRunCommandRequest =
-  | ReadonlySurfaceWorkspaceTreeRequest
-  | ReadonlySurfaceThreadRequest
-  | ReadonlySurfaceWorkspaceRequest;
+export type ThreadSurfaceRunCommandRequest =
+  | ThreadSurfaceWorkspaceTreeRequest
+  | ThreadSurfaceThreadRequest
+  | ThreadSurfaceWorkspaceRequest;
 
-export interface ReadonlySurfaceBridge {
+export interface ThreadSurfaceBridge {
   mode: "live";
-  runCommand(request: ReadonlySurfaceRunCommandRequest): Promise<unknown>;
+  runCommand(request: ThreadSurfaceRunCommandRequest): Promise<unknown>;
   sendThreadInput(request: SendThreadInputRequest): Promise<void>;
   onThreadUpdate(listener: (event: ThreadUpdateEvent) => void): () => void;
 }
@@ -53,7 +53,7 @@ export interface IpcSubscribeLike {
   ): void;
 }
 
-export function buildReadonlySurfaceCliArgs(request: ReadonlySurfaceRunCommandRequest): string[] {
+export function buildThreadSurfaceCliArgs(request: ThreadSurfaceRunCommandRequest): string[] {
   if (request.command === "workspace-tree") {
     return ["appliance", "workspace-tree", "--json"];
   }
@@ -73,7 +73,7 @@ export function buildReadonlySurfaceCliArgs(request: ReadonlySurfaceRunCommandRe
     ];
   }
 
-  const threadRequest = request as ReadonlySurfaceThreadRequest;
+  const threadRequest = request as ThreadSurfaceThreadRequest;
   const threadId = threadRequest.threadId.trim();
   if (!threadId) {
     throw new Error("Readonly host bridge requires threadId for thread command");
@@ -102,15 +102,15 @@ export function getThreadUpdateChannel(): "msgcode:thread-updated" {
   return "msgcode:thread-updated";
 }
 
-export function createReadonlySurfaceBridge(
+export function createThreadSurfaceBridge(
   ipcInvoker: IpcInvokeLike & Partial<IpcSubscribeLike>,
   readChannel = getReadonlySurfaceChannel(),
   writeChannel = getSendThreadInputChannel(),
   updateChannel = getThreadUpdateChannel(),
-): ReadonlySurfaceBridge {
+): ThreadSurfaceBridge {
   return {
     mode: "live",
-    async runCommand(request: ReadonlySurfaceRunCommandRequest): Promise<unknown> {
+    async runCommand(request: ThreadSurfaceRunCommandRequest): Promise<unknown> {
       return await ipcInvoker.invoke(readChannel, request);
     },
     async sendThreadInput(request: SendThreadInputRequest): Promise<void> {
