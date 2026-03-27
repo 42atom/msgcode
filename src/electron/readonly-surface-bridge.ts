@@ -1,4 +1,4 @@
-export type ReadonlySurfaceCommand = "workspace-tree" | "thread";
+export type ReadonlySurfaceCommand = "workspace-tree" | "thread" | "profile" | "capabilities";
 
 export interface SendThreadInputRequest {
   workspacePath: string;
@@ -16,9 +16,15 @@ export interface ReadonlySurfaceThreadRequest {
   threadId: string;
 }
 
+export interface ReadonlySurfaceWorkspaceRequest {
+  command: "profile" | "capabilities";
+  workspace: string;
+}
+
 export type ReadonlySurfaceRunCommandRequest =
   | ReadonlySurfaceWorkspaceTreeRequest
-  | ReadonlySurfaceThreadRequest;
+  | ReadonlySurfaceThreadRequest
+  | ReadonlySurfaceWorkspaceRequest;
 
 export interface ReadonlySurfaceBridge {
   mode: "live";
@@ -36,10 +42,22 @@ export function buildReadonlySurfaceCliArgs(request: ReadonlySurfaceRunCommandRe
   }
 
   const workspace = request.workspace.trim();
-  const threadId = request.threadId.trim();
   if (!workspace) {
-    throw new Error("Readonly host bridge requires workspace for thread command");
+    throw new Error(`Readonly host bridge requires workspace for ${request.command} command`);
   }
+
+  if (request.command === "profile" || request.command === "capabilities") {
+    return [
+      "appliance",
+      request.command,
+      "--workspace",
+      workspace,
+      "--json",
+    ];
+  }
+
+  const threadRequest = request as ReadonlySurfaceThreadRequest;
+  const threadId = threadRequest.threadId.trim();
   if (!threadId) {
     throw new Error("Readonly host bridge requires threadId for thread command");
   }

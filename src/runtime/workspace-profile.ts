@@ -2,13 +2,18 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Diagnostic } from "../memory/types.js";
-import { loadWorkspaceConfig } from "../config/workspace.js";
+import { getMemoryInjectConfig, loadWorkspaceConfig } from "../config/workspace.js";
 
 export interface WorkspaceProfileSurfaceData {
   workspacePath: string;
   profile: {
     sourcePath: string;
     name: string;
+  };
+  memory: {
+    enabled: boolean;
+    topK: number;
+    maxChars: number;
   };
   soul: {
     path: string;
@@ -31,6 +36,7 @@ export async function readWorkspaceProfileSurface(workspacePath: string): Promis
   const orgPath = path.join(workspacePath, ".msgcode", "ORG.md");
 
   const config = await loadWorkspaceConfig(workspacePath);
+  const memory = await getMemoryInjectConfig(workspacePath);
   const profileName = normalizeCell(config["profile.name"]);
   if (!profileName) {
     warnings.push({
@@ -51,6 +57,7 @@ export async function readWorkspaceProfileSurface(workspacePath: string): Promis
         sourcePath: configPath,
         name: profileName,
       },
+      memory,
       soul,
       organization,
     },

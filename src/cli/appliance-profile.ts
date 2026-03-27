@@ -131,6 +131,11 @@ function emptyProfileData(workspacePath: string): ApplianceProfileData {
       sourcePath: path.join(workspacePath, ".msgcode", "config.json"),
       name: "",
     },
+    memory: {
+      enabled: true,
+      topK: 5,
+      maxChars: 2000,
+    },
     soul: {
       path: path.join(workspacePath, ".msgcode", "SOUL.md"),
       exists: false,

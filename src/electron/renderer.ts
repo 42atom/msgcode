@@ -54,12 +54,47 @@ interface ThreadEnvelope {
   };
 }
 
+interface ProfileEnvelope {
+  data?: {
+    workspacePath?: string;
+    profile?: {
+      sourcePath?: string;
+      name?: string;
+    };
+    memory?: {
+      enabled?: boolean;
+      topK?: number;
+      maxChars?: number;
+    };
+    soul?: {
+      path?: string;
+      exists?: boolean;
+      content?: string;
+    };
+  };
+}
+
+interface CapabilitiesEnvelope {
+  data?: {
+    capabilities?: Array<{
+      id?: string;
+      title?: string;
+      configured?: boolean;
+      source?: string;
+      model?: string;
+      note?: string;
+    }>;
+  };
+}
+
 interface ReadonlyThreadSurfaceViewData {
   selectedWorkspace: string;
   selectedWorkspacePath: string;
   selectedThreadId: string;
   workspaceTree: WorkspaceTreeEnvelope;
   thread: ThreadEnvelope | null;
+  profile: ProfileEnvelope | null;
+  capabilities: CapabilitiesEnvelope | null;
   loadingError: string | null;
 }
 
@@ -106,6 +141,8 @@ export async function loadReadonlyThreadSurface(
   selectedThreadId: string;
   workspaceTree: WorkspaceTreeEnvelope;
   thread: ThreadEnvelope | null;
+  profile: ProfileEnvelope | null;
+  capabilities: CapabilitiesEnvelope | null;
 }> {
   const workspaceTree = (await bridge.runCommand({
     command: "workspace-tree",
@@ -122,21 +159,28 @@ export async function loadReadonlyThreadSurface(
       selectedThreadId,
       workspaceTree,
       thread: null,
+      profile: null,
+      capabilities: null,
     };
   }
 
-  const thread = (await bridge.runCommand({
-    command: "thread",
-    workspace: selectedWorkspaceItem.name,
-    threadId: selectedThreadId,
-  } satisfies ReadonlySurfaceRunCommandRequest)) as ThreadEnvelope;
+  const [thread, shared] = await Promise.all([
+    bridge.runCommand({
+      command: "thread",
+      workspace: selectedWorkspaceItem.name,
+      threadId: selectedThreadId,
+    } satisfies ReadonlySurfaceRunCommandRequest) as Promise<ThreadEnvelope>,
+    loadWorkspaceSharedSurfaces(bridge, selectedWorkspaceItem.path),
+  ]);
 
   return {
     selectedWorkspace: selectedWorkspaceItem.name,
     selectedWorkspacePath: selectedWorkspaceItem.path,
     selectedThreadId,
     workspaceTree,
-    thread,
+    thread: thread as ThreadEnvelope,
+    profile: shared.profile,
+    capabilities: shared.capabilities,
   };
 }
 
@@ -161,15 +205,21 @@ export function applyReadonlyThreadSurfaceData(
 
   const railPanel = documentLike.querySelector('[data-surface-slot="thread-rail"]');
   if (railPanel) {
+    const threadKey = buildSurfaceThreadKey(data.selectedWorkspacePath, data.selectedThreadId);
     const scheduleCount = data.thread?.data?.schedules?.length ?? 0;
     const recentStatusCount = data.thread?.data?.workStatus?.recentEntries?.length ?? 0;
     railPanel.innerHTML = renderRailPanel({
       selectedWorkspace: data.selectedWorkspace,
       selectedWorkspacePath: data.selectedWorkspacePath,
+      selectedThreadId: data.selectedThreadId,
       loadingError: data.loadingError,
       scheduleCount,
       recentStatusCount,
       writable: data.thread?.data?.thread?.writable === true,
+      waiting: pendingComposerThreads.has(threadKey),
+      lastTurnAt: data.thread?.data?.thread?.lastTurnAt ?? "",
+      profile: data.profile,
+      capabilities: data.capabilities,
     });
   }
 }
@@ -297,11 +347,24 @@ function renderThreadPanel(data: {
 function renderRailPanel(params: {
   selectedWorkspace: string;
   selectedWorkspacePath: string;
+  selectedThreadId: string;
   loadingError: string | null;
   scheduleCount: number;
   recentStatusCount: number;
   writable: boolean;
+  waiting: boolean;
+  lastTurnAt: string;
+  profile: ProfileEnvelope | null;
+  capabilities: CapabilitiesEnvelope | null;
 }): string {
+  const brainCapability = (params.capabilities?.data?.capabilities ?? []).find((entry) => entry.id === "brain");
+  const memoryEnabled = params.profile?.data?.memory?.enabled === true;
+  const memoryTopK = params.profile?.data?.memory?.topK ?? 0;
+  const soulPath = params.profile?.data?.soul?.path ?? "";
+  const soulLabel = soulPath.trim() ? basenamePath(soulPath) : "未配置";
+  const brainLabel = normalizeBrainLabel(brainCapability);
+  const threadStatus = params.waiting ? "等待回复" : params.writable ? "可写" : "只读";
+
   return [
     '<header class="surface-panel__header">',
     '<p class="surface-panel__eyebrow">Observer</p>',
@@ -311,7 +374,9 @@ function renderRailPanel(params: {
     '<section class="observer-section">',
     '<div class="observer-section__header"><h3>This Thread</h3></div>',
     '<div class="observer-rows">',
-    renderObserverRow("状态", params.writable ? "可写" : "只读"),
+    renderObserverRow("状态", threadStatus),
+    renderObserverRow("线程", params.selectedThreadId || "-"),
+    renderObserverRow("最近回合", params.lastTurnAt || "-"),
     renderObserverRow("最近事件", `${params.recentStatusCount}`),
     ...(params.loadingError ? [renderObserverRow("异常", params.loadingError)] : []),
     "</div>",
@@ -321,6 +386,9 @@ function renderRailPanel(params: {
     '<div class="observer-rows">',
     renderObserverRow("工作区", params.selectedWorkspace || "-"),
     renderObserverRow("路径", params.selectedWorkspacePath || "-"),
+    renderObserverRow("大脑模型", brainLabel),
+    renderObserverRow("Soul", soulLabel),
+    renderObserverRow("记忆", memoryEnabled ? `已启用 · Top ${memoryTopK}` : "未启用"),
     renderObserverRow("定时任务", `${params.scheduleCount}`),
     "</div>",
     "</section>",
@@ -347,6 +415,53 @@ async function loadThreadEnvelope(
     workspace,
     threadId,
   } satisfies ReadonlySurfaceRunCommandRequest)) as ThreadEnvelope;
+}
+
+async function loadWorkspaceSharedSurfaces(
+  bridge: ReadonlySurfaceBridge,
+  workspace: string,
+): Promise<{ profile: ProfileEnvelope; capabilities: CapabilitiesEnvelope }> {
+  const [profile, capabilities] = await Promise.all([
+    bridge.runCommand({
+      command: "profile",
+      workspace,
+    } satisfies ReadonlySurfaceRunCommandRequest) as Promise<ProfileEnvelope>,
+    bridge.runCommand({
+      command: "capabilities",
+      workspace,
+    } satisfies ReadonlySurfaceRunCommandRequest) as Promise<CapabilitiesEnvelope>,
+  ]);
+
+  return { profile, capabilities };
+}
+
+function normalizeBrainLabel(
+  entry:
+    | {
+        configured?: boolean;
+        model?: string;
+        note?: string;
+      }
+    | undefined,
+): string {
+  if (!entry) {
+    return "未配置";
+  }
+  const model = String(entry.model ?? "").trim();
+  const note = String(entry.note ?? "").trim();
+  if (model) {
+    return note ? `${model} · ${note}` : model;
+  }
+  return note || "未配置";
+}
+
+function basenamePath(value: string): string {
+  const normalized = String(value ?? "").trim().replace(/\\/g, "/");
+  if (!normalized) {
+    return "";
+  }
+  const parts = normalized.split("/").filter(Boolean);
+  return parts[parts.length - 1] ?? normalized;
 }
 
 function renderReadonlyThreadSurface(
@@ -483,9 +598,19 @@ async function handleWorkspaceSelection(
     selectedThreadId: nextThreadId,
     loadingError: null,
     thread: null,
+    profile: null,
+    capabilities: null,
   };
   try {
-    nextData.thread = nextThreadId ? await loadThreadEnvelope(bridge, workspaceName, nextThreadId) : null;
+    const [thread, shared] = await Promise.all([
+      nextThreadId
+        ? loadThreadEnvelope(bridge, workspaceName, nextThreadId)
+        : Promise.resolve<ThreadEnvelope | null>(null),
+      loadWorkspaceSharedSurfaces(bridge, workspacePath),
+    ]);
+    nextData.thread = thread;
+    nextData.profile = shared.profile;
+    nextData.capabilities = shared.capabilities;
   } catch (error) {
     nextData.loadingError = error instanceof Error ? error.message : String(error);
   }
@@ -543,6 +668,8 @@ export async function startReadonlyThreadSurface(
       selectedThreadId: "",
       workspaceTree: {},
       thread: null,
+      profile: null,
+      capabilities: null,
       loadingError: error instanceof Error ? error.message : String(error),
     });
   }

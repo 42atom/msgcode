@@ -66,6 +66,36 @@ describe("readonly thread surface host bridge slice", () => {
       "thread-1",
       "--json",
     ]);
+
+    const profile = buildReadonlySurfaceCliCommand(
+      { command: "profile", workspace: "/tmp/family" },
+      {
+        env: { MSGCODE_CLI_ENTRY: "/tmp/msgcode/dist/cli.js" },
+        nodePath: "/usr/local/bin/node",
+      },
+    );
+    expect(profile.args.slice(-5)).toEqual([
+      "appliance",
+      "profile",
+      "--workspace",
+      "/tmp/family",
+      "--json",
+    ]);
+
+    const capabilities = buildReadonlySurfaceCliCommand(
+      { command: "capabilities", workspace: "/tmp/family" },
+      {
+        env: { MSGCODE_CLI_ENTRY: "/tmp/msgcode/dist/cli.js" },
+        nodePath: "/usr/local/bin/node",
+      },
+    );
+    expect(capabilities.args.slice(-5)).toEqual([
+      "appliance",
+      "capabilities",
+      "--workspace",
+      "/tmp/family",
+      "--json",
+    ]);
   });
 
   it("builds detached thread-input cli invocations from the shared runtime entry", () => {
@@ -125,6 +155,21 @@ describe("readonly thread surface host bridge slice", () => {
             },
           };
         }
+        if (request.command === "profile") {
+          return {
+            data: {
+              memory: { enabled: true, topK: 5, maxChars: 2000 },
+              soul: { path: "/tmp/family/.msgcode/SOUL.md", exists: true, content: "" },
+            },
+          };
+        }
+        if (request.command === "capabilities") {
+          return {
+            data: {
+              capabilities: [{ id: "brain", model: "gpt-5.4", note: "api:openai", configured: true }],
+            },
+          };
+        }
         return {
           data: {
             thread: {
@@ -147,6 +192,10 @@ describe("readonly thread surface host bridge slice", () => {
     expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("message-row--user");
     expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("bubble--user");
     expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain('data-thread-composer="true"');
+    expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("大脑模型");
+    expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("gpt-5.4");
+    expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("记忆");
+    expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("已启用");
     expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain("定时任务");
     expect(panels.get('[data-surface-slot="thread-rail"]')?.innerHTML).toContain(">1<");
   });
@@ -219,6 +268,9 @@ describe("readonly thread surface host bridge slice", () => {
           },
         },
       },
+      profile: null,
+      capabilities: null,
+      loadingError: null,
     });
 
     await listeners.get("input:keydown")?.({
@@ -260,6 +312,9 @@ describe("readonly thread surface host bridge slice", () => {
           },
         },
       },
+      profile: null,
+      capabilities: null,
+      loadingError: null,
     });
 
     await listeners.get("button:click")?.({
@@ -322,6 +377,21 @@ describe("readonly thread surface host bridge slice", () => {
       async sendThreadInput() {},
       async runCommand(request: { command: string; workspace?: string; threadId?: string }) {
         requests.push(request);
+        if (request.command === "profile") {
+          return {
+            data: {
+              memory: { enabled: true, topK: 5, maxChars: 2000 },
+              soul: { path: `${request.workspace}/.msgcode/SOUL.md`, exists: true, content: "" },
+            },
+          };
+        }
+        if (request.command === "capabilities") {
+          return {
+            data: {
+              capabilities: [{ id: "brain", model: "gpt-5.4", note: "api:openai", configured: true }],
+            },
+          };
+        }
         if (request.workspace === "other") {
           return {
             data: {
@@ -376,20 +446,32 @@ describe("readonly thread surface host bridge slice", () => {
           },
         },
         thread: null,
+        profile: null,
+        capabilities: null,
         loadingError: null,
       },
     );
 
     await workspaceButton.click();
     await Promise.resolve();
+    await Promise.resolve();
     expect(requests).toContainEqual({
       command: "thread",
       workspace: "other",
       threadId: "other-thread-1",
     });
+    expect(requests).toContainEqual({
+      command: "profile",
+      workspace: "/tmp/other",
+    });
+    expect(requests).toContainEqual({
+      command: "capabilities",
+      workspace: "/tmp/other",
+    });
     expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("<h2>other thread</h2>");
 
     await threadButton.click();
+    await Promise.resolve();
     await Promise.resolve();
     expect(requests).toContainEqual({
       command: "thread",

@@ -74,6 +74,8 @@ describe("appliance profile contract", () => {
     expect(payload.status).toBe("pass");
     expect(payload.data.workspacePath).toBe(workspacePath);
     expect(payload.data.profile.name).toBe("sam");
+    expect(payload.data.memory.enabled).toBe(true);
+    expect(payload.data.memory.topK).toBe(5);
     expect(payload.data.soul.exists).toBe(true);
     expect(payload.data.soul.content).toContain("简洁、直接、可执行");
     expect(payload.data.organization.name).toBe("Family Workspace");
@@ -165,6 +167,7 @@ describe("appliance profile contract", () => {
     expect(payload.exitCode).toBe(0);
     expect(payload.status).toBe("warning");
     expect(payload.data.profile.name).toBe("");
+    expect(payload.data.memory.enabled).toBe(true);
     expect(payload.data.soul.exists).toBe(false);
     expect(payload.data.organization.exists).toBe(false);
     expect(payload.warnings.some((warning: { code?: string }) => warning.code === "WORKSPACE_PROFILE_NAME_MISSING")).toBe(true);
