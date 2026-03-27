@@ -2,12 +2,12 @@ import {
   buildThreadSurfaceChrome,
   escapeHtml,
   renderThreadSurfaceMarkup,
-} from "../ui/main-window/readonly-thread-surface.js";
+} from "../ui/main-window/thread-surface.js";
 import type {
   ThreadSurfaceBridge,
   ThreadSurfaceRunCommandRequest,
   ThreadUpdateEvent,
-} from "./readonly-surface-bridge.js";
+} from "./thread-surface-bridge.js";
 
 export interface HtmlDocumentLike {
   open(): void;

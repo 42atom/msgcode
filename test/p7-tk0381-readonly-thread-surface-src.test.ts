@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   buildThreadSurfaceChrome,
   renderThreadSurfaceMarkup,
-} from "../src/ui/main-window/readonly-thread-surface.js";
+} from "../src/ui/main-window/thread-surface.js";
 
 describe("readonly thread surface src implementation", () => {
   it("keeps the first cut to three columns, settings affordance, and a bridge slot", () => {

@@ -10,7 +10,7 @@ import {
   getThreadUpdateChannel,
   type ThreadSurfaceRunCommandRequest,
   type SendThreadInputRequest,
-} from "./readonly-surface-bridge.js";
+} from "./thread-surface-bridge.js";
 import {
   sendThreadInput as sendThreadInputFromRuntime,
   type PersistedThreadInput,

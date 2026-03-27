@@ -10,7 +10,7 @@ import {
   getThreadSurfaceReadChannel,
   getSendThreadInputChannel,
   getThreadUpdateChannel,
-} from "../src/electron/readonly-surface-bridge.js";
+} from "../src/electron/thread-surface-bridge.js";
 import { bootstrapThreadSurface } from "../src/electron/renderer.js";
 
 describe("electron runtime bootstrap slice", () => {

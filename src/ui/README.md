@@ -4,7 +4,7 @@ Formal UI structure lives here.
 
 Current first cut:
 
-- `main-window/readonly-thread-surface.ts` for the desktop main window thread shell
+- `main-window/thread-surface.ts` for the desktop main window thread shell
 
 Rules:
 

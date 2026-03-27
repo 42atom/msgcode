@@ -5,7 +5,7 @@ import {
   getThreadUpdateChannel,
   type IpcInvokeLike,
   type IpcSubscribeLike,
-} from "./readonly-surface-bridge.js";
+} from "./thread-surface-bridge.js";
 
 type ThreadSurfaceIpcChannel =
   | ReturnType<typeof getThreadSurfaceReadChannel>
