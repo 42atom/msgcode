@@ -194,6 +194,21 @@ describe("readonly thread surface host bridge slice", () => {
       "--json",
     ]);
 
+    const shared = buildThreadSurfaceCliCommand(
+      { command: "shared", workspace: "/tmp/family" },
+      {
+        env: { MSGCODE_CLI_ENTRY: "/tmp/msgcode/dist/cli.js" },
+        nodePath: "/usr/local/bin/node",
+      },
+    );
+    expect(shared.args.slice(-5)).toEqual([
+      "appliance",
+      "shared",
+      "--workspace",
+      "/tmp/family",
+      "--json",
+    ]);
+
     const capabilities = buildThreadSurfaceCliCommand(
       { command: "capabilities", workspace: "/tmp/family" },
       {
@@ -302,46 +317,36 @@ describe("readonly thread surface host bridge slice", () => {
             },
           };
         }
-        if (request.command === "profile") {
+        if (request.command === "shared") {
           return {
             data: {
-              memory: { enabled: true, topK: 5, maxChars: 2000 },
-              soul: { path: "/tmp/family/.msgcode/SOUL.md", exists: true, content: "" },
-            },
-          };
-        }
-        if (request.command === "capabilities") {
-          return {
-            data: {
-              capabilities: [{ id: "brain", model: "gpt-5.4", note: "api:openai", configured: true }],
-            },
-          };
-        }
-        if (request.command === "hall") {
-          return {
-            data: {
-              org: { name: "msgcode", taxRegion: "SG", uscc: "UEN-1" },
-              runtime: {
-                appVersion: "1.0.0",
-                logPath: "/tmp/family/.msgcode/log",
-                summary: { status: "pass", warnings: 0, errors: 0 },
+              profile: {
+                memory: { enabled: true, topK: 5, maxChars: 2000 },
+                soul: { path: "/tmp/family/.msgcode/SOUL.md", exists: true, content: "" },
               },
-              packs: {
-                builtin: [{ id: "core", name: "Core", version: "1.0.0", enabled: true }],
-                user: [],
+              capabilities: {
+                capabilities: [{ id: "brain", model: "gpt-5.4", note: "api:openai", configured: true }],
               },
-              sites: [{ id: "admin", title: "Admin", kind: "sidecar" }],
-            },
-          };
-        }
-        if (request.command === "neighbor") {
-          return {
-            data: {
-              enabled: true,
-              self: { nodeId: "self-node", publicIdentity: "self" },
-              summary: { unreadCount: 1, lastMessageAt: "2026-03-28T10:00:00.000Z", lastProbeAt: "", reachableCount: 1 },
-              neighbors: [{ nodeId: "neighbor-1", displayName: "邻居01", unreadCount: 1, state: "contact" }],
-              mailbox: { updatedAt: "", entries: [] },
+              hall: {
+                org: { name: "msgcode", taxRegion: "SG", uscc: "UEN-1" },
+                runtime: {
+                  appVersion: "1.0.0",
+                  logPath: "/tmp/family/.msgcode/log",
+                  summary: { status: "pass", warnings: 0, errors: 0 },
+                },
+                packs: {
+                  builtin: [{ id: "core", name: "Core", version: "1.0.0", enabled: true }],
+                  user: [],
+                },
+                sites: [{ id: "admin", title: "Admin", kind: "sidecar" }],
+              },
+              neighbor: {
+                enabled: true,
+                self: { nodeId: "self-node", publicIdentity: "self" },
+                summary: { unreadCount: 1, lastMessageAt: "2026-03-28T10:00:00.000Z", lastProbeAt: "", reachableCount: 1 },
+                neighbors: [{ nodeId: "neighbor-1", displayName: "邻居01", unreadCount: 1, state: "contact" }],
+                mailbox: { updatedAt: "", entries: [] },
+              },
             },
           };
         }
@@ -419,39 +424,29 @@ describe("readonly thread surface host bridge slice", () => {
             },
           };
         }
-        if (request.command === "profile") {
+        if (request.command === "shared") {
           return {
             data: {
-              memory: { enabled: false, topK: 0, maxChars: 0 },
-              soul: { path: "", exists: false, content: "" },
-            },
-          };
-        }
-        if (request.command === "capabilities") {
-          return {
-            data: {
-              capabilities: [],
-            },
-          };
-        }
-        if (request.command === "hall") {
-          return {
-            data: {
-              org: { name: "msgcode" },
-              runtime: { summary: { status: "pass", warnings: 0, errors: 0 } },
-              packs: { builtin: [], user: [] },
-              sites: [],
-            },
-          };
-        }
-        if (request.command === "neighbor") {
-          return {
-            data: {
-              enabled: false,
-              self: { nodeId: "self-node", publicIdentity: "self" },
-              summary: { unreadCount: 0, lastMessageAt: "", lastProbeAt: "", reachableCount: 0 },
-              neighbors: [],
-              mailbox: { updatedAt: "", entries: [] },
+              profile: {
+                memory: { enabled: false, topK: 0, maxChars: 0 },
+                soul: { path: "", exists: false, content: "" },
+              },
+              capabilities: {
+                capabilities: [],
+              },
+              hall: {
+                org: { name: "msgcode" },
+                runtime: { summary: { status: "pass", warnings: 0, errors: 0 } },
+                packs: { builtin: [], user: [] },
+                sites: [],
+              },
+              neighbor: {
+                enabled: false,
+                self: { nodeId: "self-node", publicIdentity: "self" },
+                summary: { unreadCount: 0, lastMessageAt: "", lastProbeAt: "", reachableCount: 0 },
+                neighbors: [],
+                mailbox: { updatedAt: "", entries: [] },
+              },
             },
           };
         }
@@ -697,39 +692,29 @@ describe("readonly thread surface host bridge slice", () => {
       async setWorkspaceMemoryEnabled() {},
       async runCommand(request: { command: string; workspace?: string; threadId?: string }) {
         requests.push(request);
-        if (request.command === "profile") {
+        if (request.command === "shared") {
           return {
             data: {
-              memory: { enabled: true, topK: 5, maxChars: 2000 },
-              soul: { path: `${request.workspace}/.msgcode/SOUL.md`, exists: true, content: "" },
-            },
-          };
-        }
-        if (request.command === "capabilities") {
-          return {
-            data: {
-              capabilities: [{ id: "brain", model: "gpt-5.4", note: "api:openai", configured: true }],
-            },
-          };
-        }
-        if (request.command === "hall") {
-          return {
-            data: {
-              org: { name: "msgcode" },
-              runtime: { summary: { status: "pass", warnings: 0, errors: 0 }, logPath: "/tmp/other/log" },
-              packs: { builtin: [], user: [] },
-              sites: [],
-            },
-          };
-        }
-        if (request.command === "neighbor") {
-          return {
-            data: {
-              enabled: true,
-              self: { nodeId: "self-node", publicIdentity: "self" },
-              summary: { unreadCount: 0, lastMessageAt: "", lastProbeAt: "", reachableCount: 0 },
-              neighbors: [],
-              mailbox: { updatedAt: "", entries: [] },
+              profile: {
+                memory: { enabled: true, topK: 5, maxChars: 2000 },
+                soul: { path: `${request.workspace}/.msgcode/SOUL.md`, exists: true, content: "" },
+              },
+              capabilities: {
+                capabilities: [{ id: "brain", model: "gpt-5.4", note: "api:openai", configured: true }],
+              },
+              hall: {
+                org: { name: "msgcode" },
+                runtime: { summary: { status: "pass", warnings: 0, errors: 0 }, logPath: "/tmp/other/log" },
+                packs: { builtin: [], user: [] },
+                sites: [],
+              },
+              neighbor: {
+                enabled: true,
+                self: { nodeId: "self-node", publicIdentity: "self" },
+                summary: { unreadCount: 0, lastMessageAt: "", lastProbeAt: "", reachableCount: 0 },
+                neighbors: [],
+                mailbox: { updatedAt: "", entries: [] },
+              },
             },
           };
         }
@@ -805,11 +790,7 @@ describe("readonly thread surface host bridge slice", () => {
       threadId: "other-thread-1",
     });
     expect(requests).toContainEqual({
-      command: "profile",
-      workspace: "/tmp/other",
-    });
-    expect(requests).toContainEqual({
-      command: "capabilities",
+      command: "shared",
       workspace: "/tmp/other",
     });
     expect(panels.get('[data-surface-slot="thread"]')?.innerHTML).toContain("<h2>other thread</h2>");
@@ -969,39 +950,29 @@ describe("readonly thread surface host bridge slice", () => {
             },
           };
         }
-        if (request.command === "profile") {
+        if (request.command === "shared") {
           return {
             data: {
-              memory: { enabled: true, topK: 5, maxChars: 2000 },
-              soul: { path: "/tmp/family/.msgcode/SOUL.md", exists: true, content: "" },
-            },
-          };
-        }
-        if (request.command === "capabilities") {
-          return {
-            data: {
-              capabilities: [{ id: "brain", model: "gpt-5.4", note: "api:openai", configured: true }],
-            },
-          };
-        }
-        if (request.command === "hall") {
-          return {
-            data: {
-              org: { name: "msgcode" },
-              runtime: { summary: { status: "pass", warnings: 0, errors: 0 } },
-              packs: { builtin: [], user: [] },
-              sites: [],
-            },
-          };
-        }
-        if (request.command === "neighbor") {
-          return {
-            data: {
-              enabled: false,
-              self: { nodeId: "self-node", publicIdentity: "self" },
-              summary: { unreadCount: 0, lastMessageAt: "", lastProbeAt: "", reachableCount: 0 },
-              neighbors: [],
-              mailbox: { updatedAt: "", entries: [] },
+              profile: {
+                memory: { enabled: true, topK: 5, maxChars: 2000 },
+                soul: { path: "/tmp/family/.msgcode/SOUL.md", exists: true, content: "" },
+              },
+              capabilities: {
+                capabilities: [{ id: "brain", model: "gpt-5.4", note: "api:openai", configured: true }],
+              },
+              hall: {
+                org: { name: "msgcode" },
+                runtime: { summary: { status: "pass", warnings: 0, errors: 0 } },
+                packs: { builtin: [], user: [] },
+                sites: [],
+              },
+              neighbor: {
+                enabled: false,
+                self: { nodeId: "self-node", publicIdentity: "self" },
+                summary: { unreadCount: 0, lastMessageAt: "", lastProbeAt: "", reachableCount: 0 },
+                neighbors: [],
+                mailbox: { updatedAt: "", entries: [] },
+              },
             },
           };
         }
@@ -1077,35 +1048,27 @@ describe("readonly thread surface host bridge slice", () => {
         calls.push(request);
       },
       async runCommand(request: { command: string }) {
-        if (request.command === "profile") {
+        if (request.command === "shared") {
           return {
             data: {
-              memory: { enabled: false, topK: 5, maxChars: 2000 },
-              soul: { path: "/tmp/family-memory/.msgcode/SOUL.md", exists: true, content: "" },
-            },
-          };
-        }
-        if (request.command === "capabilities") {
-          return { data: { capabilities: [] } };
-        }
-        if (request.command === "hall") {
-          return {
-            data: {
-              org: { name: "msgcode" },
-              runtime: { summary: { status: "pass", warnings: 0, errors: 0 } },
-              packs: { builtin: [], user: [] },
-              sites: [],
-            },
-          };
-        }
-        if (request.command === "neighbor") {
-          return {
-            data: {
-              enabled: false,
-              self: { nodeId: "self-node", publicIdentity: "self" },
-              summary: { unreadCount: 0, lastMessageAt: "", lastProbeAt: "", reachableCount: 0 },
-              neighbors: [],
-              mailbox: { updatedAt: "", entries: [] },
+              profile: {
+                memory: { enabled: false, topK: 5, maxChars: 2000 },
+                soul: { path: "/tmp/family-memory/.msgcode/SOUL.md", exists: true, content: "" },
+              },
+              capabilities: { capabilities: [] },
+              hall: {
+                org: { name: "msgcode" },
+                runtime: { summary: { status: "pass", warnings: 0, errors: 0 } },
+                packs: { builtin: [], user: [] },
+                sites: [],
+              },
+              neighbor: {
+                enabled: false,
+                self: { nodeId: "self-node", publicIdentity: "self" },
+                summary: { unreadCount: 0, lastMessageAt: "", lastProbeAt: "", reachableCount: 0 },
+                neighbors: [],
+                mailbox: { updatedAt: "", entries: [] },
+              },
             },
           };
         }

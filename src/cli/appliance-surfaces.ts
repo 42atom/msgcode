@@ -7,12 +7,16 @@ import { createEnvelope, getWorkspacePath } from "./command-runner.js";
 import { buildMissingWorkspaceError } from "./appliance-common.js";
 import type { Diagnostic, Envelope, CommandStatus } from "../memory/types.js";
 import { getVersionInfo } from "../version.js";
-import { runAllProbes } from "../probe/index.js";
-import { readWorkspacePackRegistry, type WorkspacePackSurfaceData } from "../runtime/workspace-packs.js";
 import {
   readWorkspaceNeighborSurface,
   type WorkspaceNeighborSurfaceData,
 } from "../runtime/workspace-neighbor.js";
+import {
+  readWorkspaceHallSurface,
+  readWorkspaceSharedSurface,
+  type WorkspaceHallSurfaceData,
+  type WorkspaceSharedSurfaceData,
+} from "../runtime/workspace-shared-surface.js";
 import {
   readWorkspaceThreadDetailSurface,
   readWorkspaceThreadSurface,
@@ -26,39 +30,6 @@ import {
   type WorkspaceTreeSurfaceData,
 } from "../runtime/workspace-tree-surface.js";
 import { installWorkspaceWpkg } from "../runtime/workspace-wpkg-install.js";
-
-interface OrgCard {
-  path: string;
-  exists: boolean;
-  name: string;
-  taxRegion: string;
-  uscc: string;
-}
-
-interface ApplianceRuntimeSurface {
-  appVersion: string;
-  configPath: string;
-  logPath: string;
-  summary: {
-    status: string;
-    warnings: number;
-    errors: number;
-  };
-  categories: Array<{
-    key: string;
-    name: string;
-    status: string;
-    message: string;
-  }>;
-}
-
-interface ApplianceHallData {
-  workspacePath: string;
-  org: OrgCard;
-  runtime: ApplianceRuntimeSurface;
-  packs: WorkspacePackSurfaceData;
-  sites: ApplianceSiteEntry[];
-}
 
 interface ApplianceSiteEntry {
   id: string;
@@ -96,84 +67,6 @@ interface AppliancePackInstallData {
     packsPath: string;
     sitesPath: string;
   };
-}
-
-function parseOrgField(content: string, label: string): string {
-  const match = content.match(new RegExp(`^- ${label}：(.+)$`, "m"));
-  return match?.[1]?.trim() ?? "";
-}
-
-async function readOrgCard(workspacePath: string): Promise<{ org: OrgCard; warnings: Diagnostic[] }> {
-  const orgPath = path.join(workspacePath, ".msgcode", "ORG.md");
-  const warnings: Diagnostic[] = [];
-
-  if (!existsSync(orgPath)) {
-    warnings.push({
-      code: "APPLIANCE_ORG_MISSING",
-      message: "工作区缺少 ORG.md",
-      hint: "先运行 msgcode init --workspace <path> 或手工补机构卡片",
-      details: { orgPath },
-    });
-    return {
-      org: {
-        path: orgPath,
-        exists: false,
-        name: "",
-        taxRegion: "",
-        uscc: "",
-      },
-      warnings,
-    };
-  }
-
-  const content = await readFile(orgPath, "utf8");
-  const taxRegion = parseOrgField(content, "位置城市") || parseOrgField(content, "交税地");
-  const org = {
-    path: orgPath,
-    exists: true,
-    name: parseOrgField(content, "名称"),
-    taxRegion,
-    uscc: parseOrgField(content, "统一社会信用代码"),
-  };
-
-  if (!org.name || !org.taxRegion) {
-    warnings.push({
-      code: "APPLIANCE_ORG_INCOMPLETE",
-      message: "ORG.md 缺少机构卡片字段",
-      hint: "至少补齐 名称 和 位置城市（兼容旧字段 交税地）",
-      details: { orgPath },
-    });
-  }
-
-  return { org, warnings };
-}
-
-async function readRuntimeSurface(): Promise<ApplianceRuntimeSurface> {
-  const report = await runAllProbes();
-  const versionInfo = getVersionInfo();
-  return {
-    appVersion: versionInfo.appVersion,
-    configPath: versionInfo.configPath,
-    logPath: path.join(os.homedir(), ".config/msgcode/log/msgcode.log"),
-    summary: {
-      status: report.summary.status,
-      warnings: report.summary.warnings,
-      errors: report.summary.errors,
-    },
-    categories: Object.entries(report.categories).map(([key, category]) => ({
-      key,
-      name: category.name,
-      status: category.status,
-      message: category.probes[0]?.message ?? "",
-    })),
-  };
-}
-
-function buildHallStatus(orgWarnings: Diagnostic[], runtimeStatus: string): CommandStatus {
-  if (runtimeStatus === "error") return "warning";
-  if (runtimeStatus === "warning") return "warning";
-  if (orgWarnings.length > 0) return "warning";
-  return "pass";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -259,7 +152,7 @@ export function registerApplianceSurfaceCommands(cmd: Command): void {
       if (!existsSync(workspacePath)) {
         errors.push(buildMissingWorkspaceError(workspacePath, options.workspace));
 
-        const envelope = createEnvelope<ApplianceHallData>(
+        const envelope = createEnvelope<WorkspaceHallSurfaceData>(
           `msgcode appliance hall --workspace ${options.workspace}`,
           startTime,
           "error",
@@ -290,24 +183,15 @@ export function registerApplianceSurfaceCommands(cmd: Command): void {
         process.exit(1);
       }
 
-      const { org, warnings: orgWarnings } = await readOrgCard(workspacePath);
-      warnings.push(...orgWarnings);
-      const { data: packRegistry, warnings: packWarnings } = await readWorkspacePackRegistry(workspacePath);
-      warnings.push(...packWarnings);
-      const { sites, warnings: siteWarnings } = await readSitesRegistry(workspacePath);
-      warnings.push(...siteWarnings);
+      const { data, warnings: surfaceWarnings } = await readWorkspaceHallSurface(workspacePath);
+      warnings.push(...surfaceWarnings);
 
-      const runtime = await readRuntimeSurface();
-      const data: ApplianceHallData = {
-        workspacePath,
-        org,
-        runtime,
-        packs: packRegistry,
-        sites,
-      };
-
-      const status = buildHallStatus(warnings, runtime.summary.status);
-      const envelope: Envelope<ApplianceHallData> = createEnvelope(
+      const status = data.runtime.summary.status === "error"
+        ? "warning"
+        : data.runtime.summary.status === "warning" || warnings.length > 0
+          ? "warning"
+          : "pass";
+      const envelope: Envelope<WorkspaceHallSurfaceData> = createEnvelope(
         `msgcode appliance hall --workspace ${options.workspace}`,
         startTime,
         status,
@@ -318,6 +202,82 @@ export function registerApplianceSurfaceCommands(cmd: Command): void {
       envelope.exitCode = 0;
       console.log(JSON.stringify(envelope, null, 2));
       process.exit(0);
+    });
+
+  cmd
+    .command("shared")
+    .description("输出桌面 thread surface 共享读面 JSON")
+    .requiredOption("--workspace <labelOrPath>", "Workspace 相对路径或绝对路径")
+    .option("--json", "JSON 格式输出")
+    .action(async (options: { workspace: string; json?: boolean }) => {
+      const startTime = Date.now();
+      const workspacePath = getWorkspacePath(options.workspace);
+      const warnings: Diagnostic[] = [];
+      const errors: Diagnostic[] = [];
+
+      if (!existsSync(workspacePath)) {
+        errors.push(buildMissingWorkspaceError(workspacePath, options.workspace));
+      }
+
+      const { data, warnings: surfaceWarnings } = errors.length === 0
+        ? await readWorkspaceSharedSurface(workspacePath)
+        : {
+            data: {
+              workspacePath,
+              profile: {
+                workspacePath,
+                profile: { sourcePath: path.join(workspacePath, ".msgcode", "config.json"), name: "" },
+                memory: { enabled: false, topK: 0, maxChars: 0 },
+                soul: { path: path.join(workspacePath, ".msgcode", "SOUL.md"), exists: false, content: "" },
+                organization: { path: path.join(workspacePath, ".msgcode", "ORG.md"), exists: false, name: "", city: "", cityField: "" as const },
+              },
+              capabilities: {
+                workspacePath,
+                runtime: { kind: "agent" as const, lane: "api" as const, agentProvider: "none" as const, tmuxClient: "none" as const },
+                capabilities: [],
+              },
+              hall: {
+                workspacePath,
+                org: { path: path.join(workspacePath, ".msgcode", "ORG.md"), exists: false, name: "", taxRegion: "", uscc: "" },
+                runtime: {
+                  appVersion: "",
+                  configPath: "",
+                  logPath: "",
+                  summary: { status: "error", warnings: 0, errors: 1 },
+                  categories: [],
+                },
+                packs: { builtin: [], user: [] },
+                sites: [],
+              },
+              neighbor: {
+                workspacePath,
+                configPath: path.join(workspacePath, ".msgcode", "neighbor", "config.json"),
+                neighborsPath: path.join(workspacePath, ".msgcode", "neighbor", "neighbors.json"),
+                mailboxPath: path.join(workspacePath, ".msgcode", "neighbor", "mailbox.jsonl"),
+                enabled: false,
+                self: { nodeId: "", publicIdentity: "" },
+                summary: { unreadCount: 0, lastMessageAt: "", lastProbeAt: "", reachableCount: 0 },
+                neighbors: [],
+                mailbox: { updatedAt: "", entries: [] },
+              },
+            },
+            warnings: [],
+          };
+      warnings.push(...surfaceWarnings);
+
+      const status: CommandStatus = errors.length > 0 ? "error" : warnings.length > 0 ? "warning" : "pass";
+      const envelope: Envelope<WorkspaceSharedSurfaceData> = createEnvelope(
+        `msgcode appliance shared --workspace ${options.workspace}`,
+        startTime,
+        status,
+        data,
+        warnings,
+        errors,
+      );
+      envelope.exitCode = errors.length > 0 ? 1 : 0;
+
+      console.log(JSON.stringify(envelope, null, 2));
+      process.exit(errors.length > 0 ? 1 : 0);
     });
 
   cmd

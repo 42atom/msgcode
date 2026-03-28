@@ -28,7 +28,7 @@ export interface ThreadSurfaceChrome {
   kind: "thread-surface";
   state: ThreadSurfaceState;
   transientStateKeys: readonly ["selectedWorkspace", "selectedThreadId", "loadingError"];
-  dataFeeds: readonly ["workspace-tree", "thread", "profile", "capabilities", "hall", "neighbor"];
+  dataFeeds: readonly ["workspace-tree", "thread", "shared"];
   columns: readonly ThreadSurfaceColumn[];
   settingsAffordance: ThreadSurfaceSettingsAffordance;
   bridgeSlot: ThreadSurfaceBridgeSlot;
@@ -46,7 +46,7 @@ export function buildThreadSurfaceChrome(
       loadingError: state.loadingError,
     },
     transientStateKeys: ["selectedWorkspace", "selectedThreadId", "loadingError"],
-      dataFeeds: ["workspace-tree", "thread", "profile", "capabilities", "hall", "neighbor"],
+      dataFeeds: ["workspace-tree", "thread", "shared"],
     columns: [
       { id: "workspace-tree", label: "Workspace Tree", slot: "workspace-tree" },
       { id: "thread", label: "Thread", slot: "thread" },

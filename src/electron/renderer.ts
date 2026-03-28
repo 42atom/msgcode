@@ -182,6 +182,16 @@ interface NeighborEnvelope {
   };
 }
 
+interface SharedEnvelope {
+  data?: {
+    workspacePath?: string;
+    profile?: ProfileEnvelope["data"];
+    capabilities?: CapabilitiesEnvelope["data"];
+    hall?: HallEnvelope["data"];
+    neighbor?: NeighborEnvelope["data"];
+  };
+}
+
 type ThreadSurfaceSection = "workspace" | "base" | "neighbor";
 
 interface ThreadSurfaceViewData {
@@ -1045,26 +1055,17 @@ async function loadWorkspaceSharedSurfaces(
   hall: HallEnvelope;
   neighbor: NeighborEnvelope;
 }> {
-  const [profile, capabilities, hall, neighbor] = await Promise.all([
-    bridge.runCommand({
-      command: "profile",
-      workspace,
-    } satisfies ThreadSurfaceRunCommandRequest) as Promise<ProfileEnvelope>,
-    bridge.runCommand({
-      command: "capabilities",
-      workspace,
-    } satisfies ThreadSurfaceRunCommandRequest) as Promise<CapabilitiesEnvelope>,
-    bridge.runCommand({
-      command: "hall",
-      workspace,
-    } satisfies ThreadSurfaceRunCommandRequest) as Promise<HallEnvelope>,
-    bridge.runCommand({
-      command: "neighbor",
-      workspace,
-    } satisfies ThreadSurfaceRunCommandRequest) as Promise<NeighborEnvelope>,
-  ]);
+  const shared = (await bridge.runCommand({
+    command: "shared",
+    workspace,
+  } satisfies ThreadSurfaceRunCommandRequest)) as SharedEnvelope;
 
-  return { profile, capabilities, hall, neighbor };
+  return {
+    profile: { data: shared.data?.profile },
+    capabilities: { data: shared.data?.capabilities },
+    hall: { data: shared.data?.hall },
+    neighbor: { data: shared.data?.neighbor },
+  };
 }
 
 function normalizeBrainLabel(

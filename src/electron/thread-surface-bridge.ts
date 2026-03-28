@@ -1,6 +1,7 @@
 export type ThreadSurfaceCommand =
   | "workspace-tree"
   | "thread"
+  | "shared"
   | "profile"
   | "capabilities"
   | "hall"
@@ -37,7 +38,7 @@ export interface ThreadSurfaceThreadRequest {
 }
 
 export interface ThreadSurfaceWorkspaceRequest {
-  command: "profile" | "capabilities" | "hall" | "neighbor";
+  command: "shared" | "profile" | "capabilities" | "hall" | "neighbor";
   workspace: string;
 }
 
@@ -81,6 +82,7 @@ export function buildThreadSurfaceCliArgs(request: ThreadSurfaceRunCommandReques
   }
 
   if (
+    request.command === "shared" ||
     request.command === "profile" ||
     request.command === "capabilities" ||
     request.command === "hall" ||
